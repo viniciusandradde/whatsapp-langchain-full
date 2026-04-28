@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError
+from whatsapp_langchain.server.middlewares import install_security_headers
 from whatsapp_langchain.server.routes.admin import router as admin_router
 from whatsapp_langchain.server.routes.health import router as health_router
 from whatsapp_langchain.server.routes.webhook import router as webhook_router
@@ -73,6 +74,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Twilio-Signature"],
 )
+
+install_security_headers(app, is_production=settings.is_production)
 
 
 # Exception handlers
