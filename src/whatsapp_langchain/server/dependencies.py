@@ -12,11 +12,14 @@ Uso:
 """
 
 import hmac
+import random
 import time
 from collections import defaultdict
+from datetime import UTC, datetime
 
 import structlog
 from fastapi import HTTPException, Request
+from psycopg_pool import AsyncConnectionPool
 from twilio.request_validator import RequestValidator  # type: ignore[import-untyped]
 
 from whatsapp_langchain.shared.config import settings
@@ -128,6 +131,55 @@ async def verify_service_token(request: Request) -> None:
         )
 
     logger.debug("service_token_valid", path=str(request.url.path))
+
+
+_RATE_LIMIT_CLEANUP_PROBABILITY = 0.01  # 1% das requisições limpam buckets antigos
+
+
+async def _check_rate_limit_db(
+    pool: AsyncConnectionPool,
+    phone_number: str,
+    *,
+    limit: int,
+) -> None:
+    """Sliding window por hora cheia em Postgres.
+
+    Levanta HTTPException(429) ao estourar. Cleanup inline probabilístico
+    evita dependência de cron — em ~1% das requisições apaga buckets com
+    mais de 24h.
+    """
+    hour_start = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+
+    async with pool.connection() as conn:
+        cursor = await conn.execute(
+            """
+            INSERT INTO rate_limit_buckets (phone_number, hour_start, request_count)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (phone_number, hour_start)
+            DO UPDATE SET request_count = rate_limit_buckets.request_count + 1
+            RETURNING request_count
+            """,
+            (phone_number, hour_start),
+        )
+        row = await cursor.fetchone()
+        await conn.commit()
+        count = row[0] if row else 1
+
+        if random.random() < _RATE_LIMIT_CLEANUP_PROBABILITY:
+            await conn.execute(
+                "DELETE FROM rate_limit_buckets"
+                " WHERE hour_start < NOW() - INTERVAL '24 hours'"
+            )
+            await conn.commit()
+
+    if count > limit:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Rate limit excedido ({limit}/hora). "
+                "Tente novamente em alguns minutos."
+            ),
+        )
 
 
 async def check_rate_limit(phone_number: str) -> None:
