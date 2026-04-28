@@ -1,0 +1,6 @@
+# Ignora arquivos desnecessários no contexto de build do Docker
+node_modules
+.next
+.env
+.env.local
+.git

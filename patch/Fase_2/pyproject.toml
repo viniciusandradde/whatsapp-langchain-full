@@ -1,0 +1,50 @@
+[project]
+name = "whatsapp-langchain"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain==1.2.8",
+    "langgraph==1.0.7",
+    "langchain-openai==1.1.7",
+    "langgraph-checkpoint-postgres==3.0.4",
+    "python-dotenv==1.2.1",
+    "fastapi==0.129.0",
+    "uvicorn[standard]==0.40.0",
+    "psycopg[binary,pool]==3.3.2",
+    "pydantic-settings==2.12.0",
+    "structlog==25.5.0",
+    "httpx==0.28.1",
+    "python-multipart==0.0.22",
+]
+
+[project.optional-dependencies]
+dev = [
+    "langgraph-cli[inmem]==0.4.12",
+    "langgraph-sdk==0.3.12",
+    "ruff==0.9.6",
+    "pyright==1.1.408",
+    "pytest==8.3.5",
+    "pytest-asyncio==0.25.3",
+    "httpx==0.28.1",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "docker_demo: testes demonstrativos que exigem API/Worker/DB rodando em Docker",
+]

@@ -1,0 +1,4 @@
+# PostgreSQL com pgvector habilitado.
+# pgvector é necessário para memória semântica futura (INT-202).
+# A extensão é criada via migração SQL (CREATE EXTENSION vector).
+FROM pgvector/pgvector:pg16

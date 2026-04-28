@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.uv-cache
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Internal docs (planning/architecture - not for end users)
+docs/internal/
+docs/srt/
+
+# Testing
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.cover
+
+# LangGraph
+.langgraph_api/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node (frontend)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Docker
+*.log
+
+# Stress testing results
+stress/results_*.csv
+docs/FASE_1_APOIO_VISUAL.excalidraw
+docs/FASE_1_APOIO_VISUAL.md

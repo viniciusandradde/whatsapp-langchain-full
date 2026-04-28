@@ -1,0 +1,103 @@
+# Docker Compose para desenvolvimento local.
+# Sobe PostgreSQL (com pgvector), API e Worker.
+#
+# Uso:
+#   docker compose up -d         # Sobe tudo
+#   docker compose up -d db      # Só o banco
+#   docker compose logs -f       # Logs
+#   docker compose down          # Para tudo
+#
+# Profiles:
+#   docker compose --profile testing up stress   # Sobe o Locust para teste de carga
+
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    environment:
+      POSTGRES_DB: whatsapp_langchain
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/whatsapp_langchain
+      LOG_JSON: "true"
+      INTERNAL_SERVICE_TOKEN: dev-token-change-in-production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/whatsapp_langchain
+      LOG_JSON: "true"
+      TWILIO_OUTBOUND_MODE: ${TWILIO_OUTBOUND_MODE:-mock}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # API interna via rede do compose (não localhost)
+      INTERNAL_API_URL: http://api:8000
+      INTERNAL_SERVICE_TOKEN: dev-token-change-in-production
+      # Better Auth
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/whatsapp_langchain
+      BETTER_AUTH_SECRET: dev-secret-change-in-production-min-32-chars!!
+      BETTER_AUTH_URL: http://localhost:3000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Locust para teste de carga.
+  # Usa profile "testing" para não subir junto com os serviços principais.
+  # Só inicia com: docker compose --profile testing up stress
+  stress:
+    build:
+      context: ./stress
+      dockerfile: Dockerfile
+    ports:
+      - "8089:8089"
+    environment:
+      LOCUST_HOST: http://api:8000
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-test-token}
+      TWILIO_WEBHOOK_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+    profiles:
+      - testing
+
+volumes:
+  postgres_data:
