@@ -131,14 +131,17 @@ class TestWebhookTwilio:
         assert response.status_code == 200
         assert "Response" in response.text
 
-    @patch("whatsapp_langchain.server.routes.webhook.enqueue_or_buffer")
+    @patch(
+        "whatsapp_langchain.server.routes.webhook.enqueue_or_buffer",
+        new_callable=AsyncMock,
+    )
     def test_webhook_enqueues_n_rows_for_num_media_2(self, mock_enqueue):
         """NumMedia=2 cria 1 row de texto + 2 rows de mídia com mesmo message_id."""
         from whatsapp_langchain.shared.models import EnqueueResult
 
         call_count = 0
 
-        def fake_enqueue_side_effect(*args, **kwargs):
+        async def fake_enqueue_side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             return EnqueueResult(message_id=call_count, is_buffered=False)

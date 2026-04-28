@@ -256,6 +256,10 @@ def assert_outbound_sent(db_url: str, message_sid: str) -> dict:
 
     Em modo Twilio real, isso garante que `TwilioClient.send_message` retornou OK
     (porque `mark_done` só corre depois). Retorna a row da fila pra inspeção.
+
+    AVISO: para mensagens com NumMedia > 1 (que geram N rows com mesmo message_id),
+    use `wait_until_n_rows_done` em vez desta função — `assert_outbound_sent` lê
+    apenas uma row arbitrária e pode dar falso positivo silencioso.
     """
     with psycopg.connect(db_url) as conn:
         with conn.cursor() as cur:
