@@ -68,6 +68,9 @@ class Settings(BaseSettings):
 
     # --- Rate Limit ---
     rate_limit_per_hour: int = 30
+    # True ativa Postgres sliding window (necessário em multi-instância).
+    # Migration 005_rate_limit_buckets.sql precisa estar aplicada.
+    rate_limit_distributed: bool = False
 
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
