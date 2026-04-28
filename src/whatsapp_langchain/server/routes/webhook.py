@@ -11,7 +11,7 @@ Uso:
 """
 
 import structlog
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError, list_agents
 from whatsapp_langchain.server.dependencies import (
@@ -32,9 +32,13 @@ EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 
 @router.post("/webhook/twilio")
 async def webhook_twilio(
+    request: Request,
     agent: str = Query(
         description="ID do agente para processar a mensagem",
     ),
+    # Parâmetros Form declarados para documentação OpenAPI (Swagger UI).
+    # Os valores reais são lidos via request.form() para suportar
+    # MediaUrl{i} dinâmicos (NumMedia > 1).
     message_sid: str = Form(
         default="",
         alias="MessageSid",
@@ -58,17 +62,7 @@ async def webhook_twilio(
     num_media_raw: str = Form(
         default="0",
         alias="NumMedia",
-        description="Quantidade de mídias anexadas.",
-    ),
-    media_url_form: str | None = Form(
-        default=None,
-        alias="MediaUrl0",
-        description="URL da primeira mídia (quando NumMedia > 0).",
-    ),
-    media_type_form: str | None = Form(
-        default=None,
-        alias="MediaContentType0",
-        description="MIME type da primeira mídia.",
+        description="Quantidade de mídias anexadas (suporta até 10).",
     ),
     wa_id: str = Form(
         default="",
@@ -78,6 +72,10 @@ async def webhook_twilio(
     _signature: None = Depends(validate_twilio_signature),
 ) -> Response:
     """Recebe webhook do Twilio e enfileira para processamento.
+
+    Suporta múltiplas mídias no mesmo webhook (NumMedia > 1): cada mídia vira
+    1 row independente na fila com o mesmo message_sid; o worker processa cada
+    uma como turn separado do agente. O checkpointer LangGraph agrega via thread_id.
 
     O Worker consome a mensagem da fila, executa o agente, e envia
     a resposta via Twilio. Assinatura validada via HMAC-SHA1 (SDK oficial)
@@ -89,6 +87,26 @@ async def webhook_twilio(
     Returns:
         TwiML vazio com status 200.
     """
+    # Lê form data via Request para acessar MediaUrl{i} dinâmicos.
+    # Os parâmetros Form acima são mantidos para documentação OpenAPI;
+    # aqui usamos request.form() para leitura real dos campos.
+    form = await request.form()
+
+    # Campos escalares — usa os valores já parseados pelos parâmetros Form
+    # (ou lê do form diretamente para garantia de consistência).
+    msg_sid = (form.get("MessageSid") or "").strip()
+    from_raw = (form.get("From") or "").strip()
+    to_raw = (form.get("To") or "").strip()
+    body_raw = (form.get("Body") or "").strip()
+    wa_id_raw = (form.get("WaId") or "").strip()
+
+    try:
+        num_media = int(form.get("NumMedia") or "0")
+    except ValueError:
+        num_media = 0
+    # Twilio limita 10 mídias por mensagem WhatsApp
+    num_media = max(0, min(num_media, 10))
+
     # Verifica se o agente existe
     available_agents = list_agents()
     if agent not in available_agents:
@@ -96,60 +114,70 @@ async def webhook_twilio(
 
     # Sanitização de campos do Twilio recebidos via x-www-form-urlencoded.
     # From vem como "whatsapp:+55...", WaId vem como "5511..." sem + (fallback).
-    phone_number = (from_number or "").replace("whatsapp:", "")
-    if not phone_number and wa_id:
+    phone_number = from_raw.replace("whatsapp:", "")
+    if not phone_number and wa_id_raw:
         # WaId pode vir sem + — normaliza para E.164
-        phone_number = wa_id if wa_id.startswith("+") else f"+{wa_id}"
-    body = body or ""
-    to_number = (to_number_form or "").replace("whatsapp:", "")
-    message_sid = message_sid or ""
+        phone_number = wa_id_raw if wa_id_raw.startswith("+") else f"+{wa_id_raw}"
+    to_number = to_raw.replace("whatsapp:", "")
 
     # Rejeita webhook sem identidade de remetente (From e WaId ambos vazios)
     if not phone_number:
         logger.warning(
             "webhook_missing_sender",
-            message_sid=message_sid,
-            from_raw=from_number,
-            wa_id_raw=wa_id,
+            message_sid=msg_sid,
+            from_raw=from_raw,
+            wa_id_raw=wa_id_raw,
         )
         raise HTTPException(
             status_code=400,
             detail="Missing sender identity (From/WaId)",
         )
 
-    # Mídia (imagem, áudio)
-    try:
-        num_media = int(num_media_raw or "0")
-    except ValueError:
-        num_media = 0
-    media_url = media_url_form.strip() if (num_media > 0 and media_url_form) else None
-    media_type = (
-        media_type_form.strip() if (num_media > 0 and media_type_form) else None
-    )
-
     # Rate limit
     await check_rate_limit(phone_number)
 
-    # Enfileira a mensagem
+    # Enfileiramento:
+    # - se há texto OU não há mídia: enfileira o texto como 1 row
+    # - cada mídia (MediaUrl0..MediaUrl{NumMedia-1}) vira 1 row adicional
+    #   com o mesmo message_sid (sem debounce, processada imediatamente)
     pool = await get_pool()
-    result = await enqueue_or_buffer(
-        pool=pool,
-        phone_number=phone_number,
-        agent_id=agent,
-        body=body,
-        media_url=media_url,
-        media_type=media_type,
-        to_number=to_number,
-        message_id=message_sid,
-        buffer_seconds=settings.message_buffer_seconds,
-    )
+
+    if body_raw or num_media == 0:
+        await enqueue_or_buffer(
+            pool=pool,
+            phone_number=phone_number,
+            agent_id=agent,
+            body=body_raw,
+            media_url=None,
+            media_type=None,
+            to_number=to_number,
+            message_id=msg_sid,
+            buffer_seconds=settings.message_buffer_seconds,
+        )
+
+    for i in range(num_media):
+        media_url = (form.get(f"MediaUrl{i}") or "").strip()
+        media_type = (form.get(f"MediaContentType{i}") or "").strip()
+        if not media_url:
+            continue
+        await enqueue_or_buffer(
+            pool=pool,
+            phone_number=phone_number,
+            agent_id=agent,
+            body="",  # Mídia sem texto adicional
+            media_url=media_url,
+            media_type=media_type or None,
+            to_number=to_number,
+            message_id=msg_sid,
+            buffer_seconds=settings.message_buffer_seconds,
+        )
 
     logger.info(
         "webhook_twilio_received",
         phone=phone_number,
         agent_id=agent,
-        message_id=result.message_id,
-        buffered=result.is_buffered,
+        message_sid=msg_sid,
+        num_media=num_media,
     )
 
     return Response(content=EMPTY_TWIML, media_type="application/xml")

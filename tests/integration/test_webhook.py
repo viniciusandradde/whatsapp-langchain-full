@@ -131,6 +131,56 @@ class TestWebhookTwilio:
         assert response.status_code == 200
         assert "Response" in response.text
 
+    @patch("whatsapp_langchain.server.routes.webhook.enqueue_or_buffer")
+    def test_webhook_enqueues_n_rows_for_num_media_2(self, mock_enqueue):
+        """NumMedia=2 cria 1 row de texto + 2 rows de mídia com mesmo message_id."""
+        from whatsapp_langchain.shared.models import EnqueueResult
+
+        call_count = 0
+
+        def fake_enqueue_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return EnqueueResult(message_id=call_count, is_buffered=False)
+
+        mock_enqueue.side_effect = fake_enqueue_side_effect
+
+        response = client.post(
+            "/webhook/twilio?agent=rhawk_assistant",
+            data={
+                "MessageSid": "SM_MULTI_001",
+                "From": "whatsapp:+5511999990050",
+                "To": "whatsapp:+14155238886",
+                "Body": "olha as fotos",
+                "NumMedia": "2",
+                "MediaUrl0": "https://example.com/img0.jpg",
+                "MediaContentType0": "image/jpeg",
+                "MediaUrl1": "https://example.com/img1.jpg",
+                "MediaContentType1": "image/jpeg",
+            },
+        )
+        assert response.status_code == 200, response.text
+
+        # Deve ter chamado enqueue_or_buffer 3 vezes: 1 texto + 2 mídias
+        assert mock_enqueue.call_count == 3, (
+            f"Esperava 3 chamadas a enqueue_or_buffer, vi {mock_enqueue.call_count}"
+        )
+
+        calls_kwargs = [c.kwargs for c in mock_enqueue.call_args_list]
+
+        media_rows = [k for k in calls_kwargs if k.get("media_url")]
+        assert len(media_rows) == 2, (
+            f"Esperava 2 rows de mídia, vi {len(media_rows)}: {calls_kwargs}"
+        )
+        assert {k["media_url"] for k in media_rows} == {
+            "https://example.com/img0.jpg",
+            "https://example.com/img1.jpg",
+        }
+        # Mesmo message_id em todas as chamadas
+        assert all(k.get("message_id") == "SM_MULTI_001" for k in calls_kwargs), (
+            f"Esperava message_id='SM_MULTI_001' em todas as chamadas: {calls_kwargs}"
+        )
+
     def test_twilio_openapi_exposes_form_fields(self):
         """Swagger deve exibir body form-encoded para teste manual."""
         openapi = client.get("/openapi.json").json()
