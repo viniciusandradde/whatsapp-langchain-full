@@ -60,6 +60,30 @@ class TestRuntimeSettingsValidation:
         settings = Settings(
             environment="production",
             internal_service_token="x" * MIN_PRODUCTION_SECRET_LENGTH,
+            validate_twilio_signature=True,
         )
 
         settings.validate_runtime_settings()
+
+
+def test_validate_runtime_fails_when_signature_disabled_in_prod(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "false")
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    with pytest.raises(ValueError, match="VALIDATE_TWILIO_SIGNATURE"):
+        s.validate_runtime_settings()
+
+
+def test_validate_runtime_passes_when_signature_enabled_in_prod(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
+    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    s.validate_runtime_settings()  # não deve levantar

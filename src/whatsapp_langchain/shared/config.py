@@ -145,6 +145,12 @@ class Settings(BaseSettings):
                 "Atualize as env vars antes do deploy."
             )
 
+        if self.is_production and not self.validate_twilio_signature:
+            raise ValueError(
+                "Production requer VALIDATE_TWILIO_SIGNATURE=true. "
+                "Sem isso o endpoint /webhook/twilio aceita payloads não autenticados."
+            )
+
 
 # Singleton — importar de qualquer lugar do projeto
 settings = Settings()
