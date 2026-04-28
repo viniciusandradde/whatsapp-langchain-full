@@ -29,7 +29,6 @@ Implementado:
 - stress testing documentado
 
 Limitações conhecidas:
-- `NumMedia > 1` no mesmo webhook continua fora do escopo
 - o fechamento operacional completo ainda depende de número real Twilio + smoke final
 
 ## Visão do Harness
@@ -194,6 +193,7 @@ No estado atual do projeto:
 - mídia não faz debounce
 - antes de inserir mídia, textos pendentes do mesmo `phone+agent` são flushed
 - concorrência do mesmo remetente/agente é serializada com advisory lock
+- múltiplas mídias num único webhook (NumMedia > 1) viram N rows independentes com o mesmo `message_id`; o worker processa cada uma como turn separado do agente; o checkpointer LangGraph agrega o histórico por `thread_id`
 
 ### Retry com backoff
 
@@ -232,4 +232,3 @@ Logs estruturados com `structlog` em todos os componentes.
 - fechar o teste e2e real com número Twilio final
 - endurecer operação multi-instância (rate limit distribuído)
 - revisar proteção de admin/CORS para produção
-- suporte explícito a cenários fora do escopo atual, como `NumMedia > 1`

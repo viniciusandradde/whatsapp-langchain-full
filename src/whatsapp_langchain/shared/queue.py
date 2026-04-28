@@ -46,7 +46,8 @@ async def enqueue_or_buffer(
       para que o worker processe o texto ANTES da mídia (ordenação por created_at).
     - Concorrência protegida por pg_advisory_xact_lock(hash(phone+agent)).
 
-    Limitação conhecida: NumMedia > 1 no mesmo webhook fica fora do escopo.
+    Múltiplas mídias (NumMedia > 1) são enfileiradas como N rows independentes
+    com o mesmo message_id, processadas em ordem de created_at pelo worker.
 
     Args:
         pool: Pool de conexões do psycopg.

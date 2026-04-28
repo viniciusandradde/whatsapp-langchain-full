@@ -22,7 +22,7 @@ Controle das migrações SQL locais (`db/migrations/*.sql`).
 Fila operacional de mensagens.
 
 Campos principais:
-- `message_id`: id externo (ex: Twilio MessageSid)
+- `message_id`: id externo (ex: Twilio MessageSid). **Múltiplas rows com mesmo `message_id`:** ocorre quando o webhook traz NumMedia > 1. Cada mídia vira uma row independente; ordenação por `created_at`.
 - `phone_number`, `agent_id`, `thread_id`
 - `incoming_message`: entrada original
 - `media_url`, `media_type`
