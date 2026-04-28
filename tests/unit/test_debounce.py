@@ -8,7 +8,8 @@ Valida as regras de debounce da Fase 3:
 - Concorrência protegida por pg_advisory_xact_lock.
 - Interação correta entre debounce e retry/lease.
 
-Limitação conhecida: NumMedia > 1 no mesmo webhook fora do escopo.
+Múltiplas mídias (NumMedia > 1) são enfileiradas como N rows independentes
+com o mesmo message_id, processadas em ordem de created_at pelo worker.
 """
 
 from contextlib import asynccontextmanager
@@ -642,3 +643,99 @@ class TestAdvisoryLock:
         calls = conn.execute.call_args_list
         lock_sql = calls[0][0][0]
         assert "pg_advisory_xact_lock" in lock_sql
+
+
+class TestMultiMediaIdempotency:
+    """Idempotência do flush em cenários NumMedia > 1.
+
+    Quando o webhook envia N mídias, enqueue_or_buffer é chamado N vezes.
+    A primeira chamada faz flush do texto pendente; as subsequentes são
+    no-op no flush (rowcount=0) e apenas inserem a mídia diretamente.
+    """
+
+    async def test_segunda_midia_nao_interfere_com_flush(self, mock_pool):
+        """Segunda mídia não re-faz flush (texto já foi flushed pela primeira).
+
+        Simula cenário: texto pendente → mídia1 (flush+insert) → mídia2 (só insert).
+        O UPDATE de flush deve ser idempotente: na segunda chamada rowcount=0.
+        """
+        pool, conn = mock_pool
+
+        # --- Chamada 1: mídia com texto pendente para flushar ---
+        setup_media_with_pending(conn, new_id=51, flushed_count=1)
+        result1 = await enqueue_or_buffer(
+            pool,
+            phone_number="+5511999999999",
+            agent_id="assistant",
+            body="",
+            media_url="https://example.com/img0.jpg",
+            media_type="image/jpeg",
+        )
+        calls_after_first = conn.execute.call_args_list[:]
+
+        # calls: lock, UPDATE(flush com rowcount=1), INSERT
+        assert len(calls_after_first) == 3
+        flush_sql_1 = calls_after_first[1][0][0]
+        assert "SET process_after = NOW()" in flush_sql_1
+        assert result1.is_buffered is False
+        assert result1.message_id == 51
+
+        # --- Chamada 2: segunda mídia (sem texto pendente) ---
+        setup_media_no_pending(conn, new_id=52)
+        conn.execute.reset_mock()
+        result2 = await enqueue_or_buffer(
+            pool,
+            phone_number="+5511999999999",
+            agent_id="assistant",
+            body="",
+            media_url="https://example.com/img1.jpg",
+            media_type="image/jpeg",
+        )
+        calls_after_second = conn.execute.call_args_list[:]
+
+        # calls: lock, UPDATE(flush no-op com rowcount=0), INSERT
+        assert len(calls_after_second) == 3
+        flush_sql_2 = calls_after_second[1][0][0]
+        assert "SET process_after = NOW()" in flush_sql_2  # mesmo SQL
+        assert result2.is_buffered is False
+        assert result2.message_id == 52
+
+        # As duas mídias são inseridas com media_url distintas
+        insert_params_1 = calls_after_first[2][0][1]
+        insert_params_2 = calls_after_second[2][0][1]
+        assert insert_params_1[6] == "https://example.com/img0.jpg"
+        assert insert_params_2[6] == "https://example.com/img1.jpg"
+
+    async def test_duas_midias_sem_texto_pendente(self, mock_pool):
+        """Duas mídias sem texto pendente: cada uma faz flush no-op + insert."""
+        pool, conn = mock_pool
+
+        # Chamada 1: sem texto pendente
+        setup_media_no_pending(conn, new_id=60)
+        result1 = await enqueue_or_buffer(
+            pool,
+            phone_number="+5511999999999",
+            agent_id="assistant",
+            body="",
+            media_url="https://example.com/a.jpg",
+            media_type="image/jpeg",
+        )
+        assert result1.message_id == 60
+        assert result1.is_buffered is False
+
+        # Chamada 2: também sem texto pendente
+        setup_media_no_pending(conn, new_id=61)
+        conn.execute.reset_mock()
+        result2 = await enqueue_or_buffer(
+            pool,
+            phone_number="+5511999999999",
+            agent_id="assistant",
+            body="",
+            media_url="https://example.com/b.jpg",
+            media_type="image/jpeg",
+        )
+        assert result2.message_id == 61
+        assert result2.is_buffered is False
+
+        # Cada chamada faz 3 executes: lock, flush(no-op), insert
+        assert conn.execute.call_count == 3
