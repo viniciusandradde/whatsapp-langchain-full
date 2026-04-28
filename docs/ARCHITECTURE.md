@@ -25,11 +25,16 @@ Implementado:
 - frontend/admin panel em Next.js
 - autenticação administrativa com Better Auth no schema `auth`
 - proteção das rotas `/api/*` com `INTERNAL_SERVICE_TOKEN`
+- CORS estrito via `FRONTEND_ORIGINS` + cabeçalhos de segurança (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS em prod)
+- fail-fast no startup quando production está sem `VALIDATE_TWILIO_SIGNATURE=true` ou `FRONTEND_ORIGINS` configurado
+- rate limit distribuído opcional via Postgres (`RATE_LIMIT_DISTRIBUTED=true`) com sliding window por hora — para multi-instância
+- suporte a múltiplas mídias por webhook (`NumMedia > 1`) — N rows independentes com mesmo `message_id`
+- smoke test e2e opt-in com Twilio real (`make test-twilio-smoke`, gating via `TWILIO_LIVE_TESTS=1`)
 - deploy documentado em Railway
 - stress testing documentado
 
 Limitações conhecidas:
-- o fechamento operacional completo ainda depende de número real Twilio + smoke final
+- o smoke test e2e (`tests/integration/test_twilio_smoke.py`) custa crédito Twilio por execução; rodar manualmente apenas no cutover
 
 ## Visão do Harness
 
@@ -201,7 +206,7 @@ No estado atual do projeto:
 
 ### Rate limits
 
-- API: limite por telefone/hora (in-memory)
+- API: limite por telefone/hora — in-memory por default (`RATE_LIMIT_DISTRIBUTED=false`); para multi-instância ative `RATE_LIMIT_DISTRIBUTED=true`, que migra pra sliding window em Postgres via tabela `rate_limit_buckets` (migration `005_rate_limit_buckets.sql`)
 - LLM: token bucket por processo (`InMemoryRateLimiter`)
 
 ### Observabilidade
@@ -229,6 +234,7 @@ Logs estruturados com `structlog` em todos os componentes.
 
 ## Próximos passos do Harness
 
-- fechar o teste e2e real com número Twilio final
-- endurecer operação multi-instância (rate limit distribuído)
-- revisar proteção de admin/CORS para produção
+(Itens prioritários encerrados: smoke e2e Twilio real, rate limit distribuído, hardening admin/CORS, suporte a NumMedia > 1.)
+
+- avaliar Content-Security-Policy estrito quando o frontend estabilizar
+- automatizar a execução do smoke test no cutover (sem habilitar em CI por causa do custo)

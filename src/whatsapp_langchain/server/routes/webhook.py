@@ -94,14 +94,16 @@ async def webhook_twilio(
 
     # Campos escalares — usa os valores já parseados pelos parâmetros Form
     # (ou lê do form diretamente para garantia de consistência).
-    msg_sid = (form.get("MessageSid") or "").strip()
-    from_raw = (form.get("From") or "").strip()
-    to_raw = (form.get("To") or "").strip()
-    body_raw = (form.get("Body") or "").strip()
-    wa_id_raw = (form.get("WaId") or "").strip()
+    # form.get() retorna str | UploadFile; webhooks Twilio nunca enviam
+    # uploads, então o cast str() é seguro e satisfaz pyright.
+    msg_sid = str(form.get("MessageSid") or "").strip()
+    from_raw = str(form.get("From") or "").strip()
+    to_raw = str(form.get("To") or "").strip()
+    body_raw = str(form.get("Body") or "").strip()
+    wa_id_raw = str(form.get("WaId") or "").strip()
 
     try:
-        num_media = int(form.get("NumMedia") or "0")
+        num_media = int(str(form.get("NumMedia") or "0"))
     except ValueError:
         num_media = 0
     # Twilio limita 10 mídias por mensagem WhatsApp
@@ -156,8 +158,8 @@ async def webhook_twilio(
         )
 
     for i in range(num_media):
-        media_url = (form.get(f"MediaUrl{i}") or "").strip()
-        media_type = (form.get(f"MediaContentType{i}") or "").strip()
+        media_url = str(form.get(f"MediaUrl{i}") or "").strip()
+        media_type = str(form.get(f"MediaContentType{i}") or "").strip()
         if not media_url:
             continue
         await enqueue_or_buffer(
