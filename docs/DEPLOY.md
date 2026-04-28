@@ -130,6 +130,27 @@ Três níveis de rollback disponíveis:
 - Combina nível 1 + nível 2
 - Usar quando tanto o deploy quanto a configuração Twilio precisam reverter
 
+## Hardening de produção
+
+Em `ENVIRONMENT=production` o startup faz fail-fast nestes casos:
+
+- `INTERNAL_SERVICE_TOKEN` vazio ou com menos de 32 caracteres
+- `VALIDATE_TWILIO_SIGNATURE=false` (signature obrigatória)
+
+Variáveis adicionais a configurar:
+
+- `FRONTEND_ORIGINS` — lista CSV de origens permitidas (ex: `https://app.rhawk.pro`)
+- `TWILIO_AUTH_TOKEN` e `TWILIO_WEBHOOK_URL` — necessários para validar signature
+
+Cabeçalhos de segurança aplicados automaticamente:
+
+| Header | Dev | Prod |
+|--------|-----|------|
+| X-Content-Type-Options: nosniff | ✓ | ✓ |
+| X-Frame-Options: DENY | ✓ | ✓ |
+| Referrer-Policy: no-referrer | ✓ | ✓ |
+| Strict-Transport-Security | — | ✓ (max-age=1y) |
+
 ## Notas operacionais
 
 - Em `ENVIRONMENT=production`, o endpoint `/webhook/sync` fica desabilitado.
