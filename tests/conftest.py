@@ -40,6 +40,29 @@ def live_openrouter_api_key():
     return os.environ["OPENROUTER_API_KEY"]
 
 
+def _twilio_smoke_enabled() -> tuple[bool, str | None]:
+    """Retorna (enabled, número de destino) se opt-in válido."""
+    flag = os.getenv("TWILIO_LIVE_TESTS", "").strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        return False, None
+    number = os.getenv("TWILIO_TEST_TO_NUMBER", "").strip()
+    if not number or not number.startswith("+"):
+        return False, None
+    return True, number
+
+
+@pytest.fixture
+def twilio_live_to_number():
+    """Exige TWILIO_LIVE_TESTS=1 e TWILIO_TEST_TO_NUMBER='+...'."""
+    enabled, number = _twilio_smoke_enabled()
+    if not enabled:
+        pytest.skip(
+            "Smoke test Twilio requer TWILIO_LIVE_TESTS=1 e "
+            "TWILIO_TEST_TO_NUMBER='+5511...' (E.164)"
+        )
+    return number
+
+
 @pytest.fixture
 def sample_messages():
     """Mensagens de exemplo para testes de contexto."""

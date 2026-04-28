@@ -114,3 +114,12 @@ def test_validate_runtime_passes_when_frontend_origins_set_in_prod(monkeypatch):
 
     s = Settings()
     s.validate_runtime_settings()  # não deve levantar
+
+
+def test_twilio_live_test_settings_default_off(monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    assert s.twilio_live_tests is False
+    assert s.twilio_test_to_number == ""

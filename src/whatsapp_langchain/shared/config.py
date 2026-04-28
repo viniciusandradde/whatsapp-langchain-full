@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     twilio_api_key_secret: str = ""
     twilio_from_number: str = ""
 
+    # --- Twilio Live Tests (smoke pré-deploy) ---
+    # CUIDADO: rodar só manualmente. Cada teste envia mensagem real e cobra crédito.
+    twilio_live_tests: bool = False
+    twilio_test_to_number: str = ""
+
     # --- Rate Limit ---
     rate_limit_per_hour: int = 30
 
