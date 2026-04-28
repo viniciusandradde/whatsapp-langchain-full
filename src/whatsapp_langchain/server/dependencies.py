@@ -134,6 +134,9 @@ async def verify_service_token(request: Request) -> None:
 
 
 _RATE_LIMIT_CLEANUP_PROBABILITY = 0.01  # 1% das requisições limpam buckets antigos
+_RATE_LIMIT_DETAIL_TEMPLATE = (
+    "Rate limit excedido ({limit}/hora). Tente novamente em alguns minutos."
+)
 
 
 async def _check_rate_limit_db(
@@ -144,9 +147,17 @@ async def _check_rate_limit_db(
 ) -> None:
     """Sliding window por hora cheia em Postgres.
 
-    Levanta HTTPException(429) ao estourar. Cleanup inline probabilístico
-    evita dependência de cron — em ~1% das requisições apaga buckets com
-    mais de 24h.
+    Compartilha estado entre réplicas via tabela rate_limit_buckets.
+    Cleanup inline probabilístico (~1% das requisições) apaga buckets
+    com mais de 24h, evitando dependência de cron.
+
+    Args:
+        pool: Pool de conexões assíncrono do psycopg.
+        phone_number: Telefone do remetente (E.164).
+        limit: Máximo de mensagens por telefone por hora.
+
+    Raises:
+        HTTPException: 429 quando o telefone excede o limite na hora atual.
     """
     hour_start = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
 
@@ -173,12 +184,15 @@ async def _check_rate_limit_db(
             await conn.commit()
 
     if count > limit:
+        logger.warning(
+            "rate_limit_exceeded",
+            phone=phone_number,
+            count=count,
+            limit=limit,
+        )
         raise HTTPException(
             status_code=429,
-            detail=(
-                f"Rate limit excedido ({limit}/hora). "
-                "Tente novamente em alguns minutos."
-            ),
+            detail=_RATE_LIMIT_DETAIL_TEMPLATE.format(limit=limit),
         )
 
 
@@ -210,7 +224,7 @@ def _check_rate_limit_inmemory(phone_number: str) -> None:
         )
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded. Try again later.",
+            detail=_RATE_LIMIT_DETAIL_TEMPLATE.format(limit=settings.rate_limit_per_hour),
         )
 
     # Registra nova requisição

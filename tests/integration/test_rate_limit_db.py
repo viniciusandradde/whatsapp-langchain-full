@@ -47,7 +47,6 @@ def clean_buckets(db_url):
             conn.commit()
 
 
-@pytest.mark.asyncio
 async def test_check_rate_limit_db_increments(db_url, clean_buckets):
     from whatsapp_langchain.server.dependencies import _check_rate_limit_db
 
@@ -65,7 +64,6 @@ async def test_check_rate_limit_db_increments(db_url, clean_buckets):
     assert row is not None and row[0] == 3
 
 
-@pytest.mark.asyncio
 async def test_check_rate_limit_db_blocks_over_limit(db_url, clean_buckets):
     from whatsapp_langchain.server.dependencies import _check_rate_limit_db
 
