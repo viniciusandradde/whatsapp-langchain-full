@@ -403,6 +403,44 @@ curl https://api-production.up.railway.app/health
 - [ ] Testar assinatura inválida (curl direto sem header) → deve retornar 403
 - [ ] Verificar métricas em `/api/metrics`
 
+## Smoke test e2e com Twilio real
+
+Antes do cutover sandbox→produção, rode o smoke test que valida o ciclo completo
+(webhook simulado → worker → outbound REAL via Twilio Messages API → `mark_done`):
+
+### Pré-requisitos
+
+- Stack Docker rodando: `make up`
+- `.env` com credenciais Twilio reais (`TWILIO_OUTBOUND_MODE=real`, account SID,
+  API key SID/secret, FROM number, AUTH token)
+- Número WhatsApp privado descartável que você controla
+- Crédito Twilio ativo
+
+### Comando
+
+```bash
+TWILIO_LIVE_TESTS=1 \
+TWILIO_TEST_TO_NUMBER="+5511999999999" \
+make test-twilio-smoke
+```
+
+### O que valida
+
+- Webhook aceita payload com signature
+- Worker desenfileira, processa pelo agente, retorna resposta
+- Twilio Messages API retorna 201 com SID
+- `mark_done` corre só após envio confirmado (semântica at-least-once)
+
+### O que NÃO valida
+
+- Entrega final no celular (Twilio retorna `queued`/`accepted`, não `delivered`)
+- Cenários multi-mídia
+- Comportamento sob falha de rede
+
+### Custos
+
+Aproximadamente USD 0.005–0.05 por execução. Não rode em loop.
+
 ---
 
 # Referência
