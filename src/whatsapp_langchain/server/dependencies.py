@@ -182,8 +182,8 @@ async def _check_rate_limit_db(
         )
 
 
-async def check_rate_limit(phone_number: str) -> None:
-    """Verifica rate limit por número de telefone.
+def _check_rate_limit_inmemory(phone_number: str) -> None:
+    """Rate limit in-memory por número de telefone (modo legado, single-process).
 
     Usa sliding window de 1 hora. Remove timestamps antigos e compara
     a quantidade de requisições com o limite configurado.
@@ -215,3 +215,27 @@ async def check_rate_limit(phone_number: str) -> None:
 
     # Registra nova requisição
     request_history[phone_number].append(now)
+
+
+async def check_rate_limit(
+    phone_number: str, pool: AsyncConnectionPool | None = None
+) -> None:
+    """Dispatcher: usa Postgres se RATE_LIMIT_DISTRIBUTED=true, senão in-memory.
+
+    Args:
+        phone_number: Número de telefone do remetente.
+        pool: Pool de conexões Postgres (obrigatório quando distribuído).
+
+    Raises:
+        HTTPException 429: Se o limite foi atingido.
+    """
+    if settings.rate_limit_distributed:
+        if pool is None:
+            from whatsapp_langchain.shared.db import get_pool
+
+            pool = await get_pool()
+        await _check_rate_limit_db(
+            pool, phone_number, limit=settings.rate_limit_per_hour
+        )
+    else:
+        _check_rate_limit_inmemory(phone_number)

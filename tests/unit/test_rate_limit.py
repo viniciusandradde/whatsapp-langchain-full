@@ -1,4 +1,4 @@
-"""Testes do rate limiter in-memory."""
+"""Testes do rate limiter in-memory e dispatcher."""
 
 import time
 
@@ -67,3 +67,36 @@ class TestRateLimit:
 
         # Deve permitir novas requisições (as antigas expiraram)
         await check_rate_limit("+5511999999999")
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_uses_inmemory_when_flag_off(monkeypatch):
+    # Patcha diretamente no módulo de dependencies para evitar problema de
+    # reload de módulo config (test_cors_config faz importlib.reload do config).
+    import whatsapp_langchain.server.dependencies as dep_mod
+
+    monkeypatch.setattr(dep_mod.settings, "rate_limit_distributed", False)
+    from whatsapp_langchain.server.dependencies import check_rate_limit
+
+    # Não levanta porque modo in-memory ainda permite (default 30/h)
+    await check_rate_limit("+5511999990010", pool=None)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_calls_db_when_flag_on(monkeypatch):
+    called = {}
+
+    async def fake_db(pool, phone, *, limit):
+        called["phone"] = phone
+        called["limit"] = limit
+
+    # Patcha diretamente no módulo de dependencies para evitar problema de
+    # reload de módulo config (test_cors_config faz importlib.reload do config).
+    import whatsapp_langchain.server.dependencies as dep_mod
+
+    monkeypatch.setattr(dep_mod.settings, "rate_limit_distributed", True)
+    monkeypatch.setattr(dep_mod, "_check_rate_limit_db", fake_db)
+    from whatsapp_langchain.server.dependencies import check_rate_limit
+
+    await check_rate_limit("+5511999990011", pool="<sentinel>")
+    assert called == {"phone": "+5511999990011", "limit": 30}
