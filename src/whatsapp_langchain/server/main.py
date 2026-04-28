@@ -65,13 +65,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS para o frontend (Next.js)
+# CORS para o frontend (Next.js) — origens restritas via FRONTEND_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.frontend_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Twilio-Signature"],
 )
 
 
