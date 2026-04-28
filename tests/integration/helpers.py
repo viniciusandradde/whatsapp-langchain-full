@@ -247,6 +247,35 @@ def wait_queue_done(
 
 
 # ---------------------------------------------------------------------------
+# Asserções de outbound
+# ---------------------------------------------------------------------------
+
+
+def assert_outbound_sent(db_url: str, message_sid: str) -> dict:
+    """Valida que a mensagem alcançou status terminal `done` com response não-vazio.
+
+    Em modo Twilio real, isso garante que `TwilioClient.send_message` retornou OK
+    (porque `mark_done` só corre depois). Retorna a row da fila pra inspeção.
+    """
+    with psycopg.connect(db_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, status, response, error, attempts
+                FROM message_queue
+                WHERE message_id = %s
+                """,
+                (message_sid,),
+            )
+            row = cur.fetchone()
+    assert row is not None, f"Sem row para message_id={message_sid}"
+    id_, status, response, error, attempts = row
+    assert status == "done", f"status={status} error={error} attempts={attempts}"
+    assert response and response.strip(), "response vazio"
+    return {"id": id_, "status": status, "response": response, "attempts": attempts}
+
+
+# ---------------------------------------------------------------------------
 # Envio de webhooks
 # ---------------------------------------------------------------------------
 
