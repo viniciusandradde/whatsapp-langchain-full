@@ -75,17 +75,17 @@ check: ## Verifica tudo (lint + format + types) — não altera arquivos
 	uv run ruff check . && uv run ruff format --check . && uv run pyright src/
 
 ci: ## CI/CD: verifica tudo + roda testes — não altera arquivos
-	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo"
+	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo and not twilio_real"
 
 ##@ Testes
 test: ## Roda todos os testes
-	uv run pytest -m "not docker_demo"
+	uv run pytest -m "not docker_demo and not twilio_real"
 
 test-x: ## Roda testes, para no primeiro erro
-	uv run pytest -x -m "not docker_demo"
+	uv run pytest -x -m "not docker_demo and not twilio_real"
 
 test-v: ## Roda testes com output verboso
-	uv run pytest -v -m "not docker_demo"
+	uv run pytest -v -m "not docker_demo and not twilio_real"
 
 test-live: ## Roda integracoes live com OpenRouter real (requer OPENROUTER_API_KEY valida)
 	OPENROUTER_LIVE_TESTS=1 uv run pytest tests/integration/test_context_middleware.py tests/integration/test_memory.py tests/integration/test_media_real.py -v
@@ -102,6 +102,9 @@ test-demo-up: ## Sobe stack Docker e roda testes demonstrativos
 
 test-flows: ## Roda testes de fluxo realista (requer stack Docker)
 	uv run pytest tests/integration/test_realistic_flows.py -v -s
+
+test-twilio-smoke: ## Smoke test e2e com Twilio real (custos $$$). Requer TWILIO_LIVE_TESTS=1 e stack Docker.
+	uv run pytest tests/integration/test_twilio_smoke.py -v -s -m twilio_real
 
 ##@ Limpeza
 clean: ## Remove arquivos de cache do Python
