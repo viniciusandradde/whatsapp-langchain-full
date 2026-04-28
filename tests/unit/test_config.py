@@ -8,6 +8,24 @@ from whatsapp_langchain.shared.config import (
 )
 
 
+def test_frontend_origins_parses_csv(monkeypatch):
+    monkeypatch.setenv(
+        "FRONTEND_ORIGINS", "http://localhost:3000,https://app.rhawk.pro"
+    )
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    assert s.frontend_origins_list == ["http://localhost:3000", "https://app.rhawk.pro"]
+
+
+def test_frontend_origins_default_allows_localhost():
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    assert "http://localhost:3000" in s.frontend_origins_list
+
+
 class TestRuntimeSettingsValidation:
     """Garantias de configuração mínima e hardening por ambiente."""
 

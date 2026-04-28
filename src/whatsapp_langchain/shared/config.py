@@ -100,12 +100,22 @@ class Settings(BaseSettings):
     # Preencha também em desenvolvimento; em produção, use um token forte.
     internal_service_token: str = ""
 
+    # --- CORS / Security Headers ---
+    # Lista CSV de origens permitidas para CORS. Em produção, restrinja ao domínio
+    # do frontend. Em desenvolvimento, o default permite localhost:3000.
+    frontend_origins: str = "http://localhost:3000"
+
     # --- Semantic Memory (LangGraph Store) ---
     memory_enabled: bool = True
     # Nome do modelo no OpenRouter (sem prefixo "openai:")
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_dims: int = 1536
     memory_search_limit: int = 5
+
+    @property
+    def frontend_origins_list(self) -> list[str]:
+        """Retorna a lista de origens CORS a partir do CSV em FRONTEND_ORIGINS."""
+        return [o.strip() for o in self.frontend_origins.split(",") if o.strip()]
 
     @property
     def resolved_twilio_outbound_mode(self) -> str:
