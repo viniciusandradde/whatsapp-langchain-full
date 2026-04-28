@@ -87,3 +87,30 @@ def test_validate_runtime_passes_when_signature_enabled_in_prod(monkeypatch):
 
     s = Settings()
     s.validate_runtime_settings()  # não deve levantar
+
+
+def test_validate_runtime_fails_when_frontend_origins_empty_in_prod(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
+    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
+    monkeypatch.setenv("FRONTEND_ORIGINS", "")
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    with pytest.raises(ValueError, match="FRONTEND_ORIGINS"):
+        s.validate_runtime_settings()
+
+
+def test_validate_runtime_passes_when_frontend_origins_set_in_prod(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
+    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
+    monkeypatch.setenv("FRONTEND_ORIGINS", "https://app.rhawk.pro")
+    from whatsapp_langchain.shared.config import Settings
+
+    s = Settings()
+    s.validate_runtime_settings()  # não deve levantar

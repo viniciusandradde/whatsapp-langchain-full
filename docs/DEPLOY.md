@@ -136,6 +136,7 @@ Em `ENVIRONMENT=production` o startup faz fail-fast nestes casos:
 
 - `INTERNAL_SERVICE_TOKEN` vazio ou com menos de 32 caracteres
 - `VALIDATE_TWILIO_SIGNATURE=false` (signature obrigatória)
+- `FRONTEND_ORIGINS` vazio (precisa ter pelo menos uma origem permitida)
 
 Variáveis adicionais a configurar:
 

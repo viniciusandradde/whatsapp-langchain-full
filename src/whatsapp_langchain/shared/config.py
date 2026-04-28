@@ -151,6 +151,12 @@ class Settings(BaseSettings):
                 "Sem isso o endpoint /webhook/twilio aceita payloads não autenticados."
             )
 
+        if self.is_production and not self.frontend_origins_list:
+            raise ValueError(
+                "Production requer FRONTEND_ORIGINS configurado com pelo menos uma "
+                "origem. Ex: FRONTEND_ORIGINS=https://app.rhawk.pro"
+            )
+
 
 # Singleton — importar de qualquer lugar do projeto
 settings = Settings()

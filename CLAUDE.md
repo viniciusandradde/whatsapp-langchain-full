@@ -78,7 +78,7 @@ The repo is structured as a teaching harness across phases (`Fase_1` → `Fase_4
 
 All config flows through `pydantic-settings` in `shared/config.py` as a singleton `settings` object — import that, don't read env vars directly. The full env surface is documented in `.env.example`. Notable defaults that matter at runtime: `CONTEXT_STRATEGY=trim`, `MEMORY_ENABLED=true`, `MAX_ATTEMPTS=3`, `LEASE_SECONDS=60`, `RATE_LIMIT_PER_HOUR=30`, `MESSAGE_BUFFER_SECONDS=2.0`, `FRONTEND_ORIGINS=http://localhost:3000`. All LLM, embeddings, and audio transcription go through one OpenRouter key (`OPENROUTER_API_KEY`).
 
-`Settings.validate_runtime_settings()` enforces three invariants no startup: (1) `INTERNAL_SERVICE_TOKEN` não pode ser vazio; (2) em produção, o token deve ter ≥32 caracteres; (3) em produção, `VALIDATE_TWILIO_SIGNATURE` deve ser `true` — sem isso o endpoint `/webhook/twilio` aceita payloads não autenticados e o startup falha imediatamente.
+`Settings.validate_runtime_settings()` enforces four invariants no startup: (1) `INTERNAL_SERVICE_TOKEN` não pode ser vazio; (2) em produção, o token deve ter ≥32 caracteres; (3) em produção, `VALIDATE_TWILIO_SIGNATURE` deve ser `true` — sem isso o endpoint `/webhook/twilio` aceita payloads não autenticados; (4) em produção, `FRONTEND_ORIGINS` deve ter pelo menos uma origem configurada — sem isso o CORS nega todos os requests cross-origin e o painel quebra silenciosamente. O startup falha imediatamente em qualquer desses casos.
 
 ## Reference docs
 
