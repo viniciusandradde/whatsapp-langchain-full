@@ -2,6 +2,7 @@
 
 Requer Postgres rodando (make db && make migrate). Skip se não acessível.
 """
+
 import os
 from contextlib import suppress
 
@@ -21,15 +22,11 @@ def db_url() -> str:
     try:
         with psycopg.connect(url) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM rate_limit_buckets LIMIT 1"
-                )
+                cur.execute("SELECT 1 FROM rate_limit_buckets LIMIT 1")
     except psycopg.OperationalError:
         pytest.skip("Postgres não acessível. Rode: make db")
     except psycopg.errors.UndefinedTable:
-        pytest.skip(
-            "Tabela rate_limit_buckets ausente. Rode: make migrate"
-        )
+        pytest.skip("Tabela rate_limit_buckets ausente. Rode: make migrate")
     return url
 
 

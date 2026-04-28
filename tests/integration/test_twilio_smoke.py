@@ -12,6 +12,7 @@ Uso:
     make up  # com .env preparado
     TWILIO_LIVE_TESTS=1 TWILIO_TEST_TO_NUMBER="+5511999999999" make test-twilio-smoke
 """
+
 import httpx
 import psycopg
 import pytest
@@ -68,9 +69,7 @@ def test_inbound_to_outbound_real_cycle(db_url, twilio_live_to_number):
     assert resp.status_code == 200, resp.text
 
     # Outbound real + LLM real = janela maior
-    status, output, error, _ = wait_terminal_status(
-        db_url, sid, timeout_seconds=120
-    )
+    status, output, error, _ = wait_terminal_status(db_url, sid, timeout_seconds=120)
     assert status == "done", f"Falhou: status={status} error={error}"
     assert output and output.strip(), "Resposta vazia"
 

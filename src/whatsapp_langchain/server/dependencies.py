@@ -224,7 +224,9 @@ def _check_rate_limit_inmemory(phone_number: str) -> None:
         )
         raise HTTPException(
             status_code=429,
-            detail=_RATE_LIMIT_DETAIL_TEMPLATE.format(limit=settings.rate_limit_per_hour),
+            detail=_RATE_LIMIT_DETAIL_TEMPLATE.format(
+                limit=settings.rate_limit_per_hour
+            ),
         )
 
     # Registra nova requisição
