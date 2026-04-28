@@ -315,3 +315,42 @@ def send_webhook_and_wait(
     assert response.status_code == 200, f"Webhook retornou {response.status_code}"
     row = wait_terminal_status(db_url, sid, timeout_seconds=timeout_seconds)
     return sid, row
+
+
+def wait_until_n_rows_done(
+    db_url: str,
+    message_sid: str,
+    *,
+    expected: int,
+    timeout_seconds: int = 180,
+) -> None:
+    """Aguarda N rows com mesmo message_id atingirem status terminal.
+
+    Usado em cenários NumMedia > 1, onde um mesmo MessageSid gera N rows
+    independentes na fila (1 texto + N mídias). Polling a cada 2s até
+    todas as rows alcançarem 'done' ou 'failed'.
+
+    Args:
+        db_url: URL de conexão ao banco.
+        message_sid: Twilio MessageSid compartilhado pelas N rows.
+        expected: Quantidade de rows terminais esperadas.
+        timeout_seconds: Tempo máximo de espera.
+    """
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        with psycopg.connect(db_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) FROM message_queue
+                    WHERE message_id = %s AND status IN ('done', 'failed')
+                    """,
+                    (message_sid,),
+                )
+                count = cur.fetchone()[0]
+        if count >= expected:
+            return
+        time.sleep(2)
+    raise AssertionError(
+        f"Timeout esperando {expected} rows terminais para {message_sid}"
+    )
