@@ -12,12 +12,14 @@ Uso:
     make up  # com .env preparado
     TWILIO_LIVE_TESTS=1 TWILIO_TEST_TO_NUMBER="+5511999999999" make test-twilio-smoke
 """
-import os
-
+import httpx
+import psycopg
 import pytest
 
 from .helpers import (
+    API_BASE_URL,
     assert_outbound_sent,
+    get_db_url,
     send_webhook,
     unique_sid,
     wait_terminal_status,
@@ -27,11 +29,22 @@ pytestmark = pytest.mark.twilio_real
 
 
 @pytest.fixture
-def db_url():
-    return os.environ.get(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/whatsapp_langchain",
-    )
+def db_url() -> str:
+    """Valida stack rodando e retorna URL do banco."""
+    try:
+        response = httpx.get(f"{API_BASE_URL}/health", timeout=3)
+        if response.status_code != 200:
+            pytest.skip("API não saudável. Rode: make up com TWILIO_OUTBOUND_MODE=real")
+    except Exception:
+        pytest.skip("API não acessível. Rode: make up")
+    url = get_db_url()
+    try:
+        with psycopg.connect(url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    except Exception:
+        pytest.skip("DB não acessível. Verifique docker compose e DATABASE_URL")
+    return url
 
 
 def test_inbound_to_outbound_real_cycle(db_url, twilio_live_to_number):

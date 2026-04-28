@@ -46,7 +46,7 @@ def _twilio_smoke_enabled() -> tuple[bool, str | None]:
     if flag not in {"1", "true", "yes", "on"}:
         return False, None
     number = os.getenv("TWILIO_TEST_TO_NUMBER", "").strip()
-    if not number or not number.startswith("+"):
+    if not number or not number.startswith("+") or len(number) < 8:
         return False, None
     return True, number
 
@@ -58,8 +58,10 @@ def twilio_live_to_number():
     if not enabled:
         pytest.skip(
             "Smoke test Twilio requer TWILIO_LIVE_TESTS=1 e "
-            "TWILIO_TEST_TO_NUMBER='+5511...' (E.164)"
+            "TWILIO_TEST_TO_NUMBER='+<E.164>' (ex: '+5511999999999')"
         )
+    # narrowing: _twilio_smoke_enabled garante number não-None quando enabled=True
+    assert number is not None
     return number
 
 
