@@ -1,4 +1,4 @@
-"""Agente vsa_tech - assistente da comunidade Top Hawks.
+"""Agente vsa_tech - assistente da VSA Tech.
 
 Este é o agente padrão do projeto, usado como exemplo e template
 para criar novos agentes.

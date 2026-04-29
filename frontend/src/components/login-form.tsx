@@ -87,7 +87,7 @@ export function LoginForm({
         <div className="relative z-10 px-10 pb-8 lg:px-14">
           <div className="h-px w-12 bg-hawk-blue/20" />
           <p className="mt-3 text-[11px] text-white/25">
-            TOPHAWKS
+            VSA TECH
           </p>
         </div>
       </div>

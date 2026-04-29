@@ -195,7 +195,7 @@ async def test_demo_semantic_memory_roundtrip(ensure_docker_stack: str):
     ) as store:
         await store.setup()
         save_result = await save_memory_fn(
-            "Meu nome é Ronnald e eu estudo sistemas de agentes.",
+            "Meu nome é Pedro e eu estudo sistemas de agentes.",
             runtime=runtime,
             store=store,
         )
@@ -214,7 +214,7 @@ async def test_demo_semantic_memory_roundtrip(ensure_docker_stack: str):
         )
 
         assert "memórias relevantes" in read_result.lower()
-        assert "ronnald" in read_result.lower()
+        assert "pedro" in read_result.lower()
 
     with psycopg.connect(ensure_docker_stack) as conn:
         with conn.cursor() as cur:

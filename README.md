@@ -293,4 +293,4 @@ make reset                # rebuild Docker do zero (down -v + up --build)
 
 ## Licença
 
-[TOPHAWKS Community License](LICENSE) - uso restrito a membros da comunidade [TOPHAWKS](https://www.rhawk.pro/comunidade).
+[VSA Tech Community License](LICENSE) - uso restrito a membros da comunidade [VSA Tech](https://chat.nexus.com).

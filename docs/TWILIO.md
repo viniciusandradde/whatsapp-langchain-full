@@ -53,7 +53,7 @@ Nenhuma dependência de número real ou aprovação da Meta.
    - `Auth Token` (clique em **Show** para revelar)
 2. Vá em **Account → API keys & tokens** e clique em **Create API Key**.
 3. Preencha:
-   - **Friendly name**: ex. `tophawks-whatsapp-worker`
+   - **Friendly name**: ex. `vsa-tech-whatsapp-worker`
    - **Region**: `United States - Default`
    - **Key type**: prefira `Standard`/`Main` quando disponível.
 4. Se só aparecer `Restricted`, selecione permissões mínimas de envio:

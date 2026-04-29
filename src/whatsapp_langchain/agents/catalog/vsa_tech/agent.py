@@ -1,4 +1,4 @@
-"""Agente vsa_tech - assistente da comunidade Top Hawks.
+"""Agente vsa_tech - assistente da VSA Tech.
 
 Agente simples usando create_agent do LangChain 1.0.
 Usa middleware de contexto configurável (trim ou summarize)
