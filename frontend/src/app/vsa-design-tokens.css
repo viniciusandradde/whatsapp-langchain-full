@@ -4,12 +4,12 @@
  */
 
 :root {
-  /* OBSIDIAN SCALE */
-  --obsidian-950: #050505;
-  --obsidian-900: #0a0a0a;
-  --obsidian-800: #121212;
-  --obsidian-700: #1a1a1a;
-  --obsidian-600: #262626;
+  /* OBSIDIAN SCALE — suavizado pra reduzir contraste extremo do void puro */
+  --obsidian-950: #0d0d10;
+  --obsidian-900: #14141a;
+  --obsidian-800: #1c1c24;
+  --obsidian-700: #24242c;
+  --obsidian-600: #2e2e36;
 
   /* BRAND */
   --brand-primary: #F97316;

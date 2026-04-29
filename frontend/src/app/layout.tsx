@@ -24,7 +24,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  themeColor: "#050505",
+  themeColor: "#0d0d10",
 };
 
 export default function RootLayout({
@@ -36,19 +36,19 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        {/* Ambient Light Orbs — profundidade cristalina sobre obsidian-950 */}
+        {/* Ambient Light Orbs — suaves, mais difusos pra reduzir saturação visual */}
         <div
           aria-hidden
-          className="fixed top-[-100px] left-[-100px] w-[500px] h-[500px] bg-brand-primary/15 blur-[80px] rounded-full pointer-events-none -z-10 animate-float"
+          className="fixed top-[-150px] left-[-150px] w-[600px] h-[600px] bg-brand-primary/[0.08] blur-[120px] rounded-full pointer-events-none -z-10 animate-float"
         />
         <div
           aria-hidden
-          className="fixed bottom-[-50px] right-[-50px] w-[400px] h-[400px] bg-brand-secondary/15 blur-[80px] rounded-full pointer-events-none -z-10 animate-float"
+          className="fixed bottom-[-100px] right-[-100px] w-[500px] h-[500px] bg-brand-secondary/[0.08] blur-[120px] rounded-full pointer-events-none -z-10 animate-float"
           style={{ animationDelay: "2s" }}
         />
         <div
           aria-hidden
-          className="fixed top-[20%] right-[30%] w-[300px] h-[300px] bg-brand-primary/10 blur-[80px] rounded-full pointer-events-none -z-10 animate-pulse-slow"
+          className="fixed top-[30%] right-[35%] w-[350px] h-[350px] bg-brand-primary/[0.05] blur-[110px] rounded-full pointer-events-none -z-10 animate-pulse-slow"
         />
         <AppShell>{children}</AppShell>
       </body>
