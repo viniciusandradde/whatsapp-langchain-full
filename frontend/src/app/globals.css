@@ -58,6 +58,20 @@
   --shadow-glow-blue: var(--glow-blue);
   --shadow-glow-blue-lg: var(--glow-blue-lg);
   --shadow-glow-brand: var(--glow-brand);
+  --shadow-vsa-orange: 0 4px 14px rgba(249, 115, 22, 0.25);
+  --shadow-vsa-orange-lg: 0 8px 24px rgba(249, 115, 22, 0.35);
+  --shadow-vsa-blue: 0 4px 14px rgba(59, 130, 246, 0.25);
+  --shadow-vsa-blue-lg: 0 8px 24px rgba(59, 130, 246, 0.35);
+  --shadow-vsa-brand: 0 4px 14px rgba(249, 115, 22, 0.20), 0 4px 14px rgba(59, 130, 246, 0.15);
+
+  --background-image-vsa-brand: linear-gradient(135deg, #F97316 0%, #EA580C 40%, #3B82F6 100%);
+  --background-image-vsa-brand-hover: linear-gradient(135deg, #EA580C 0%, #C2410C 40%, #2563EB 100%);
+  --background-image-vsa-soft: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+  --background-image-vsa-orange-gradient: linear-gradient(135deg, #F97316 0%, #EA580C 50%, #FDBA74 100%);
+  --background-image-vsa-blue-gradient: linear-gradient(135deg, #3B82F6 0%, #2563EB 50%, #60A5FA 100%);
+  --background-image-vsa-orange: linear-gradient(180deg, #F97316 0%, #EA580C 100%);
+  --background-image-vsa-blue: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+  --background-image-vsa-radial: radial-gradient(circle at top right, rgba(249, 115, 22, 0.08), transparent 50%), radial-gradient(circle at bottom left, rgba(59, 130, 246, 0.06), transparent 50%);
 
   --animate-float: float 6s ease-in-out infinite;
   --animate-pulse-slow: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;

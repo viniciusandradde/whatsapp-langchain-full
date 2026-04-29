@@ -10,16 +10,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // Obsidian default — gradient brand (orange→blue) com glow no hover.
+        default:
+          "bg-vsa-brand text-white font-semibold shadow-vsa-orange hover:bg-vsa-brand-hover hover:shadow-glow-orange-lg hover:-translate-y-px active:translate-y-0",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-white/10 bg-white/[0.04] text-foreground hover:bg-white/[0.08] hover:border-white/20 hover:-translate-y-px",
+        // Secondary — gradient blue.
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-vsa-blue-gradient text-white font-semibold shadow-vsa-blue hover:shadow-glow-blue-lg hover:-translate-y-px active:translate-y-0",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground aria-expanded:bg-white/[0.08] aria-expanded:text-foreground",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/25 hover:border-destructive/50 focus-visible:ring-destructive/30",
+        link: "text-brand-primary underline-offset-4 hover:underline hover:text-brand-primary-light",
       },
       size: {
         default:

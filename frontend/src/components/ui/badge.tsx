@@ -9,16 +9,22 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // Obsidian — pílulas com tinta translúcida da paleta brand.
+        default:
+          "bg-brand-primary/15 text-brand-primary-light [a]:hover:bg-brand-primary/25",
         secondary:
-          "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
+          "bg-brand-secondary/15 text-brand-secondary-light [a]:hover:bg-brand-secondary/25",
         destructive:
-          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
+          "bg-destructive/15 text-destructive [a]:hover:bg-destructive/25 focus-visible:ring-destructive/30",
         outline:
-          "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
+          "border-white/10 text-foreground/80 [a]:hover:bg-white/[0.06] [a]:hover:text-foreground",
         ghost:
-          "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground",
+        success:
+          "bg-vsa-success/15 text-emerald-300 [a]:hover:bg-vsa-success/25",
+        gradient:
+          "bg-vsa-brand text-white shadow-vsa-orange [a]:hover:shadow-glow-orange-lg",
+        link: "text-brand-primary underline-offset-4 hover:underline",
       },
     },
     defaultVariants: {
