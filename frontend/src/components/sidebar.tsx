@@ -82,7 +82,7 @@ export function Sidebar() {
         />
       )}
 
-      {/* Sidebar — fundo escuro vsa-navy */}
+      {/* Sidebar — obsidian-900 com accent laranja Obsidian */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar transition-transform md:translate-x-0",
@@ -115,7 +115,7 @@ export function Sidebar() {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
                 isActive(item.href)
-                  ? "bg-sidebar-accent text-vsa-blue font-medium shadow-sm"
+                  ? "bg-sidebar-accent text-brand-primary font-medium shadow-glow-orange"
                   : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >

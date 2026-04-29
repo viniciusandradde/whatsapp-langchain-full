@@ -1,0 +1,180 @@
+/**
+ * VSA Tecnologia - Design System "Obsidian v2.0"
+ * Dark-first design tokens
+ */
+
+:root {
+  /* OBSIDIAN SCALE */
+  --obsidian-950: #050505;
+  --obsidian-900: #0a0a0a;
+  --obsidian-800: #121212;
+  --obsidian-700: #1a1a1a;
+  --obsidian-600: #262626;
+
+  /* BRAND */
+  --brand-primary: #F97316;
+  --brand-primary-dark: #EA580C;
+  --brand-primary-light: #FB923C;
+  --brand-secondary: #3B82F6;
+  --brand-secondary-dark: #2563EB;
+  --brand-secondary-light: #60A5FA;
+
+  /* CORES PRIMÁRIAS (updated to Tailwind palette) */
+  --vsa-orange-50: #FFF7ED;
+  --vsa-orange-100: #FFEDD5;
+  --vsa-orange-200: #FED7AA;
+  --vsa-orange-300: #FDBA74;
+  --vsa-orange-400: #FB923C;
+  --vsa-orange-500: #F97316;
+  --vsa-orange-600: #EA580C;
+  --vsa-orange-700: #C2410C;
+  --vsa-orange-800: #9A3412;
+  --vsa-orange-900: #7C2D12;
+
+  --vsa-blue-50: #EFF6FF;
+  --vsa-blue-100: #DBEAFE;
+  --vsa-blue-200: #BFDBFE;
+  --vsa-blue-300: #93C5FD;
+  --vsa-blue-400: #60A5FA;
+  --vsa-blue-500: #3B82F6;
+  --vsa-blue-600: #2563EB;
+  --vsa-blue-700: #1D4ED8;
+  --vsa-blue-800: #1E40AF;
+  --vsa-blue-900: #1E3A8A;
+
+  /* TEXT (dark mode) */
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-muted: #737373;
+
+  /* BORDERS (dark mode) */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+
+  /* GLASS (white-base for crystalline depth on #050505) */
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.05);
+  --glass-blur: 20px;
+
+  /* GLOW (vibrant neon on deep void) */
+  --glow-orange: 0 0 30px -5px rgba(249, 115, 22, 0.3);
+  --glow-orange-lg: 0 0 40px -10px rgba(249, 115, 22, 0.4);
+  --glow-blue: 0 0 30px -5px rgba(59, 130, 246, 0.3);
+  --glow-blue-lg: 0 0 40px -10px rgba(59, 130, 246, 0.4);
+  --glow-brand: 0 0 40px -10px rgba(249, 115, 22, 0.4);
+
+  /* SEMÂNTICAS */
+  --vsa-success-light: #D1FAE5;
+  --vsa-success: #10B981;
+  --vsa-success-dark: #059669;
+  --vsa-error-light: #FEE2E2;
+  --vsa-error: #EF4444;
+  --vsa-error-dark: #DC2626;
+  --vsa-warning-light: var(--vsa-orange-100);
+  --vsa-warning: var(--vsa-orange-500);
+  --vsa-warning-dark: var(--vsa-orange-600);
+  --vsa-info-light: var(--vsa-blue-100);
+  --vsa-info: var(--vsa-blue-500);
+  --vsa-info-dark: var(--vsa-blue-600);
+
+  /* GRADIENTES */
+  --vsa-gradient-brand: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-primary-dark) 40%, var(--brand-secondary) 100%);
+  --vsa-gradient-soft: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+  --vsa-gradient-hover: linear-gradient(135deg, var(--brand-primary-dark) 0%, #C2410C 40%, var(--brand-secondary-dark) 100%);
+  --vsa-gradient-border: linear-gradient(135deg, var(--brand-primary-light), var(--brand-secondary-light));
+  --vsa-gradient-orange: linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-primary-dark) 100%);
+  --vsa-gradient-blue: linear-gradient(180deg, var(--brand-secondary) 0%, var(--brand-secondary-dark) 100%);
+
+  /* TIPOGRAFIA */
+  --vsa-font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --vsa-font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --vsa-font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --vsa-text-xs: 0.75rem;
+  --vsa-text-sm: 0.875rem;
+  --vsa-text-base: 1rem;
+
+  --vsa-font-normal: 400;
+  --vsa-font-medium: 500;
+  --vsa-font-semibold: 600;
+  --vsa-font-bold: 700;
+  --vsa-leading-none: 1;
+  --vsa-leading-normal: 1.5;
+  /* ESPAÇAMENTO */
+  --vsa-space-1: 0.25rem;
+  --vsa-space-2: 0.5rem;
+  --vsa-space-3: 0.75rem;
+  --vsa-space-4: 1rem;
+  --vsa-space-5: 1.25rem;
+  --vsa-space-6: 1.5rem;
+  --vsa-space-8: 2rem;
+
+  /* SOMBRAS */
+  --vsa-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --vsa-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5), 0 4px 6px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5), 0 8px 10px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.6);
+  --vsa-shadow-orange: 0 4px 14px rgba(249, 115, 22, 0.25);
+  --vsa-shadow-orange-lg: 0 8px 24px rgba(249, 115, 22, 0.35);
+  --vsa-shadow-blue: 0 4px 14px rgba(59, 130, 246, 0.25);
+  --vsa-shadow-blue-lg: 0 8px 24px rgba(59, 130, 246, 0.35);
+  --vsa-shadow-brand: 0 4px 14px rgba(249, 115, 22, 0.20), 0 4px 14px rgba(59, 130, 246, 0.15);
+  --vsa-shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-inner-lg: inset 0 4px 8px rgba(0, 0, 0, 0.4);
+
+  /* BORDAS */
+  --vsa-radius-md: 0.375rem;
+  --vsa-radius-lg: 0.5rem;
+  --vsa-radius-xl: 0.75rem;
+  --vsa-radius-2xl: 1rem;
+  --vsa-radius-full: 9999px;
+
+  /* TRANSIÇÕES */
+  --vsa-transition-fast: 150ms ease;
+  --vsa-transition-base: 200ms ease;
+  /* Z-INDEX */
+  --vsa-z-modal-backdrop: 1040;
+  --vsa-z-modal: 1050;
+
+  /* Aliases para compatibilidade */
+  --vsa-orange: var(--vsa-orange-500);
+  --vsa-orange-dark: var(--vsa-orange-600);
+  --vsa-orange-light: var(--vsa-orange-400);
+  --vsa-orange-lighter: var(--vsa-orange-200);
+  --vsa-blue: var(--vsa-blue-500);
+  --vsa-blue-dark: var(--vsa-blue-600);
+  --vsa-blue-light: var(--vsa-blue-400);
+  --vsa-blue-lighter: var(--vsa-blue-200);
+  --vsa-orange-gradient: var(--vsa-gradient-brand);
+  --vsa-blue-gradient: var(--vsa-gradient-blue);
+  --vsa-gradient: var(--vsa-gradient-brand);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--brand-secondary);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: var(--vsa-radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+::selection {
+  background: rgba(249, 115, 22, 0.3);
+  color: var(--text-primary);
+}

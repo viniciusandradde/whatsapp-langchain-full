@@ -1,3 +1,5 @@
+@import "./vsa-design-tokens.css";
+@import "./vsa-components.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -8,7 +10,57 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-mono);
+
+  /* VSA Tech — Design System Obsidian v2.0 */
+  --color-obsidian-950: var(--obsidian-950);
+  --color-obsidian-900: var(--obsidian-900);
+  --color-obsidian-800: var(--obsidian-800);
+  --color-obsidian-700: var(--obsidian-700);
+  --color-obsidian-600: var(--obsidian-600);
+
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-dark: var(--brand-primary-dark);
+  --color-brand-primary-light: var(--brand-primary-light);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-secondary-dark: var(--brand-secondary-dark);
+  --color-brand-secondary-light: var(--brand-secondary-light);
+
+  --color-vsa-orange-50: var(--vsa-orange-50);
+  --color-vsa-orange-100: var(--vsa-orange-100);
+  --color-vsa-orange-200: var(--vsa-orange-200);
+  --color-vsa-orange-300: var(--vsa-orange-300);
+  --color-vsa-orange-400: var(--vsa-orange-400);
+  --color-vsa-orange-500: var(--vsa-orange-500);
+  --color-vsa-orange-600: var(--vsa-orange-600);
+  --color-vsa-orange-700: var(--vsa-orange-700);
+  --color-vsa-orange-800: var(--vsa-orange-800);
+  --color-vsa-orange-900: var(--vsa-orange-900);
+
+  --color-vsa-blue-50: var(--vsa-blue-50);
+  --color-vsa-blue-100: var(--vsa-blue-100);
+  --color-vsa-blue-200: var(--vsa-blue-200);
+  --color-vsa-blue-300: var(--vsa-blue-300);
+  --color-vsa-blue-400: var(--vsa-blue-400);
+  --color-vsa-blue-500: var(--vsa-blue-500);
+  --color-vsa-blue-600: var(--vsa-blue-600);
+  --color-vsa-blue-700: var(--vsa-blue-700);
+  --color-vsa-blue-800: var(--vsa-blue-800);
+  --color-vsa-blue-900: var(--vsa-blue-900);
+
+  --color-vsa-success: var(--vsa-success);
+  --color-vsa-error: var(--vsa-error);
+  --color-vsa-warning: var(--vsa-warning);
+  --color-vsa-info: var(--vsa-info);
+
+  --shadow-glow-orange: var(--glow-orange);
+  --shadow-glow-orange-lg: var(--glow-orange-lg);
+  --shadow-glow-blue: var(--glow-blue);
+  --shadow-glow-blue-lg: var(--glow-blue-lg);
+  --shadow-glow-brand: var(--glow-brand);
+
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-pulse-slow: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -51,74 +103,46 @@
   --color-vsa-orange: oklch(0.62 0.21 30);
 }
 
+/* Dark-first Obsidian — não há tema light. Tokens shadcn apontam pros tokens VSA. */
 :root {
-  --background: oklch(0.98 0.002 250);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.68 0.14 200);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.96 0.005 250);
-  --secondary-foreground: oklch(0.25 0.08 265);
-  --muted: oklch(0.96 0.005 250);
-  --muted-foreground: oklch(0.50 0.02 260);
-  --accent: oklch(0.94 0.01 200);
-  --accent-foreground: oklch(0.25 0.08 265);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.91 0.005 250);
-  --input: oklch(0.91 0.005 250);
-  --ring: oklch(0.68 0.14 200);
-  --chart-1: oklch(0.68 0.14 200);
-  --chart-2: oklch(0.62 0.21 30);
-  --chart-3: oklch(0.25 0.08 265);
-  --chart-4: oklch(0.58 0.13 300);
-  --chart-5: oklch(0.78 0.17 105);
-  --radius: 0.625rem;
-  /* Sidebar escura — identidade da marca */
-  --sidebar: oklch(0.18 0.06 265);
-  --sidebar-foreground: oklch(0.88 0.02 250);
-  --sidebar-primary: oklch(0.68 0.14 200);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.24 0.06 265);
-  --sidebar-accent-foreground: oklch(0.95 0.005 200);
-  --sidebar-border: oklch(0.28 0.05 265);
-  --sidebar-ring: oklch(0.68 0.14 200);
-}
+  --font-sans: var(--vsa-font-body);
+  --font-mono: var(--vsa-font-mono);
 
-.dark {
-  --background: oklch(0.13 0.02 265);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.03 265);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.03 265);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.72 0.14 200);
-  --primary-foreground: oklch(0.15 0.03 265);
-  --secondary: oklch(0.22 0.04 265);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.04 265);
-  --muted-foreground: oklch(0.65 0.02 260);
-  --accent: oklch(0.26 0.05 265);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.28 0.04 265);
-  --input: oklch(0.25 0.04 265);
-  --ring: oklch(0.68 0.14 200);
-  --chart-1: oklch(0.72 0.14 200);
-  --chart-2: oklch(0.65 0.21 30);
-  --chart-3: oklch(0.50 0.10 265);
-  --chart-4: oklch(0.62 0.13 300);
-  --chart-5: oklch(0.80 0.17 105);
-  --sidebar: oklch(0.13 0.04 265);
-  --sidebar-foreground: oklch(0.88 0.02 250);
-  --sidebar-primary: oklch(0.72 0.14 200);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.20 0.04 265);
-  --sidebar-accent-foreground: oklch(0.95 0.005 200);
-  --sidebar-border: oklch(0.25 0.04 265);
-  --sidebar-ring: oklch(0.68 0.14 200);
+  --background: var(--obsidian-950);
+  --foreground: var(--text-primary);
+  --card: var(--glass-bg);
+  --card-foreground: var(--text-primary);
+  --popover: var(--obsidian-800);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--brand-primary);
+  --primary-foreground: #ffffff;
+  --secondary: var(--obsidian-700);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--obsidian-700);
+  --muted-foreground: var(--text-secondary);
+  --accent: rgba(249, 115, 22, 0.1);
+  --accent-foreground: var(--brand-primary-light);
+  --destructive: var(--vsa-error);
+  --border: var(--border-default);
+  --input: var(--obsidian-700);
+  --ring: var(--brand-primary);
+
+  --chart-1: var(--brand-primary);
+  --chart-2: var(--brand-secondary);
+  --chart-3: var(--vsa-success);
+  --chart-4: var(--vsa-warning);
+  --chart-5: var(--vsa-info);
+  --radius: 0.625rem;
+
+  /* Sidebar — obsidian-900 com accent laranja */
+  --sidebar: var(--obsidian-900);
+  --sidebar-foreground: var(--text-secondary);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(249, 115, 22, 0.1);
+  --sidebar-accent-foreground: var(--brand-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--brand-primary);
 }
 
 @layer base {
@@ -126,9 +150,55 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--obsidian-950);
+    color: var(--text-primary);
+    min-height: 100dvh;
+    font-family: var(--vsa-font-body);
   }
   html {
     @apply font-sans;
   }
+}
+
+/* Glass panel utility — crystalline glassmorphism */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--vsa-radius-md);
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
