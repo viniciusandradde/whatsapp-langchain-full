@@ -16,7 +16,8 @@ import httpx
 import psycopg
 
 DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5432/whatsapp_langchain"
-API_BASE_URL = "http://localhost:8000"
+DEFAULT_API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", DEFAULT_API_BASE_URL)
 TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
 
 
