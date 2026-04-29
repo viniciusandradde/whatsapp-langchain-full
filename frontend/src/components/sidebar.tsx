@@ -15,6 +15,8 @@ import {
   LayoutDashboard,
   MessageSquare,
   Bot,
+  Brain,
+  Activity,
   ListOrdered,
   ShieldCheck,
   LogOut,
@@ -29,6 +31,8 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chats", label: "Conversas", icon: MessageSquare },
   { href: "/agents", label: "Agentes", icon: Bot },
+  { href: "/models", label: "Modelos", icon: Brain },
+  { href: "/traces", label: "Traces", icon: Activity },
   { href: "/queue", label: "Fila", icon: ListOrdered },
   { href: "/settings", label: "Segurança", icon: ShieldCheck },
 ];
