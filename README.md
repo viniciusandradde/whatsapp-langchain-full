@@ -40,6 +40,12 @@ O objetivo deste repositório é ensinar arquitetura de harness em volta do agen
 - checklist de cutover sandbox → produção
 - rollback documentado (deploy e Twilio)
 - branding mínimo da rhawk.pro no painel (favicon, cores, metadados)
+- **CORS estrito** via `FRONTEND_ORIGINS` (lista CSV de origens permitidas)
+- **cabeçalhos de segurança** automáticos: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` + `Strict-Transport-Security` em produção
+- **fail-fast no startup em produção**: levanta `ValueError` se faltar token forte (≥32 chars), `VALIDATE_TWILIO_SIGNATURE=true` ou `FRONTEND_ORIGINS` não-vazio
+- **rate limit distribuído opcional** via Postgres (sliding window por hora) — habilite com `RATE_LIMIT_DISTRIBUTED=true` para multi-instância
+- **suporte a múltiplas mídias** num único webhook (`NumMedia > 1`) — N rows independentes com mesmo `message_id`, processadas em ordem como turns separados pelo agente
+- **smoke test e2e com Twilio real** (opt-in, custa crédito): `make test-twilio-smoke` valida webhook → worker → outbound REAL → `mark_done`
 
 O harness foi desenhado para funcionar tanto em desenvolvimento local
 (`sandbox`/`mock`) quanto em ambiente publicado com Twilio real. Para o fluxo
@@ -138,6 +144,102 @@ curl http://localhost:8000/api/metrics
 curl http://localhost:8000/api/chats
 ```
 
+### 5. Múltiplas mídias num único webhook (`NumMedia > 1`)
+
+```bash
+curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+  -d "MessageSid=SM_MULTI_001" \
+  -d "From=whatsapp:+5511999999999" \
+  -d "To=whatsapp:+14155238886" \
+  -d "Body=olha as fotos" \
+  -d "NumMedia=2" \
+  -d "MediaUrl0=https://demo.twilio.com/owl.png" \
+  -d "MediaContentType0=image/png" \
+  -d "MediaUrl1=https://demo.twilio.com/owl.png" \
+  -d "MediaContentType1=image/png"
+```
+
+A API enfileira 1 row de texto + 2 rows de mídia, todas com o mesmo `message_id`.
+O worker processa cada uma como turn separado do agente; o checkpointer LangGraph
+agrega o histórico por `thread_id`. Twilio limita a 10 mídias por webhook — o
+parser respeita esse cap.
+
+## Hardening de produção
+
+Em `ENVIRONMENT=production` o startup faz **fail-fast** se qualquer destes
+invariantes falhar:
+
+| Invariante | Variável | Critério |
+|------------|----------|----------|
+| Token interno presente | `INTERNAL_SERVICE_TOKEN` | não-vazio |
+| Token forte em prod | `INTERNAL_SERVICE_TOKEN` | ≥ 32 caracteres |
+| Signature obrigatória | `VALIDATE_TWILIO_SIGNATURE` | `true` |
+| CORS configurado | `FRONTEND_ORIGINS` | pelo menos 1 origem |
+
+Cabeçalhos de segurança aplicados automaticamente em toda resposta:
+
+| Header | Dev | Prod |
+|--------|-----|------|
+| `X-Content-Type-Options: nosniff` | ✓ | ✓ |
+| `X-Frame-Options: DENY` | ✓ | ✓ |
+| `Referrer-Policy: no-referrer` | ✓ | ✓ |
+| `Strict-Transport-Security` (1 ano) | — | ✓ |
+
+`FRONTEND_ORIGINS` aceita CSV (ex: `https://app.rhawk.pro,https://admin.rhawk.pro`)
+e o middleware CORS restringe `allow_methods` a verbos HTTP padrão e
+`allow_headers` a `Authorization, Content-Type, X-Twilio-Signature`. Veja
+[Deploy](docs/DEPLOY.md) para o checklist completo.
+
+## Rate limit distribuído (multi-instância)
+
+Por padrão, o rate limit por telefone é in-memory por processo
+(`RATE_LIMIT_DISTRIBUTED=false`). Em deploys multi-instância isso permite que
+um mesmo número estoure `N × RATE_LIMIT_PER_HOUR` requisições/hora.
+
+Para ativar o sliding window distribuído em Postgres:
+
+```bash
+# 1. Configurar
+RATE_LIMIT_DISTRIBUTED=true
+
+# 2. Aplicar a migration nova
+make migrate
+# aplica db/migrations/005_rate_limit_buckets.sql
+```
+
+A função `_check_rate_limit_db` faz `INSERT ... ON CONFLICT DO UPDATE` atômico
+contra a tabela `rate_limit_buckets` (PK `(phone_number, hour_start)`). O
+cleanup de buckets > 24h roda inline com 1% de probabilidade — sem cron, sem
+Redis. Mensagem de erro 429 e log `rate_limit_exceeded` são consistentes
+entre os dois backends.
+
+## Smoke test e2e com Twilio real
+
+Antes do cutover sandbox→produção, rode o smoke test que valida o ciclo
+completo (webhook simulado → worker → outbound REAL via Twilio Messages API
+→ `mark_done`):
+
+```bash
+# 1. Stack rodando com TWILIO_OUTBOUND_MODE=real e credenciais válidas
+make up
+
+# 2. Configurar número de teste descartável
+export TWILIO_LIVE_TESTS=1
+export TWILIO_TEST_TO_NUMBER="+5511999999999"
+
+# 3. Rodar smoke
+make test-twilio-smoke
+```
+
+Características:
+
+- **Opt-in duplo**: `TWILIO_LIVE_TESTS` precisa ser truthy E `TWILIO_TEST_TO_NUMBER` precisa começar com `+` (E.164)
+- **Health check**: a fixture confirma que API e DB respondem antes de tentar enviar
+- **Excluído de CI**: o marker `twilio_real` é filtrado em `make ci` e `make test`
+- **Custos**: ~USD 0.005–0.05 por execução (1 mensagem real). Não rode em loop.
+
+Veja [Integração Twilio](docs/TWILIO.md) para o checklist completo de cutover.
+
 ## Estrutura do Projeto
 
 ```text
@@ -175,16 +277,18 @@ Para detalhes técnicos:
 ## Comandos úteis
 
 ```bash
-make help
-make api
-make worker
-make migrate
-make test
-make test-live
-make check
-make logs
-make reset
-make test-demo
+make help                 # lista todos os targets
+make api                  # roda API local (uvicorn)
+make worker               # roda Worker local
+make migrate              # aplica migrações pendentes
+make test                 # suite normal (exclui docker_demo e twilio_real)
+make test-live            # testes live com OpenRouter real (gating OPENROUTER_LIVE_TESTS=1)
+make test-demo            # testes Docker realísticos (marker docker_demo)
+make test-twilio-smoke    # smoke e2e com Twilio real (gating TWILIO_LIVE_TESTS=1, custa $$)
+make check                # ruff + pyright (sem alterar arquivos)
+make ci                   # check + suite normal (o que CI roda)
+make logs                 # docker compose logs -f
+make reset                # rebuild Docker do zero (down -v + up --build)
 ```
 
 ## Licença
