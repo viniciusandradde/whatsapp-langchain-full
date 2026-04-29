@@ -140,3 +140,20 @@ class UpdateAgentLLMConfigRequest(BaseModel):
 
     chat_model: str | None = None
     midia_model: str | None = None
+
+
+# --- Painel: visualização de traces LangSmith ---
+
+
+class TraceInfo(BaseModel):
+    """Run enxuta do LangSmith pra exibir na tabela `/traces` do painel."""
+
+    run_id: str
+    name: str | None
+    status: str | None
+    start_time: str | None
+    end_time: str | None
+    latency_ms: int | None
+    total_tokens: int | None
+    thread_id: str | None
+    smith_url: str = Field(description="URL direta pro run em smith.langchain.com")
