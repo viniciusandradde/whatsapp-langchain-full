@@ -66,7 +66,10 @@ def _patch_processor(preprocess_result):
             new_callable=AsyncMock,
             return_value=preprocess_result,
         ),
-        patch("whatsapp_langchain.worker.processor.load_graph"),
+        patch(
+            "whatsapp_langchain.worker.processor.load_graph",
+            new_callable=AsyncMock,
+        ),
         patch(
             "whatsapp_langchain.worker.processor.mark_done",
             new_callable=AsyncMock,
@@ -78,6 +81,11 @@ def _patch_processor(preprocess_result):
         patch(
             "whatsapp_langchain.worker.processor.upsert_conversation",
             new_callable=AsyncMock,
+        ),
+        patch(
+            "whatsapp_langchain.worker.processor.get_agent_llm_config",
+            new_callable=AsyncMock,
+            return_value=("env-chat", "env-midia"),
         ),
     )
 
@@ -111,6 +119,7 @@ class TestSendMessageMarkDone:
             patches[2] as mock_done,
             patches[3] as mock_failed,
             patches[4],
+            patches[5],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -149,6 +158,7 @@ class TestSendMessageMarkDone:
             patches[2] as mock_done,
             patches[3] as mock_failed,
             patches[4],
+            patches[5],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -187,6 +197,7 @@ class TestSendMessageMarkDone:
             patches[2] as mock_done,
             patches[3] as mock_failed,
             patches[4],
+            patches[5],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -223,6 +234,7 @@ class TestAutoResponseTwilio:
             patches[2] as mock_done,
             patches[3] as mock_failed,
             patches[4],
+            patches[5],
         ):
             from whatsapp_langchain.worker.processor import process_message
 
@@ -257,6 +269,7 @@ class TestAutoResponseTwilio:
             patches[2] as mock_done,
             patches[3] as mock_failed,
             patches[4],
+            patches[5],
         ):
             from whatsapp_langchain.worker.processor import process_message
 

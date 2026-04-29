@@ -106,8 +106,16 @@ def _extract_text(content: str | list | None) -> str:
     return str(content)
 
 
-async def _chat_completion_media(messages: list[dict]) -> str:
-    """Executa chamada multimodal no OpenRouter usando modelo de mídia."""
+async def _chat_completion_media(
+    messages: list[dict],
+    model: str | None = None,
+) -> str:
+    """Executa chamada multimodal no OpenRouter usando modelo de mídia.
+
+    Args:
+        messages: Mensagens no formato OpenAI (system + user com input_image/audio).
+        model: Override do modelo. None = usa settings.openrouter_midia_model.
+    """
     api_key = settings.openrouter_api_key
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY não configurada")
@@ -120,7 +128,7 @@ async def _chat_completion_media(messages: list[dict]) -> str:
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.openrouter_midia_model,
+                "model": model or settings.openrouter_midia_model,
                 "messages": messages,
             },
             timeout=45.0,
@@ -131,7 +139,9 @@ async def _chat_completion_media(messages: list[dict]) -> str:
         return _extract_text(content).strip()
 
 
-async def _describe_image(media_bytes: bytes, media_type: str) -> str:
+async def _describe_image(
+    media_bytes: bytes, media_type: str, model: str | None = None
+) -> str:
     image_b64 = base64.b64encode(media_bytes).decode("utf-8")
 
     return await _chat_completion_media(
@@ -164,11 +174,14 @@ async def _describe_image(media_bytes: bytes, media_type: str) -> str:
                     },
                 ],
             },
-        ]
+        ],
+        model=model,
     )
 
 
-async def _transcribe_audio(media_bytes: bytes, media_type: str) -> str:
+async def _transcribe_audio(
+    media_bytes: bytes, media_type: str, model: str | None = None
+) -> str:
     audio_b64 = base64.b64encode(media_bytes).decode("utf-8")
     audio_format = _audio_format_from_media_type(media_type)
 
@@ -206,7 +219,8 @@ async def _transcribe_audio(media_bytes: bytes, media_type: str) -> str:
                     },
                 ],
             },
-        ]
+        ],
+        model=model,
     )
 
 
@@ -214,8 +228,17 @@ async def preprocess_incoming_message(
     body: str,
     media_url: str | None = None,
     media_type: str | None = None,
+    midia_model: str | None = None,
 ) -> MediaPreprocessResult:
-    """Normaliza entrada para texto antes da chamada ao agente."""
+    """Normaliza entrada para texto antes da chamada ao agente.
+
+    Args:
+        body: Texto recebido (pode ser vazio quando é só mídia).
+        media_url: URL Twilio da mídia (None = sem mídia).
+        media_type: MIME type da mídia.
+        midia_model: Override do modelo multimodal.
+                     None = usa settings.openrouter_midia_model.
+    """
     if not media_url and not media_type:
         return MediaPreprocessResult(
             should_invoke_agent=True,
@@ -262,14 +285,18 @@ async def preprocess_incoming_message(
         media_bytes = await download_media(media_url)
 
         if kind == "image":
-            description = await _describe_image(media_bytes, media_type)
+            description = await _describe_image(
+                media_bytes, media_type, model=midia_model
+            )
             parts = [
                 p for p in [body.strip(), f"[Descrição de imagem]: {description}"] if p
             ]
             normalized = "\n".join(parts)
 
         elif kind == "audio":
-            transcription = await _transcribe_audio(media_bytes, media_type)
+            transcription = await _transcribe_audio(
+                media_bytes, media_type, model=midia_model
+            )
             parts = [
                 p
                 for p in [body.strip(), f"[Transcrição de áudio]: {transcription}"]

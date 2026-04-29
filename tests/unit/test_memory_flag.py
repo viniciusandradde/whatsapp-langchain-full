@@ -46,7 +46,10 @@ class TestProcessorMemoryFlag:
                     media_processing_status="none",
                 ),
             ) as mock_preprocess,
-            patch("whatsapp_langchain.worker.processor.load_graph") as mock_load,
+            patch(
+                "whatsapp_langchain.worker.processor.load_graph",
+                new_callable=AsyncMock,
+            ) as mock_load,
             patch(
                 "whatsapp_langchain.worker.processor.mark_done",
                 new_callable=AsyncMock,
@@ -55,6 +58,11 @@ class TestProcessorMemoryFlag:
                 "whatsapp_langchain.worker.processor.upsert_conversation",
                 new_callable=AsyncMock,
             ),
+            patch(
+                "whatsapp_langchain.worker.processor.get_agent_llm_config",
+                new_callable=AsyncMock,
+                return_value=("env-chat", "env-midia"),
+            ),
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -62,6 +70,7 @@ class TestProcessorMemoryFlag:
             }
             mock_load.return_value = mock_graph
             mock_checkpointer = AsyncMock()
+            mock_pool = AsyncMock()
 
             from whatsapp_langchain.shared.models import MessageQueue
             from whatsapp_langchain.worker.processor import process_message
@@ -80,7 +89,7 @@ class TestProcessorMemoryFlag:
 
             await process_message(
                 message,
-                AsyncMock(),
+                mock_pool,
                 checkpointer=mock_checkpointer,
                 store=None,
                 twilio=mock_twilio,
@@ -91,9 +100,10 @@ class TestProcessorMemoryFlag:
             # Salva como done com metadados de pré-processamento
             assert mock_mark_done.await_count == 1
 
-            # load_graph deve ser chamado sem store
-            mock_load.assert_called_once_with(
+            # load_graph deve ser chamado sem store, recebendo o pool
+            mock_load.assert_awaited_once_with(
                 "vsa_tech",
                 checkpointer=mock_checkpointer,
                 store=None,
+                pool=mock_pool,
             )

@@ -36,6 +36,7 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
+from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.models import MessageQueue
 from whatsapp_langchain.shared.queue import (
     mark_done,
@@ -83,11 +84,15 @@ async def process_message(
     )
 
     try:
+        # 0. Resolver modelos do agente (hot reload via DB; fallback pra env)
+        _, midia_model = await get_agent_llm_config(pool, message.agent_id)
+
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(
             body=message.incoming_message,
             media_url=message.media_url,
             media_type=message.media_type,
+            midia_model=midia_model,
         )
 
         # Se mídia está desabilitada ou falhou, não chama o agente
@@ -142,10 +147,11 @@ async def process_message(
             }
         }
 
-        graph = load_graph(
+        graph = await load_graph(
             message.agent_id,
             checkpointer=checkpointer,
             store=store,
+            pool=pool,
         )
         result = await graph.ainvoke(
             {"messages": [human_message]},

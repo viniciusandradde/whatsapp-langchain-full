@@ -16,10 +16,13 @@ src/whatsapp_langchain/agents/catalog/<agent_id>/
 
 ### Regras
 
-- `agent.py` deve expor `build_graph(checkpointer=None, store=None)`
+- `agent.py` deve expor `build_graph(checkpointer=None, store=None, chat_model=None)`
 - `graph.py` deve exportar variável `graph` para `langgraph dev`
 - `prompts.py` deve conter `SYSTEM_PROMPT`
 - não importar módulos de `server/` ou `worker/` dentro do agente
+- `chat_model` é opcional: `None` mantém o default do `.env`
+  (`OPENROUTER_MODEL`); o painel `/models` envia o override resolvido pelo
+  loader a partir da tabela `agent_llm_config`
 
 ## Passo a passo
 
@@ -58,8 +61,11 @@ from .prompts import SYSTEM_PROMPT
 def build_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
+    chat_model: str | None = None,
 ):
-    model = create_chat_model()
+    # chat_model=None faz fallback pra settings.openrouter_model.
+    # O loader resolve o valor por agente via tabela agent_llm_config.
+    model = create_chat_model(model=chat_model)
     middleware = get_context_middleware()
     tools = [save_memory, read_memory] if store else []
 

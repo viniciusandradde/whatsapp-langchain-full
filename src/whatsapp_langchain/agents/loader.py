@@ -19,6 +19,9 @@ from pathlib import Path
 import structlog
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
+from psycopg_pool import AsyncConnectionPool
+
+from whatsapp_langchain.shared.llm import get_agent_llm_config
 
 logger = structlog.get_logger()
 
@@ -41,14 +44,17 @@ class AgentNotFoundError(Exception):
         super().__init__(f"Agente '{agent_id}' não encontrado no catálogo")
 
 
-def load_graph(
+async def load_graph(
     agent_id: str,
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
+    pool: AsyncConnectionPool | None = None,
 ):
     """Carrega e compila o grafo de um agente pelo ID.
 
     Importa dinamicamente o módulo agent.py do catálogo e chama build_graph().
+    Quando `pool` é fornecido, resolve o modelo principal via
+    `agent_llm_config` (hot reload) e propaga como `chat_model`.
 
     Args:
         agent_id: Identificador do agente (nome do diretório em catalog/).
@@ -56,6 +62,7 @@ def load_graph(
                       None em dev, PostgresSaver em prod.
         store: Store para memória semântica cross-thread.
                None desabilita memória, AsyncPostgresStore em prod.
+        pool: Pool psycopg pra resolver chat_model por agente. None = usa env.
 
     Returns:
         CompiledStateGraph pronto para invoke().
@@ -77,8 +84,14 @@ def load_graph(
     if not hasattr(module, "build_graph"):
         raise AgentNotFoundError(agent_id)
 
-    logger.info("agent_loaded", agent_id=agent_id)
-    return module.build_graph(checkpointer=checkpointer, store=store)
+    chat_model: str | None = None
+    if pool is not None:
+        chat_model, _ = await get_agent_llm_config(pool, agent_id)
+
+    logger.info("agent_loaded", agent_id=agent_id, chat_model=chat_model)
+    return module.build_graph(
+        checkpointer=checkpointer, store=store, chat_model=chat_model
+    )
 
 
 def list_agents() -> list[str]:

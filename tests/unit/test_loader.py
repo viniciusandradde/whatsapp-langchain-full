@@ -29,21 +29,21 @@ class TestListAgents:
 class TestLoadGraph:
     """Testes de carregamento de agentes."""
 
-    def test_load_vsa_tech(self):
+    async def test_load_vsa_tech(self):
         """Deve carregar o agente vsa_tech com sucesso."""
-        graph = load_graph("vsa_tech")
+        graph = await load_graph("vsa_tech")
         assert graph is not None
 
-    def test_load_vsa_tech_with_store(self):
+    async def test_load_vsa_tech_with_store(self):
         """Deve carregar o agente com store para memória semântica."""
         store = InMemoryStore()
-        graph = load_graph("vsa_tech", store=store)
+        graph = await load_graph("vsa_tech", store=store)
         assert graph is not None
 
-    def test_load_nonexistent_agent(self):
+    async def test_load_nonexistent_agent(self):
         """Deve falhar com AgentNotFoundError para agente inexistente."""
         with pytest.raises(AgentNotFoundError) as exc_info:
-            load_graph("agente_que_nao_existe")
+            await load_graph("agente_que_nao_existe")
         assert exc_info.value.agent_id == "agente_que_nao_existe"
 
     def test_agent_not_found_error_message(self):

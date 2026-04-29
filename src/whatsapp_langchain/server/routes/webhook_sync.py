@@ -69,8 +69,9 @@ async def webhook_sync(
     # mas funcional para testar o fluxo de save/recall dentro de uma chamada
     store = InMemoryStore() if settings.memory_enabled else None
 
-    # Carrega agente sem checkpointer (sem persistência)
-    graph = load_graph(agent, store=store)
+    # Carrega agente sem checkpointer (sem persistência) e sem pool —
+    # webhook_sync é dev-only e não consulta agent_llm_config.
+    graph = await load_graph(agent, store=store)
 
     # Executa o agente
     thread_id = f"{payload.phone}:{agent}"

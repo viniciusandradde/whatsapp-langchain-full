@@ -32,6 +32,7 @@ from .prompts import SYSTEM_PROMPT
 def build_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
+    chat_model: str | None = None,
 ):
     """Constrói o agente vsa_tech.
 
@@ -50,12 +51,15 @@ def build_graph(
         store: Store para memória semântica cross-thread.
                None desabilita memória, InMemoryStore em dev,
                AsyncPostgresStore em prod.
+        chat_model: Override do modelo principal (ex: "openai/gpt-4o-mini").
+                    None = usa settings.openrouter_model do .env.
 
     Returns:
         CompiledStateGraph: Agente compilado pronto para uso.
     """
-    # Modelo principal com rate limiter centralizado (shared/llm.py)
-    model = create_chat_model()
+    # Modelo principal com rate limiter centralizado (shared/llm.py).
+    # chat_model=None faz fallback pra settings.openrouter_model.
+    model = create_chat_model(model=chat_model)
 
     # Middleware de contexto baseado em CONTEXT_STRATEGY
     middleware = get_context_middleware()
