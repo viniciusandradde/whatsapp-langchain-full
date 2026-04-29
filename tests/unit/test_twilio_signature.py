@@ -81,7 +81,7 @@ class TestSignatureValidationDisabled:
         mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -102,7 +102,7 @@ class TestSignatureValidationDisabled:
         mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -126,7 +126,7 @@ class TestSignatureValidationEnabled:
         monkeypatch.setattr(settings, "twilio_auth_token", TEST_AUTH_TOKEN)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -147,7 +147,7 @@ class TestSignatureValidationEnabled:
         monkeypatch.setattr(settings, "twilio_webhook_url", TEST_WEBHOOK_URL)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -178,11 +178,11 @@ class TestSignatureValidationEnabled:
             "Body": "Olá",
             "NumMedia": "0",
         }
-        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=rhawk_assistant"
+        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=vsa_tech"
         signature = sign_request(url, params)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data=params,
             headers={"X-Twilio-Signature": signature},
         )
@@ -208,11 +208,11 @@ class TestSignatureValidationEnabled:
             "MediaUrl0": "https://api.twilio.com/media/img.jpg",
             "MediaContentType0": "image/jpeg",
         }
-        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=rhawk_assistant"
+        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=vsa_tech"
         signature = sign_request(url, params)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data=params,
             headers={"X-Twilio-Signature": signature},
         )
@@ -233,12 +233,12 @@ class TestSignatureValidationEnabled:
             "Body": "Olá",
             "NumMedia": "0",
         }
-        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=rhawk_assistant"
+        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=vsa_tech"
         # Assina com token diferente do configurado no server
         signature = sign_request(url, params, auth_token="token_errado_do_atacante")
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data=params,
             headers={"X-Twilio-Signature": signature},
         )
@@ -259,13 +259,13 @@ class TestSignatureValidationEnabled:
             "Body": "Mensagem original",
             "NumMedia": "0",
         }
-        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=rhawk_assistant"
+        url = f"{TEST_WEBHOOK_URL}/webhook/twilio?agent=vsa_tech"
         signature = sign_request(url, params)
 
         # Envia com body adulterado
         tampered_params = {**params, "Body": "Mensagem adulterada"}
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data=tampered_params,
             headers={"X-Twilio-Signature": signature},
         )
@@ -279,7 +279,7 @@ class TestSignatureValidationEnabled:
         monkeypatch.setattr(settings, "twilio_auth_token", "")
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -319,8 +319,8 @@ class TestBuildValidationUrl:
                     (),
                     {
                         "path": "/webhook/twilio",
-                        "query": "agent=rhawk_assistant",
-                        "__str__": lambda self: "http://localhost:8000/webhook/twilio?agent=rhawk_assistant",
+                        "query": "agent=vsa_tech",
+                        "__str__": lambda self: "http://localhost:8000/webhook/twilio?agent=vsa_tech",
                     },
                 )()
             },
@@ -328,7 +328,7 @@ class TestBuildValidationUrl:
 
         result = build_validation_url(mock_request)
         assert (
-            result == "https://tunnel.example.com/webhook/twilio?agent=rhawk_assistant"
+            result == "https://tunnel.example.com/webhook/twilio?agent=vsa_tech"
         )
 
     def test_falls_back_to_request_url(self, monkeypatch):
@@ -349,15 +349,15 @@ class TestBuildValidationUrl:
                     (),
                     {
                         "path": "/webhook/twilio",
-                        "query": "agent=rhawk_assistant",
-                        "__str__": lambda self: "http://localhost:8000/webhook/twilio?agent=rhawk_assistant",
+                        "query": "agent=vsa_tech",
+                        "__str__": lambda self: "http://localhost:8000/webhook/twilio?agent=vsa_tech",
                     },
                 )()
             },
         )()
 
         result = build_validation_url(mock_request)
-        assert result == "http://localhost:8000/webhook/twilio?agent=rhawk_assistant"
+        assert result == "http://localhost:8000/webhook/twilio?agent=vsa_tech"
 
     def test_strips_trailing_slash_from_base(self, monkeypatch):
         """Remove trailing slash da URL base para evitar duplicata."""
@@ -405,7 +405,7 @@ class TestWaIdNormalization:
         mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
 
         client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -430,7 +430,7 @@ class TestWaIdNormalization:
         mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
 
         client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "",
@@ -455,7 +455,7 @@ class TestWaIdNormalization:
         mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
 
         client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "",
@@ -476,7 +476,7 @@ class TestWaIdNormalization:
         monkeypatch.setattr(settings, "validate_twilio_signature", False)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "",

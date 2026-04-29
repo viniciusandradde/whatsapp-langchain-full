@@ -25,8 +25,8 @@ def message():
         id=1,
         message_id="SM123",
         phone_number="+5511999999999",
-        agent_id="rhawk_assistant",
-        thread_id="+5511999999999:rhawk_assistant",
+        agent_id="vsa_tech",
+        thread_id="+5511999999999:vsa_tech",
         incoming_message="Olá!",
     )
 
@@ -38,8 +38,8 @@ def media_message():
         id=2,
         message_id="MM456",
         phone_number="+5511999999999",
-        agent_id="rhawk_assistant",
-        thread_id="+5511999999999:rhawk_assistant",
+        agent_id="vsa_tech",
+        thread_id="+5511999999999:vsa_tech",
         incoming_message="",
         media_url="https://api.twilio.com/media/test.jpg",
         media_type="image/jpeg",

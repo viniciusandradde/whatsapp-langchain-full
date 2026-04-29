@@ -83,7 +83,7 @@ Worker -> Twilio (outbound)
 1. Provisionar `db`, `api`, `worker` e `frontend`.
 2. Configurar as variáveis de ambiente por serviço.
 3. Publicar domínio da API e do Frontend.
-4. Configurar o webhook do Twilio apontando para `https://<api>/webhook/twilio?agent=rhawk_assistant`.
+4. Configurar o webhook do Twilio apontando para `https://<api>/webhook/twilio?agent=vsa_tech`.
 5. Definir `ADMIN_EMAIL` e `ADMIN_PASSWORD` no Frontend, acessar `/login`, validar o bootstrap automático do primeiro admin e trocar a senha em `/settings`.
 6. Executar smoke tests de API, painel e mensagem real no WhatsApp.
 

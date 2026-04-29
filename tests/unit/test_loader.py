@@ -13,10 +13,10 @@ from whatsapp_langchain.agents.loader import (
 class TestListAgents:
     """Testes de listagem de agentes."""
 
-    def test_lists_rhawk_assistant(self):
-        """Deve encontrar o agente rhawk_assistant no catálogo."""
+    def test_lists_vsa_tech(self):
+        """Deve encontrar o agente vsa_tech no catálogo."""
         agents = list_agents()
-        assert "rhawk_assistant" in agents
+        assert "vsa_tech" in agents
 
     def test_returns_list(self):
         """Deve retornar uma lista de strings."""
@@ -29,15 +29,15 @@ class TestListAgents:
 class TestLoadGraph:
     """Testes de carregamento de agentes."""
 
-    def test_load_rhawk_assistant(self):
-        """Deve carregar o agente rhawk_assistant com sucesso."""
-        graph = load_graph("rhawk_assistant")
+    def test_load_vsa_tech(self):
+        """Deve carregar o agente vsa_tech com sucesso."""
+        graph = load_graph("vsa_tech")
         assert graph is not None
 
-    def test_load_rhawk_assistant_with_store(self):
+    def test_load_vsa_tech_with_store(self):
         """Deve carregar o agente com store para memória semântica."""
         store = InMemoryStore()
-        graph = load_graph("rhawk_assistant", store=store)
+        graph = load_graph("vsa_tech", store=store)
         assert graph is not None
 
     def test_load_nonexistent_agent(self):

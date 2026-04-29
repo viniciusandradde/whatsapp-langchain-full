@@ -9,7 +9,7 @@ correspondente antes de rodar o ambiente local:
 - `uv.lock`
 - `Dockerfile.api`
 - `Dockerfile.worker`
-- `src/whatsapp_langchain/agents/catalog/rhawk_assistant/graph.py`
+- `src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py`
 
 Fluxo sugerido:
 
@@ -19,8 +19,8 @@ cp patch/Fase_2/pyproject.toml .
 cp patch/Fase_2/uv.lock .
 cp patch/Fase_2/Dockerfile.api .
 cp patch/Fase_2/Dockerfile.worker .
-cp patch/Fase_2/src/whatsapp_langchain/agents/catalog/rhawk_assistant/graph.py \
-  src/whatsapp_langchain/agents/catalog/rhawk_assistant/graph.py
+cp patch/Fase_2/src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py \
+  src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py
 make setup
 docker compose build --no-cache api worker
 make dev

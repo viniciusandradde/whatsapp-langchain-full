@@ -287,7 +287,7 @@ def assert_outbound_sent(db_url: str, message_sid: str) -> dict:
 def send_webhook(
     phone: str,
     body: str,
-    agent: str = "rhawk_assistant",
+    agent: str = "vsa_tech",
     message_sid: str | None = None,
     timeout: int = 10,
 ) -> httpx.Response:
@@ -310,7 +310,7 @@ def send_webhook_and_wait(
     db_url: str,
     phone: str,
     body: str,
-    agent: str = "rhawk_assistant",
+    agent: str = "vsa_tech",
     timeout_seconds: int = 90,
 ) -> tuple[str, tuple]:
     """Envia webhook e aguarda status terminal. Retorna (sid, row)."""

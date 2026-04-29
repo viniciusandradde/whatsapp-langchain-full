@@ -34,7 +34,7 @@ Você verá todos os endpoints documentados com formulários interativos.
 
 1. No Swagger, localize **POST /webhook/twilio**
 2. Clique em **Try it out**
-3. No campo `agent` (query param), digite: `rhawk_assistant`
+3. No campo `agent` (query param), digite: `vsa_tech`
 4. No corpo (form data), preencha:
 
 | Campo | Valor |
@@ -142,7 +142,7 @@ Depois verifique:
 ```sql
 -- Quantas entradas na fila? Se o debounce funcionou, deve ser 1 (não 3)
 SELECT COUNT(*) FROM message_queue
-WHERE phone_number = '+5511999990002' AND agent_id = 'rhawk_assistant';
+WHERE phone_number = '+5511999990002' AND agent_id = 'vsa_tech';
 
 -- O texto ficou concatenado?
 SELECT incoming_message FROM message_queue
@@ -185,8 +185,8 @@ WHERE prefix = '+5511999990003.memories';
 Limpe os checkpoints para simular uma nova sessão:
 
 ```sql
-DELETE FROM checkpoint_writes WHERE thread_id = '+5511999990003:rhawk_assistant';
-DELETE FROM checkpoints WHERE thread_id = '+5511999990003:rhawk_assistant';
+DELETE FROM checkpoint_writes WHERE thread_id = '+5511999990003:vsa_tech';
+DELETE FROM checkpoints WHERE thread_id = '+5511999990003:vsa_tech';
 ```
 
 Envie nova mensagem pedindo recall:
@@ -212,7 +212,7 @@ Sem sair do Swagger, teste os endpoints admin:
 
 | Endpoint | O que mostra |
 |---|---|
-| `GET /api/agents` | Agentes disponíveis (`rhawk_assistant`) |
+| `GET /api/agents` | Agentes disponíveis (`vsa_tech`) |
 | `GET /api/chats` | Lista de conversas com `message_count` |
 | `GET /api/chats/+5511999990001` | Mensagens de um telefone específico |
 | `GET /api/metrics` | `total_today`, `queue_size`, `failures_today` |

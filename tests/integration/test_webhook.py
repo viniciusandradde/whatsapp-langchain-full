@@ -119,7 +119,7 @@ class TestWebhookTwilio:
         mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM123",
                 "From": "whatsapp:+5511999999999",
@@ -149,7 +149,7 @@ class TestWebhookTwilio:
         mock_enqueue.side_effect = fake_enqueue_side_effect
 
         response = client.post(
-            "/webhook/twilio?agent=rhawk_assistant",
+            "/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": "SM_MULTI_001",
                 "From": "whatsapp:+5511999990050",
@@ -217,7 +217,7 @@ class TestAdminRoutes:
         assert response.status_code == 200
         data = response.json()
         assert "agents" in data
-        assert "rhawk_assistant" in data["agents"]
+        assert "vsa_tech" in data["agents"]
 
     def test_list_agents_requires_token(self):
         """Deve rejeitar requisição sem token de serviço."""

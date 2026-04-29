@@ -1,4 +1,4 @@
-"""Agente rhawk_assistant - assistente da comunidade Top Hawks.
+"""Agente vsa_tech - assistente da comunidade Top Hawks.
 
 Agente simples usando create_agent do LangChain 1.0.
 Usa middleware de contexto configurável (trim ou summarize)
@@ -33,7 +33,7 @@ def build_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
 ):
-    """Constrói o agente rhawk_assistant.
+    """Constrói o agente vsa_tech.
 
     O agente usa middleware de contexto configurável via CONTEXT_STRATEGY:
     - trim: Remove mensagens antigas (custo zero, perde contexto)

@@ -72,7 +72,7 @@ The system intentionally splits into two processes that share Postgres. Understa
 
 ## Branch / patch layout (didactic)
 
-The repo is structured as a teaching harness across phases (`Fase_1` → `Fase_4`). The `patch/Fase_N/` directory holds drop-in replacements (`pyproject.toml`, `uv.lock`, Dockerfiles, `rhawk_assistant/graph.py`) meant to be copied over after `git checkout Fase_N`. Don't merge or "clean up" `patch/` — see `patch/README.md` for the intended workflow. The Docker patches matter because `make up` rebuilds against `uv.lock`, and a clean build without the patched lockfile can resolve incompatible transitive deps.
+The repo is structured as a teaching harness across phases (`Fase_1` → `Fase_4`). The `patch/Fase_N/` directory holds drop-in replacements (`pyproject.toml`, `uv.lock`, Dockerfiles, `vsa_tech/graph.py`) meant to be copied over after `git checkout Fase_N`. Don't merge or "clean up" `patch/` — see `patch/README.md` for the intended workflow. The Docker patches matter because `make up` rebuilds against `uv.lock`, and a clean build without the patched lockfile can resolve incompatible transitive deps.
 
 ## Configuration
 

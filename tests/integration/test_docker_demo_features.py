@@ -51,7 +51,7 @@ def _make_tool_runtime(user_id: str) -> MagicMock:
     runtime.config = {
         "configurable": {
             "user_id": user_id,
-            "thread_id": f"{user_id}:rhawk_assistant",
+            "thread_id": f"{user_id}:vsa_tech",
         }
     }
     return runtime
@@ -115,7 +115,7 @@ def test_demo_webhook_image_e2e(
     phone = f"+5511{uuid.uuid4().int % 10**8:08d}"
 
     response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=rhawk_assistant",
+        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
         data={
             "MessageSid": sid,
             "From": f"whatsapp:{phone}",
@@ -144,7 +144,7 @@ def test_demo_webhook_audio_e2e(
     phone = f"+5521{uuid.uuid4().int % 10**8:08d}"
 
     response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=rhawk_assistant",
+        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
         data={
             "MessageSid": sid,
             "From": f"whatsapp:{phone}",
@@ -240,12 +240,12 @@ def test_demo_webhook_memory_recall_e2e(ensure_docker_stack: str):
     4) Resposta final deve conter o fato salvo.
     """
     phone = f"+5531{uuid.uuid4().int % 10**8:08d}"
-    thread_id = f"{phone}:rhawk_assistant"
-    token = f"rhawk-{uuid.uuid4().hex[:10]}"
+    thread_id = f"{phone}:vsa_tech"
+    token = f"vsa-{uuid.uuid4().hex[:10]}"
 
     sid_save = f"SMMEM{uuid.uuid4().hex[:12]}"
     save_response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=rhawk_assistant",
+        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
         data={
             "MessageSid": sid_save,
             "From": f"whatsapp:{phone}",
@@ -272,7 +272,7 @@ def test_demo_webhook_memory_recall_e2e(ensure_docker_stack: str):
 
     sid_recall = f"SMMEM{uuid.uuid4().hex[:12]}"
     recall_response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=rhawk_assistant",
+        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
         data={
             "MessageSid": sid_recall,
             "From": f"whatsapp:{phone}",

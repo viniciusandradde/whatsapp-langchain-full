@@ -64,7 +64,7 @@ def test_inbound_to_outbound_real_cycle(db_url, twilio_live_to_number):
         phone=phone,
         body="Smoke test e2e — ignore. Responda apenas 'ok'.",
         message_sid=sid,
-        agent="rhawk_assistant",
+        agent="vsa_tech",
     )
     assert resp.status_code == 200, resp.text
 

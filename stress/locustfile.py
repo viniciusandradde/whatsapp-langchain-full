@@ -46,7 +46,7 @@ AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 WEBHOOK_URL = os.environ.get("TWILIO_WEBHOOK_URL", "http://localhost:8000")
 
 # Endpoint do webhook com o agente padrao
-WEBHOOK_PATH = "/webhook/twilio?agent=rhawk_assistant"
+WEBHOOK_PATH = "/webhook/twilio?agent=vsa_tech"
 
 
 def generate_twilio_signature(url: str, params: dict[str, str], auth_token: str) -> str:
@@ -63,7 +63,7 @@ def generate_twilio_signature(url: str, params: dict[str, str], auth_token: str)
     sem precisar desativa-la, simulando trafego realista.
 
     Args:
-        url: URL completa do webhook (ex: http://localhost:8000/webhook/twilio?agent=rhawk_assistant).
+        url: URL completa do webhook (ex: http://localhost:8000/webhook/twilio?agent=vsa_tech).
         params: Parametros POST do formulario (Body, From, To, etc.).
         auth_token: Token de autenticacao do Twilio.
 
@@ -93,7 +93,7 @@ def build_webhook_url() -> str:
     inclui tudo isso no calculo da assinatura.
 
     Returns:
-        URL completa (ex: http://localhost:8000/webhook/twilio?agent=rhawk_assistant).
+        URL completa (ex: http://localhost:8000/webhook/twilio?agent=vsa_tech).
     """
     base = WEBHOOK_URL.rstrip("/")
     return f"{base}{WEBHOOK_PATH}"

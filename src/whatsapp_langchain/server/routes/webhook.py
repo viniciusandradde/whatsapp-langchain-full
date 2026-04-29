@@ -6,7 +6,7 @@ para processamento pelo Worker. Retorna 200 imediatamente (TwiML vazio).
 Fluxo: Twilio -> POST /webhook/twilio -> Fila (PostgreSQL) -> Worker
 
 Uso:
-    curl -X POST ".../webhook/twilio?agent=rhawk_assistant" \
+    curl -X POST ".../webhook/twilio?agent=vsa_tech" \
          -d "MessageSid=SM123&From=whatsapp:+5511..."
 """
 

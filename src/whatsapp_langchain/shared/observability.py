@@ -12,7 +12,7 @@ Uso:
     # Depois, em qualquer módulo:
     import structlog
     logger = structlog.get_logger()
-    logger.info("mensagem_processada", phone="+55...", agent="rhawk")
+    logger.info("mensagem_processada", phone="+55...", agent="vsa_tech")
 """
 
 import logging

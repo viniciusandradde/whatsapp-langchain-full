@@ -95,7 +95,7 @@ class TestJornadaNovoUsuario:
     def test_novo_usuario_conversa_multi_turno(self, db_url: str) -> None:
         """Maria envia 2 mensagens e verificamos todo o pipeline."""
         phone = unique_phone("11")
-        agent = "rhawk_assistant"
+        agent = "vsa_tech"
 
         # --- Passo 1: Primeira mensagem ---
         print(f"\n{'=' * 60}")
@@ -189,8 +189,8 @@ class TestMemoriaSemantica:
     def test_memoria_persiste_entre_sessoes(self, db_url: str) -> None:
         """João salva um código secreto e recupera sem histórico de conversa."""
         phone = unique_phone("21")
-        thread_id = f"{phone}:rhawk_assistant"
-        token = f"rhawk-{uuid.uuid4().hex[:8]}"
+        thread_id = f"{phone}:vsa_tech"
+        token = f"vsa-{uuid.uuid4().hex[:8]}"
 
         print(f"\n{'=' * 60}")
         print("CENÁRIO: Memória Semântica Persistente")
@@ -267,7 +267,7 @@ class TestDebounce:
     def test_debounce_agrupa_mensagens_rapidas(self, db_url: str) -> None:
         """3 mensagens rápidas viram 1 entrada na fila."""
         phone = unique_phone("31")
-        agent = "rhawk_assistant"
+        agent = "vsa_tech"
         messages = ["Oi", "Tudo bem?", "Quero saber sobre LangGraph"]
 
         print(f"\n{'=' * 60}")
@@ -377,7 +377,7 @@ class TestUsuariosSimultaneos:
         # --- Passo 3: Verificar conversations isoladas ---
         print("[3/4] Verificando isolamento de conversations...")
         for phone in results:
-            conv = query_conversation(db_url, phone, "rhawk_assistant")
+            conv = query_conversation(db_url, phone, "vsa_tech")
             assert conv is not None, f"Conversa de {phone} não encontrada"
             assert conv[0] >= 1, f"message_count de {phone} = {conv[0]}"
             print(f"  ✓ {phone}: message_count = {conv[0]}")
@@ -460,7 +460,7 @@ class TestRateLimiting:
 
         # --- Passo 3: Verificar que mensagens aceitas foram enfileiradas ---
         print(f"[3/3] Verificando que {accepted} mensagens foram enfileiradas...")
-        total = count_queue_entries(db_url, phone, "rhawk_assistant")
+        total = count_queue_entries(db_url, phone, "vsa_tech")
         # O debounce pode ter agrupado várias, mas deve ter pelo menos 1
         assert total >= 1, "Nenhuma mensagem enfileirada antes do rate limit"
         print(f"  ✓ {total} entrada(s) na fila (debounce pode ter agrupado)")
@@ -548,8 +548,8 @@ class TestConsistenciaAPIAdmin:
         )
         assert agents_resp.status_code == 200
         agents = agents_resp.json()["agents"]
-        assert "rhawk_assistant" in agents, (
-            f"rhawk_assistant não está na lista: {agents}"
+        assert "vsa_tech" in agents, (
+            f"vsa_tech não está na lista: {agents}"
         )
         print(f"  ✓ Agentes disponíveis: {agents}")
 
@@ -630,7 +630,7 @@ class TestMultiplasMidias:
 
         print("\n[1/3] Enviando webhook com NumMedia=2...")
         resp = httpx.post(
-            f"{API_BASE_URL}/webhook/twilio?agent=rhawk_assistant",
+            f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
             data={
                 "MessageSid": sid,
                 "From": f"whatsapp:{phone}",

@@ -121,7 +121,7 @@ curl http://localhost:8000/health
 ### 3. Teste rápido (endpoint síncrono)
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/sync?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/sync?agent=vsa_tech" \
   -H "Content-Type: application/json" \
   -d '{"phone":"+5511999999999","message":"Olá!"}'
 ```
@@ -129,7 +129,7 @@ curl -X POST "http://localhost:8000/webhook/sync?agent=rhawk_assistant" \
 ### 4. Teste assíncrono (simulando Twilio)
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SM123" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -147,7 +147,7 @@ curl http://localhost:8000/api/chats
 ### 5. Múltiplas mídias num único webhook (`NumMedia > 1`)
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SM_MULTI_001" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \

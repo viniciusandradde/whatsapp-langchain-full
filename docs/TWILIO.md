@@ -10,7 +10,7 @@ Usuário WhatsApp
        │
        ▼
 Twilio (nuvem)
-       │  POST /webhook/twilio?agent=rhawk_assistant
+       │  POST /webhook/twilio?agent=vsa_tech
        │  X-Twilio-Signature: <HMAC-SHA1>
        ▼
 cloudflared tunnel ──► API (localhost:8000)       [Parte A — sandbox/local]
@@ -161,7 +161,7 @@ TWILIO_WEBHOOK_URL=https://random-name.trycloudflare.com
 1. Acesse [Twilio Console → WhatsApp Sandbox Settings](https://console.twilio.com/us1/develop/sms/settings/whatsapp-sandbox)
 2. Em "When a message comes in", configure:
    ```
-   https://random-name.trycloudflare.com/webhook/twilio?agent=rhawk_assistant
+   https://random-name.trycloudflare.com/webhook/twilio?agent=vsa_tech
    ```
    Metodo: **HTTP POST**
 3. Salve
@@ -179,7 +179,7 @@ curl https://random-name.trycloudflare.com/health
 
 ```bash
 # Simula o que o Twilio enviaria
-curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SMTEST001" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -231,7 +231,7 @@ Reinicie a API (`make api` ou `docker compose restart api`).
 
 Teste que assinatura inválida é rejeitada:
 ```bash
-curl -X POST "https://random-name.trycloudflare.com/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "https://random-name.trycloudflare.com/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SMFAKE" \
   -d "From=whatsapp:+5511999999999" \
   -d "Body=Teste sem assinatura" \
@@ -352,7 +352,7 @@ Diferente do sandbox, o webhook de produção é configurado em outro lugar do C
 2. Selecione o número real
 3. Em **Webhook URL for incoming messages**, configure:
    ```
-   https://api-production.up.railway.app/webhook/twilio?agent=rhawk_assistant
+   https://api-production.up.railway.app/webhook/twilio?agent=vsa_tech
    ```
    Metodo: **HTTP POST**
 4. Salve
@@ -497,7 +497,7 @@ Twilio conhecem.
 A cada POST no webhook, o Twilio calcula um HMAC-SHA1 usando:
 
 1. O `Auth Token` (segredo compartilhado)
-2. A URL completa do webhook (incluindo query params como `?agent=rhawk_assistant`)
+2. A URL completa do webhook (incluindo query params como `?agent=vsa_tech`)
 3. Os parâmetros POST ordenados alfabeticamente (`Body`, `From`, `MessageSid`, etc.)
 
 O resultado vai no header `X-Twilio-Signature` do request.
@@ -505,7 +505,7 @@ O resultado vai no header `X-Twilio-Signature` do request.
 ```
 Twilio                                      Sua API
   │                                            │
-  │  POST /webhook/twilio?agent=rhawk_assistant │
+  │  POST /webhook/twilio?agent=vsa_tech │
   │  X-Twilio-Signature: "abc123..."           │
   │  Body=Ola&From=whatsapp:+5511...           │
   │────────────────────────────────────────────>│
@@ -622,7 +622,7 @@ Causas mais comuns:
 2. **Webhook salvo no sender com URL divergente**: no Twilio Console, o campo
    **Webhook URL for incoming messages** precisa apontar para a URL completa do
    sender:
-   - Correto: `https://api-production.up.railway.app/webhook/twilio?agent=rhawk_assistant`
+   - Correto: `https://api-production.up.railway.app/webhook/twilio?agent=vsa_tech`
    - Errado: deixar vazio, usar outro dominio ou esquecer o query param `agent=...`
 3. **Redeploy alterou o domínio**: se o Railway gerou novo domínio, atualize
    tanto `TWILIO_WEBHOOK_URL` na API quanto o webhook salvo no sender da Twilio
@@ -654,7 +654,7 @@ Se precisar reverter para o sandbox após ativar produção:
 
 1. **Twilio Console**: reconfigurar webhook em **Sandbox Settings** (não em WhatsApp Senders)
    ```
-   https://random-name.trycloudflare.com/webhook/twilio?agent=rhawk_assistant
+   https://random-name.trycloudflare.com/webhook/twilio?agent=vsa_tech
    ```
 2. **Railway (Worker)**: reverter variáveis
    ```bash

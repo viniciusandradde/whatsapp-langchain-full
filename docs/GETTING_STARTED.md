@@ -59,12 +59,12 @@ make dev
 # abre o LangGraph Studio
 ```
 
-O grafo padrão é `rhawk_assistant`, registrado em `langgraph.json`.
+O grafo padrão é `vsa_tech`, registrado em `langgraph.json`.
 
 Arquivos centrais do agente:
-- `src/whatsapp_langchain/agents/catalog/rhawk_assistant/agent.py`
-- `src/whatsapp_langchain/agents/catalog/rhawk_assistant/prompts.py`
-- `src/whatsapp_langchain/agents/catalog/rhawk_assistant/graph.py`
+- `src/whatsapp_langchain/agents/catalog/vsa_tech/agent.py`
+- `src/whatsapp_langchain/agents/catalog/vsa_tech/prompts.py`
+- `src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py`
 
 ## 3. Trilha B: stack completo do harness
 
@@ -169,7 +169,7 @@ make logs
 ### 4.1 Endpoint síncrono (didático)
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/sync?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/sync?agent=vsa_tech" \
   -H "Content-Type: application/json" \
   -d '{"phone":"+5511999999999","message":"Me explique debounce"}'
 ```
@@ -179,7 +179,7 @@ Use para debugging rápido sem fila.
 ### 4.2 Webhook assíncrono (arquitetura real)
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SM123" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -198,10 +198,10 @@ curl -H "Authorization: Bearer <seu_INTERNAL_SERVICE_TOKEN>" http://localhost:80
 ### 4.2.1 Teste manual no Swagger (`/docs`)
 
 1. Abra `http://localhost:8000/docs`.
-2. Execute `GET /api/agents` e confirme `rhawk_assistant`.
+2. Execute `GET /api/agents` e confirme `vsa_tech`.
 3. Abra `POST /webhook/twilio` e clique em `Try it out`.
 4. Preencha:
-   - `agent` (query): `rhawk_assistant`
+   - `agent` (query): `vsa_tech`
    - `MessageSid`: `SMDOCS001`
    - `From`: `whatsapp:+5511999999999`
    - `To`: `whatsapp:+14155238886`
@@ -216,7 +216,7 @@ curl -H "Authorization: Bearer <seu_INTERNAL_SERVICE_TOKEN>" http://localhost:80
 1. Envie uma mensagem pedindo para salvar um fato:
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SMMEM001" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -227,7 +227,7 @@ curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
 2. Envie outra mensagem pedindo recall explícito:
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=rhawk_assistant" \
+curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
   -d "MessageSid=SMMEM002" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \

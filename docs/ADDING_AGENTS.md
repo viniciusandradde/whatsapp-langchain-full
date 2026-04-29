@@ -91,7 +91,7 @@ graph = build_graph(store=store)
 {
   "dependencies": ["."],
   "graphs": {
-    "rhawk_assistant": "./src/whatsapp_langchain/agents/catalog/rhawk_assistant/graph.py:graph",
+    "vsa_tech": "./src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py:graph",
     "meu_agente": "./src/whatsapp_langchain/agents/catalog/meu_agente/graph.py:graph"
   },
   "env": ".env"

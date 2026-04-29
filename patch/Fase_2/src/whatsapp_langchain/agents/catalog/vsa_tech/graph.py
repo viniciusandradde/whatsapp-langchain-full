@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from whatsapp_langchain.agents.catalog.rhawk_assistant.agent import build_graph
+from whatsapp_langchain.agents.catalog.vsa_tech.agent import build_graph
 
 if TYPE_CHECKING:
     from langgraph_sdk.runtime import ServerRuntime

@@ -544,7 +544,7 @@ class TestThreadIdGeneration:
         await enqueue_or_buffer(
             pool,
             phone_number="+5511999999999",
-            agent_id="rhawk_assistant",
+            agent_id="vsa_tech",
             body="Olá",
         )
 
@@ -552,7 +552,7 @@ class TestThreadIdGeneration:
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
         # thread_id é o 5o param (index 4)
-        assert insert_params[4] == "+5511999999999:rhawk_assistant"
+        assert insert_params[4] == "+5511999999999:vsa_tech"
 
 
 class TestAdvisoryLock:

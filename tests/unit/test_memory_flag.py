@@ -69,8 +69,8 @@ class TestProcessorMemoryFlag:
             message = MessageQueue(
                 id=1,
                 phone_number="+5511999999999",
-                agent_id="rhawk_assistant",
-                thread_id="+5511999999999:rhawk_assistant",
+                agent_id="vsa_tech",
+                thread_id="+5511999999999:vsa_tech",
                 incoming_message="Olá!",
             )
 
@@ -93,7 +93,7 @@ class TestProcessorMemoryFlag:
 
             # load_graph deve ser chamado sem store
             mock_load.assert_called_once_with(
-                "rhawk_assistant",
+                "vsa_tech",
                 checkpointer=mock_checkpointer,
                 store=None,
             )

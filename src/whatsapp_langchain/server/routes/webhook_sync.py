@@ -9,7 +9,7 @@ a mensagem inline e retorna a resposta diretamente. Útil para:
 NÃO usar em produção — não tem debounce, fila, retry ou rate limit.
 
 Uso:
-    curl -X POST "http://localhost:8000/webhook/sync?agent=rhawk_assistant" \
+    curl -X POST "http://localhost:8000/webhook/sync?agent=vsa_tech" \
          -H "Content-Type: application/json" \
          -d '{"phone": "+5511999999999", "message": "Olá!"}'
 """

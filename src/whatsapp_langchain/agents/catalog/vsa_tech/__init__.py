@@ -1,10 +1,10 @@
-"""Agente rhawk_assistant - assistente da comunidade Top Hawks.
+"""Agente vsa_tech - assistente da comunidade Top Hawks.
 
 Este é o agente padrão do projeto, usado como exemplo e template
 para criar novos agentes.
 
 Uso:
-    from whatsapp_langchain.agents.catalog.rhawk_assistant import build_graph
+    from whatsapp_langchain.agents.catalog.vsa_tech import build_graph
 
     agent = build_graph()
     result = agent.invoke({"messages": [{"role": "user", "content": "Olá!"}]})

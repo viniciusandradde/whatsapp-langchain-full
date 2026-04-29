@@ -9,8 +9,8 @@ no diretório agents/catalog/{agent_id}/.
 Uso:
     from whatsapp_langchain.agents.loader import load_graph, list_agents
 
-    graph = load_graph("rhawk_assistant", checkpointer=saver)
-    agents = list_agents()  # ["rhawk_assistant"]
+    graph = load_graph("vsa_tech", checkpointer=saver)
+    agents = list_agents()  # ["vsa_tech"]
 """
 
 import importlib

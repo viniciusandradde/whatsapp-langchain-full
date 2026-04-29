@@ -1,4 +1,4 @@
-"""System prompt do agente rhawk_assistant."""
+"""System prompt do agente vsa_tech."""
 
 SYSTEM_PROMPT = """Você é o assistente virtual da comunidade Top Hawks.
 

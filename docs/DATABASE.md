@@ -160,7 +160,7 @@ SELECT
   octet_length(blob) AS bytes,
   left(encode(blob, 'escape'), 600) AS blob_preview
 FROM checkpoint_writes
-WHERE thread_id = '+5511999999999:rhawk_assistant'
+WHERE thread_id = '+5511999999999:vsa_tech'
   AND channel = 'messages'
 ORDER BY checkpoint_id DESC
 LIMIT 20;

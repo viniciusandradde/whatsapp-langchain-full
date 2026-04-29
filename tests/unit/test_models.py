@@ -30,8 +30,8 @@ class TestMessageQueue:
         msg = MessageQueue(
             id=1,
             phone_number="+5511999999999",
-            agent_id="rhawk_assistant",
-            thread_id="+5511999999999:rhawk_assistant",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
             incoming_message="Olá!",
         )
         assert msg.status == MessageStatus.QUEUED
@@ -44,8 +44,8 @@ class TestMessageQueue:
         msg = MessageQueue(
             id=1,
             phone_number="+5511999999999",
-            agent_id="rhawk_assistant",
-            thread_id="+5511999999999:rhawk_assistant",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
             incoming_message="Veja esta foto",
             media_url="https://example.com/image.jpg",
             media_type="image/jpeg",

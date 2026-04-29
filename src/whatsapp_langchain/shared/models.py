@@ -6,7 +6,7 @@ Todos os modelos usam Pydantic v2 para validação e serialização.
 Uso:
     from whatsapp_langchain.shared.models import MessageQueue, MessageStatus
 
-    msg = MessageQueue(phone_number="+5511999999999", agent_id="rhawk_assistant", ...)
+    msg = MessageQueue(phone_number="+5511999999999", agent_id="vsa_tech", ...)
 """
 
 from datetime import UTC, datetime
