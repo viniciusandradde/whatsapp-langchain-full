@@ -82,6 +82,46 @@ export interface QueueResponse {
   messages: QueueMessage[];
 }
 
+// --- Painel de modelos LLM por agente ---
+
+export type ModelType = "chat" | "media";
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  type: ModelType;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+}
+
+export interface AgentLLMConfig {
+  agent_id: string;
+  chat_model: string;
+  midia_model: string;
+  chat_model_override: string | null;
+  midia_model_override: string | null;
+}
+
+// --- Painel de traces (LangSmith) ---
+
+export interface TraceInfo {
+  run_id: string;
+  name: string | null;
+  status: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  latency_ms: number | null;
+  total_tokens: number | null;
+  thread_id: string | null;
+  smith_url: string;
+}
+
+export interface TracesResponse {
+  traces: TraceInfo[];
+}
+
 // --- Configuração ---
 
 // URL interna da API — em Docker usa o nome do serviço (http://api:8000),
@@ -91,16 +131,31 @@ const SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN || "";
 
 // --- Função base de fetch ---
 
-async function apiFetch<T>(path: string): Promise<T> {
+interface ApiFetchOptions {
+  method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+  body?: unknown;
+}
+
+async function apiFetch<T>(
+  path: string,
+  options: ApiFetchOptions = {}
+): Promise<T> {
   ensureFrontendRuntimeConfig();
 
+  const { method = "GET", body } = options;
   const url = `${API_URL}${path}`;
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+  };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${SERVICE_TOKEN}`,
-    },
-    // Desabilita cache para dados operacionais em tempo real
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
 
@@ -195,4 +250,37 @@ export async function getMetrics(): Promise<MetricsResponse> {
 
 export async function getQueue(): Promise<QueueResponse> {
   return apiFetch<QueueResponse>("/api/queue");
+}
+
+export async function getModels(): Promise<ModelsResponse> {
+  return apiFetch<ModelsResponse>("/api/models");
+}
+
+export async function getAgentConfig(
+  agentId: string
+): Promise<AgentLLMConfig> {
+  return apiFetch<AgentLLMConfig>(
+    `/api/agents/${encodeURIComponent(agentId)}/config`
+  );
+}
+
+export async function updateAgentConfig(
+  agentId: string,
+  body: { chat_model?: string | null; midia_model?: string | null }
+): Promise<AgentLLMConfig> {
+  return apiFetch<AgentLLMConfig>(
+    `/api/agents/${encodeURIComponent(agentId)}/config`,
+    { method: "PUT", body }
+  );
+}
+
+export async function getTraces(params: {
+  limit?: number;
+  thread_id?: string;
+} = {}): Promise<TracesResponse> {
+  const q = new URLSearchParams();
+  if (params.limit) q.set("limit", String(params.limit));
+  if (params.thread_id) q.set("thread_id", params.thread_id);
+  const qs = q.toString();
+  return apiFetch<TracesResponse>(`/api/traces${qs ? `?${qs}` : ""}`);
 }
