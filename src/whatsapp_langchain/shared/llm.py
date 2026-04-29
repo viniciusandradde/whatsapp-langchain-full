@@ -14,11 +14,44 @@ Uso:
 
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_openai import ChatOpenAI
+from psycopg_pool import AsyncConnectionPool
 from pydantic import SecretStr
 
 from whatsapp_langchain.shared.config import settings
 
 _RATE_LIMITERS: dict[tuple[float, int], InMemoryRateLimiter] = {}
+
+# Catálogo curado de modelos disponíveis no painel para swap por agente.
+# Mantenha em sincronia com o frontend (/models) — qualquer string é aceita
+# pelo backend, mas só essas aparecem no select.
+CURATED_MODELS: list[dict[str, str]] = [
+    {"id": "x-ai/grok-4.1-fast", "label": "Grok 4.1 Fast", "type": "chat"},
+    {"id": "x-ai/grok-4.1", "label": "Grok 4.1", "type": "chat"},
+    {"id": "openai/gpt-4o-mini", "label": "GPT-4o Mini", "type": "chat"},
+    {"id": "openai/gpt-4o", "label": "GPT-4o", "type": "chat"},
+    {"id": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "type": "chat"},
+    {"id": "anthropic/claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "type": "chat"},
+    {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash", "type": "chat"},
+    {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "type": "chat"},
+    {
+        "id": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Llama 3.3 70B",
+        "type": "chat",
+    },
+    # Modelos com suporte multimodal (imagem/áudio via OpenRouter).
+    {
+        "id": "google/gemini-2.5-flash-lite",
+        "label": "Gemini 2.5 Flash Lite",
+        "type": "media",
+    },
+    {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash", "type": "media"},
+    {"id": "openai/gpt-4o-mini", "label": "GPT-4o Mini", "type": "media"},
+    {
+        "id": "anthropic/claude-haiku-4.5",
+        "label": "Claude Haiku 4.5",
+        "type": "media",
+    },
+]
 
 
 def _get_rate_limiter(
@@ -74,3 +107,23 @@ def create_chat_model(
         kwargs["temperature"] = temperature
 
     return ChatOpenAI(**kwargs)
+
+
+async def get_agent_llm_config(
+    pool: AsyncConnectionPool, agent_id: str
+) -> tuple[str, str]:
+    """Resolve (chat_model, midia_model) para um agente, com hot reload via DB.
+
+    Lê a tabela `agent_llm_config`. Quando a row está ausente ou um campo é
+    NULL, faz fallback para `settings.openrouter_model` /
+    `settings.openrouter_midia_model`. Sem cache — uma query por chamada.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT chat_model, midia_model FROM agent_llm_config WHERE agent_id = %s",
+            (agent_id,),
+        )
+        row = await cur.fetchone()
+    chat = (row[0] if row else None) or settings.openrouter_model
+    midia = (row[1] if row else None) or settings.openrouter_midia_model
+    return chat, midia

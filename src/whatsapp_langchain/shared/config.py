@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     # do frontend. Em desenvolvimento, o default permite localhost:3000.
     frontend_origins: str = "http://localhost:3000"
 
+    # --- LangSmith (opcional — só usado pelo /api/traces do painel) ---
+    langchain_api_key: SecretStr | None = None
+    langchain_project: str = ""
+
     # --- Semantic Memory (LangGraph Store) ---
     memory_enabled: bool = True
     # Nome do modelo no OpenRouter (sem prefixo "openai:")
