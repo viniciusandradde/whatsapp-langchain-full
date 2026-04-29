@@ -13,9 +13,16 @@ Uso:
 import structlog
 from fastapi import APIRouter, Depends, Query
 
-from whatsapp_langchain.agents.loader import list_agents
+from whatsapp_langchain.agents.loader import AgentNotFoundError, list_agents
 from whatsapp_langchain.server.dependencies import verify_service_token
+from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.llm import CURATED_MODELS
+from whatsapp_langchain.shared.models import (
+    AgentLLMConfigResponse,
+    ModelInfo,
+    UpdateAgentLLMConfigRequest,
+)
 
 logger = structlog.get_logger()
 
@@ -34,6 +41,72 @@ async def get_agents() -> dict[str, list[str]]:
         Lista de agent_ids registrados.
     """
     return {"agents": list_agents()}
+
+
+@router.get("/models")
+async def list_models() -> dict[str, list[ModelInfo]]:
+    """Lista curada de modelos LLM disponíveis no painel.
+
+    Tipo "chat" são os modelos principais; "media" são os usados pelo
+    pré-processamento multimodal (imagem/áudio).
+    """
+    return {"models": [ModelInfo(**m) for m in CURATED_MODELS]}
+
+
+@router.get("/agents/{agent_id}/config")
+async def get_agent_config(agent_id: str) -> AgentLLMConfigResponse:
+    """Retorna a configuração de modelos resolvida (DB ou env) + overrides crus."""
+    if agent_id not in list_agents():
+        raise AgentNotFoundError(agent_id)
+
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cursor = await conn.execute(
+            "SELECT chat_model, midia_model FROM agent_llm_config WHERE agent_id = %s",
+            (agent_id,),
+        )
+        row = await cursor.fetchone()
+
+    chat_override = row[0] if row else None
+    midia_override = row[1] if row else None
+
+    return AgentLLMConfigResponse(
+        agent_id=agent_id,
+        chat_model=chat_override or settings.openrouter_model,
+        midia_model=midia_override or settings.openrouter_midia_model,
+        chat_model_override=chat_override,
+        midia_model_override=midia_override,
+    )
+
+
+@router.put("/agents/{agent_id}/config")
+async def update_agent_config(
+    agent_id: str, body: UpdateAgentLLMConfigRequest
+) -> AgentLLMConfigResponse:
+    """Atualiza overrides de modelo. None ou string vazia limpa o override."""
+    if agent_id not in list_agents():
+        raise AgentNotFoundError(agent_id)
+
+    chat = (body.chat_model or "").strip() or None
+    midia = (body.midia_model or "").strip() or None
+
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO agent_llm_config (agent_id, chat_model, midia_model)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (agent_id) DO UPDATE SET
+                chat_model = EXCLUDED.chat_model,
+                midia_model = EXCLUDED.midia_model,
+                updated_at = NOW()
+            """,
+            (agent_id, chat, midia),
+        )
+
+    logger.info("agent_llm_config_updated", agent_id=agent_id, chat=chat, midia=midia)
+
+    return await get_agent_config(agent_id)
 
 
 @router.get("/chats")

@@ -105,3 +105,38 @@ class EnqueueResult(BaseModel):
         default=False,
         description="True se a mensagem foi concatenada a uma existente (debounce)",
     )
+
+
+# --- Painel: configuração de modelos LLM por agente ---
+
+
+class ModelInfo(BaseModel):
+    """Item da lista curada de modelos disponíveis no painel."""
+
+    id: str = Field(description="Slug OpenRouter, ex: 'openai/gpt-4o-mini'")
+    label: str
+    type: str = Field(description="'chat' (principal) ou 'media' (multimodal)")
+
+
+class AgentLLMConfigResponse(BaseModel):
+    """Configuração resolvida de modelos para um agente.
+
+    Os campos `*_model` mostram o valor efetivamente usado (DB ou env), e
+    `*_model_override` mostra o valor cru da tabela (None = usa env).
+    """
+
+    agent_id: str
+    chat_model: str
+    midia_model: str
+    chat_model_override: str | None
+    midia_model_override: str | None
+
+
+class UpdateAgentLLMConfigRequest(BaseModel):
+    """Payload do PUT /api/agents/{id}/config.
+
+    Campos None ou string vazia removem o override (volta a usar env).
+    """
+
+    chat_model: str | None = None
+    midia_model: str | None = None
