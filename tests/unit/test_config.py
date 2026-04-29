@@ -10,13 +10,16 @@ from whatsapp_langchain.shared.config import (
 
 def test_frontend_origins_parses_csv(monkeypatch):
     monkeypatch.setenv(
-        "FRONTEND_ORIGINS", "http://localhost:3000,https://app.rhawk.pro"
+        "FRONTEND_ORIGINS", "http://localhost:3000,https://chat.nexus.com"
     )
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
     from whatsapp_langchain.shared.config import Settings
 
     s = Settings()
-    assert s.frontend_origins_list == ["http://localhost:3000", "https://app.rhawk.pro"]
+    assert s.frontend_origins_list == [
+        "http://localhost:3000",
+        "https://chat.nexus.com",
+    ]
 
 
 def test_frontend_origins_default_allows_localhost():
@@ -109,7 +112,7 @@ def test_validate_runtime_passes_when_frontend_origins_set_in_prod(monkeypatch):
     monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
     monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
-    monkeypatch.setenv("FRONTEND_ORIGINS", "https://app.rhawk.pro")
+    monkeypatch.setenv("FRONTEND_ORIGINS", "https://chat.nexus.com")
     from whatsapp_langchain.shared.config import Settings
 
     s = Settings()

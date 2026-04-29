@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "rhawk.pro",
-  description: "Painel administrativo rhawk.pro",
+  title: "VSA Tech",
+  description: "Painel administrativo VSA Tech",
 };
 
 export default function RootLayout({

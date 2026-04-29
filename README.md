@@ -39,7 +39,7 @@ O objetivo deste repositório é ensinar arquitetura de harness em volta do agen
 - documentação de integração Twilio reescrita (sandbox vs produção separados)
 - checklist de cutover sandbox → produção
 - rollback documentado (deploy e Twilio)
-- branding mínimo da rhawk.pro no painel (favicon, cores, metadados)
+- branding mínimo da VSA Tech no painel (favicon, cores, metadados)
 - **CORS estrito** via `FRONTEND_ORIGINS` (lista CSV de origens permitidas)
 - **cabeçalhos de segurança** automáticos: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` + `Strict-Transport-Security` em produção
 - **fail-fast no startup em produção**: levanta `ValueError` se faltar token forte (≥32 chars), `VALIDATE_TWILIO_SIGNATURE=true` ou `FRONTEND_ORIGINS` não-vazio
@@ -185,7 +185,7 @@ Cabeçalhos de segurança aplicados automaticamente em toda resposta:
 | `Referrer-Policy: no-referrer` | ✓ | ✓ |
 | `Strict-Transport-Security` (1 ano) | — | ✓ |
 
-`FRONTEND_ORIGINS` aceita CSV (ex: `https://app.rhawk.pro,https://admin.rhawk.pro`)
+`FRONTEND_ORIGINS` aceita CSV (ex: `https://chat.nexus.com,https://admin.chat.nexus.com`)
 e o middleware CORS restringe `allow_methods` a verbos HTTP padrão e
 `allow_headers` a `Authorization, Content-Type, X-Twilio-Signature`. Veja
 [Deploy](docs/DEPLOY.md) para o checklist completo.

@@ -64,9 +64,9 @@ export function LoginForm({
           {/* Marca */}
           <div className="mb-8">
             <div className="mb-3 flex items-center gap-3">
-              <Image src="/logo-hawk.png" alt="rhawk.pro" width={32} height={32} className="rounded" unoptimized />
+              <Image src="/logo-hawk.png" alt="VSA Tech" width={32} height={32} className="rounded" unoptimized />
               <span className="text-lg font-semibold tracking-tight text-white/90">
-                rhawk.pro
+                VSA Tech
               </span>
             </div>
             <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-hawk-blue/80">
@@ -98,8 +98,8 @@ export function LoginForm({
           {/* Marca no mobile */}
           <div className="mb-8 flex flex-col items-center md:hidden">
             <div className="mb-3 flex items-center gap-2.5">
-              <Image src="/logo-hawk.png" alt="rhawk.pro" width={28} height={28} className="rounded" unoptimized />
-              <span className="text-lg font-semibold tracking-tight">rhawk.pro</span>
+              <Image src="/logo-hawk.png" alt="VSA Tech" width={28} height={28} className="rounded" unoptimized />
+              <span className="text-lg font-semibold tracking-tight">VSA Tech</span>
             </div>
           </div>
 

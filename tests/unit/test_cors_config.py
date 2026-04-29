@@ -19,20 +19,20 @@ def _build_app(monkeypatch, **env):
 
 
 def test_cors_allows_listed_origin(monkeypatch):
-    app = _build_app(monkeypatch, FRONTEND_ORIGINS="https://app.rhawk.pro")
+    app = _build_app(monkeypatch, FRONTEND_ORIGINS="https://chat.nexus.com")
     client = TestClient(app)
     r = client.options(
         "/health",
         headers={
-            "Origin": "https://app.rhawk.pro",
+            "Origin": "https://chat.nexus.com",
             "Access-Control-Request-Method": "GET",
         },
     )
-    assert r.headers.get("access-control-allow-origin") == "https://app.rhawk.pro"
+    assert r.headers.get("access-control-allow-origin") == "https://chat.nexus.com"
 
 
 def test_cors_rejects_unlisted_origin(monkeypatch):
-    app = _build_app(monkeypatch, FRONTEND_ORIGINS="https://app.rhawk.pro")
+    app = _build_app(monkeypatch, FRONTEND_ORIGINS="https://chat.nexus.com")
     client = TestClient(app)
     r = client.options(
         "/health",

@@ -140,7 +140,7 @@ Em `ENVIRONMENT=production` o startup faz fail-fast nestes casos:
 
 Variáveis adicionais a configurar:
 
-- `FRONTEND_ORIGINS` — lista CSV de origens permitidas (ex: `https://app.rhawk.pro`)
+- `FRONTEND_ORIGINS` — lista CSV de origens permitidas (ex: `https://chat.nexus.com`)
 - `TWILIO_AUTH_TOKEN` e `TWILIO_WEBHOOK_URL` — necessários para validar signature
 
 Cabeçalhos de segurança aplicados automaticamente:

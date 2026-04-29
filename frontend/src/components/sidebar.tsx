@@ -87,10 +87,10 @@ export function Sidebar() {
       >
         {/* Header com marca */}
         <div className="flex h-16 items-center gap-3 px-6">
-          <Image src="/logo-hawk.png" alt="rhawk.pro" width={28} height={28} className="rounded" unoptimized />
+          <Image src="/logo-hawk.png" alt="VSA Tech" width={28} height={28} className="rounded" unoptimized />
           <div>
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-              rhawk.pro
+              VSA Tech
             </span>
             <span className="block text-[10px] uppercase tracking-[0.15em] text-sidebar-foreground/50">
               operations
