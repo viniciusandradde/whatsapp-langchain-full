@@ -49,7 +49,7 @@ export function LoginForm({
   return (
     <div className="flex min-h-screen">
       {/* Painel esquerdo — identidade da marca (escondido no mobile) */}
-      <div className="relative hidden w-[45%] overflow-hidden bg-hawk-navy-deep md:flex md:flex-col md:justify-between">
+      <div className="relative hidden w-[45%] overflow-hidden bg-vsa-navy-deep md:flex md:flex-col md:justify-between">
         {/* Gradiente sutil */}
         <div
           className="absolute inset-0"
@@ -69,7 +69,7 @@ export function LoginForm({
                 VSA Tech
               </span>
             </div>
-            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-hawk-blue/80">
+            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-vsa-blue/80">
               Harness para agentes de WhatsApp
             </p>
           </div>
@@ -85,7 +85,7 @@ export function LoginForm({
 
         {/* Rodapé do painel */}
         <div className="relative z-10 px-10 pb-8 lg:px-14">
-          <div className="h-px w-12 bg-hawk-blue/20" />
+          <div className="h-px w-12 bg-vsa-blue/20" />
           <p className="mt-3 text-[11px] text-white/25">
             VSA TECH
           </p>

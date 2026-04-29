@@ -45,10 +45,10 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --color-hawk-blue: oklch(0.68 0.14 200);
-  --color-hawk-navy: oklch(0.25 0.08 265);
-  --color-hawk-navy-deep: oklch(0.18 0.06 265);
-  --color-hawk-orange: oklch(0.62 0.21 30);
+  --color-vsa-blue: oklch(0.68 0.14 200);
+  --color-vsa-navy: oklch(0.25 0.08 265);
+  --color-vsa-navy-deep: oklch(0.18 0.06 265);
+  --color-vsa-orange: oklch(0.62 0.21 30);
 }
 
 :root {
