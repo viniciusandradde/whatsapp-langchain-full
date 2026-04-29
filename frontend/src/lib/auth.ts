@@ -15,11 +15,20 @@ export const authPool = new Pool({
   options: "-c search_path=auth,public",
 });
 
+// Origens confiáveis adicionais (CSRF). BETTER_AUTH_URL é sempre confiável;
+// BETTER_AUTH_TRUSTED_ORIGINS aceita CSV pra cenários multi-host (LAN, tunnel, etc).
+const trustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 export const auth = betterAuth({
   // Conecta ao mesmo PostgreSQL, mas usa o schema "auth" para separação lógica.
   // O search_path garante que as tabelas do Better Auth (user, session, account, etc.)
   // ficam em auth.user, auth.session — sem conflito com as tabelas da aplicação.
   database: authPool,
+
+  trustedOrigins,
 
   emailAndPassword: {
     enabled: true,
