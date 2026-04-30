@@ -157,3 +157,40 @@ class TraceInfo(BaseModel):
     total_tokens: int | None
     thread_id: str | None
     smith_url: str = Field(description="URL direta pro run em smith.langchain.com")
+
+
+# --- Multi-tenant: Empresa + Membership ---
+
+
+class Empresa(BaseModel):
+    """Tenant root — uma empresa cliente do Nexus Chat AI.
+
+    Toda entidade operacional (conversa, mensagem, conexão, agente) pertence
+    a uma `empresa_id`. id=1 é a empresa default "VSA Tech" criada na
+    migration 007.
+    """
+
+    id: int
+    nome: str
+    slug: str
+    doc: str | None = None
+    plano: str = "free"
+    status: str = "active"
+    config: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class EmpresaMembro(BaseModel):
+    """Associa user (Better Auth) a uma empresa com role.
+
+    `is_default=True` marca a empresa que entra automático na sessão quando
+    o user não envia X-Empresa-Id. Roles seguem o convention: admin (full
+    control), operator (atendimento), viewer (read-only).
+    """
+
+    empresa_id: int
+    user_id: str
+    role: str
+    is_default: bool
+    joined_at: datetime
