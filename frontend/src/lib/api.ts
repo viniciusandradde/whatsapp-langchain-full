@@ -104,6 +104,39 @@ export interface EmpresasResponse {
   empresas: Empresa[];
 }
 
+export type ConexaoProvider = "twilio_sandbox" | "twilio_prod" | "waba";
+export type ConexaoStatus = "active" | "disabled" | "error";
+
+export interface Conexao {
+  id: number;
+  empresa_id: number;
+  provider: ConexaoProvider;
+  sid: string | null;
+  from_number: string;
+  display_name: string | null;
+  default_agent_id: string;
+  status: ConexaoStatus;
+  is_default: boolean;
+  payload_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConexoesResponse {
+  conexoes: Conexao[];
+}
+
+export interface ConexaoInput {
+  provider: ConexaoProvider;
+  sid?: string | null;
+  from_number: string;
+  display_name?: string | null;
+  default_agent_id?: string;
+  status?: ConexaoStatus;
+  is_default?: boolean;
+  payload_json?: Record<string, unknown>;
+}
+
 // --- Painel de modelos LLM por agente ---
 
 export type ModelType = "chat" | "media";
@@ -299,6 +332,25 @@ export async function getQueue(): Promise<QueueResponse> {
 
 export async function getMyEmpresas(): Promise<EmpresasResponse> {
   return apiFetch<EmpresasResponse>("/api/empresas");
+}
+
+export async function getConexoes(): Promise<ConexoesResponse> {
+  return apiFetch<ConexoesResponse>("/api/conexoes");
+}
+
+export async function createConexao(body: ConexaoInput): Promise<Conexao> {
+  return apiFetch<Conexao>("/api/conexoes", { method: "POST", body });
+}
+
+export async function updateConexao(
+  id: number,
+  body: ConexaoInput
+): Promise<Conexao> {
+  return apiFetch<Conexao>(`/api/conexoes/${id}`, { method: "PUT", body });
+}
+
+export async function disableConexao(id: number): Promise<void> {
+  await apiFetch<void>(`/api/conexoes/${id}`, { method: "DELETE" });
 }
 
 export async function getModels(): Promise<ModelsResponse> {
