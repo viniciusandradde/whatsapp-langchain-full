@@ -35,6 +35,9 @@ class MessageQueue(BaseModel):
     """
 
     id: int
+    empresa_id: int = Field(
+        default=1, description="Empresa dona da mensagem (multi-tenancy)"
+    )
     message_id: str | None = None
     phone_number: str = Field(description="Formato E.164, ex: +5511999999999")
     to_number: str | None = None

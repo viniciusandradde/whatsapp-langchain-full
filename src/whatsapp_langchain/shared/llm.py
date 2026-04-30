@@ -110,18 +110,22 @@ def create_chat_model(
 
 
 async def get_agent_llm_config(
-    pool: AsyncConnectionPool, agent_id: str
+    pool: AsyncConnectionPool, agent_id: str, empresa_id: int = 1
 ) -> tuple[str, str]:
-    """Resolve (chat_model, midia_model) para um agente, com hot reload via DB.
+    """Resolve (chat_model, midia_model) para (empresa, agente) com hot reload.
 
-    Lê a tabela `agent_llm_config`. Quando a row está ausente ou um campo é
-    NULL, faz fallback para `settings.openrouter_model` /
-    `settings.openrouter_midia_model`. Sem cache — uma query por chamada.
+    Lê a tabela `agent_llm_config` usando a PK composta (empresa_id, agent_id).
+    Quando a row está ausente ou um campo é NULL, faz fallback para
+    `settings.openrouter_model` / `settings.openrouter_midia_model`. Sem
+    cache — uma query por chamada.
     """
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT chat_model, midia_model FROM agent_llm_config WHERE agent_id = %s",
-            (agent_id,),
+            """
+            SELECT chat_model, midia_model FROM agent_llm_config
+             WHERE empresa_id = %s AND agent_id = %s
+            """,
+            (empresa_id, agent_id),
         )
         row = await cur.fetchone()
     chat = (row[0] if row else None) or settings.openrouter_model

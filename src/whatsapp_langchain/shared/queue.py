@@ -36,6 +36,7 @@ async def enqueue_or_buffer(
     to_number: str | None = None,
     message_id: str | None = None,
     buffer_seconds: float = 2.0,
+    empresa_id: int = 1,
 ) -> EnqueueResult:
     """Insere mensagem na fila ou agrupa com mensagem pendente (debounce).
 
@@ -109,13 +110,14 @@ async def enqueue_or_buffer(
             cursor = await conn.execute(
                 """
                 INSERT INTO message_queue
-                    (message_id, phone_number, to_number, agent_id,
+                    (empresa_id, message_id, phone_number, to_number, agent_id,
                      thread_id, incoming_message, media_url, media_type,
                      process_after)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 RETURNING id
                 """,
                 (
+                    empresa_id,
                     message_id,
                     phone_number,
                     to_number,
@@ -189,12 +191,14 @@ async def enqueue_or_buffer(
         cursor = await conn.execute(
             """
             INSERT INTO message_queue
-                (message_id, phone_number, to_number, agent_id, thread_id,
-                 incoming_message, media_url, media_type, process_after)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (empresa_id, message_id, phone_number, to_number, agent_id,
+                 thread_id, incoming_message, media_url, media_type,
+                 process_after)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
+                empresa_id,
                 message_id,
                 phone_number,
                 to_number,
@@ -283,12 +287,13 @@ async def claim_next(
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id, message_id, phone_number, to_number, agent_id, thread_id,
-                      incoming_message, media_url, media_type,
-                      normalized_input, media_processing_status, media_processing_error,
-                      status,
-                      process_after, attempts, max_attempts, lease_until,
-                      response, error, created_at, updated_at, processed_at
+            RETURNING id, empresa_id, message_id, phone_number, to_number,
+                      agent_id, thread_id, incoming_message,
+                      media_url, media_type, normalized_input,
+                      media_processing_status, media_processing_error,
+                      status, process_after, attempts, max_attempts,
+                      lease_until, response, error,
+                      created_at, updated_at, processed_at
             """,
             (lease_until,),
         )
@@ -300,27 +305,28 @@ async def claim_next(
 
         message = MessageQueue(
             id=row[0],
-            message_id=row[1],
-            phone_number=row[2],
-            to_number=row[3],
-            agent_id=row[4],
-            thread_id=row[5],
-            incoming_message=row[6],
-            media_url=row[7],
-            media_type=row[8],
-            normalized_input=row[9],
-            media_processing_status=row[10],
-            media_processing_error=row[11],
-            status=row[12],
-            process_after=row[13],
-            attempts=row[14],
-            max_attempts=row[15],
-            lease_until=row[16],
-            response=row[17],
-            error=row[18],
-            created_at=row[19],
-            updated_at=row[20],
-            processed_at=row[21],
+            empresa_id=row[1],
+            message_id=row[2],
+            phone_number=row[3],
+            to_number=row[4],
+            agent_id=row[5],
+            thread_id=row[6],
+            incoming_message=row[7],
+            media_url=row[8],
+            media_type=row[9],
+            normalized_input=row[10],
+            media_processing_status=row[11],
+            media_processing_error=row[12],
+            status=row[13],
+            process_after=row[14],
+            attempts=row[15],
+            max_attempts=row[16],
+            lease_until=row[17],
+            response=row[18],
+            error=row[19],
+            created_at=row[20],
+            updated_at=row[21],
+            processed_at=row[22],
         )
 
         logger.info(
@@ -453,17 +459,12 @@ async def upsert_conversation(
     phone_number: str,
     agent_id: str,
     last_message: str,
+    empresa_id: int = 1,
 ) -> None:
-    """Atualiza ou cria registro de conversa.
+    """Atualiza ou cria registro de conversa (escopado por empresa).
 
     Usado após cada mensagem processada para manter o histórico
     de conversas atualizado (para o painel admin).
-
-    Args:
-        pool: Pool de conexões do psycopg.
-        phone_number: Telefone do remetente.
-        agent_id: ID do agente.
-        last_message: Última mensagem processada.
     """
     thread_id = f"{phone_number}:{agent_id}"
 
@@ -471,15 +472,15 @@ async def upsert_conversation(
         await conn.execute(
             """
             INSERT INTO conversations (
-                phone_number, agent_id, thread_id,
+                empresa_id, phone_number, agent_id, thread_id,
                 last_message, last_message_at, message_count)
-            VALUES (%s, %s, %s, %s, NOW(), 1)
+            VALUES (%s, %s, %s, %s, %s, NOW(), 1)
             ON CONFLICT (phone_number, agent_id) DO UPDATE SET
                 last_message = EXCLUDED.last_message,
                 last_message_at = NOW(),
                 message_count = conversations.message_count + 1,
                 updated_at = NOW()
             """,
-            (phone_number, agent_id, thread_id, last_message),
+            (empresa_id, phone_number, agent_id, thread_id, last_message),
         )
         await conn.commit()

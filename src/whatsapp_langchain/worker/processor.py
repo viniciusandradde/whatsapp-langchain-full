@@ -84,8 +84,11 @@ async def process_message(
     )
 
     try:
-        # 0. Resolver modelos do agente (hot reload via DB; fallback pra env)
-        _, midia_model = await get_agent_llm_config(pool, message.agent_id)
+        # 0. Resolver modelos do agente escopados pela empresa da mensagem
+        # (hot reload via DB; fallback pra env quando row ausente).
+        _, midia_model = await get_agent_llm_config(
+            pool, message.agent_id, message.empresa_id
+        )
 
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(
@@ -115,6 +118,7 @@ async def process_message(
                 phone_number=message.phone_number,
                 agent_id=message.agent_id,
                 last_message=auto_response,
+                empresa_id=message.empresa_id,
             )
             logger.info(
                 "message_auto_responded",
@@ -152,6 +156,7 @@ async def process_message(
             checkpointer=checkpointer,
             store=store,
             pool=pool,
+            empresa_id=message.empresa_id,
         )
         result = await graph.ainvoke(
             {"messages": [human_message]},
@@ -178,6 +183,7 @@ async def process_message(
             phone_number=message.phone_number,
             agent_id=message.agent_id,
             last_message=response_text,
+            empresa_id=message.empresa_id,
         )
 
         logger.info(

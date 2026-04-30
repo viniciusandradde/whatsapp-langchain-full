@@ -100,10 +100,12 @@ class TestProcessorMemoryFlag:
             # Salva como done com metadados de pré-processamento
             assert mock_mark_done.await_count == 1
 
-            # load_graph deve ser chamado sem store, recebendo o pool
+            # load_graph deve ser chamado sem store, recebendo o pool e
+            # propagando empresa_id da MessageQueue (default 1).
             mock_load.assert_awaited_once_with(
                 "vsa_tech",
                 checkpointer=mock_checkpointer,
                 store=None,
                 pool=mock_pool,
+                empresa_id=1,
             )

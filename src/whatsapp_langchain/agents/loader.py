@@ -49,12 +49,14 @@ async def load_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
     pool: AsyncConnectionPool | None = None,
+    empresa_id: int = 1,
 ):
     """Carrega e compila o grafo de um agente pelo ID.
 
     Importa dinamicamente o módulo agent.py do catálogo e chama build_graph().
     Quando `pool` é fornecido, resolve o modelo principal via
-    `agent_llm_config` (hot reload) e propaga como `chat_model`.
+    `agent_llm_config` (hot reload) escopado por (empresa_id, agent_id) e
+    propaga como `chat_model`.
 
     Args:
         agent_id: Identificador do agente (nome do diretório em catalog/).
@@ -63,6 +65,7 @@ async def load_graph(
         store: Store para memória semântica cross-thread.
                None desabilita memória, AsyncPostgresStore em prod.
         pool: Pool psycopg pra resolver chat_model por agente. None = usa env.
+        empresa_id: Tenant scope. Default 1 ("VSA Tech").
 
     Returns:
         CompiledStateGraph pronto para invoke().
@@ -86,9 +89,14 @@ async def load_graph(
 
     chat_model: str | None = None
     if pool is not None:
-        chat_model, _ = await get_agent_llm_config(pool, agent_id)
+        chat_model, _ = await get_agent_llm_config(pool, agent_id, empresa_id)
 
-    logger.info("agent_loaded", agent_id=agent_id, chat_model=chat_model)
+    logger.info(
+        "agent_loaded",
+        agent_id=agent_id,
+        empresa_id=empresa_id,
+        chat_model=chat_model,
+    )
     return module.build_graph(
         checkpointer=checkpointer, store=store, chat_model=chat_model
     )

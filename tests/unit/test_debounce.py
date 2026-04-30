@@ -203,9 +203,11 @@ class TestTextDebounce:
         # calls[0]=lock, calls[1]=SELECT, calls[2]=INSERT
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
-        # media_url e media_type devem ser None na inserção de texto
-        assert insert_params[6] is None  # media_url
-        assert insert_params[7] is None  # media_type
+        # empresa_id agora é o primeiro param (index 0); media_url/type
+        # subiram para 7/8.
+        assert insert_params[0] == 1  # empresa_id default
+        assert insert_params[7] is None  # media_url
+        assert insert_params[8] is None  # media_type
 
 
 class TestMediaNoDebounce:
@@ -273,11 +275,11 @@ class TestMediaNoDebounce:
         # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
-        # Body é preservado na mídia
-        assert insert_params[5] == "Olha essa foto"
-        # media_url e media_type presentes
-        assert insert_params[6] == "https://api.twilio.com/media/img.jpg"
-        assert insert_params[7] == "image/jpeg"
+        # empresa_id é o primeiro param; body/media_url/media_type subiram.
+        assert insert_params[0] == 1
+        assert insert_params[6] == "Olha essa foto"
+        assert insert_params[7] == "https://api.twilio.com/media/img.jpg"
+        assert insert_params[8] == "image/jpeg"
 
 
 class TestMediaFlushPendingText:
@@ -551,8 +553,8 @@ class TestThreadIdGeneration:
         # calls[0]=lock, calls[1]=SELECT, calls[2]=INSERT
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
-        # thread_id é o 5o param (index 4)
-        assert insert_params[4] == "+5511999999999:vsa_tech"
+        # thread_id é o 6º param (index 5) — empresa_id ocupa o índice 0.
+        assert insert_params[5] == "+5511999999999:vsa_tech"
 
 
 class TestAdvisoryLock:
@@ -700,11 +702,12 @@ class TestMultiMediaIdempotency:
         assert result2.is_buffered is False
         assert result2.message_id == 52
 
-        # As duas mídias são inseridas com media_url distintas
+        # As duas mídias são inseridas com media_url distintas (index 7
+        # após inclusão de empresa_id em [0]).
         insert_params_1 = calls_after_first[2][0][1]
         insert_params_2 = calls_after_second[2][0][1]
-        assert insert_params_1[6] == "https://example.com/img0.jpg"
-        assert insert_params_2[6] == "https://example.com/img1.jpg"
+        assert insert_params_1[7] == "https://example.com/img0.jpg"
+        assert insert_params_2[7] == "https://example.com/img1.jpg"
 
     async def test_duas_midias_sem_texto_pendente(self, mock_pool):
         """Duas mídias sem texto pendente: cada uma faz flush no-op + insert."""
