@@ -197,3 +197,41 @@ class EmpresaMembro(BaseModel):
     role: str
     is_default: bool
     joined_at: datetime
+
+
+# --- Multi-conexão WhatsApp ---
+
+
+class Conexao(BaseModel):
+    """Linha WhatsApp (Twilio sandbox/prod, WABA) ligada a uma empresa.
+
+    O webhook usa `from_number` pra resolver dinamicamente empresa_id +
+    default_agent_id. `is_default` marca a conexão preferida pra outbound
+    quando a mensagem não cita conexão específica (futuro).
+    """
+
+    id: int
+    empresa_id: int
+    provider: str
+    sid: str | None = None
+    from_number: str
+    display_name: str | None = None
+    default_agent_id: str = "vsa_tech"
+    status: str = "active"
+    is_default: bool = False
+    payload_json: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConexaoInput(BaseModel):
+    """Payload de criar/editar conexão (via /api/conexoes)."""
+
+    provider: str
+    sid: str | None = None
+    from_number: str
+    display_name: str | None = None
+    default_agent_id: str = "vsa_tech"
+    status: str = "active"
+    is_default: bool = False
+    payload_json: dict = Field(default_factory=dict)
