@@ -239,3 +239,49 @@ class ConexaoInput(BaseModel):
     status: str = "active"
     is_default: bool = False
     payload_json: dict = Field(default_factory=dict)
+
+
+# --- M3 CRM Light: Cliente + Atendimento ---
+
+
+class Cliente(BaseModel):
+    """Pessoa cadastrada na empresa (1 row por empresa+telefone)."""
+
+    id: int
+    empresa_id: int
+    telefone: str
+    nome: str | None = None
+    email: str | None = None
+    doc: str | None = None
+    status: str = "active"
+    config: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    tags: list[str] = Field(default_factory=list)
+
+
+class ClienteAnotacao(BaseModel):
+    id: int
+    cliente_id: int
+    user_id: str
+    conteudo: str
+    created_at: datetime
+
+
+class Atendimento(BaseModel):
+    """Conversa estruturada — fila de atendimento humano + status."""
+
+    id: int
+    empresa_id: int
+    cliente_id: int
+    conexao_id: int
+    agente_atual: str = "vsa_tech"
+    status: str = "aguardando"  # aguardando|em_andamento|resolvido|abandonado
+    assigned_to_user_id: str | None = None
+    last_message_at: datetime
+    closed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    # Campos derivados (preenchidos pelas queries que fazem JOIN):
+    cliente_nome: str | None = None
+    cliente_telefone: str | None = None
