@@ -17,6 +17,7 @@ import {
   Bot,
   Brain,
   Activity,
+  Building2,
   ListOrdered,
   ShieldCheck,
   Smartphone,
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/models", label: "Modelos", icon: Brain },
   { href: "/traces", label: "Traces", icon: Activity },
   { href: "/queue", label: "Fila", icon: ListOrdered },
+  { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/settings", label: "Segurança", icon: ShieldCheck },
 ];
 

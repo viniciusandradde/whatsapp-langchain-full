@@ -24,12 +24,16 @@ logger = structlog.get_logger()
 async def list_empresas_of_user(
     pool: AsyncConnectionPool, user_id: str
 ) -> list[Empresa]:
-    """Retorna todas as empresas onde o user é membro, default primeiro."""
+    """Retorna todas as empresas onde o user é membro, default primeiro.
+
+    Inclui `my_role` (role do user na empresa) pra a UI poder decidir
+    o que mostrar (botão "Editar" só pra admin etc).
+    """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
             SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
-                   e.config, e.created_at, e.updated_at
+                   e.config, e.created_at, e.updated_at, m.role
               FROM empresa e
               JOIN empresa_membro m ON m.empresa_id = e.id
              WHERE m.user_id = %s
@@ -51,6 +55,7 @@ async def list_empresas_of_user(
             config=r[6] or {},
             created_at=r[7],
             updated_at=r[8],
+            my_role=r[9],
         )
         for r in rows
     ]

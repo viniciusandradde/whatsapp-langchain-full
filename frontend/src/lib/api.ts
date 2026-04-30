@@ -98,6 +98,31 @@ export interface Empresa {
   config: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** Role do user logado nessa empresa (vindo do GET /api/empresas). */
+  my_role?: "admin" | "operator" | "viewer" | null;
+}
+
+export interface EmpresaInput {
+  nome: string;
+  slug: string;
+  plano?: string;
+  doc?: string | null;
+}
+
+export interface EmpresaUpdateInput {
+  nome?: string;
+  slug?: string;
+  plano?: string;
+  doc?: string | null;
+  status?: string;
+}
+
+export interface EmpresaMembro {
+  empresa_id: number;
+  user_id: string;
+  role: "admin" | "operator" | "viewer";
+  is_default: boolean;
+  joined_at: string;
 }
 
 export interface EmpresasResponse {
@@ -332,6 +357,56 @@ export async function getQueue(): Promise<QueueResponse> {
 
 export async function getMyEmpresas(): Promise<EmpresasResponse> {
   return apiFetch<EmpresasResponse>("/api/empresas");
+}
+
+export async function createEmpresa(body: EmpresaInput): Promise<Empresa> {
+  return apiFetch<Empresa>("/api/empresas", { method: "POST", body });
+}
+
+export async function updateEmpresa(
+  id: number,
+  body: EmpresaUpdateInput
+): Promise<Empresa> {
+  return apiFetch<Empresa>(`/api/empresas/${id}`, { method: "PUT", body });
+}
+
+export async function getEmpresaMembers(
+  empresaId: number
+): Promise<EmpresaMembro[]> {
+  return apiFetch<EmpresaMembro[]>(
+    `/api/empresas/${empresaId}/membros`
+  );
+}
+
+export async function addEmpresaMember(
+  empresaId: number,
+  body: { user_id: string; role: "admin" | "operator" | "viewer" }
+): Promise<EmpresaMembro> {
+  return apiFetch<EmpresaMembro>(`/api/empresas/${empresaId}/membros`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateMemberRole(
+  empresaId: number,
+  userId: string,
+  role: "admin" | "operator" | "viewer"
+): Promise<EmpresaMembro> {
+  return apiFetch<EmpresaMembro>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}`,
+    { method: "PUT", body: { role } }
+  );
+}
+
+export async function removeEmpresaMember(
+  empresaId: number,
+  userId: string
+): Promise<void> {
+  await apiFetch<void>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}`,
+    { method: "DELETE" }
+  );
 }
 
 export async function getConexoes(): Promise<ConexoesResponse> {

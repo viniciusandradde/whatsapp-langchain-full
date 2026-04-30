@@ -171,6 +171,9 @@ class Empresa(BaseModel):
     Toda entidade operacional (conversa, mensagem, conexão, agente) pertence
     a uma `empresa_id`. id=1 é a empresa default "VSA Tech" criada na
     migration 007.
+
+    Quando o response vem de uma listagem do usuário (`list_empresas_of_user`),
+    o campo `my_role` é populado com a role do user na empresa.
     """
 
     id: int
@@ -182,6 +185,7 @@ class Empresa(BaseModel):
     config: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    my_role: str | None = None
 
 
 class EmpresaMembro(BaseModel):
