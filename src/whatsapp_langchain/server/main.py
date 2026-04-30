@@ -19,6 +19,9 @@ from whatsapp_langchain.agents.loader import AgentNotFoundError
 from whatsapp_langchain.server.middlewares import install_security_headers
 from whatsapp_langchain.server.routes.admin import router as admin_router
 from whatsapp_langchain.server.routes.conexao import router as conexao_router
+from whatsapp_langchain.server.routes.empresa_admin import (
+    router as empresa_admin_router,
+)
 from whatsapp_langchain.server.routes.health import router as health_router
 from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.webhook import router as webhook_router
@@ -97,6 +100,7 @@ async def agent_not_found_handler(
 app.include_router(health_router)
 app.include_router(webhook_router)
 app.include_router(admin_router)
+app.include_router(empresa_admin_router)
 app.include_router(conexao_router)
 app.include_router(traces_router)
 
