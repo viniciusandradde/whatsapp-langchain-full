@@ -4,6 +4,7 @@ Usa o RequestValidator do SDK oficial para gerar assinaturas válidas
 e verifica que o middleware rejeita assinaturas inválidas com 403.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 from twilio.request_validator import RequestValidator
 
 from whatsapp_langchain.server.main import app
+from whatsapp_langchain.shared.models import Conexao
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -20,13 +22,37 @@ TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
 TEST_WEBHOOK_URL = "https://example.com"
 
 
+def _default_conexao() -> Conexao:
+    now = datetime.now(UTC)
+    return Conexao(
+        id=1,
+        empresa_id=1,
+        provider="twilio_sandbox",
+        sid=None,
+        from_number="+14155238886",
+        display_name="Sandbox VSA Tech",
+        default_agent_id="vsa_tech",
+        status="active",
+        is_default=True,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+
+
 @pytest.fixture(autouse=True)
 def mock_db(monkeypatch):
-    """Mock do banco de dados para testes sem PostgreSQL."""
+    """Mock do banco de dados + lookup de conexão (M2)."""
     from whatsapp_langchain.shared.config import settings
 
     mock_pool = AsyncMock()
     monkeypatch.setattr(settings, "internal_service_token", TEST_INTERNAL_SERVICE_TOKEN)
+
+    async def fake_lookup(_pool, from_number: str):
+        if from_number == "+14155238886":
+            return _default_conexao()
+        return None
+
     with (
         patch(
             "whatsapp_langchain.server.routes.health.check_db_health",
@@ -35,6 +61,10 @@ def mock_db(monkeypatch):
         patch(
             "whatsapp_langchain.server.routes.webhook.get_pool",
             return_value=mock_pool,
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.get_conexao_by_from_number",
+            side_effect=fake_lookup,
         ),
         patch(
             "whatsapp_langchain.server.routes.admin.get_pool",

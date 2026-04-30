@@ -203,11 +203,12 @@ class TestTextDebounce:
         # calls[0]=lock, calls[1]=SELECT, calls[2]=INSERT
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
-        # empresa_id agora é o primeiro param (index 0); media_url/type
-        # subiram para 7/8.
+        # Ordem do INSERT (M2): empresa_id, conexao_id, message_id, phone,
+        # to, agent, thread, body, media_url, media_type, process_after.
         assert insert_params[0] == 1  # empresa_id default
-        assert insert_params[7] is None  # media_url
-        assert insert_params[8] is None  # media_type
+        assert insert_params[1] is None  # conexao_id (não veio do webhook)
+        assert insert_params[8] is None  # media_url
+        assert insert_params[9] is None  # media_type
 
 
 class TestMediaNoDebounce:
@@ -275,11 +276,12 @@ class TestMediaNoDebounce:
         # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
-        # empresa_id é o primeiro param; body/media_url/media_type subiram.
+        # Mesma ordem do texto, sem process_after (mídia usa NOW() inline).
         assert insert_params[0] == 1
-        assert insert_params[6] == "Olha essa foto"
-        assert insert_params[7] == "https://api.twilio.com/media/img.jpg"
-        assert insert_params[8] == "image/jpeg"
+        assert insert_params[1] is None  # conexao_id
+        assert insert_params[7] == "Olha essa foto"
+        assert insert_params[8] == "https://api.twilio.com/media/img.jpg"
+        assert insert_params[9] == "image/jpeg"
 
 
 class TestMediaFlushPendingText:
@@ -553,8 +555,8 @@ class TestThreadIdGeneration:
         # calls[0]=lock, calls[1]=SELECT, calls[2]=INSERT
         calls = conn.execute.call_args_list
         insert_params = calls[2][0][1]
-        # thread_id é o 6º param (index 5) — empresa_id ocupa o índice 0.
-        assert insert_params[5] == "+5511999999999:vsa_tech"
+        # thread_id passou pra index 6 — empresa_id [0] e conexao_id [1].
+        assert insert_params[6] == "+5511999999999:vsa_tech"
 
 
 class TestAdvisoryLock:
@@ -702,12 +704,12 @@ class TestMultiMediaIdempotency:
         assert result2.is_buffered is False
         assert result2.message_id == 52
 
-        # As duas mídias são inseridas com media_url distintas (index 7
-        # após inclusão de empresa_id em [0]).
+        # As duas mídias são inseridas com media_url distintas (index 8
+        # após inclusão de empresa_id [0] e conexao_id [1]).
         insert_params_1 = calls_after_first[2][0][1]
         insert_params_2 = calls_after_second[2][0][1]
-        assert insert_params_1[7] == "https://example.com/img0.jpg"
-        assert insert_params_2[7] == "https://example.com/img1.jpg"
+        assert insert_params_1[8] == "https://example.com/img0.jpg"
+        assert insert_params_2[8] == "https://example.com/img1.jpg"
 
     async def test_duas_midias_sem_texto_pendente(self, mock_pool):
         """Duas mídias sem texto pendente: cada uma faz flush no-op + insert."""

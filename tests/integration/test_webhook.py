@@ -4,6 +4,7 @@ Testa o fluxo de webhook sem banco de dados real.
 Usa mocking para simular pool e operações de fila.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -11,18 +12,43 @@ from fastapi.testclient import TestClient
 
 from whatsapp_langchain import __version__
 from whatsapp_langchain.server.main import app
+from whatsapp_langchain.shared.models import Conexao
 
 client = TestClient(app, raise_server_exceptions=False)
 TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
 
 
+def _default_conexao() -> Conexao:
+    """Conexão fake pra empresa 1, número Twilio Sandbox padrão."""
+    now = datetime.now(UTC)
+    return Conexao(
+        id=1,
+        empresa_id=1,
+        provider="twilio_sandbox",
+        sid=None,
+        from_number="+14155238886",
+        display_name="Sandbox VSA Tech",
+        default_agent_id="vsa_tech",
+        status="active",
+        is_default=True,
+        payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+
+
 @pytest.fixture(autouse=True)
 def mock_db(monkeypatch):
-    """Mock do banco de dados para testes sem PostgreSQL."""
+    """Mock do banco de dados + lookup de conexão (M2)."""
     from whatsapp_langchain.shared.config import settings
 
     mock_pool = AsyncMock()
     monkeypatch.setattr(settings, "internal_service_token", TEST_INTERNAL_SERVICE_TOKEN)
+
+    async def fake_lookup(_pool, from_number: str):
+        if from_number == "+14155238886":
+            return _default_conexao()
+        return None
 
     with (
         patch(
@@ -32,6 +58,10 @@ def mock_db(monkeypatch):
         patch(
             "whatsapp_langchain.server.routes.webhook.get_pool",
             return_value=mock_pool,
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.get_conexao_by_from_number",
+            side_effect=fake_lookup,
         ),
         patch(
             "whatsapp_langchain.server.routes.admin.get_pool",
@@ -82,8 +112,15 @@ class TestWebhookSync:
 class TestWebhookTwilio:
     """Testes do webhook Twilio."""
 
-    def test_twilio_requires_agent(self):
-        """Deve exigir o query param 'agent'."""
+    @patch(
+        "whatsapp_langchain.server.routes.webhook.enqueue_or_buffer",
+        new_callable=AsyncMock,
+    )
+    def test_twilio_uses_default_agent_when_omitted(self, mock_enqueue):
+        """Sem ?agent= o webhook resolve via conexao.default_agent_id (M2)."""
+        from whatsapp_langchain.shared.models import EnqueueResult
+
+        mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
         response = client.post(
             "/webhook/twilio",
             data={
@@ -94,8 +131,24 @@ class TestWebhookTwilio:
                 "NumMedia": "0",
             },
         )
-        # Sem agent= -> 422
-        assert response.status_code == 422
+        assert response.status_code == 200
+        # Conexão default tem agent_id="vsa_tech"
+        assert mock_enqueue.await_args.kwargs["agent_id"] == "vsa_tech"
+
+    def test_twilio_unknown_to_number_returns_empty_twiml(self):
+        """`To` sem conexão registrada → 200 vazio sem enfileirar."""
+        response = client.post(
+            "/webhook/twilio",
+            data={
+                "MessageSid": "SM999",
+                "From": "whatsapp:+5511999999999",
+                "To": "whatsapp:+19999999999",
+                "Body": "Olá",
+                "NumMedia": "0",
+            },
+        )
+        assert response.status_code == 200
+        assert "<Response" in response.text
 
     def test_twilio_nonexistent_agent(self):
         """Deve retornar erro para agente inexistente."""

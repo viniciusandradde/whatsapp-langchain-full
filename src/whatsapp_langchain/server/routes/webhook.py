@@ -18,6 +18,7 @@ from whatsapp_langchain.server.dependencies import (
     check_rate_limit,
     validate_twilio_signature,
 )
+from whatsapp_langchain.shared.conexao import get_conexao_by_from_number
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.queue import enqueue_or_buffer
@@ -34,7 +35,11 @@ EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 async def webhook_twilio(
     request: Request,
     agent: str = Query(
-        description="ID do agente para processar a mensagem",
+        default="",
+        description=(
+            "Override do agente (opcional). Sem valor, usa o "
+            "default_agent_id da conexão resolvida pelo número de destino."
+        ),
     ),
     # Parâmetros Form declarados para documentação OpenAPI (Swagger UI).
     # Os valores reais são lidos via request.form() para suportar
@@ -109,11 +114,6 @@ async def webhook_twilio(
     # Twilio limita 10 mídias por mensagem WhatsApp
     num_media = max(0, min(num_media, 10))
 
-    # Verifica se o agente existe
-    available_agents = list_agents()
-    if agent not in available_agents:
-        raise AgentNotFoundError(agent)
-
     # Sanitização de campos do Twilio recebidos via x-www-form-urlencoded.
     # From vem como "whatsapp:+55...", WaId vem como "5511..." sem + (fallback).
     phone_number = from_raw.replace("whatsapp:", "")
@@ -135,26 +135,52 @@ async def webhook_twilio(
             detail="Missing sender identity (From/WaId)",
         )
 
-    # Rate limit
+    pool = await get_pool()
+
+    # Resolve a conexão pelo número de destino (To). Sem match (número
+    # desconhecido ou conexão desativada), respondemos TwiML vazio sem
+    # enfileirar — o Twilio considera entregue e o sistema não vaza
+    # mensagens em buckets sem dono.
+    conexao = await get_conexao_by_from_number(pool, to_number) if to_number else None
+    if conexao is None or conexao.status != "active":
+        logger.warning(
+            "webhook_unknown_conexao",
+            to=to_number,
+            status=conexao.status if conexao else None,
+            message_sid=msg_sid,
+        )
+        return Response(content=EMPTY_TWIML, media_type="application/xml")
+
+    empresa_id = conexao.empresa_id
+    conexao_id = conexao.id
+    # Override por query (Studio dev) ganha do default da conexão.
+    resolved_agent = agent or conexao.default_agent_id
+
+    # Verifica se o agente existe no catálogo
+    if resolved_agent not in list_agents():
+        raise AgentNotFoundError(resolved_agent)
+
+    # Rate limit (por phone — independente da conexão)
     await check_rate_limit(phone_number)
 
     # Enfileiramento:
     # - se há texto OU não há mídia: enfileira o texto como 1 row
     # - cada mídia (MediaUrl0..MediaUrl{NumMedia-1}) vira 1 row adicional
     #   com o mesmo message_sid (sem debounce, processada imediatamente)
-    pool = await get_pool()
 
     if body_raw or num_media == 0:
         await enqueue_or_buffer(
             pool=pool,
             phone_number=phone_number,
-            agent_id=agent,
+            agent_id=resolved_agent,
             body=body_raw,
             media_url=None,
             media_type=None,
             to_number=to_number,
             message_id=msg_sid,
             buffer_seconds=settings.message_buffer_seconds,
+            empresa_id=empresa_id,
+            conexao_id=conexao_id,
         )
 
     for i in range(num_media):
@@ -165,19 +191,23 @@ async def webhook_twilio(
         await enqueue_or_buffer(
             pool=pool,
             phone_number=phone_number,
-            agent_id=agent,
+            agent_id=resolved_agent,
             body="",  # Mídia sem texto adicional
             media_url=media_url,
             media_type=media_type or None,
             to_number=to_number,
             message_id=msg_sid,
             buffer_seconds=settings.message_buffer_seconds,
+            empresa_id=empresa_id,
+            conexao_id=conexao_id,
         )
 
     logger.info(
         "webhook_twilio_received",
         phone=phone_number,
-        agent_id=agent,
+        agent_id=resolved_agent,
+        empresa_id=empresa_id,
+        conexao_id=conexao_id,
         message_sid=msg_sid,
         num_media=num_media,
     )
