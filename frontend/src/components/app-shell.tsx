@@ -5,12 +5,21 @@
  *
  * Na rota /login, renderiza apenas o conteúdo (full viewport).
  * Nas demais rotas, renderiza sidebar + conteúdo com margem.
+ *
+ * `empresaSwitcher` (opcional) é renderizado no header da sidebar — server-
+ * resolvido em `app/layout.tsx` pra evitar fetch client-side.
  */
 
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  empresaSwitcher,
+}: {
+  children: React.ReactNode;
+  empresaSwitcher?: React.ReactNode;
+}) {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
 
@@ -20,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Sidebar />
+      <Sidebar empresaSwitcher={empresaSwitcher} />
       <main className="min-h-screen md:ml-64 p-6 pt-16 md:pt-6">
         {children}
       </main>

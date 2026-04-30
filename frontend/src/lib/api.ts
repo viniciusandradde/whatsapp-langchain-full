@@ -9,7 +9,11 @@
  * INTERNAL_SERVICE_TOKEN. Isso é separado da autenticação do usuário (Better Auth).
  */
 import "server-only";
+import { cookies, headers as nextHeaders } from "next/headers";
+import { auth } from "@/lib/auth";
 import { ensureFrontendRuntimeConfig } from "@/lib/runtime-config";
+
+const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
 
 // --- Tipos de resposta da API ---
 
@@ -82,6 +86,24 @@ export interface QueueResponse {
   messages: QueueMessage[];
 }
 
+// --- Multi-tenancy ---
+
+export interface Empresa {
+  id: number;
+  nome: string;
+  slug: string;
+  doc: string | null;
+  plano: string;
+  status: string;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmpresasResponse {
+  empresas: Empresa[];
+}
+
 // --- Painel de modelos LLM por agente ---
 
 export type ModelType = "chat" | "media";
@@ -150,6 +172,29 @@ async function apiFetch<T>(
   };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
+  }
+
+  // Multi-tenancy: a API espera X-User-Id (derivado da Better Auth
+  // session) e opcionalmente X-Empresa-Id (cookie definido pelo
+  // EmpresaSwitcher). Sem session válida o request dispara o redirect
+  // de requireSession() — esse path não é exercitado em chamadas server-
+  // only que já passaram por ele.
+  try {
+    const session = await auth.api.getSession({ headers: await nextHeaders() });
+    if (session?.user?.id) {
+      headers["X-User-Id"] = session.user.id;
+    }
+  } catch {
+    // Sem session — admin endpoints retornarão 401, comportamento esperado.
+  }
+
+  try {
+    const empresaCookie = (await cookies()).get(ACTIVE_EMPRESA_COOKIE)?.value;
+    if (empresaCookie) {
+      headers["X-Empresa-Id"] = empresaCookie;
+    }
+  } catch {
+    // Sem contexto de cookies (build estático, etc.) — backend usa default.
   }
 
   const response = await fetch(url, {
@@ -250,6 +295,10 @@ export async function getMetrics(): Promise<MetricsResponse> {
 
 export async function getQueue(): Promise<QueueResponse> {
   return apiFetch<QueueResponse>("/api/queue");
+}
+
+export async function getMyEmpresas(): Promise<EmpresasResponse> {
+  return apiFetch<EmpresasResponse>("/api/empresas");
 }
 
 export async function getModels(): Promise<ModelsResponse> {

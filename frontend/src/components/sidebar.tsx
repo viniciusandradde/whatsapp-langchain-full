@@ -37,7 +37,11 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Segurança", icon: ShieldCheck },
 ];
 
-export function Sidebar() {
+export function Sidebar({
+  empresaSwitcher,
+}: {
+  empresaSwitcher?: React.ReactNode;
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -104,6 +108,11 @@ export function Sidebar() {
 
         {/* Separador sutil */}
         <div className="mx-4 h-px bg-sidebar-border" />
+
+        {/* Switcher de empresa (renderizado só com >1 empresa ou superadmin) */}
+        {empresaSwitcher ? (
+          <div className="px-3 pt-3">{empresaSwitcher}</div>
+        ) : null}
 
         {/* Navegação */}
         <nav className="flex-1 space-y-0.5 px-3 py-4">

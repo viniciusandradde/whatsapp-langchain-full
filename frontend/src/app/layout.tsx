@@ -1,8 +1,29 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
+import { EmpresaSwitcher } from "@/components/empresa-switcher";
+import { getMyEmpresas } from "@/lib/api";
 import "./globals.css";
+
+const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
+
+async function resolveEmpresaSwitcher() {
+  // Tentamos buscar a lista de empresas do user — se a session estiver
+  // ausente (rota /login, primeiro carregamento) ou a API falhar, o
+  // switcher simplesmente não renderiza.
+  try {
+    const { empresas } = await getMyEmpresas();
+    if (!empresas || empresas.length === 0) return null;
+    const cookieStore = await cookies();
+    const raw = cookieStore.get(ACTIVE_EMPRESA_COOKIE)?.value;
+    const active = raw ? Number(raw) : empresas[0].id;
+    return <EmpresaSwitcher empresas={empresas} activeEmpresaId={active} />;
+  } catch {
+    return null;
+  }
+}
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const jetbrainsMono = JetBrains_Mono({
@@ -27,9 +48,10 @@ export const viewport: Viewport = {
   themeColor: "#0d0d10",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const empresaSwitcher = await resolveEmpresaSwitcher();
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body
@@ -50,7 +72,7 @@ export default function RootLayout({
           aria-hidden
           className="fixed top-[30%] right-[35%] w-[350px] h-[350px] bg-brand-primary/[0.05] blur-[110px] rounded-full pointer-events-none -z-10 animate-pulse-slow"
         />
-        <AppShell>{children}</AppShell>
+        <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
       </body>
     </html>
   );
