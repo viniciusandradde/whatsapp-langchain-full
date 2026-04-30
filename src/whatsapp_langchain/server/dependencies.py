@@ -23,6 +23,12 @@ from psycopg_pool import AsyncConnectionPool
 from twilio.request_validator import RequestValidator  # type: ignore[import-untyped]
 
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.empresa import (
+    get_default_empresa_id,
+    get_empresa_membership,
+    is_superadmin,
+)
 
 logger = structlog.get_logger()
 
@@ -231,6 +237,74 @@ def _check_rate_limit_inmemory(phone_number: str) -> None:
 
     # Registra nova requisição
     request_history[phone_number].append(now)
+
+
+def get_user_id_from_request(request: Request) -> str:
+    """Extrai o user_id da chamada do frontend via header X-User-Id.
+
+    O frontend (Next.js) deriva o id da session Better Auth e envia em todas
+    as chamadas pra /api/*. A API confia no header porque a request já passou
+    pelo `verify_service_token` (token compartilhado em rede interna).
+
+    Raises:
+        HTTPException 401: header ausente.
+    """
+    user_id = request.headers.get("X-User-Id", "").strip()
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="X-User-Id header ausente — frontend deve injetar via session.",
+        )
+    return user_id
+
+
+async def get_empresa_context(request: Request) -> int:
+    """Resolve empresa_id ativo da request (header ou default do user).
+
+    Ordem:
+    1. Header `X-Empresa-Id` — se presente, valida membership do user.
+    2. Empresa default do user (is_default=TRUE em empresa_membro).
+    3. Superadmins podem usar header sem ser membros (acesso cross-tenant).
+
+    Raises:
+        HTTPException 401: X-User-Id ausente.
+        HTTPException 403: user não tem nenhuma empresa OU header pra
+            empresa que não é membro (e não é superadmin).
+    """
+    user_id = get_user_id_from_request(request)
+    pool = await get_pool()
+
+    raw = request.headers.get("X-Empresa-Id", "").strip()
+    if raw:
+        try:
+            empresa_id = int(raw)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="X-Empresa-Id deve ser inteiro."
+            ) from exc
+
+        # Superadmins entram em qualquer empresa.
+        if await is_superadmin(pool, user_id):
+            return empresa_id
+
+        membership = await get_empresa_membership(pool, empresa_id, user_id)
+        if membership is None:
+            logger.warning(
+                "empresa_membership_denied", user=user_id, empresa=empresa_id
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Sem acesso à empresa {empresa_id}.",
+            )
+        return empresa_id
+
+    default = await get_default_empresa_id(pool, user_id)
+    if default is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Usuário não pertence a nenhuma empresa.",
+        )
+    return default
 
 
 async def check_rate_limit(
