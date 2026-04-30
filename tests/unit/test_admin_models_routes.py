@@ -5,14 +5,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from whatsapp_langchain.server.dependencies import verify_service_token
+from whatsapp_langchain.server.dependencies import (
+    get_empresa_context,
+    verify_service_token,
+)
 from whatsapp_langchain.server.main import app
 
 
 @pytest.fixture
 def client():
-    """TestClient com verify_service_token desabilitado pra simplificar setup."""
+    """TestClient com auth desabilitada e empresa_id=1 fixo no contexto.
+
+    Pra testes de routing/lógica, override de dependencies é mais limpo
+    do que injetar headers manualmente em cada chamada.
+    """
     app.dependency_overrides[verify_service_token] = lambda: None
+    app.dependency_overrides[get_empresa_context] = lambda: 1
     try:
         yield TestClient(app)
     finally:
@@ -115,6 +123,7 @@ def test_put_agent_config_persists_and_returns_updated(client, monkeypatch):
     ]
     assert len(insert_calls) == 1
     assert insert_calls[0].args[1] == (
+        1,
         "vsa_tech",
         "openai/gpt-4o-mini",
         "google/gemini-2.5-flash-lite",
@@ -151,7 +160,7 @@ def test_put_agent_config_clears_override_with_empty_string(client, monkeypatch)
     insert_calls = [
         call for call in conn.execute.await_args_list if "INSERT" in str(call.args[0])
     ]
-    assert insert_calls[0].args[1] == ("vsa_tech", None, None)
+    assert insert_calls[0].args[1] == (1, "vsa_tech", None, None)
 
 
 def test_get_agent_config_returns_400_for_unknown_agent(client, monkeypatch):

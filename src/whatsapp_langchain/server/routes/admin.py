@@ -14,12 +14,18 @@ import structlog
 from fastapi import APIRouter, Depends, Query
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError, list_agents
-from whatsapp_langchain.server.dependencies import verify_service_token
+from whatsapp_langchain.server.dependencies import (
+    get_empresa_context,
+    get_user_id_from_request,
+    verify_service_token,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.empresa import list_empresas_of_user
 from whatsapp_langchain.shared.llm import CURATED_MODELS
 from whatsapp_langchain.shared.models import (
     AgentLLMConfigResponse,
+    Empresa,
     ModelInfo,
     UpdateAgentLLMConfigRequest,
 )
@@ -53,8 +59,25 @@ async def list_models() -> dict[str, list[ModelInfo]]:
     return {"models": [ModelInfo(**m) for m in CURATED_MODELS]}
 
 
+@router.get("/empresas")
+async def list_my_empresas(
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict[str, list[Empresa]]:
+    """Lista todas as empresas onde o usuário (Better Auth) é membro.
+
+    Usado pelo `<EmpresaSwitcher>` do frontend pra montar o dropdown.
+    Usuários sem nenhuma empresa retornam lista vazia (sem 403 — o painel
+    decide o que mostrar).
+    """
+    pool = await get_pool()
+    return {"empresas": await list_empresas_of_user(pool, user_id)}
+
+
 @router.get("/agents/{agent_id}/config")
-async def get_agent_config(agent_id: str) -> AgentLLMConfigResponse:
+async def get_agent_config(
+    agent_id: str,
+    empresa_id: int = Depends(get_empresa_context),
+) -> AgentLLMConfigResponse:
     """Retorna a configuração de modelos resolvida (DB ou env) + overrides crus."""
     if agent_id not in list_agents():
         raise AgentNotFoundError(agent_id)
@@ -62,8 +85,11 @@ async def get_agent_config(agent_id: str) -> AgentLLMConfigResponse:
     pool = await get_pool()
     async with pool.connection() as conn:
         cursor = await conn.execute(
-            "SELECT chat_model, midia_model FROM agent_llm_config WHERE agent_id = %s",
-            (agent_id,),
+            """
+            SELECT chat_model, midia_model FROM agent_llm_config
+             WHERE empresa_id = %s AND agent_id = %s
+            """,
+            (empresa_id, agent_id),
         )
         row = await cursor.fetchone()
 
@@ -81,7 +107,9 @@ async def get_agent_config(agent_id: str) -> AgentLLMConfigResponse:
 
 @router.put("/agents/{agent_id}/config")
 async def update_agent_config(
-    agent_id: str, body: UpdateAgentLLMConfigRequest
+    agent_id: str,
+    body: UpdateAgentLLMConfigRequest,
+    empresa_id: int = Depends(get_empresa_context),
 ) -> AgentLLMConfigResponse:
     """Atualiza overrides de modelo. None ou string vazia limpa o override."""
     if agent_id not in list_agents():
@@ -94,27 +122,34 @@ async def update_agent_config(
     async with pool.connection() as conn:
         await conn.execute(
             """
-            INSERT INTO agent_llm_config (agent_id, chat_model, midia_model)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (agent_id) DO UPDATE SET
+            INSERT INTO agent_llm_config (empresa_id, agent_id, chat_model, midia_model)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (empresa_id, agent_id) DO UPDATE SET
                 chat_model = EXCLUDED.chat_model,
                 midia_model = EXCLUDED.midia_model,
                 updated_at = NOW()
             """,
-            (agent_id, chat, midia),
+            (empresa_id, agent_id, chat, midia),
         )
 
-    logger.info("agent_llm_config_updated", agent_id=agent_id, chat=chat, midia=midia)
+    logger.info(
+        "agent_llm_config_updated",
+        empresa_id=empresa_id,
+        agent_id=agent_id,
+        chat=chat,
+        midia=midia,
+    )
 
-    return await get_agent_config(agent_id)
+    return await get_agent_config(agent_id, empresa_id=empresa_id)
 
 
 @router.get("/chats")
 async def get_chats(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
-    """Lista conversas ativas, ordenadas por última mensagem.
+    """Lista conversas ativas da empresa ativa, ordenadas por última mensagem.
 
     Args:
         limit: Máximo de resultados (1-100). Default: 20.
@@ -131,15 +166,18 @@ async def get_chats(
             SELECT phone_number, agent_id, thread_id, last_message,
                    last_message_at, message_count, created_at
             FROM conversations
+             WHERE empresa_id = %s
             ORDER BY last_message_at DESC
             LIMIT %s OFFSET %s
             """,
-            (limit, offset),
+            (empresa_id, limit, offset),
         )
         rows = await cursor.fetchall()
 
-        # Total para paginação
-        count_cursor = await conn.execute("SELECT COUNT(*) FROM conversations")
+        count_cursor = await conn.execute(
+            "SELECT COUNT(*) FROM conversations WHERE empresa_id = %s",
+            (empresa_id,),
+        )
         count_row = await count_cursor.fetchone()
         total = count_row[0] if count_row else 0
 
@@ -164,17 +202,9 @@ async def get_chat_messages(
     phone_number: str,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
-    """Lista mensagens de uma conversa específica.
-
-    Args:
-        phone_number: Número de telefone do remetente.
-        limit: Máximo de resultados (1-200). Default: 50.
-        offset: Offset para paginação. Default: 0.
-
-    Returns:
-        Lista de mensagens da conversa.
-    """
+    """Lista mensagens de uma conversa específica (na empresa ativa)."""
     pool = await get_pool()
 
     async with pool.connection() as conn:
@@ -185,11 +215,11 @@ async def get_chat_messages(
                    response, status, created_at, processed_at,
                    media_processing_error, error
             FROM message_queue
-            WHERE phone_number = %s
+            WHERE empresa_id = %s AND phone_number = %s
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
             """,
-            (phone_number, limit, offset),
+            (empresa_id, phone_number, limit, offset),
         )
         rows = await cursor.fetchall()
 
@@ -215,52 +245,55 @@ async def get_chat_messages(
 
 
 @router.get("/metrics")
-async def get_metrics() -> dict:
-    """Métricas operacionais da fila de mensagens.
-
-    Returns:
-        Métricas: total hoje, falhas, tempo médio de processamento, fila atual.
-    """
+async def get_metrics(
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Métricas operacionais da fila — escopadas pela empresa ativa."""
     pool = await get_pool()
 
     async with pool.connection() as conn:
-        # Total de mensagens hoje
         cursor = await conn.execute(
             """
             SELECT COUNT(*) FROM message_queue
-            WHERE created_at >= CURRENT_DATE
-            """
+             WHERE empresa_id = %s AND created_at >= CURRENT_DATE
+            """,
+            (empresa_id,),
         )
         row = await cursor.fetchone()
         total_today = row[0] if row else 0
 
-        # Falhas hoje
         cursor = await conn.execute(
             """
             SELECT COUNT(*) FROM message_queue
-            WHERE status = 'failed' AND created_at >= CURRENT_DATE
-            """
+             WHERE empresa_id = %s
+               AND status = 'failed'
+               AND created_at >= CURRENT_DATE
+            """,
+            (empresa_id,),
         )
         row = await cursor.fetchone()
         failures_today = row[0] if row else 0
 
-        # Tempo médio de processamento (em segundos)
         cursor = await conn.execute(
             """
             SELECT AVG(EXTRACT(EPOCH FROM (processed_at - created_at)))
-            FROM message_queue
-            WHERE status = 'done' AND processed_at IS NOT NULL
-              AND created_at >= CURRENT_DATE
-            """
+              FROM message_queue
+             WHERE empresa_id = %s
+               AND status = 'done'
+               AND processed_at IS NOT NULL
+               AND created_at >= CURRENT_DATE
+            """,
+            (empresa_id,),
         )
         row = await cursor.fetchone()
         avg_processing_time = (
             float(round(row[0], 2)) if row and row[0] is not None else None
         )
 
-        # Mensagens na fila agora
         cursor = await conn.execute(
-            "SELECT COUNT(*) FROM message_queue WHERE status = 'queued'"
+            "SELECT COUNT(*) FROM message_queue"
+            " WHERE empresa_id = %s AND status = 'queued'",
+            (empresa_id,),
         )
         row = await cursor.fetchone()
         queue_size = row[0] if row else 0
@@ -274,45 +307,39 @@ async def get_metrics() -> dict:
 
 
 @router.get("/queue")
-async def get_queue() -> dict:
-    """Visão geral da fila de mensagens: contadores por status e mensagens recentes.
-
-    Usado pelo painel admin para monitorar o estado da fila em tempo real.
-    Retorna contadores do dia atual agrupados por status e as últimas 50 mensagens.
-
-    Returns:
-        Contadores por status (queued, processing, done, failed) e lista
-        das 50 mensagens mais recentes com dados resumidos.
-    """
+async def get_queue(
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Visão da fila — contadores e últimas 50 mensagens da empresa ativa."""
     pool = await get_pool()
 
     async with pool.connection() as conn:
-        # Contadores por status (apenas do dia atual)
         cursor = await conn.execute(
             """
             SELECT status, COUNT(*) as count
-            FROM message_queue
-            WHERE created_at >= CURRENT_DATE
-            GROUP BY status
-            """
+              FROM message_queue
+             WHERE empresa_id = %s AND created_at >= CURRENT_DATE
+             GROUP BY status
+            """,
+            (empresa_id,),
         )
         status_rows = await cursor.fetchall()
 
-        # Inicializa todos os status com zero para garantir presença no response
         counters = {"queued": 0, "processing": 0, "done": 0, "failed": 0}
         for row in status_rows:
             counters[row[0]] = row[1]
 
-        # Mensagens recentes (últimas 50, qualquer data)
         cursor = await conn.execute(
             """
             SELECT id, phone_number, agent_id,
                    LEFT(incoming_message, 100) as incoming_message,
                    status, created_at, attempts, error
-            FROM message_queue
-            ORDER BY created_at DESC
-            LIMIT 50
-            """
+              FROM message_queue
+             WHERE empresa_id = %s
+             ORDER BY created_at DESC
+             LIMIT 50
+            """,
+            (empresa_id,),
         )
         message_rows = await cursor.fetchall()
 
