@@ -464,3 +464,59 @@ class VariavelAmbienteInput(BaseModel):
     valor: str = Field(min_length=0, max_length=4000)
     descricao: str | None = Field(default=None, max_length=200)
     ativo: bool = True
+
+
+class Departamento(BaseModel):
+    """Categorização opcional de atendimento (suporte, vendas, etc) — M6.a."""
+
+    id: int
+    empresa_id: int
+    nome: str
+    descricao: str | None = None
+    ativo: bool = True
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DepartamentoInput(BaseModel):
+    nome: str = Field(min_length=1, max_length=80)
+    descricao: str | None = Field(default=None, max_length=200)
+    ativo: bool = True
+
+
+class HorarioFuncionamento(BaseModel):
+    """Janela de expediente por dia da semana (0=dom .. 6=sáb) — M6.a."""
+
+    id: int
+    empresa_id: int
+    dia_semana: int = Field(ge=0, le=6)
+    hora_inicio: str  # "HH:MM" — TIME do Postgres serializa como string
+    hora_fim: str
+    departamento_id: int | None = None
+    ativo: bool = True
+    created_at: datetime
+
+
+class HorarioFuncionamentoInput(BaseModel):
+    dia_semana: int = Field(ge=0, le=6)
+    hora_inicio: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    hora_fim: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    departamento_id: int | None = None
+    ativo: bool = True
+
+
+class Feriado(BaseModel):
+    """Override de horário — empresa fechada o dia inteiro — M6.a."""
+
+    id: int
+    empresa_id: int
+    data: str  # ISO date "YYYY-MM-DD"
+    descricao: str | None = None
+    created_by_user_id: str | None = None
+    created_at: datetime
+
+
+class FeriadoInput(BaseModel):
+    data: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    descricao: str | None = Field(default=None, max_length=200)
