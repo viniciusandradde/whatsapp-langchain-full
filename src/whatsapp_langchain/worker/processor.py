@@ -37,6 +37,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
 from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
+from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.models import MessageQueue
 from whatsapp_langchain.shared.queue import (
@@ -178,6 +179,16 @@ async def process_message(
 
         # 3. Carregar agente com checkpointer + store (se memória habilitada)
         normalized_text = pre.normalized_text or message.incoming_message
+
+        # M6.a — sinalizamos pro agente quando estamos fora do expediente.
+        # Wrapper textual no prompt do user é a forma menos invasiva: o
+        # agente padrão simplesmente repassa "ok" e o admin pode treinar
+        # seu prompt override pra reagir ao prefixo (ex: "responda que
+        # voltamos no próximo dia útil").
+        within_hours = await is_business_hours(pool, message.empresa_id)
+        if not within_hours:
+            normalized_text = f"[FORA DO EXPEDIENTE] {normalized_text}"
+
         human_message = HumanMessage(content=normalized_text)
 
         invoke_config = {

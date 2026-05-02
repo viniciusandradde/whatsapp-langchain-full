@@ -63,6 +63,11 @@ class TestProcessorMemoryFlag:
                 new_callable=AsyncMock,
                 return_value=("env-chat", "env-midia"),
             ),
+            patch(
+                "whatsapp_langchain.worker.processor.is_business_hours",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {

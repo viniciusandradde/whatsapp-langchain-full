@@ -95,6 +95,12 @@ def _patch_processor(preprocess_result, *, atendimento_lookup=None):
             "whatsapp_langchain.worker.processor.get_atendimento_by_id",
             new=atendimento_lookup or AsyncMock(return_value=None),
         ),
+        # M6.a — sempre dentro do expediente nos testes (gate ortogonal).
+        patch(
+            "whatsapp_langchain.worker.processor.is_business_hours",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
     )
 
 
@@ -118,6 +124,47 @@ MEDIA_DISABLED_PREPROCESS = MediaPreprocessResult(
 class TestSendMessageMarkDone:
     """Garante que mark_done só ocorre após send_message bem-sucedido."""
 
+    async def test_prefixes_message_when_outside_business_hours(
+        self, message, mock_twilio
+    ):
+        """M6.a: is_business_hours=False prepende '[FORA DO EXPEDIENTE] ' no input do agente."""
+        patches = _patch_processor(TEXT_PREPROCESS)
+        # Override patches[7] (is_business_hours) pra retornar False
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2],
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patch(
+                "whatsapp_langchain.worker.processor.is_business_hours",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Voltamos em breve!")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                twilio=mock_twilio,
+            )
+
+            # Verifica o conteúdo passado pro agente
+            call_args = mock_graph.ainvoke.await_args
+            human_msg = call_args.args[0]["messages"][0]
+            assert human_msg.content.startswith("[FORA DO EXPEDIENTE] ")
+            assert "Olá!" in human_msg.content
+
     async def test_mark_done_after_successful_send(self, message, mock_twilio):
         """Fluxo feliz: send_message ok → mark_done chamado."""
         patches = _patch_processor(TEXT_PREPROCESS)
@@ -129,6 +176,7 @@ class TestSendMessageMarkDone:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -169,6 +217,7 @@ class TestSendMessageMarkDone:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -209,6 +258,7 @@ class TestSendMessageMarkDone:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -247,6 +297,7 @@ class TestAutoResponseTwilio:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             from whatsapp_langchain.worker.processor import process_message
 
@@ -283,6 +334,7 @@ class TestAutoResponseTwilio:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             from whatsapp_langchain.worker.processor import process_message
 
@@ -349,6 +401,7 @@ class TestHandoffHumano:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             from whatsapp_langchain.worker.processor import (
                 HANDOFF_HUMANO_MARKER,
@@ -391,6 +444,7 @@ class TestHandoffHumano:
             patches[4],
             patches[5],
             patches[6],
+            patches[7],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -429,6 +483,7 @@ class TestHandoffHumano:
             patches[4],
             patches[5],
             patches[6] as mock_atd,
+            patches[7],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
