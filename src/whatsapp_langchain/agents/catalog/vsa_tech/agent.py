@@ -44,6 +44,8 @@ def build_graph(
     pool: AsyncConnectionPool | None = None,  # noqa: ARG001 — reservado pra futuras tools sync
     empresa_id: int | None = None,  # noqa: ARG001 — idem
     calendar_enabled: bool = False,
+    system_prompt_override: str | None = None,
+    temperatura: float | None = None,
 ):
     """Constrói o agente vsa_tech.
 
@@ -70,7 +72,8 @@ def build_graph(
     """
     # Modelo principal com rate limiter centralizado (shared/llm.py).
     # chat_model=None faz fallback pra settings.openrouter_model.
-    model = create_chat_model(model=chat_model)
+    # temperatura=None deixa o provider aplicar o default dele.
+    model = create_chat_model(model=chat_model, temperature=temperatura)
 
     # Middleware de contexto baseado em CONTEXT_STRATEGY
     middleware = get_context_middleware()
@@ -89,10 +92,18 @@ def build_graph(
             ]
         )
 
+    # Override do prompt vem do `agente_ia_config` da empresa via loader.
+    # Vazio/None = usa o template hardcoded (`SYSTEM_PROMPT`).
+    effective_prompt = (
+        system_prompt_override
+        if system_prompt_override and system_prompt_override.strip()
+        else SYSTEM_PROMPT
+    )
+
     return create_agent(
         model=model,
         tools=tools,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=effective_prompt,
         middleware=middleware,
         checkpointer=checkpointer,
         store=store,

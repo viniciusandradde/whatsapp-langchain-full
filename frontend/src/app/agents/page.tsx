@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot, MessageSquare } from "lucide-react";
+import { Bot, MessageSquare, SlidersHorizontal } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -88,11 +88,17 @@ export default async function AgentsPage() {
                 </p>
               </CardContent>
 
-              {/* Link para ver conversas filtradas por este agente */}
-              <CardFooter>
+              <CardFooter className="flex flex-wrap items-center gap-4">
+                <Link
+                  href={`/agents/${encodeURIComponent(agentId)}/edit`}
+                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Editar IA
+                </Link>
                 <Link
                   href={`/chats?agent=${encodeURIComponent(agentId)}`}
-                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
                 >
                   <MessageSquare className="h-4 w-4" />
                   Ver conversas

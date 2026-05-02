@@ -355,6 +355,30 @@ export interface HookLogsResponse {
   logs: HookLog[];
 }
 
+// --- M5.b: AgenteIA Configurável ---
+
+export interface AgenteIAConfig {
+  empresa_id: number;
+  agent_id: string;
+  system_prompt_override: string | null;
+  temperatura: number | null;
+  ativo: boolean;
+  updated_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgenteIAConfigInput {
+  system_prompt_override?: string | null;
+  temperatura?: number | null;
+  ativo?: boolean;
+}
+
+export interface AgenteIAConfigResponse {
+  config: AgenteIAConfig | null;
+  default_system_prompt: string;
+}
+
 // --- M5.a: Google Calendar ---
 
 export interface GoogleCalendarConfig {
@@ -785,6 +809,33 @@ export async function getGoogleCalendarOAuthUrl(): Promise<{ authorize_url: stri
 
 export async function disconnectGoogleCalendar(): Promise<void> {
   await apiFetch<void>("/api/google-calendar/config", { method: "DELETE" });
+}
+
+// --- AgenteIA configurável ---
+
+export async function getAgenteIAConfig(
+  agentId: string
+): Promise<AgenteIAConfigResponse> {
+  return apiFetch<AgenteIAConfigResponse>(
+    `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`
+  );
+}
+
+export async function updateAgenteIAConfig(
+  agentId: string,
+  body: AgenteIAConfigInput
+): Promise<AgenteIAConfig> {
+  return apiFetch<AgenteIAConfig>(
+    `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`,
+    { method: "PUT", body }
+  );
+}
+
+export async function resetAgenteIAConfig(agentId: string): Promise<void> {
+  await apiFetch<void>(
+    `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`,
+    { method: "DELETE" }
+  );
 }
 
 export async function claimAtendimento(id: number): Promise<Atendimento> {

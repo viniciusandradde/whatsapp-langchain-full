@@ -272,6 +272,35 @@ class ClienteAnotacao(BaseModel):
     created_at: datetime
 
 
+class AgenteIAConfig(BaseModel):
+    """Override de comportamento do agente por (empresa, agent_id) — M5.b.
+
+    Quando `ativo` e `system_prompt_override` está preenchido, o loader
+    usa este texto em vez do SYSTEM_PROMPT hardcoded no catálogo.
+    """
+
+    empresa_id: int
+    agent_id: str
+    system_prompt_override: str | None = None
+    temperatura: float | None = None
+    ativo: bool = True
+    updated_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgenteIAConfigInput(BaseModel):
+    """Payload do PUT /api/agentes/{id}/config-ia.
+
+    `system_prompt_override` vazio + `ativo=False` é o sinal pra "voltar
+    pro default" sem precisar deletar a row.
+    """
+
+    system_prompt_override: str | None = Field(default=None, max_length=20000)
+    temperatura: float | None = Field(default=None, ge=0, le=2)
+    ativo: bool = True
+
+
 class EmpresaCalendarConfig(BaseModel):
     """Conexão Google Calendar de uma empresa (M5.a).
 

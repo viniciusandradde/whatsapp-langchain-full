@@ -10,6 +10,8 @@ Uso:
     curl http://localhost:8000/api/metrics
 """
 
+import importlib
+
 import structlog
 from fastapi import APIRouter, Depends, Query
 
@@ -19,11 +21,18 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.shared.agente_ia import (
+    delete_agente_ia_config,
+    get_agente_ia_config,
+    upsert_agente_ia_config,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import list_empresas_of_user
 from whatsapp_langchain.shared.llm import CURATED_MODELS
 from whatsapp_langchain.shared.models import (
+    AgenteIAConfig,
+    AgenteIAConfigInput,
     AgentLLMConfigResponse,
     Empresa,
     ModelInfo,
@@ -141,6 +150,80 @@ async def update_agent_config(
     )
 
     return await get_agent_config(agent_id, empresa_id=empresa_id)
+
+
+# --- M5.b AgenteIA configurável: prompt + temperatura ---
+
+
+def _load_default_system_prompt(agent_id: str) -> str:
+    """Lê SYSTEM_PROMPT do módulo do catálogo (placeholder pra UI)."""
+    try:
+        prompts_mod = importlib.import_module(
+            f"whatsapp_langchain.agents.catalog.{agent_id}.prompts"
+        )
+        return getattr(prompts_mod, "SYSTEM_PROMPT", "")
+    except ModuleNotFoundError:
+        return ""
+
+
+@router.get("/agents/{agent_id}/agente-ia-config")
+async def get_agente_ia_config_route(
+    agent_id: str,
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Retorna o override (se existir) + o prompt default do catálogo."""
+    if agent_id not in list_agents():
+        raise AgentNotFoundError(agent_id)
+    pool = await get_pool()
+    config = await get_agente_ia_config(pool, empresa_id, agent_id)
+    return {
+        "config": config.model_dump(mode="json") if config else None,
+        "default_system_prompt": _load_default_system_prompt(agent_id),
+    }
+
+
+@router.put("/agents/{agent_id}/agente-ia-config")
+async def update_agente_ia_config_route(
+    agent_id: str,
+    body: AgenteIAConfigInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> AgenteIAConfig:
+    if agent_id not in list_agents():
+        raise AgentNotFoundError(agent_id)
+    pool = await get_pool()
+    out = await upsert_agente_ia_config(
+        pool, empresa_id, agent_id, body, user_id=user_id
+    )
+    logger.info(
+        "agente_ia_config_updated",
+        empresa_id=empresa_id,
+        agent_id=agent_id,
+        ativo=out.ativo,
+        has_prompt=bool(out.system_prompt_override),
+        temperatura=out.temperatura,
+        user_id=user_id,
+    )
+    return out
+
+
+@router.delete("/agents/{agent_id}/agente-ia-config", status_code=204)
+async def delete_agente_ia_config_route(
+    agent_id: str,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> None:
+    if agent_id not in list_agents():
+        raise AgentNotFoundError(agent_id)
+    pool = await get_pool()
+    deleted = await delete_agente_ia_config(pool, empresa_id, agent_id)
+    logger.info(
+        "agente_ia_config_deleted",
+        empresa_id=empresa_id,
+        agent_id=agent_id,
+        deleted=deleted,
+        user_id=user_id,
+    )
 
 
 @router.get("/chats")
