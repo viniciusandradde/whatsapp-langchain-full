@@ -38,6 +38,10 @@ class MessageQueue(BaseModel):
     empresa_id: int = Field(
         default=1, description="Empresa dona da mensagem (multi-tenancy)"
     )
+    atendimento_id: int | None = Field(
+        default=None,
+        description="Atendimento (M3 CRM) ao qual a mensagem pertence; None em rows legacy.",
+    )
     message_id: str | None = None
     phone_number: str = Field(description="Formato E.164, ex: +5511999999999")
     to_number: str | None = None

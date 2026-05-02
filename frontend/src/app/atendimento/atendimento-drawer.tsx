@@ -345,7 +345,11 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
       meta: m.media_url,
     });
   }
-  if (m.response) {
+  // Marker do handoff humano — o worker grava no `response` quando pula o
+  // agente IA. Não renderiza como bolha (a inbound já fica visível); só
+  // exibe um divider sutil pra deixar claro que o agente foi pulado.
+  const isHandoff = m.response?.startsWith("[handoff humano");
+  if (m.response && !isHandoff) {
     bubbles.push({ side: "out", text: m.response });
   }
   if (m.error) {
@@ -387,6 +391,11 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
           </div>
         </div>
       ))}
+      {isHandoff && (
+        <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          ⏸ agente pausado — operador respondendo
+        </p>
+      )}
     </div>
   );
 }

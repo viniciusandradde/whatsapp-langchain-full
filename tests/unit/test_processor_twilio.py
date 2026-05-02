@@ -58,8 +58,12 @@ def mock_twilio():
 # --- Helpers ---
 
 
-def _patch_processor(preprocess_result):
-    """Retorna context managers para mockar dependências do processor."""
+def _patch_processor(preprocess_result, *, atendimento_lookup=None):
+    """Retorna context managers para mockar dependências do processor.
+
+    `atendimento_lookup`: AsyncMock pra get_atendimento_by_id; default
+    retorna None (caminho normal — sem handoff).
+    """
     return (
         patch(
             "whatsapp_langchain.worker.processor.preprocess_incoming_message",
@@ -86,6 +90,10 @@ def _patch_processor(preprocess_result):
             "whatsapp_langchain.worker.processor.get_agent_llm_config",
             new_callable=AsyncMock,
             return_value=("env-chat", "env-midia"),
+        ),
+        patch(
+            "whatsapp_langchain.worker.processor.get_atendimento_by_id",
+            new=atendimento_lookup or AsyncMock(return_value=None),
         ),
     )
 
@@ -120,6 +128,7 @@ class TestSendMessageMarkDone:
             patches[3] as mock_failed,
             patches[4],
             patches[5],
+            patches[6],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -159,6 +168,7 @@ class TestSendMessageMarkDone:
             patches[3] as mock_failed,
             patches[4],
             patches[5],
+            patches[6],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -198,6 +208,7 @@ class TestSendMessageMarkDone:
             patches[3] as mock_failed,
             patches[4],
             patches[5],
+            patches[6],
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -235,6 +246,7 @@ class TestAutoResponseTwilio:
             patches[3] as mock_failed,
             patches[4],
             patches[5],
+            patches[6],
         ):
             from whatsapp_langchain.worker.processor import process_message
 
@@ -270,6 +282,7 @@ class TestAutoResponseTwilio:
             patches[3] as mock_failed,
             patches[4],
             patches[5],
+            patches[6],
         ):
             from whatsapp_langchain.worker.processor import process_message
 
@@ -287,3 +300,153 @@ class TestAutoResponseTwilio:
             # mark_failed chamado
             mock_failed.assert_awaited_once()
             assert "503" in mock_failed.call_args[0][2]
+
+
+# === Testes do handoff humano (M4.c) ===
+
+
+class TestHandoffHumano:
+    """Worker pula o agente IA quando atendimento está em_andamento+assigned."""
+
+    @staticmethod
+    def _atendimento(status: str, assigned_to: str | None = None):
+        from datetime import UTC, datetime
+
+        from whatsapp_langchain.shared.models import Atendimento
+
+        now = datetime.now(UTC)
+        return Atendimento(
+            id=42,
+            empresa_id=1,
+            cliente_id=10,
+            conexao_id=1,
+            status=status,
+            assigned_to_user_id=assigned_to,
+            last_message_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def test_skips_agent_when_em_andamento_with_assignee(self, mock_twilio):
+        """Atendimento claim'ado: worker marca done com marker, sem invocar agente."""
+        msg = MessageQueue(
+            id=99,
+            atendimento_id=42,
+            phone_number="+5511999999999",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
+            incoming_message="oi novamente",
+        )
+        atd = AsyncMock(
+            return_value=self._atendimento("em_andamento", assigned_to="user-x")
+        )
+        patches = _patch_processor(TEXT_PREPROCESS, atendimento_lookup=atd)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+        ):
+            from whatsapp_langchain.worker.processor import (
+                HANDOFF_HUMANO_MARKER,
+                process_message,
+            )
+
+            await process_message(
+                msg,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                twilio=mock_twilio,
+            )
+
+            # Agente NÃO carregado, Twilio NÃO chamado
+            mock_load.assert_not_awaited()
+            mock_twilio.send_message.assert_not_awaited()
+            # mark_done com o marker de handoff
+            mock_done.assert_awaited_once()
+            response_arg = mock_done.call_args[0][2]
+            assert response_arg == HANDOFF_HUMANO_MARKER
+            mock_failed.assert_not_awaited()
+
+    async def test_invokes_agent_when_atendimento_aguardando(self, mock_twilio):
+        """Atendimento ainda sem operador: agente IA continua respondendo."""
+        msg = MessageQueue(
+            id=100,
+            atendimento_id=42,
+            phone_number="+5511999999999",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
+            incoming_message="oi",
+        )
+        atd = AsyncMock(return_value=self._atendimento("aguardando"))
+        patches = _patch_processor(TEXT_PREPROCESS, atendimento_lookup=atd)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta do agente")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                msg,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                twilio=mock_twilio,
+            )
+
+            # Agente carregado e Twilio chamado
+            mock_load.assert_awaited_once()
+            mock_twilio.send_message.assert_awaited_once_with(
+                "+5511999999999", "Resposta do agente"
+            )
+            mock_done.assert_awaited_once()
+            mock_failed.assert_not_awaited()
+
+    async def test_invokes_agent_when_atendimento_id_is_none(
+        self, message, mock_twilio
+    ):
+        """Mensagem legacy (atendimento_id=None): caminho normal do agente."""
+        # message fixture já tem atendimento_id=None por default
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6] as mock_atd,
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                twilio=mock_twilio,
+            )
+
+            # get_atendimento_by_id NÃO foi consultado (atendimento_id é None)
+            mock_atd.assert_not_awaited()
+            mock_load.assert_awaited_once()
+            mock_done.assert_awaited_once()
+            mock_failed.assert_not_awaited()

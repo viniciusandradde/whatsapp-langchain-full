@@ -36,6 +36,7 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
+from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.models import MessageQueue
 from whatsapp_langchain.shared.queue import (
@@ -50,6 +51,12 @@ from whatsapp_langchain.worker.media import (
 from whatsapp_langchain.worker.twilio_client import TwilioClient
 
 logger = structlog.get_logger()
+
+
+# Marcador na coluna `response` quando o worker pula o agente IA por
+# handoff humano. O painel filtra rows com este marker pra não exibir
+# como bolha de resposta automática.
+HANDOFF_HUMANO_MARKER = "[handoff humano — operador respondendo]"
 
 
 async def process_message(
@@ -128,6 +135,35 @@ async def process_message(
                 media_status=pre.media_processing_status,
             )
             return
+
+        # 1.5. Handoff humano: se o atendimento foi claim'ado por um operador
+        # (status=em_andamento + assigned_to_user_id), o worker pula a invocação
+        # do agente IA — o humano responde manualmente via composer no painel.
+        # A mensagem ainda é marcada como `done` pra liberar a fila e fica
+        # visível na timeline do drawer (incoming_message preservado).
+        if message.atendimento_id is not None:
+            atd = await get_atendimento_by_id(pool, message.atendimento_id)
+            if (
+                atd is not None
+                and atd.status == "em_andamento"
+                and atd.assigned_to_user_id
+            ):
+                await mark_done(
+                    pool,
+                    message.id,
+                    HANDOFF_HUMANO_MARKER,
+                    normalized_input=pre.normalized_text,
+                    media_processing_status=pre.media_processing_status,
+                    media_processing_error=pre.media_processing_error,
+                )
+                logger.info(
+                    "worker_skipped_agent_handoff",
+                    message_id=message.id,
+                    atendimento_id=message.atendimento_id,
+                    assigned_to=atd.assigned_to_user_id,
+                    phone=message.phone_number,
+                )
+                return
 
         # 2. Typing indicator (best-effort, falha não interrompe processamento)
         try:
