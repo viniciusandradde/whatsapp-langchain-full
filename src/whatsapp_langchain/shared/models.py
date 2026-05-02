@@ -40,7 +40,7 @@ class MessageQueue(BaseModel):
     )
     atendimento_id: int | None = Field(
         default=None,
-        description="Atendimento (M3 CRM) ao qual a mensagem pertence; None em rows legacy.",
+        description="Atendimento (M3 CRM); None em rows legacy.",
     )
     message_id: str | None = None
     phone_number: str = Field(description="Formato E.164, ex: +5511999999999")
@@ -269,6 +269,48 @@ class ClienteAnotacao(BaseModel):
     cliente_id: int
     user_id: str
     conteudo: str
+    created_at: datetime
+
+
+HookEvento = str  # validado em runtime contra CHECK constraint da tabela
+
+
+class Hook(BaseModel):
+    """Webhook HTTP configurável da empresa (M4.d).
+
+    Disparado pelo dispatcher quando o evento correspondente acontece;
+    cada tentativa fica registrada em `hook_log`.
+    """
+
+    id: int
+    empresa_id: int
+    nome: str
+    evento: str
+    url: str
+    secret: str | None = None
+    ativo: bool = True
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class HookInput(BaseModel):
+    """Payload de POST/PUT em /api/hooks."""
+
+    nome: str = Field(min_length=1, max_length=120)
+    evento: str = Field(min_length=1)
+    url: str = Field(min_length=1, max_length=2048)
+    secret: str | None = Field(default=None, max_length=256)
+    ativo: bool = True
+
+
+class HookLog(BaseModel):
+    id: int
+    hook_id: int
+    evento: str
+    status_code: int | None = None
+    error: str | None = None
+    duration_ms: int | None = None
     created_at: datetime
 
 

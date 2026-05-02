@@ -307,6 +307,54 @@ export interface ModelosMensagemResponse {
   modelos: ModeloMensagem[];
 }
 
+// --- M4.d: Webhooks (hook + hook_log) ---
+
+export type HookEvento =
+  | "mensagem.recebida"
+  | "atendimento.aberto"
+  | "atendimento.atendido"
+  | "atendimento.fechado"
+  | "atendimento.transferido";
+
+export interface Hook {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  evento: HookEvento;
+  url: string;
+  secret: string | null;
+  ativo: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HookInput {
+  nome: string;
+  evento: HookEvento;
+  url: string;
+  secret?: string | null;
+  ativo?: boolean;
+}
+
+export interface HookLog {
+  id: number;
+  hook_id: number;
+  evento: string;
+  status_code: number | null;
+  error: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface HooksResponse {
+  hooks: Hook[];
+}
+
+export interface HookLogsResponse {
+  logs: HookLog[];
+}
+
 // --- Configuração ---
 
 // URL interna da API — em Docker usa o nome do serviço (http://api:8000),
@@ -679,6 +727,38 @@ export async function updateModeloMensagem(
 
 export async function deleteModeloMensagem(id: number): Promise<void> {
   await apiFetch<void>(`/api/modelos/${id}`, { method: "DELETE" });
+}
+
+// --- Hooks (webhooks configuráveis) ---
+
+export async function getHooks(evento?: HookEvento): Promise<HooksResponse> {
+  const qs = evento ? `?evento=${encodeURIComponent(evento)}` : "";
+  return apiFetch<HooksResponse>(`/api/hooks${qs}`);
+}
+
+export async function getHookEventos(): Promise<{ eventos: HookEvento[] }> {
+  return apiFetch<{ eventos: HookEvento[] }>(`/api/hooks/eventos`);
+}
+
+export async function createHook(body: HookInput): Promise<Hook> {
+  return apiFetch<Hook>(`/api/hooks`, { method: "POST", body });
+}
+
+export async function updateHook(id: number, body: HookInput): Promise<Hook> {
+  return apiFetch<Hook>(`/api/hooks/${id}`, { method: "PUT", body });
+}
+
+export async function deleteHook(id: number): Promise<void> {
+  await apiFetch<void>(`/api/hooks/${id}`, { method: "DELETE" });
+}
+
+export async function getHookLogs(
+  id: number,
+  limit: number = 20
+): Promise<HookLogsResponse> {
+  return apiFetch<HookLogsResponse>(
+    `/api/hooks/${id}/logs?limit=${limit}`
+  );
 }
 
 export async function claimAtendimento(id: number): Promise<Atendimento> {

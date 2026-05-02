@@ -28,6 +28,7 @@ from whatsapp_langchain.shared.atendimento import (
     transfer_atendimento,
 )
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
 
@@ -140,6 +141,16 @@ async def claim(
         atendimento_id=atendimento_id,
         user_id=user_id,
     )
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "atendimento.atendido",
+        {
+            "atendimento_id": atendimento_id,
+            "assigned_to_user_id": user_id,
+            "cliente_id": out.cliente_id,
+        },
+    )
     return out
 
 
@@ -162,6 +173,17 @@ async def close(
         atendimento_id=atendimento_id,
         status=body.status,
         user_id=user_id,
+    )
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "atendimento.fechado",
+        {
+            "atendimento_id": atendimento_id,
+            "status": body.status,
+            "closed_by_user_id": user_id,
+            "cliente_id": out.cliente_id,
+        },
     )
     return out
 
@@ -215,5 +237,16 @@ async def transfer(
         atendimento_id=atendimento_id,
         from_user=user_id,
         to_user=body.user_id,
+    )
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "atendimento.transferido",
+        {
+            "atendimento_id": atendimento_id,
+            "from_user_id": user_id,
+            "to_user_id": body.user_id,
+            "cliente_id": out.cliente_id,
+        },
     )
     return out

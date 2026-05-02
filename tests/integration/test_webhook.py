@@ -94,7 +94,11 @@ def mock_db(monkeypatch):
         ),
         patch(
             "whatsapp_langchain.server.routes.webhook.open_or_attach_atendimento",
-            new=AsyncMock(return_value=_default_atendimento()),
+            new=AsyncMock(return_value=(_default_atendimento(), True)),
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.dispatch_event",
+            new=AsyncMock(return_value=None),
         ),
         patch(
             "whatsapp_langchain.server.routes.admin.get_pool",

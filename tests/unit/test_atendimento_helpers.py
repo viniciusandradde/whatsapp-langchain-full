@@ -65,7 +65,10 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
 async def test_open_or_attach_inserts_when_no_open_row():
     # SELECT FOR UPDATE → None, INSERT → row
     pool, conn = _mock_pool(None, _row(id_=10, status="aguardando"))
-    out = await open_or_attach_atendimento(pool, 1, 5, 7, agente="vsa_tech")
+    out, was_created = await open_or_attach_atendimento(
+        pool, 1, 5, 7, agente="vsa_tech"
+    )
+    assert was_created is True
     assert out.id == 10
     assert out.status == "aguardando"
     # confirma que o segundo execute foi INSERT
@@ -79,7 +82,8 @@ async def test_open_or_attach_updates_when_already_open():
     # SELECT retorna row existente, UPDATE retorna row atualizado
     existing = _row(id_=42, status="em_andamento")
     pool, conn = _mock_pool(existing, _row(id_=42, status="em_andamento"))
-    out = await open_or_attach_atendimento(pool, 1, 5, 7)
+    out, was_created = await open_or_attach_atendimento(pool, 1, 5, 7)
+    assert was_created is False
     assert out.id == 42
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
     assert any(

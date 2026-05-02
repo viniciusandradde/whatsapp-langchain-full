@@ -33,14 +33,20 @@ def _atendimento(**overrides) -> Atendimento:
 
 @pytest.fixture
 def client():
-    """TestClient com auth desabilitada e empresa_id=1, user=user-x."""
+    """TestClient com auth desabilitada, empresa_id=1, user=user-x e
+    dispatch_event mockado pra evitar HTTP real (M4.d).
+    """
     app.dependency_overrides[verify_service_token] = lambda: None
     app.dependency_overrides[get_empresa_context] = lambda: 1
     app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
+    with patch(
+        "whatsapp_langchain.server.routes.atendimento.dispatch_event",
+        new=AsyncMock(return_value=None),
+    ):
+        try:
+            yield TestClient(app)
+        finally:
+            app.dependency_overrides.clear()
 
 
 def test_list_atendimentos_default_aguardando(client):

@@ -116,7 +116,9 @@ def test_list_members_returns_list(client):
         ),
         patch(
             "whatsapp_langchain.server.routes.empresa_admin.list_members",
-            new=AsyncMock(return_value=[_membro(role="admin"), _membro(user_id="user-y")]),
+            new=AsyncMock(
+                return_value=[_membro(role="admin"), _membro(user_id="user-y")]
+            ),
         ),
     ):
         response = client.get("/api/empresas/7/membros")

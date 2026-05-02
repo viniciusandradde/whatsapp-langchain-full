@@ -26,6 +26,7 @@ import {
   Smartphone,
   LogOut,
   Menu,
+  Webhook,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/atendimento", label: "Atendimentos", icon: Headphones },
   { href: "/clientes", label: "Clientes", icon: UsersRound },
   { href: "/modelos", label: "Modelos", icon: MessagesSquare },
+  { href: "/hooks", label: "Webhooks", icon: Webhook },
   { href: "/chats", label: "Conversas", icon: MessageSquare },
   { href: "/agents", label: "Agentes", icon: Bot },
   { href: "/connections", label: "Conexões", icon: Smartphone },

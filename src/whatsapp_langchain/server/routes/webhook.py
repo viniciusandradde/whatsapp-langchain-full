@@ -23,6 +23,7 @@ from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import get_conexao_by_from_number
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.queue import enqueue_or_buffer
 
 logger = structlog.get_logger()
@@ -171,7 +172,7 @@ async def webhook_twilio(
     # tem nome (upsert_cliente preserva via COALESCE). Cada inbound anexa
     # ao mesmo atendimento aberto via índice parcial único.
     cliente = await upsert_cliente(pool, empresa_id, phone_number, nome=profile_name)
-    atendimento = await open_or_attach_atendimento(
+    atendimento, atendimento_aberto = await open_or_attach_atendimento(
         pool,
         empresa_id=empresa_id,
         cliente_id=cliente.id,
@@ -228,8 +229,41 @@ async def webhook_twilio(
         conexao_id=conexao_id,
         cliente_id=cliente.id,
         atendimento_id=atendimento.id,
+        atendimento_aberto=atendimento_aberto,
         message_sid=msg_sid,
         num_media=num_media,
+    )
+
+    # Webhooks (M4.d): dispara eventos async (fire-and-forget). Se um
+    # atendimento foi aberto agora, mandamos primeiro `atendimento.aberto`
+    # e depois `mensagem.recebida` — facilita o consumidor reagir na
+    # ordem correta. Falhas não bloqueiam a resposta TwiML pro Twilio.
+    if atendimento_aberto:
+        await dispatch_event(
+            pool,
+            empresa_id,
+            "atendimento.aberto",
+            {
+                "atendimento_id": atendimento.id,
+                "cliente_id": cliente.id,
+                "cliente_telefone": cliente.telefone,
+                "cliente_nome": cliente.nome,
+                "conexao_id": conexao_id,
+                "agente_atual": atendimento.agente_atual,
+            },
+        )
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "mensagem.recebida",
+        {
+            "atendimento_id": atendimento.id,
+            "cliente_id": cliente.id,
+            "cliente_telefone": cliente.telefone,
+            "message_sid": msg_sid,
+            "body": body_raw,
+            "num_media": num_media,
+        },
     )
 
     return Response(content=EMPTY_TWIML, media_type="application/xml")

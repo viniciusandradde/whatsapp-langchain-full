@@ -62,13 +62,16 @@ async def open_or_attach_atendimento(
     conexao_id: int,
     *,
     agente: str = "vsa_tech",
-) -> Atendimento:
+) -> tuple[Atendimento, bool]:
     """Abre novo atendimento ou anexa ao já-aberto (fluxo do webhook).
 
     Usa o índice parcial `idx_atendimento_aberto_unique` (empresa+cliente+conexao
     WHERE status IN aguardando|em_andamento) pra garantir 1 atendimento aberto
     por tupla. Quando já existe, atualiza `last_message_at` e retorna o id
     existente em uma transação curta.
+
+    Retorna `(atendimento, was_created)` — o flag permite o caller disparar
+    o evento `atendimento.aberto` só quando um row novo foi inserido.
     """
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -95,7 +98,7 @@ async def open_or_attach_atendimento(
             )
             updated = await cur.fetchone()
             assert updated is not None
-            return _row_to_atendimento(updated)
+            return _row_to_atendimento(updated), False
 
         cur = await conn.execute(
             f"""
@@ -107,7 +110,7 @@ async def open_or_attach_atendimento(
         )
         new = await cur.fetchone()
     assert new is not None
-    return _row_to_atendimento(new)
+    return _row_to_atendimento(new), True
 
 
 TipoVisualizacao = Literal["meus", "aguardando", "grupos", "outros"]
