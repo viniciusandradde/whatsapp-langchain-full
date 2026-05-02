@@ -438,6 +438,70 @@ export interface VariaveisResponse {
   variaveis: VariavelAmbiente[];
 }
 
+// --- M6.a: Departamento + Horário + Feriado ---
+
+export interface Departamento {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DepartamentoInput {
+  nome: string;
+  descricao?: string | null;
+  ativo?: boolean;
+}
+
+export interface DepartamentosResponse {
+  departamentos: Departamento[];
+}
+
+export interface HorarioFuncionamento {
+  id: number;
+  empresa_id: number;
+  dia_semana: number;
+  hora_inicio: string;
+  hora_fim: string;
+  departamento_id: number | null;
+  ativo: boolean;
+  created_at: string;
+}
+
+export interface HorarioFuncionamentoInput {
+  dia_semana: number;
+  hora_inicio: string;
+  hora_fim: string;
+  departamento_id?: number | null;
+  ativo?: boolean;
+}
+
+export interface HorariosResponse {
+  horarios: HorarioFuncionamento[];
+}
+
+export interface Feriado {
+  id: number;
+  empresa_id: number;
+  data: string;
+  descricao: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+}
+
+export interface FeriadoInput {
+  data: string;
+  descricao?: string | null;
+}
+
+export interface FeriadosResponse {
+  feriados: Feriado[];
+}
+
 // --- M5.a: Google Calendar ---
 
 export interface GoogleCalendarConfig {
@@ -989,4 +1053,68 @@ export async function updateVariavel(
 
 export async function deleteVariavel(id: number): Promise<void> {
   await apiFetch<void>(`/api/variaveis/${id}`, { method: "DELETE" });
+}
+
+// --- M6.a: Departamentos / Horários / Feriados ---
+
+export async function getDepartamentos(): Promise<DepartamentosResponse> {
+  return apiFetch<DepartamentosResponse>(`/api/departamentos`);
+}
+
+export async function createDepartamento(
+  body: DepartamentoInput
+): Promise<Departamento> {
+  return apiFetch<Departamento>(`/api/departamentos`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateDepartamento(
+  id: number,
+  body: DepartamentoInput
+): Promise<Departamento> {
+  return apiFetch<Departamento>(`/api/departamentos/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteDepartamento(id: number): Promise<void> {
+  await apiFetch<void>(`/api/departamentos/${id}`, { method: "DELETE" });
+}
+
+export async function getHorarios(): Promise<HorariosResponse> {
+  return apiFetch<HorariosResponse>(`/api/horarios`);
+}
+
+export async function createHorario(
+  body: HorarioFuncionamentoInput
+): Promise<HorarioFuncionamento> {
+  return apiFetch<HorarioFuncionamento>(`/api/horarios`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deleteHorario(id: number): Promise<void> {
+  await apiFetch<void>(`/api/horarios/${id}`, { method: "DELETE" });
+}
+
+export async function getHorariosStatus(): Promise<{ is_open: boolean }> {
+  return apiFetch<{ is_open: boolean }>(`/api/horarios/status`);
+}
+
+export async function getFeriados(): Promise<FeriadosResponse> {
+  return apiFetch<FeriadosResponse>(`/api/feriados`);
+}
+
+export async function createFeriado(
+  body: FeriadoInput
+): Promise<Feriado> {
+  return apiFetch<Feriado>(`/api/feriados`, { method: "POST", body });
+}
+
+export async function deleteFeriado(id: number): Promise<void> {
+  await apiFetch<void>(`/api/feriados/${id}`, { method: "DELETE" });
 }
