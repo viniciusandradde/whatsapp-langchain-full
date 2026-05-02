@@ -29,11 +29,18 @@ from whatsapp_langchain.server.routes.calendar_integration import (
 )
 from whatsapp_langchain.server.routes.cliente import router as cliente_router
 from whatsapp_langchain.server.routes.conexao import router as conexao_router
+from whatsapp_langchain.server.routes.departamento import (
+    router as departamento_router,
+)
 from whatsapp_langchain.server.routes.empresa_admin import (
     router as empresa_admin_router,
 )
 from whatsapp_langchain.server.routes.health import router as health_router
 from whatsapp_langchain.server.routes.hook import router as hook_router
+from whatsapp_langchain.server.routes.horario import (
+    router_feriado as feriado_router,
+    router_horario as horario_router,
+)
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
@@ -126,6 +133,9 @@ app.include_router(hook_router)
 app.include_router(calendar_integration_router)
 app.include_router(base_conhecimento_router)
 app.include_router(variavel_router)
+app.include_router(departamento_router)
+app.include_router(horario_router)
+app.include_router(feriado_router)
 app.include_router(traces_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
