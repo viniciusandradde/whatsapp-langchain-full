@@ -37,6 +37,9 @@ from whatsapp_langchain.server.routes.hook import router as hook_router
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
+from whatsapp_langchain.server.routes.variavel import (
+    router as variavel_router,
+)
 from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.webhook import router as webhook_router
 from whatsapp_langchain.shared.config import settings
@@ -122,6 +125,7 @@ app.include_router(modelo_mensagem_router)
 app.include_router(hook_router)
 app.include_router(calendar_integration_router)
 app.include_router(base_conhecimento_router)
+app.include_router(variavel_router)
 app.include_router(traces_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
