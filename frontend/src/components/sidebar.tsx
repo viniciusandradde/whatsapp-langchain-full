@@ -22,6 +22,7 @@ import {
   Activity,
   Building2,
   ListOrdered,
+  Plug,
   ShieldCheck,
   Smartphone,
   LogOut,
@@ -84,6 +85,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Configurações",
     items: [
       { href: "/companies", label: "Empresas", icon: Building2 },
+      { href: "/settings/integracoes", label: "Integrações", icon: Plug },
       { href: "/queue", label: "Fila", icon: ListOrdered },
       { href: "/settings", label: "Segurança", icon: ShieldCheck },
     ],

@@ -355,6 +355,18 @@ export interface HookLogsResponse {
   logs: HookLog[];
 }
 
+// --- M5.a: Google Calendar ---
+
+export interface GoogleCalendarConfig {
+  empresa_id: number;
+  google_email: string | null;
+  calendar_id: string;
+  timezone: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- Configuração ---
 
 // URL interna da API — em Docker usa o nome do serviço (http://api:8000),
@@ -759,6 +771,20 @@ export async function getHookLogs(
   return apiFetch<HookLogsResponse>(
     `/api/hooks/${id}/logs?limit=${limit}`
   );
+}
+
+// --- Google Calendar ---
+
+export async function getGoogleCalendarConfig(): Promise<GoogleCalendarConfig | null> {
+  return apiFetch<GoogleCalendarConfig | null>("/api/google-calendar/config");
+}
+
+export async function getGoogleCalendarOAuthUrl(): Promise<{ authorize_url: string }> {
+  return apiFetch<{ authorize_url: string }>("/api/google-calendar/oauth/init");
+}
+
+export async function disconnectGoogleCalendar(): Promise<void> {
+  await apiFetch<void>("/api/google-calendar/config", { method: "DELETE" });
 }
 
 export async function claimAtendimento(id: number): Promise<Atendimento> {

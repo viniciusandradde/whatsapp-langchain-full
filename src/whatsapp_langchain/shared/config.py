@@ -66,6 +66,19 @@ class Settings(BaseSettings):
     twilio_live_tests: bool = False
     twilio_test_to_number: str = ""
 
+    # --- Google Calendar (M5.a) ---
+    # OAuth Web Application credentials (Google Cloud Console).
+    # Vazio desativa a integração — endpoints respondem 503 e tools do
+    # agente não são injetadas.
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: SecretStr | None = None
+    # Redirect que o Google bate de volta após o user autorizar. Tem que
+    # coincidir EXATAMENTE com a URI cadastrada no console do Google.
+    # Em prod: https://chat.nexus.hospitalevangelico.com.br/api/google-calendar/oauth/callback
+    google_oauth_redirect_uri: str = (
+        "http://localhost:8081/api/google-calendar/oauth/callback"
+    )
+
     # --- Rate Limit ---
     rate_limit_per_hour: int = 30
     # True ativa Postgres sliding window (necessário em multi-instância).

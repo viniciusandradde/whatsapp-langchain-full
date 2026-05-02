@@ -184,6 +184,8 @@ async def process_message(
             "configurable": {
                 "thread_id": message.thread_id,
                 "user_id": message.phone_number,
+                "empresa_id": message.empresa_id,
+                "atendimento_id": message.atendimento_id,
             }
         }
 

@@ -21,6 +21,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.shared.calendar_integration import get_calendar_config
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 
 logger = structlog.get_logger()
@@ -88,17 +89,26 @@ async def load_graph(
         raise AgentNotFoundError(agent_id)
 
     chat_model: str | None = None
+    calendar_enabled = False
     if pool is not None:
         chat_model, _ = await get_agent_llm_config(pool, agent_id, empresa_id)
+        cal_config = await get_calendar_config(pool, empresa_id)
+        calendar_enabled = cal_config is not None and cal_config.ativo
 
     logger.info(
         "agent_loaded",
         agent_id=agent_id,
         empresa_id=empresa_id,
         chat_model=chat_model,
+        calendar_enabled=calendar_enabled,
     )
     return module.build_graph(
-        checkpointer=checkpointer, store=store, chat_model=chat_model
+        checkpointer=checkpointer,
+        store=store,
+        chat_model=chat_model,
+        pool=pool,
+        empresa_id=empresa_id,
+        calendar_enabled=calendar_enabled,
     )
 
 

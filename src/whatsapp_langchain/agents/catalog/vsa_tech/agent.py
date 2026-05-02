@@ -21,9 +21,17 @@ Configuração via .env:
 from langchain.agents import create_agent
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
+from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.middleware import get_context_middleware
-from whatsapp_langchain.agents.tools import read_memory, save_memory
+from whatsapp_langchain.agents.tools import (
+    calendar_cancel_event,
+    calendar_create_event,
+    calendar_find_free_slots,
+    calendar_get_current_time,
+    read_memory,
+    save_memory,
+)
 from whatsapp_langchain.shared.llm import create_chat_model
 
 from .prompts import SYSTEM_PROMPT
@@ -33,6 +41,9 @@ def build_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     store: BaseStore | None = None,
     chat_model: str | None = None,
+    pool: AsyncConnectionPool | None = None,  # noqa: ARG001 — reservado pra futuras tools sync
+    empresa_id: int | None = None,  # noqa: ARG001 — idem
+    calendar_enabled: bool = False,
 ):
     """Constrói o agente vsa_tech.
 
@@ -64,8 +75,19 @@ def build_graph(
     # Middleware de contexto baseado em CONTEXT_STRATEGY
     middleware = get_context_middleware()
 
-    # Tools de memória — só disponibiliza quando store existe
-    tools = [save_memory, read_memory] if store else []
+    # Tools de memória — só disponibiliza quando store existe.
+    tools: list = [save_memory, read_memory] if store else []
+    # Tools de Google Calendar — só quando a empresa tem config ativo
+    # (loader.py decide via DB e passa `calendar_enabled=True`).
+    if calendar_enabled:
+        tools.extend(
+            [
+                calendar_get_current_time,
+                calendar_find_free_slots,
+                calendar_create_event,
+                calendar_cancel_event,
+            ]
+        )
 
     return create_agent(
         model=model,

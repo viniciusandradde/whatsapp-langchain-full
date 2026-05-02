@@ -272,6 +272,38 @@ class ClienteAnotacao(BaseModel):
     created_at: datetime
 
 
+class EmpresaCalendarConfig(BaseModel):
+    """Conexão Google Calendar de uma empresa (M5.a).
+
+    `oauth_credentials_json` é a serialização do `google.oauth2.credentials
+    .Credentials` (token + refresh_token + scopes + expiry). O endpoint
+    de OAuth callback persiste isso após troca do code; o tool do agente
+    lê + refresh on-demand.
+    """
+
+    empresa_id: int
+    oauth_credentials_json: dict
+    google_email: str | None = None
+    calendar_id: str = "primary"
+    timezone: str = "America/Sao_Paulo"
+    ativo: bool = True
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CalendarConfigPublic(BaseModel):
+    """Versão segura pra UI — sem expor o token bruto."""
+
+    empresa_id: int
+    google_email: str | None
+    calendar_id: str
+    timezone: str
+    ativo: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 HookEvento = str  # validado em runtime contra CHECK constraint da tabela
 
 
