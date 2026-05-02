@@ -33,20 +33,61 @@ import { Button } from "@/components/ui/button";
 import { signOut } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/atendimento", label: "Atendimentos", icon: Headphones },
-  { href: "/clientes", label: "Clientes", icon: UsersRound },
-  { href: "/modelos", label: "Modelos", icon: MessagesSquare },
-  { href: "/hooks", label: "Webhooks", icon: Webhook },
-  { href: "/chats", label: "Conversas", icon: MessageSquare },
-  { href: "/agents", label: "Agentes", icon: Bot },
-  { href: "/connections", label: "Conexões", icon: Smartphone },
-  { href: "/models", label: "Modelos", icon: Brain },
-  { href: "/traces", label: "Traces", icon: Activity },
-  { href: "/queue", label: "Fila", icon: ListOrdered },
-  { href: "/companies", label: "Empresas", icon: Building2 },
-  { href: "/settings", label: "Segurança", icon: ShieldCheck },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+type NavSection = {
+  /** Texto exibido como header da seção. `null` = top-level sem header. */
+  label: string | null;
+  items: NavItem[];
+};
+
+// Layout do sidebar agrupado por área funcional. Ordem e nomes
+// validados pelo plano /home/vps/.claude/plans/velvety-dazzling-tiger.md.
+const NAV_SECTIONS: NavSection[] = [
+  {
+    label: null,
+    items: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/atendimento", label: "Atendimentos", icon: Headphones },
+      { href: "/agents", label: "Agentes", icon: Bot },
+    ],
+  },
+  {
+    label: "Atendimento",
+    items: [
+      { href: "/clientes", label: "Clientes", icon: UsersRound },
+      // Rótulo "Quick Replies" no sidebar pra evitar ambiguidade com
+      // /models (modelos LLM por agente). Rota /modelos preservada.
+      { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },
+      { href: "/chats", label: "Conversas", icon: MessageSquare },
+    ],
+  },
+  {
+    label: "IA & Observabilidade",
+    items: [
+      { href: "/models", label: "Modelos LLM", icon: Brain },
+      { href: "/traces", label: "Traces", icon: Activity },
+    ],
+  },
+  {
+    label: "Integrações",
+    items: [
+      { href: "/connections", label: "Conexões", icon: Smartphone },
+      { href: "/hooks", label: "Webhooks", icon: Webhook },
+    ],
+  },
+  {
+    label: "Configurações",
+    items: [
+      { href: "/companies", label: "Empresas", icon: Building2 },
+      { href: "/queue", label: "Fila", icon: ListOrdered },
+      { href: "/settings", label: "Segurança", icon: ShieldCheck },
+    ],
+  },
 ];
 
 export function Sidebar({
@@ -126,23 +167,37 @@ export function Sidebar({
           <div className="px-3 pt-3">{empresaSwitcher}</div>
         ) : null}
 
-        {/* Navegação */}
-        <nav className="flex-1 space-y-0.5 px-3 py-4">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setOpen(false)}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
-                isActive(item.href)
-                  ? "bg-sidebar-accent text-brand-primary font-medium shadow-glow-orange"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+        {/* Navegação agrupada por área funcional */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          {NAV_SECTIONS.map((section, idx) => (
+            <div key={section.label ?? `top-${idx}`}>
+              {section.label && (
+                <>
+                  <div className="mx-1 my-3 h-px bg-sidebar-border" />
+                  <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.15em] text-sidebar-foreground/40">
+                    {section.label}
+                  </p>
+                </>
               )}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
+              <div className="space-y-0.5">
+                {section.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
+                      isActive(item.href)
+                        ? "bg-sidebar-accent text-brand-primary font-medium shadow-glow-orange"
+                        : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
