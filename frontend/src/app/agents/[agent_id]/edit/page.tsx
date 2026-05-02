@@ -2,10 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Bot } from "lucide-react";
 
-import { getAgenteIAConfig, getAgents } from "@/lib/api";
+import {
+  getAgenteIAConfig,
+  getAgents,
+  getDocumentosConhecimento,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { AgenteIAForm } from "./agente-ia-form";
+import { BaseConhecimentoList } from "./base-conhecimento-list";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +44,19 @@ export default async function EditAgentePage({ params }: PageProps) {
   } catch (e) {
     error =
       e instanceof Error ? e.message : "Erro ao carregar configuração.";
+  }
+
+  let documentos: Awaited<
+    ReturnType<typeof getDocumentosConhecimento>
+  > | null = null;
+  let docsError: string | null = null;
+  try {
+    documentos = await getDocumentosConhecimento();
+  } catch (e) {
+    docsError =
+      e instanceof Error
+        ? e.message
+        : "Erro ao carregar base de conhecimento.";
   }
 
   return (
@@ -76,6 +94,12 @@ export default async function EditAgentePage({ params }: PageProps) {
           defaultPrompt={config.default_system_prompt}
         />
       )}
+
+      <BaseConhecimentoList
+        agentId={agentId}
+        initialDocumentos={documentos?.documentos ?? []}
+        loadError={docsError}
+      />
     </div>
   );
 }

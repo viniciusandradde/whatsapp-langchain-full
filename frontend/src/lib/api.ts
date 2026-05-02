@@ -379,6 +379,40 @@ export interface AgenteIAConfigResponse {
   default_system_prompt: string;
 }
 
+// --- M5.c: Base de Conhecimento (RAG) ---
+
+export interface DocumentoConhecimento {
+  id: number;
+  empresa_id: number;
+  titulo: string;
+  conteudo: string;
+  tags: string[];
+  ativo: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentoConhecimentoInput {
+  titulo: string;
+  conteudo: string;
+  tags?: string[];
+  ativo?: boolean;
+}
+
+export interface DocumentosConhecimentoResponse {
+  documentos: DocumentoConhecimento[];
+}
+
+export interface BuscarDocumentoResultado {
+  documento: DocumentoConhecimento;
+  score: number;
+}
+
+export interface BuscarDocumentosResponse {
+  resultados: BuscarDocumentoResultado[];
+}
+
 // --- M5.a: Google Calendar ---
 
 export interface GoogleCalendarConfig {
@@ -861,5 +895,44 @@ export async function transferAtendimento(
   return apiFetch<Atendimento>(`/api/atendimentos/${id}/transfer`, {
     method: "POST",
     body: { user_id },
+  });
+}
+
+// --- M5.c: Base de Conhecimento ---
+
+export async function getDocumentosConhecimento(): Promise<DocumentosConhecimentoResponse> {
+  return apiFetch<DocumentosConhecimentoResponse>(`/api/base-conhecimento`);
+}
+
+export async function createDocumentoConhecimento(
+  body: DocumentoConhecimentoInput
+): Promise<DocumentoConhecimento> {
+  return apiFetch<DocumentoConhecimento>(`/api/base-conhecimento`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateDocumentoConhecimento(
+  id: number,
+  body: DocumentoConhecimentoInput
+): Promise<DocumentoConhecimento> {
+  return apiFetch<DocumentoConhecimento>(`/api/base-conhecimento/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteDocumentoConhecimento(id: number): Promise<void> {
+  await apiFetch<void>(`/api/base-conhecimento/${id}`, { method: "DELETE" });
+}
+
+export async function buscarDocumentosConhecimento(
+  query: string,
+  k: number = 3
+): Promise<BuscarDocumentosResponse> {
+  return apiFetch<BuscarDocumentosResponse>(`/api/base-conhecimento/buscar`, {
+    method: "POST",
+    body: { query, k },
   });
 }

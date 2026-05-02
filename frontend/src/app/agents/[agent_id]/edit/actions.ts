@@ -3,9 +3,16 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  buscarDocumentosConhecimento,
+  createDocumentoConhecimento,
+  deleteDocumentoConhecimento,
   resetAgenteIAConfig,
   updateAgenteIAConfig,
+  updateDocumentoConhecimento,
   type AgenteIAConfigInput,
+  type BuscarDocumentosResponse,
+  type DocumentoConhecimento,
+  type DocumentoConhecimentoInput,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -50,6 +57,69 @@ export async function resetAgenteIAConfigAction(
     await resetAgenteIAConfig(agentId);
     revalidatePath(`/agents/${agentId}/edit`);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- M5.c Base de Conhecimento ---
+
+type SaveDocumentoResult =
+  | { ok: true; documento: DocumentoConhecimento }
+  | { ok: false; error: string };
+
+export async function saveDocumentoAction(
+  agentId: string,
+  formData: FormData
+): Promise<SaveDocumentoResult> {
+  try {
+    const idRaw = String(formData.get("id") || "").trim();
+    const tagsRaw = String(formData.get("tags") || "").trim();
+    const tags = tagsRaw
+      ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
+    const input: DocumentoConhecimentoInput = {
+      titulo: String(formData.get("titulo") || "").trim(),
+      conteudo: String(formData.get("conteudo") || "").trim(),
+      tags,
+      ativo: formData.get("ativo") === "on",
+    };
+    if (!input.titulo || !input.conteudo) {
+      return { ok: false, error: "Título e conteúdo são obrigatórios." };
+    }
+    const documento = idRaw
+      ? await updateDocumentoConhecimento(Number(idRaw), input)
+      : await createDocumentoConhecimento(input);
+    revalidatePath(`/agents/${agentId}/edit`);
+    return { ok: true, documento };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function deleteDocumentoAction(
+  agentId: string,
+  id: number
+): Promise<Result> {
+  try {
+    await deleteDocumentoConhecimento(id);
+    revalidatePath(`/agents/${agentId}/edit`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type BuscarResult =
+  | { ok: true; data: BuscarDocumentosResponse }
+  | { ok: false; error: string };
+
+export async function buscarDocumentosAction(
+  query: string
+): Promise<BuscarResult> {
+  try {
+    const data = await buscarDocumentosConhecimento(query);
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }
