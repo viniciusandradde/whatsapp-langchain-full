@@ -413,3 +413,31 @@ class Atendimento(BaseModel):
     # Campos derivados (preenchidos pelas queries que fazem JOIN):
     cliente_nome: str | None = None
     cliente_telefone: str | None = None
+
+
+class DocumentoConhecimento(BaseModel):
+    """Item da base de conhecimento — M5.c (RAG).
+
+    O agente busca top-k docs ativos via tool `search_knowledge_base`
+    antes de responder. `embedding` fica fora do payload default (pesado
+    e raramente útil pra cliente da API).
+    """
+
+    id: int
+    empresa_id: int
+    titulo: str
+    conteudo: str
+    tags: list[str] = []
+    ativo: bool = True
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DocumentoConhecimentoInput(BaseModel):
+    """Payload do POST/PUT /api/empresas/{id}/base-conhecimento."""
+
+    titulo: str = Field(min_length=1, max_length=200)
+    conteudo: str = Field(min_length=1, max_length=20000)
+    tags: list[str] = Field(default_factory=list)
+    ativo: bool = True
