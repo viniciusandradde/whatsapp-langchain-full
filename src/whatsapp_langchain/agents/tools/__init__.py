@@ -6,6 +6,7 @@ from whatsapp_langchain.agents.tools.calendar import (
     calendar_find_free_slots,
     calendar_get_current_time,
 )
+from whatsapp_langchain.agents.tools.knowledge import search_knowledge_base
 from whatsapp_langchain.agents.tools.memory import read_memory, save_memory
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "calendar_get_current_time",
     "read_memory",
     "save_memory",
+    "search_knowledge_base",
 ]

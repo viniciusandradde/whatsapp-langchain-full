@@ -22,6 +22,7 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.agente_ia import resolve_runtime_config
+from whatsapp_langchain.shared.base_conhecimento import has_active_documents
 from whatsapp_langchain.shared.calendar_integration import get_calendar_config
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 
@@ -91,12 +92,14 @@ async def load_graph(
 
     chat_model: str | None = None
     calendar_enabled = False
+    knowledge_enabled = False
     system_prompt_override: str | None = None
     temperatura: float | None = None
     if pool is not None:
         chat_model, _ = await get_agent_llm_config(pool, agent_id, empresa_id)
         cal_config = await get_calendar_config(pool, empresa_id)
         calendar_enabled = cal_config is not None and cal_config.ativo
+        knowledge_enabled = await has_active_documents(pool, empresa_id)
         system_prompt_override, temperatura = await resolve_runtime_config(
             pool, empresa_id, agent_id
         )
@@ -107,6 +110,7 @@ async def load_graph(
         empresa_id=empresa_id,
         chat_model=chat_model,
         calendar_enabled=calendar_enabled,
+        knowledge_enabled=knowledge_enabled,
         prompt_override=bool(system_prompt_override),
         temperatura=temperatura,
     )
@@ -117,6 +121,7 @@ async def load_graph(
         pool=pool,
         empresa_id=empresa_id,
         calendar_enabled=calendar_enabled,
+        knowledge_enabled=knowledge_enabled,
         system_prompt_override=system_prompt_override,
         temperatura=temperatura,
     )

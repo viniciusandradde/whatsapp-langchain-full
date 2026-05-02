@@ -31,6 +31,7 @@ from whatsapp_langchain.agents.tools import (
     calendar_get_current_time,
     read_memory,
     save_memory,
+    search_knowledge_base,
 )
 from whatsapp_langchain.shared.llm import create_chat_model
 
@@ -44,6 +45,7 @@ def build_graph(
     pool: AsyncConnectionPool | None = None,  # noqa: ARG001 — reservado pra futuras tools sync
     empresa_id: int | None = None,  # noqa: ARG001 — idem
     calendar_enabled: bool = False,
+    knowledge_enabled: bool = False,
     system_prompt_override: str | None = None,
     temperatura: float | None = None,
 ):
@@ -91,6 +93,10 @@ def build_graph(
                 calendar_cancel_event,
             ]
         )
+    # Tool de RAG — só quando a empresa tem ≥1 documento ativo
+    # (loader.py decide via DB e passa `knowledge_enabled=True`).
+    if knowledge_enabled:
+        tools.append(search_knowledge_base)
 
     # Override do prompt vem do `agente_ia_config` da empresa via loader.
     # Vazio/None = usa o template hardcoded (`SYSTEM_PROMPT`).
