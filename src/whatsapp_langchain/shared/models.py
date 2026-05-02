@@ -441,3 +441,26 @@ class DocumentoConhecimentoInput(BaseModel):
     conteudo: str = Field(min_length=1, max_length=20000)
     tags: list[str] = Field(default_factory=list)
     ativo: bool = True
+
+
+class VariavelAmbiente(BaseModel):
+    """KV por empresa referenciado em prompts/modelos como `{{var.NOME}}` — M5.d."""
+
+    id: int
+    empresa_id: int
+    nome: str
+    valor: str
+    descricao: str | None = None
+    ativo: bool = True
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class VariavelAmbienteInput(BaseModel):
+    """Payload do POST/PUT /api/variaveis."""
+
+    nome: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$")
+    valor: str = Field(min_length=0, max_length=4000)
+    descricao: str | None = Field(default=None, max_length=200)
+    ativo: bool = True
