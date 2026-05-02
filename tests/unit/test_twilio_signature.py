@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from twilio.request_validator import RequestValidator
 
 from whatsapp_langchain.server.main import app
-from whatsapp_langchain.shared.models import Conexao
+from whatsapp_langchain.shared.models import Atendimento, Cliente, Conexao
 
 client = TestClient(app, raise_server_exceptions=False)
 
@@ -35,6 +35,31 @@ def _default_conexao() -> Conexao:
         status="active",
         is_default=True,
         payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _default_cliente() -> Cliente:
+    now = datetime.now(UTC)
+    return Cliente(
+        id=10,
+        empresa_id=1,
+        telefone="+5511999999999",
+        nome=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _default_atendimento() -> Atendimento:
+    now = datetime.now(UTC)
+    return Atendimento(
+        id=20,
+        empresa_id=1,
+        cliente_id=10,
+        conexao_id=1,
+        last_message_at=now,
         created_at=now,
         updated_at=now,
     )
@@ -65,6 +90,14 @@ def mock_db(monkeypatch):
         patch(
             "whatsapp_langchain.server.routes.webhook.get_conexao_by_from_number",
             side_effect=fake_lookup,
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.upsert_cliente",
+            new=AsyncMock(return_value=_default_cliente()),
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.open_or_attach_atendimento",
+            new=AsyncMock(return_value=_default_atendimento()),
         ),
         patch(
             "whatsapp_langchain.server.routes.admin.get_pool",
@@ -357,9 +390,7 @@ class TestBuildValidationUrl:
         )()
 
         result = build_validation_url(mock_request)
-        assert (
-            result == "https://tunnel.example.com/webhook/twilio?agent=vsa_tech"
-        )
+        assert result == "https://tunnel.example.com/webhook/twilio?agent=vsa_tech"
 
     def test_falls_back_to_request_url(self, monkeypatch):
         """Usa request.url quando TWILIO_WEBHOOK_URL não está configurada."""

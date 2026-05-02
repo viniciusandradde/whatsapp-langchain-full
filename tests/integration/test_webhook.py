@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from whatsapp_langchain import __version__
 from whatsapp_langchain.server.main import app
-from whatsapp_langchain.shared.models import Conexao
+from whatsapp_langchain.shared.models import Atendimento, Cliente, Conexao
 
 client = TestClient(app, raise_server_exceptions=False)
 TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
@@ -32,6 +32,31 @@ def _default_conexao() -> Conexao:
         status="active",
         is_default=True,
         payload_json={},
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _default_cliente(empresa_id: int = 1, telefone: str = "+5511999999999") -> Cliente:
+    now = datetime.now(UTC)
+    return Cliente(
+        id=10,
+        empresa_id=empresa_id,
+        telefone=telefone,
+        nome=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _default_atendimento(empresa_id: int = 1) -> Atendimento:
+    now = datetime.now(UTC)
+    return Atendimento(
+        id=20,
+        empresa_id=empresa_id,
+        cliente_id=10,
+        conexao_id=1,
+        last_message_at=now,
         created_at=now,
         updated_at=now,
     )
@@ -62,6 +87,14 @@ def mock_db(monkeypatch):
         patch(
             "whatsapp_langchain.server.routes.webhook.get_conexao_by_from_number",
             side_effect=fake_lookup,
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.upsert_cliente",
+            new=AsyncMock(return_value=_default_cliente()),
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.webhook.open_or_attach_atendimento",
+            new=AsyncMock(return_value=_default_atendimento()),
         ),
         patch(
             "whatsapp_langchain.server.routes.admin.get_pool",

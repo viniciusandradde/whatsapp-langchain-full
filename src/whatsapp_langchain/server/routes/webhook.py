@@ -18,6 +18,8 @@ from whatsapp_langchain.server.dependencies import (
     check_rate_limit,
     validate_twilio_signature,
 )
+from whatsapp_langchain.shared.atendimento import open_or_attach_atendimento
+from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import get_conexao_by_from_number
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
@@ -106,6 +108,7 @@ async def webhook_twilio(
     to_raw = str(form.get("To") or "").strip()
     body_raw = str(form.get("Body") or "").strip()
     wa_id_raw = str(form.get("WaId") or "").strip()
+    profile_name = str(form.get("ProfileName") or "").strip() or None
 
     try:
         num_media = int(str(form.get("NumMedia") or "0"))
@@ -163,6 +166,19 @@ async def webhook_twilio(
     # Rate limit (por phone — independente da conexão)
     await check_rate_limit(phone_number)
 
+    # CRM Light: garante cliente cadastrado e atendimento aberto antes de
+    # enfileirar. ProfileName do Twilio só é usado se o cliente ainda não
+    # tem nome (upsert_cliente preserva via COALESCE). Cada inbound anexa
+    # ao mesmo atendimento aberto via índice parcial único.
+    cliente = await upsert_cliente(pool, empresa_id, phone_number, nome=profile_name)
+    atendimento = await open_or_attach_atendimento(
+        pool,
+        empresa_id=empresa_id,
+        cliente_id=cliente.id,
+        conexao_id=conexao_id,
+        agente=resolved_agent,
+    )
+
     # Enfileiramento:
     # - se há texto OU não há mídia: enfileira o texto como 1 row
     # - cada mídia (MediaUrl0..MediaUrl{NumMedia-1}) vira 1 row adicional
@@ -181,6 +197,7 @@ async def webhook_twilio(
             buffer_seconds=settings.message_buffer_seconds,
             empresa_id=empresa_id,
             conexao_id=conexao_id,
+            atendimento_id=atendimento.id,
         )
 
     for i in range(num_media):
@@ -200,6 +217,7 @@ async def webhook_twilio(
             buffer_seconds=settings.message_buffer_seconds,
             empresa_id=empresa_id,
             conexao_id=conexao_id,
+            atendimento_id=atendimento.id,
         )
 
     logger.info(
@@ -208,6 +226,8 @@ async def webhook_twilio(
         agent_id=resolved_agent,
         empresa_id=empresa_id,
         conexao_id=conexao_id,
+        cliente_id=cliente.id,
+        atendimento_id=atendimento.id,
         message_sid=msg_sid,
         num_media=num_media,
     )

@@ -38,6 +38,7 @@ async def enqueue_or_buffer(
     buffer_seconds: float = 2.0,
     empresa_id: int = 1,
     conexao_id: int | None = None,
+    atendimento_id: int | None = None,
 ) -> EnqueueResult:
     """Insere mensagem na fila ou agrupa com mensagem pendente (debounce).
 
@@ -111,15 +112,16 @@ async def enqueue_or_buffer(
             cursor = await conn.execute(
                 """
                 INSERT INTO message_queue
-                    (empresa_id, conexao_id, message_id, phone_number, to_number,
-                     agent_id, thread_id, incoming_message, media_url, media_type,
-                     process_after)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    (empresa_id, conexao_id, atendimento_id, message_id,
+                     phone_number, to_number, agent_id, thread_id,
+                     incoming_message, media_url, media_type, process_after)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 RETURNING id
                 """,
                 (
                     empresa_id,
                     conexao_id,
+                    atendimento_id,
                     message_id,
                     phone_number,
                     to_number,
@@ -193,15 +195,16 @@ async def enqueue_or_buffer(
         cursor = await conn.execute(
             """
             INSERT INTO message_queue
-                (empresa_id, conexao_id, message_id, phone_number, to_number,
-                 agent_id, thread_id, incoming_message, media_url, media_type,
-                 process_after)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (empresa_id, conexao_id, atendimento_id, message_id,
+                 phone_number, to_number, agent_id, thread_id,
+                 incoming_message, media_url, media_type, process_after)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 empresa_id,
                 conexao_id,
+                atendimento_id,
                 message_id,
                 phone_number,
                 to_number,
