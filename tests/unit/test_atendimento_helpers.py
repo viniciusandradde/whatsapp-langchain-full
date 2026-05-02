@@ -9,6 +9,7 @@ from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
     close_atendimento,
     get_atendimento_by_id,
+    list_atendimento_mensagens,
     list_atendimentos,
     open_or_attach_atendimento,
     transfer_atendimento,
@@ -176,3 +177,36 @@ async def test_get_atendimento_by_id_joins_cliente():
     assert out is not None
     assert out.cliente_nome == "Maria"
     assert out.cliente_telefone == "+551133"
+
+
+@pytest.mark.asyncio
+async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
+    now = datetime.now(UTC)
+    rows = [
+        (
+            1,
+            "vsa_tech",
+            "oi",
+            None,
+            None,
+            None,
+            None,
+            "olá! como posso ajudar?",
+            "done",
+            now,
+            now,
+            None,
+            None,
+        )
+    ]
+    pool, conn = _mock_pool(rows)
+    out = await list_atendimento_mensagens(pool, 42, 7)
+    assert len(out) == 1
+    assert out[0]["incoming_message"] == "oi"
+    assert out[0]["response"] == "olá! como posso ajudar?"
+    sql = conn.execute.await_args.args[0]
+    assert "WHERE empresa_id = %s" in sql
+    assert "AND atendimento_id = %s" in sql
+    args = conn.execute.await_args.args[1]
+    assert args[0] == 7
+    assert args[1] == 42

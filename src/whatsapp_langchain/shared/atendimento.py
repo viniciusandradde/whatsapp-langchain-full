@@ -225,6 +225,55 @@ async def close_atendimento(
     return _row_to_atendimento(row) if row else None
 
 
+async def list_atendimento_mensagens(
+    pool: AsyncConnectionPool,
+    atendimento_id: int,
+    empresa_id: int,
+    *,
+    limit: int = 200,
+) -> list[dict]:
+    """Lista mensagens do atendimento em ordem cronológica.
+
+    Filtra por (empresa_id, atendimento_id) na message_queue. Retorna
+    dicts simples (sem Pydantic) com os campos relevantes ao painel —
+    o tipo `Message` já é um shape público da API admin/chats.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, agent_id, incoming_message, media_url, media_type,
+                   normalized_input, media_processing_status,
+                   response, status, created_at, processed_at,
+                   media_processing_error, error
+              FROM message_queue
+             WHERE empresa_id = %s
+               AND atendimento_id = %s
+             ORDER BY created_at ASC, id ASC
+             LIMIT %s
+            """,
+            (empresa_id, atendimento_id, limit),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "id": r[0],
+            "agent_id": r[1],
+            "incoming_message": r[2],
+            "media_url": r[3],
+            "media_type": r[4],
+            "normalized_input": r[5],
+            "media_processing_status": r[6],
+            "response": r[7],
+            "status": r[8],
+            "created_at": r[9].isoformat() if r[9] else None,
+            "processed_at": r[10].isoformat() if r[10] else None,
+            "media_processing_error": r[11],
+            "error": r[12],
+        }
+        for r in rows
+    ]
+
+
 async def transfer_atendimento(
     pool: AsyncConnectionPool, atendimento_id: int, new_user_id: str
 ) -> Atendimento | None:

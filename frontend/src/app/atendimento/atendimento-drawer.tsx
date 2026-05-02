@@ -1,0 +1,279 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  Hand,
+  RefreshCw,
+  UserPlus,
+  X,
+  XCircle,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { Atendimento, AtendimentoMensagem } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+import {
+  claimAction,
+  closeAction,
+  loadMensagensAction,
+  transferAction,
+} from "./actions";
+
+interface Props {
+  atendimento: Atendimento;
+  onClose: () => void;
+}
+
+const STATUS_LABEL: Record<Atendimento["status"], string> = {
+  aguardando: "Aguardando",
+  em_andamento: "Em andamento",
+  resolvido: "Resolvido",
+  abandonado: "Abandonado",
+};
+
+function statusVariant(
+  status: Atendimento["status"]
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "em_andamento") return "default";
+  if (status === "aguardando") return "secondary";
+  if (status === "abandonado") return "destructive";
+  return "outline";
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("pt-BR");
+}
+
+export function AtendimentoDrawer({ atendimento, onClose }: Props) {
+  const [mensagens, setMensagens] = useState<AtendimentoMensagem[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  async function reload() {
+    setLoading(true);
+    setError(null);
+    const r = await loadMensagensAction(atendimento.id);
+    if (!r.ok) setError(r.error);
+    else setMensagens(r.mensagens);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atendimento.id]);
+
+  function runAction(fn: () => Promise<{ ok: true } | { ok: false; error: string }>) {
+    setError(null);
+    startTransition(async () => {
+      const r = await fn();
+      if (!r.ok) setError(r.error);
+      else onClose();
+    });
+  }
+
+  const isOpen =
+    atendimento.status === "aguardando" || atendimento.status === "em_andamento";
+
+  function handleTransfer() {
+    const userId = prompt(
+      "ID do operador para transferência (Better Auth user_id):"
+    );
+    if (!userId) return;
+    runAction(() => transferAction(atendimento.id, userId.trim()));
+  }
+
+  function handleClose(status: "resolvido" | "abandonado") {
+    if (
+      !confirm(
+        `Fechar atendimento como ${status === "resolvido" ? "resolvido" : "abandonado"}?`
+      )
+    )
+      return;
+    runAction(() => closeAction(atendimento.id, status));
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <aside
+        className="flex h-full w-full max-w-2xl flex-col bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-start justify-between gap-4 border-b p-5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-lg font-semibold">
+                {atendimento.cliente_nome ?? atendimento.cliente_telefone ?? "Cliente"}
+              </h2>
+              <Badge variant={statusVariant(atendimento.status)}>
+                {STATUS_LABEL[atendimento.status]}
+              </Badge>
+            </div>
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+              {atendimento.cliente_telefone ?? "—"} · atendimento #{atendimento.id} ·{" "}
+              {atendimento.agente_atual}
+            </p>
+            {atendimento.cliente_id && (
+              <Link
+                href={`/clientes/${atendimento.cliente_id}`}
+                className="mt-1 inline-block text-xs text-muted-foreground underline hover:text-foreground"
+              >
+                Ver ficha do cliente
+              </Link>
+            )}
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
+            <X className="size-4" />
+          </Button>
+        </header>
+
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex items-center justify-between border-b px-5 py-2">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+              Conversa
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void reload()}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+              Atualizar
+            </Button>
+          </div>
+
+          <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+            {error && (
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            {loading && !mensagens && (
+              <p className="text-sm text-muted-foreground">Carregando mensagens…</p>
+            )}
+
+            {!loading && mensagens && mensagens.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma mensagem registrada para este atendimento ainda.
+              </p>
+            )}
+
+            {mensagens?.map((m) => (
+              <MessageBubbles key={m.id} m={m} />
+            ))}
+          </div>
+        </div>
+
+        {isOpen && (
+          <footer className="flex flex-wrap items-center justify-end gap-2 border-t p-4">
+            {atendimento.status === "aguardando" && (
+              <Button
+                onClick={() => runAction(() => claimAction(atendimento.id))}
+                disabled={isPending}
+              >
+                <Hand className="size-3.5" />
+                Atender
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              onClick={handleTransfer}
+              disabled={isPending}
+            >
+              <UserPlus className="size-3.5" />
+              Transferir
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => handleClose("resolvido")}
+              disabled={isPending}
+            >
+              <CheckCircle2 className="size-3.5" />
+              Resolver
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => handleClose("abandonado")}
+              disabled={isPending}
+            >
+              <XCircle className="size-3.5" />
+              Abandonar
+            </Button>
+          </footer>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
+  // Cada row pode gerar 2 bolhas: a inbound (cliente) e a response (agente).
+  // Quando inbound veio só com mídia, mostramos chip da media_type.
+  const bubbles: { side: "in" | "out"; text: string; meta?: string }[] = [];
+
+  if (m.incoming_message) {
+    bubbles.push({ side: "in", text: m.incoming_message });
+  }
+  if (m.media_url) {
+    bubbles.push({
+      side: "in",
+      text: `[mídia ${m.media_type ?? ""}]`.trim(),
+      meta: m.media_url,
+    });
+  }
+  if (m.response) {
+    bubbles.push({ side: "out", text: m.response });
+  }
+  if (m.error) {
+    bubbles.push({ side: "out", text: `Erro: ${m.error}`, meta: "erro" });
+  }
+
+  return (
+    <div className="space-y-2">
+      {bubbles.map((b, i) => (
+        <div
+          key={i}
+          className={cn("flex", b.side === "out" ? "justify-end" : "justify-start")}
+        >
+          <div
+            className={cn(
+              "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
+              b.side === "out"
+                ? "bg-primary/15 text-foreground"
+                : "bg-secondary text-foreground"
+            )}
+          >
+            <p className="whitespace-pre-wrap">{b.text}</p>
+            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+              {formatTime(m.created_at)} · {b.side === "out" ? "agente" : "cliente"}
+              {b.meta && b.meta !== "erro" && (
+                <>
+                  {" · "}
+                  <a
+                    href={b.meta}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    abrir
+                  </a>
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

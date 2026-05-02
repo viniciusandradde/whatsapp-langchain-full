@@ -263,6 +263,27 @@ export interface AtendimentosResponse {
   atendimentos: Atendimento[];
 }
 
+export interface AtendimentoMensagem {
+  id: number;
+  agent_id: string;
+  incoming_message: string;
+  media_url: string | null;
+  media_type: string | null;
+  normalized_input: string | null;
+  media_processing_status: string | null;
+  response: string | null;
+  status: string;
+  created_at: string | null;
+  processed_at: string | null;
+  media_processing_error: string | null;
+  error: string | null;
+}
+
+export interface AtendimentoMensagensResponse {
+  atendimento_id: number;
+  mensagens: AtendimentoMensagem[];
+}
+
 // --- Configuração ---
 
 // URL interna da API — em Docker usa o nome do serviço (http://api:8000),
@@ -587,6 +608,15 @@ export async function getAtendimentos(params: {
 
 export async function getAtendimento(id: number): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}`);
+}
+
+export async function getAtendimentoMensagens(
+  id: number,
+  limit: number = 200
+): Promise<AtendimentoMensagensResponse> {
+  return apiFetch<AtendimentoMensagensResponse>(
+    `/api/atendimentos/${id}/mensagens?limit=${limit}`
+  );
 }
 
 export async function claimAtendimento(id: number): Promise<Atendimento> {

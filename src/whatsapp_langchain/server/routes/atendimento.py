@@ -23,6 +23,7 @@ from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
     close_atendimento,
     get_atendimento_by_id,
+    list_atendimento_mensagens,
     list_atendimentos,
     transfer_atendimento,
 )
@@ -91,6 +92,26 @@ async def read_atendimento(
 ) -> Atendimento:
     """Detalhe — inclui cliente_nome/cliente_telefone via JOIN."""
     return await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+
+
+@router.get("/{atendimento_id}/mensagens")
+async def read_atendimento_mensagens(
+    atendimento_id: int,
+    limit: int = Query(default=200, ge=1, le=500),
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Mensagens cronológicas do atendimento (ASC).
+
+    Cobre só mensagens com `atendimento_id` preenchido — inbound antigas
+    (anteriores ao M3) ficam fora; o histórico legado segue acessível
+    pela rota `/api/chats/{phone}` se for preciso.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    mensagens = await list_atendimento_mensagens(
+        pool, atendimento_id, empresa_id, limit=limit
+    )
+    return {"atendimento_id": atendimento_id, "mensagens": mensagens}
 
 
 @router.post("/{atendimento_id}/claim")

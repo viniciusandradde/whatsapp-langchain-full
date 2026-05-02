@@ -180,6 +180,44 @@ def test_close_with_abandonado(client):
     assert kwargs["status"] == "abandonado"
 
 
+def test_read_mensagens_returns_list(client):
+    with (
+        patch(
+            "whatsapp_langchain.server.routes.atendimento.get_atendimento_by_id",
+            new=AsyncMock(return_value=_atendimento()),
+        ),
+        patch(
+            "whatsapp_langchain.server.routes.atendimento.list_atendimento_mensagens",
+            new=AsyncMock(
+                return_value=[
+                    {
+                        "id": 1,
+                        "agent_id": "vsa_tech",
+                        "incoming_message": "oi",
+                        "response": "olá!",
+                        "status": "done",
+                    }
+                ]
+            ),
+        ),
+    ):
+        response = client.get("/api/atendimentos/1/mensagens")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["atendimento_id"] == 1
+    assert len(data["mensagens"]) == 1
+    assert data["mensagens"][0]["incoming_message"] == "oi"
+
+
+def test_read_mensagens_404_for_unknown_atendimento(client):
+    with patch(
+        "whatsapp_langchain.server.routes.atendimento.get_atendimento_by_id",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.get("/api/atendimentos/99/mensagens")
+    assert response.status_code == 404
+
+
 def test_transfer_changes_assignee(client):
     with (
         patch(

@@ -52,6 +52,7 @@ frontend/out/
 
 # Docker
 *.log
+docker-compose.override.yml
 
 # Stress testing results
 stress/results_*.csv

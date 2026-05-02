@@ -1,17 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import Link from "next/link";
-import {
-  CheckCircle2,
-  Hand,
-  UserPlus,
-  XCircle,
-  ExternalLink,
-} from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -20,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import type { Atendimento, TipoVisualizacao } from "@/lib/api";
 
-import { claimAction, closeAction, transferAction } from "./actions";
+import { AtendimentoDrawer } from "./atendimento-drawer";
 
 interface Props {
   atendimentos: Atendimento[];
@@ -55,41 +46,7 @@ function formatRelative(iso: string): string {
 }
 
 export function AtendimentoList({ atendimentos, tipo }: Props) {
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  function run(action: () => Promise<{ ok: true } | { ok: false; error: string }>, id: number) {
-    setBusyId(id);
-    setError(null);
-    startTransition(async () => {
-      const r = await action();
-      if (!r.ok) setError(r.error);
-      setBusyId(null);
-    });
-  }
-
-  function handleClaim(a: Atendimento) {
-    run(() => claimAction(a.id), a.id);
-  }
-
-  function handleClose(a: Atendimento, status: "resolvido" | "abandonado") {
-    if (
-      !confirm(
-        `Fechar atendimento como ${status === "resolvido" ? "resolvido" : "abandonado"}?`
-      )
-    )
-      return;
-    run(() => closeAction(a.id, status), a.id);
-  }
-
-  function handleTransfer(a: Atendimento) {
-    const userId = prompt(
-      "ID do operador para transferência (Better Auth user_id):"
-    );
-    if (!userId) return;
-    run(() => transferAction(a.id, userId.trim()), a.id);
-  }
+  const [active, setActive] = useState<Atendimento | null>(null);
 
   if (atendimentos.length === 0) {
     return (
@@ -105,20 +62,16 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
   }
 
   return (
-    <div className="space-y-4">
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
+    <>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {atendimentos.map((a) => {
-          const busy = isPending && busyId === a.id;
-          const isOpen =
-            a.status === "aguardando" || a.status === "em_andamento";
-          return (
-            <Card key={a.id}>
+        {atendimentos.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => setActive(a)}
+            className="text-left transition hover:scale-[1.01]"
+          >
+            <Card className="h-full hover:border-foreground/20">
               <CardHeader>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -149,65 +102,18 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                   />
                 )}
               </CardContent>
-              <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-4">
-                {a.cliente_id && (
-                  <Link
-                    href={`/clientes/${a.cliente_id}`}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="size-3" />
-                    Ficha do cliente
-                  </Link>
-                )}
-                {a.status === "aguardando" && (
-                  <Button
-                    size="sm"
-                    onClick={() => handleClaim(a)}
-                    disabled={busy}
-                  >
-                    <Hand className="size-3.5" />
-                    Atender
-                  </Button>
-                )}
-                {isOpen && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleTransfer(a)}
-                    disabled={busy}
-                  >
-                    <UserPlus className="size-3.5" />
-                    Transferir
-                  </Button>
-                )}
-                {isOpen && (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleClose(a, "resolvido")}
-                      disabled={busy}
-                    >
-                      <CheckCircle2 className="size-3.5" />
-                      Resolver
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleClose(a, "abandonado")}
-                      disabled={busy}
-                    >
-                      <XCircle className="size-3.5" />
-                      Abandonar
-                    </Button>
-                  </>
-                )}
-              </div>
             </Card>
-          );
-        })}
+          </button>
+        ))}
       </div>
-    </div>
+
+      {active && (
+        <AtendimentoDrawer
+          atendimento={active}
+          onClose={() => setActive(null)}
+        />
+      )}
+    </>
   );
 }
 
