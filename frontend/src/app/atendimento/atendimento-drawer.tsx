@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Hand,
   RefreshCw,
+  Send,
   UserPlus,
   X,
   XCircle,
@@ -20,6 +21,7 @@ import {
   claimAction,
   closeAction,
   loadMensagensAction,
+  responderAction,
   transferAction,
 } from "./actions";
 
@@ -53,6 +55,8 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [mensagens, setMensagens] = useState<AtendimentoMensagem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [composer, setComposer] = useState("");
+  const [sending, setSending] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   async function reload() {
@@ -97,6 +101,23 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     )
       return;
     runAction(() => closeAction(atendimento.id, status));
+  }
+
+  async function handleSend() {
+    const text = composer.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setError(null);
+    const r = await responderAction(atendimento.id, text);
+    if (!r.ok) {
+      setError(r.error);
+      setSending(false);
+      return;
+    }
+    setComposer("");
+    setSending(false);
+    // Recarrega timeline para incluir a outbound recém-enviada.
+    await reload();
   }
 
   return (
@@ -174,6 +195,34 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
             ))}
           </div>
         </div>
+
+        {isOpen && (
+          <div className="border-t bg-background/40 p-3">
+            <div className="flex items-end gap-2">
+              <textarea
+                value={composer}
+                onChange={(e) => setComposer(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
+                placeholder="Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
+                rows={2}
+                disabled={sending}
+                className="flex w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+              />
+              <Button
+                onClick={() => void handleSend()}
+                disabled={sending || !composer.trim()}
+              >
+                <Send className="size-3.5" />
+                {sending ? "Enviando…" : "Enviar"}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {isOpen && (
           <footer className="flex flex-wrap items-center justify-end gap-2 border-t p-4">

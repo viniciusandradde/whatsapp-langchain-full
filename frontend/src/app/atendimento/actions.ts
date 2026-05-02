@@ -6,6 +6,7 @@ import {
   claimAtendimento,
   closeAtendimento,
   getAtendimentoMensagens,
+  responderAtendimento,
   transferAtendimento,
   type AtendimentoMensagem,
 } from "@/lib/api";
@@ -13,6 +14,9 @@ import {
 type Result = { ok: true } | { ok: false; error: string };
 type MensagensResult =
   | { ok: true; mensagens: AtendimentoMensagem[] }
+  | { ok: false; error: string };
+type ResponderResult =
+  | { ok: true; mensagem: AtendimentoMensagem }
   | { ok: false; error: string };
 
 function toError(e: unknown): string {
@@ -25,6 +29,21 @@ export async function loadMensagensAction(
   try {
     const data = await getAtendimentoMensagens(atendimentoId);
     return { ok: true, mensagens: data.mensagens };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function responderAction(
+  atendimentoId: number,
+  conteudo: string
+): Promise<ResponderResult> {
+  const trimmed = conteudo.trim();
+  if (!trimmed) return { ok: false, error: "Mensagem vazia." };
+  try {
+    const data = await responderAtendimento(atendimentoId, trimmed);
+    revalidatePath("/atendimento");
+    return { ok: true, mensagem: data.mensagem };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

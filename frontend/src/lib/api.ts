@@ -619,6 +619,16 @@ export async function getAtendimentoMensagens(
   );
 }
 
+export async function responderAtendimento(
+  id: number,
+  conteudo: string
+): Promise<{ mensagem: AtendimentoMensagem }> {
+  return apiFetch<{ mensagem: AtendimentoMensagem }>(
+    `/api/atendimentos/${id}/responder`,
+    { method: "POST", body: { conteudo } }
+  );
+}
+
 export async function claimAtendimento(id: number): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}/claim`, {
     method: "POST",

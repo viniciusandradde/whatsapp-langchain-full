@@ -29,6 +29,7 @@ from whatsapp_langchain.shared.atendimento import (
 )
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import Atendimento
+from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
 
 logger = structlog.get_logger()
 
@@ -48,6 +49,10 @@ class CloseInput(BaseModel):
 
 class TransferInput(BaseModel):
     user_id: str
+
+
+class ResponderInput(BaseModel):
+    conteudo: str
 
 
 @router.get("")
@@ -159,6 +164,36 @@ async def close(
         user_id=user_id,
     )
     return out
+
+
+@router.post("/{atendimento_id}/responder")
+async def responder(
+    atendimento_id: int,
+    body: ResponderInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Envia mensagem manual do operador via Twilio (M4.a).
+
+    O atendimento precisa estar `aguardando` ou `em_andamento`. A mensagem
+    é persistida em message_queue como row outbound-only — aparece na
+    timeline do drawer junto às mensagens do agente IA.
+    """
+    pool = await get_pool()
+    try:
+        row = await send_outbound_manual(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            user_id=user_id,
+            conteudo=body.conteudo,
+        )
+    except OutboundError as e:
+        # Mapeia para 4xx — erros lógicos (atendimento fechado, etc).
+        msg = str(e)
+        status_code = 409 if "fechado" in msg else 404 if "encontrad" in msg else 400
+        raise HTTPException(status_code=status_code, detail=msg) from e
+    return {"mensagem": row}
 
 
 @router.post("/{atendimento_id}/transfer")

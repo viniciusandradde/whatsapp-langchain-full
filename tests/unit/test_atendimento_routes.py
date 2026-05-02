@@ -180,6 +180,56 @@ def test_close_with_abandonado(client):
     assert kwargs["status"] == "abandonado"
 
 
+def test_responder_returns_persisted_row(client):
+    persisted = {
+        "id": 99,
+        "agent_id": "vsa_tech",
+        "incoming_message": "",
+        "response": "olá!",
+        "status": "done",
+        "created_at": "2026-05-02T00:00:00Z",
+        "processed_at": "2026-05-02T00:00:00Z",
+    }
+    with patch(
+        "whatsapp_langchain.server.routes.atendimento.send_outbound_manual",
+        new=AsyncMock(return_value=persisted),
+    ) as mock_send:
+        response = client.post(
+            "/api/atendimentos/1/responder", json={"conteudo": "olá!"}
+        )
+    assert response.status_code == 200
+    assert response.json()["mensagem"]["id"] == 99
+    kwargs = mock_send.await_args.kwargs
+    assert kwargs == {
+        "atendimento_id": 1,
+        "empresa_id": 1,
+        "user_id": "user-x",
+        "conteudo": "olá!",
+    }
+
+
+def test_responder_409_when_atendimento_closed(client):
+    from whatsapp_langchain.shared.outbound import OutboundError
+
+    with patch(
+        "whatsapp_langchain.server.routes.atendimento.send_outbound_manual",
+        new=AsyncMock(side_effect=OutboundError("Atendimento já fechado")),
+    ):
+        response = client.post("/api/atendimentos/1/responder", json={"conteudo": "x"})
+    assert response.status_code == 409
+
+
+def test_responder_404_when_atendimento_missing(client):
+    from whatsapp_langchain.shared.outbound import OutboundError
+
+    with patch(
+        "whatsapp_langchain.server.routes.atendimento.send_outbound_manual",
+        new=AsyncMock(side_effect=OutboundError("Atendimento não encontrado.")),
+    ):
+        response = client.post("/api/atendimentos/1/responder", json={"conteudo": "x"})
+    assert response.status_code == 404
+
+
 def test_read_mensagens_returns_list(client):
     with (
         patch(
