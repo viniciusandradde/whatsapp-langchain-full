@@ -31,6 +31,7 @@ from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
+from whatsapp_langchain.shared.variavel import build_render_context, render_template
 
 logger = structlog.get_logger()
 
@@ -200,15 +201,23 @@ async def responder(
     O atendimento precisa estar `aguardando` ou `em_andamento`. A mensagem
     é persistida em message_queue como row outbound-only — aparece na
     timeline do drawer junto às mensagens do agente IA.
+
+    Antes do envio, `{{empresa.*}}`, `{{cliente.*}}`, `{{data.*}}` e
+    `{{var.*}}` são resolvidos server-side (M5.d) — operador pode digitar
+    `Olá {{cliente.nome}}!` direto e o cliente recebe o texto final.
     """
     pool = await get_pool()
+    ctx = await build_render_context(
+        pool, empresa_id, atendimento_id=atendimento_id
+    )
+    rendered = render_template(body.conteudo, ctx)
     try:
         row = await send_outbound_manual(
             pool,
             atendimento_id=atendimento_id,
             empresa_id=empresa_id,
             user_id=user_id,
-            conteudo=body.conteudo,
+            conteudo=rendered,
         )
     except OutboundError as e:
         # Mapeia para 4xx — erros lógicos (atendimento fechado, etc).

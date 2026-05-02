@@ -25,6 +25,7 @@ from whatsapp_langchain.shared.agente_ia import resolve_runtime_config
 from whatsapp_langchain.shared.base_conhecimento import has_active_documents
 from whatsapp_langchain.shared.calendar_integration import get_calendar_config
 from whatsapp_langchain.shared.llm import get_agent_llm_config
+from whatsapp_langchain.shared.variavel import build_render_context, render_template
 
 logger = structlog.get_logger()
 
@@ -103,6 +104,13 @@ async def load_graph(
         system_prompt_override, temperatura = await resolve_runtime_config(
             pool, empresa_id, agent_id
         )
+        # Render `{{empresa.*}}`, `{{data.*}}`, `{{var.*}}` no prompt antes
+        # de virar instrução do agente. `cliente.*` não é resolvido aqui
+        # porque o prompt é compilado uma vez por load_graph (sem
+        # atendimento ainda definido).
+        if system_prompt_override:
+            ctx = await build_render_context(pool, empresa_id)
+            system_prompt_override = render_template(system_prompt_override, ctx)
 
     logger.info(
         "agent_loaded",
