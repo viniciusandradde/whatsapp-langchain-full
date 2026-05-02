@@ -21,6 +21,7 @@ import {
   Brain,
   Activity,
   Building2,
+  Braces,
   ListOrdered,
   Plug,
   ShieldCheck,
@@ -86,6 +87,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/companies", label: "Empresas", icon: Building2 },
       { href: "/settings/integracoes", label: "Integrações", icon: Plug },
+      { href: "/settings/variaveis", label: "Variáveis", icon: Braces },
       { href: "/queue", label: "Fila", icon: ListOrdered },
       { href: "/settings", label: "Segurança", icon: ShieldCheck },
     ],

@@ -413,6 +413,31 @@ export interface BuscarDocumentosResponse {
   resultados: BuscarDocumentoResultado[];
 }
 
+// --- M5.d: Variáveis de Ambiente ---
+
+export interface VariavelAmbiente {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  valor: string;
+  descricao: string | null;
+  ativo: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VariavelAmbienteInput {
+  nome: string;
+  valor: string;
+  descricao?: string | null;
+  ativo?: boolean;
+}
+
+export interface VariaveisResponse {
+  variaveis: VariavelAmbiente[];
+}
+
 // --- M5.a: Google Calendar ---
 
 export interface GoogleCalendarConfig {
@@ -935,4 +960,33 @@ export async function buscarDocumentosConhecimento(
     method: "POST",
     body: { query, k },
   });
+}
+
+// --- M5.d: Variáveis de Ambiente ---
+
+export async function getVariaveis(): Promise<VariaveisResponse> {
+  return apiFetch<VariaveisResponse>(`/api/variaveis`);
+}
+
+export async function createVariavel(
+  body: VariavelAmbienteInput
+): Promise<VariavelAmbiente> {
+  return apiFetch<VariavelAmbiente>(`/api/variaveis`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateVariavel(
+  id: number,
+  body: VariavelAmbienteInput
+): Promise<VariavelAmbiente> {
+  return apiFetch<VariavelAmbiente>(`/api/variaveis/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteVariavel(id: number): Promise<void> {
+  await apiFetch<void>(`/api/variaveis/${id}`, { method: "DELETE" });
 }
