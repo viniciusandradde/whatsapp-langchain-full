@@ -26,11 +26,14 @@ from whatsapp_langchain.shared.models import Atendimento
 logger = structlog.get_logger()
 
 
-_BASE_COLS = (
-    "a.id, a.empresa_id, a.cliente_id, a.conexao_id, a.agente_atual, "
-    "a.status, a.assigned_to_user_id, a.last_message_at, a.closed_at, "
-    "a.created_at, a.updated_at"
+# Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
+_BARE_COLS = (
+    "id, empresa_id, cliente_id, conexao_id, agente_atual, "
+    "status, assigned_to_user_id, last_message_at, closed_at, "
+    "created_at, updated_at"
 )
+# Com alias `a.` — usado em SELECTs com JOIN.
+_BASE_COLS = ", ".join(f"a.{c.strip()}" for c in _BARE_COLS.split(","))
 _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 
@@ -86,7 +89,7 @@ async def open_or_attach_atendimento(
                 UPDATE atendimento
                    SET last_message_at = NOW(), updated_at = NOW()
                  WHERE id = %s
-                RETURNING {_BASE_COLS}
+                RETURNING {_BARE_COLS}
                 """,
                 (row[0],),
             )
@@ -98,7 +101,7 @@ async def open_or_attach_atendimento(
             f"""
             INSERT INTO atendimento (empresa_id, cliente_id, conexao_id, agente_atual)
             VALUES (%s, %s, %s, %s)
-            RETURNING {_BASE_COLS}
+            RETURNING {_BARE_COLS}
             """,
             (empresa_id, cliente_id, conexao_id, agente),
         )
@@ -195,7 +198,7 @@ async def claim_atendimento(
                    assigned_to_user_id = %s,
                    updated_at = NOW()
              WHERE id = %s AND status IN ('aguardando', 'em_andamento')
-            RETURNING {_BASE_COLS}
+            RETURNING {_BARE_COLS}
             """,
             (user_id, atendimento_id),
         )
@@ -214,7 +217,7 @@ async def close_atendimento(
             UPDATE atendimento
                SET status = %s, closed_at = NOW(), updated_at = NOW()
              WHERE id = %s
-            RETURNING {_BASE_COLS}
+            RETURNING {_BARE_COLS}
             """,
             (status, atendimento_id),
         )
@@ -234,7 +237,7 @@ async def transfer_atendimento(
                    status = 'em_andamento',
                    updated_at = NOW()
              WHERE id = %s
-            RETURNING {_BASE_COLS}
+            RETURNING {_BARE_COLS}
             """,
             (new_user_id, atendimento_id),
         )
