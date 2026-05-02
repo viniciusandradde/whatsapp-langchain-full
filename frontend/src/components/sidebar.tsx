@@ -13,6 +13,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Headphones,
+  UsersRound,
   MessageSquare,
   Bot,
   Brain,
@@ -31,6 +33,8 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/atendimento", label: "Atendimentos", icon: Headphones },
+  { href: "/clientes", label: "Clientes", icon: UsersRound },
   { href: "/chats", label: "Conversas", icon: MessageSquare },
   { href: "/agents", label: "Agentes", icon: Bot },
   { href: "/connections", label: "Conexões", icon: Smartphone },

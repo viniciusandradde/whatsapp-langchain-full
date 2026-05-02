@@ -202,6 +202,67 @@ export interface TracesResponse {
   traces: TraceInfo[];
 }
 
+// --- M3 CRM Light: Cliente + Atendimento ---
+
+export interface Cliente {
+  id: number;
+  empresa_id: number;
+  telefone: string;
+  nome: string | null;
+  email: string | null;
+  doc: string | null;
+  status: string;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  tags: string[];
+}
+
+export interface ClienteAnotacao {
+  id: number;
+  cliente_id: number;
+  user_id: string;
+  conteudo: string;
+  created_at: string;
+}
+
+export interface ClienteDetail {
+  cliente: Cliente;
+  anotacoes: ClienteAnotacao[];
+}
+
+export interface ClientesResponse {
+  clientes: Cliente[];
+}
+
+export type AtendimentoStatus =
+  | "aguardando"
+  | "em_andamento"
+  | "resolvido"
+  | "abandonado";
+
+export type TipoVisualizacao = "meus" | "aguardando" | "grupos" | "outros";
+
+export interface Atendimento {
+  id: number;
+  empresa_id: number;
+  cliente_id: number;
+  conexao_id: number;
+  agente_atual: string;
+  status: AtendimentoStatus;
+  assigned_to_user_id: string | null;
+  last_message_at: string;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  cliente_nome: string | null;
+  cliente_telefone: string | null;
+}
+
+export interface AtendimentosResponse {
+  atendimentos: Atendimento[];
+}
+
 // --- Configuração ---
 
 // URL interna da API — em Docker usa o nome do serviço (http://api:8000),
@@ -459,4 +520,97 @@ export async function getTraces(params: {
   if (params.thread_id) q.set("thread_id", params.thread_id);
   const qs = q.toString();
   return apiFetch<TracesResponse>(`/api/traces${qs ? `?${qs}` : ""}`);
+}
+
+// --- Clientes ---
+
+export async function getClientes(params: {
+  search?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<ClientesResponse> {
+  const q = new URLSearchParams();
+  if (params.search) q.set("search", params.search);
+  if (params.limit) q.set("limit", String(params.limit));
+  if (params.offset) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return apiFetch<ClientesResponse>(`/api/clientes${qs ? `?${qs}` : ""}`);
+}
+
+export async function getCliente(id: number): Promise<ClienteDetail> {
+  return apiFetch<ClienteDetail>(`/api/clientes/${id}`);
+}
+
+export async function addClienteAnotacao(
+  id: number,
+  conteudo: string
+): Promise<ClienteAnotacao> {
+  return apiFetch<ClienteAnotacao>(`/api/clientes/${id}/anotacoes`, {
+    method: "POST",
+    body: { conteudo },
+  });
+}
+
+export async function addClienteTag(id: number, tag: string): Promise<void> {
+  await apiFetch<void>(`/api/clientes/${id}/tags`, {
+    method: "POST",
+    body: { tag },
+  });
+}
+
+export async function removeClienteTag(
+  id: number,
+  tag: string
+): Promise<void> {
+  await apiFetch<void>(
+    `/api/clientes/${id}/tags/${encodeURIComponent(tag)}`,
+    { method: "DELETE" }
+  );
+}
+
+// --- Atendimentos ---
+
+export async function getAtendimentos(params: {
+  tipo?: TipoVisualizacao;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<AtendimentosResponse> {
+  const q = new URLSearchParams();
+  if (params.tipo) q.set("tipo", params.tipo);
+  if (params.limit) q.set("limit", String(params.limit));
+  if (params.offset) q.set("offset", String(params.offset));
+  const qs = q.toString();
+  return apiFetch<AtendimentosResponse>(
+    `/api/atendimentos${qs ? `?${qs}` : ""}`
+  );
+}
+
+export async function getAtendimento(id: number): Promise<Atendimento> {
+  return apiFetch<Atendimento>(`/api/atendimentos/${id}`);
+}
+
+export async function claimAtendimento(id: number): Promise<Atendimento> {
+  return apiFetch<Atendimento>(`/api/atendimentos/${id}/claim`, {
+    method: "POST",
+  });
+}
+
+export async function closeAtendimento(
+  id: number,
+  status: "resolvido" | "abandonado" = "resolvido"
+): Promise<Atendimento> {
+  return apiFetch<Atendimento>(`/api/atendimentos/${id}/close`, {
+    method: "POST",
+    body: { status },
+  });
+}
+
+export async function transferAtendimento(
+  id: number,
+  user_id: string
+): Promise<Atendimento> {
+  return apiFetch<Atendimento>(`/api/atendimentos/${id}/transfer`, {
+    method: "POST",
+    body: { user_id },
+  });
 }
