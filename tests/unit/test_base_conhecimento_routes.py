@@ -1,0 +1,177 @@
+"""Testes dos endpoints CRUD /api/base-conhecimento (M5.c)."""
+
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from whatsapp_langchain.server.dependencies import (
+    get_empresa_context,
+    get_user_id_from_request,
+    verify_service_token,
+)
+from whatsapp_langchain.server.main import app
+from whatsapp_langchain.shared.models import DocumentoConhecimento
+
+
+def _doc(**overrides) -> DocumentoConhecimento:
+    now = datetime.now(UTC)
+    base: dict = {
+        "id": 1,
+        "empresa_id": 1,
+        "titulo": "Política de Trocas",
+        "conteudo": "7 dias.",
+        "tags": [],
+        "ativo": True,
+        "created_by_user_id": "user-x",
+        "created_at": now,
+        "updated_at": now,
+    }
+    base.update(overrides)
+    return DocumentoConhecimento(**base)
+
+
+@pytest.fixture
+def client():
+    """TestClient com auth desabilitada e empresa_id=1, user=user-x."""
+    app.dependency_overrides[verify_service_token] = lambda: None
+    app.dependency_overrides[get_empresa_context] = lambda: 1
+    app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_documentos(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.list_documentos",
+        new=AsyncMock(return_value=[_doc(), _doc(id=2, titulo="FAQ Pagamento")]),
+    ):
+        response = client.get("/api/base-conhecimento")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["documentos"]) == 2
+
+
+def test_get_documento_returns_doc(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.get_documento",
+        new=AsyncMock(return_value=_doc(id=10, titulo="X")),
+    ):
+        response = client.get("/api/base-conhecimento/10")
+    assert response.status_code == 200
+    assert response.json()["titulo"] == "X"
+
+
+def test_get_documento_404_when_missing(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.get_documento",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.get("/api/base-conhecimento/99")
+    assert response.status_code == 404
+
+
+def test_create_documento_returns_201(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.upsert_documento",
+        new=AsyncMock(return_value=_doc(id=42)),
+    ) as mock_upsert:
+        response = client.post(
+            "/api/base-conhecimento",
+            json={"titulo": "Novo", "conteudo": "conteudo aqui", "tags": ["faq"]},
+        )
+    assert response.status_code == 201
+    assert response.json()["id"] == 42
+    kwargs = mock_upsert.await_args.kwargs
+    assert kwargs == {"user_id": "user-x"}
+
+
+def test_create_documento_422_on_empty_titulo(client):
+    response = client.post(
+        "/api/base-conhecimento", json={"titulo": "", "conteudo": "y"}
+    )
+    assert response.status_code == 422
+
+
+def test_update_documento_returns_200(client):
+    with (
+        patch(
+            "whatsapp_langchain.shared.base_conhecimento.get_documento",
+            new=AsyncMock(return_value=_doc()),
+        ),
+        patch(
+            "whatsapp_langchain.shared.base_conhecimento.upsert_documento",
+            new=AsyncMock(return_value=_doc(titulo="Atualizado")),
+        ),
+    ):
+        response = client.put(
+            "/api/base-conhecimento/1",
+            json={"titulo": "Atualizado", "conteudo": "novo"},
+        )
+    assert response.status_code == 200
+    assert response.json()["titulo"] == "Atualizado"
+
+
+def test_update_documento_404_when_missing(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.get_documento",
+        new=AsyncMock(return_value=None),
+    ):
+        response = client.put(
+            "/api/base-conhecimento/99",
+            json={"titulo": "x", "conteudo": "y"},
+        )
+    assert response.status_code == 404
+
+
+def test_delete_documento_returns_204(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.delete_documento",
+        new=AsyncMock(return_value=True),
+    ):
+        response = client.delete("/api/base-conhecimento/1")
+    assert response.status_code == 204
+
+
+def test_delete_documento_404_when_missing(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.delete_documento",
+        new=AsyncMock(return_value=False),
+    ):
+        response = client.delete("/api/base-conhecimento/99")
+    assert response.status_code == 404
+
+
+def test_buscar_documentos_returns_pairs(client):
+    pair = (_doc(id=1, titulo="A"), 0.85)
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.search_relevant",
+        new=AsyncMock(return_value=[pair]),
+    ) as mock_search:
+        response = client.post(
+            "/api/base-conhecimento/buscar", json={"query": "trocas"}
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["resultados"]) == 1
+    assert data["resultados"][0]["score"] == pytest.approx(0.85)
+    assert data["resultados"][0]["documento"]["titulo"] == "A"
+    kwargs = mock_search.await_args.kwargs
+    assert kwargs == {"k": 3}
+
+
+def test_buscar_validates_query(client):
+    response = client.post("/api/base-conhecimento/buscar", json={"query": ""})
+    assert response.status_code == 422
+
+
+def test_routes_require_service_token():
+    """Sem override de verify_service_token, request retorna 401/403."""
+    # Limpa overrides pra forçar verificação real
+    app.dependency_overrides.clear()
+    client = TestClient(app)
+    response = client.get("/api/base-conhecimento")
+    assert response.status_code in (401, 403)
