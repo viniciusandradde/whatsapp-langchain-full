@@ -284,6 +284,29 @@ export interface AtendimentoMensagensResponse {
   mensagens: AtendimentoMensagem[];
 }
 
+// --- M4.b: Quick replies (modelo_mensagem) ---
+
+export interface ModeloMensagem {
+  id: number;
+  empresa_id: number;
+  titulo: string;
+  conteudo: string;
+  atalho: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModeloMensagemInput {
+  titulo: string;
+  conteudo: string;
+  atalho?: string | null;
+}
+
+export interface ModelosMensagemResponse {
+  modelos: ModeloMensagem[];
+}
+
 // --- Configuração ---
 
 // URL interna da API — em Docker usa o nome do serviço (http://api:8000),
@@ -627,6 +650,35 @@ export async function responderAtendimento(
     `/api/atendimentos/${id}/responder`,
     { method: "POST", body: { conteudo } }
   );
+}
+
+// --- Modelos de mensagem (quick replies) ---
+
+export async function getModelosMensagem(
+  search?: string
+): Promise<ModelosMensagemResponse> {
+  const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+  return apiFetch<ModelosMensagemResponse>(`/api/modelos${qs}`);
+}
+
+export async function createModeloMensagem(
+  body: ModeloMensagemInput
+): Promise<ModeloMensagem> {
+  return apiFetch<ModeloMensagem>(`/api/modelos`, { method: "POST", body });
+}
+
+export async function updateModeloMensagem(
+  id: number,
+  body: ModeloMensagemInput
+): Promise<ModeloMensagem> {
+  return apiFetch<ModeloMensagem>(`/api/modelos/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteModeloMensagem(id: number): Promise<void> {
+  await apiFetch<void>(`/api/modelos/${id}`, { method: "DELETE" });
 }
 
 export async function claimAtendimento(id: number): Promise<Atendimento> {

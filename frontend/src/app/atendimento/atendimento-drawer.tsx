@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
+  ChevronDown,
   Hand,
   RefreshCw,
   Send,
@@ -14,13 +15,18 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Atendimento, AtendimentoMensagem } from "@/lib/api";
+import type {
+  Atendimento,
+  AtendimentoMensagem,
+  ModeloMensagem,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import {
   claimAction,
   closeAction,
   loadMensagensAction,
+  loadModelosAction,
   responderAction,
   transferAction,
 } from "./actions";
@@ -57,6 +63,8 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
+  const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
+  const [modelosOpen, setModelosOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   async function reload() {
@@ -101,6 +109,20 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     )
       return;
     runAction(() => closeAction(atendimento.id, status));
+  }
+
+  async function openModelosDropdown() {
+    if (modelos === null) {
+      const r = await loadModelosAction();
+      if (r.ok) setModelos(r.modelos);
+      else setError(r.error);
+    }
+    setModelosOpen((v) => !v);
+  }
+
+  function insertModelo(m: ModeloMensagem) {
+    setComposer((prev) => (prev ? `${prev}\n${m.conteudo}` : m.conteudo));
+    setModelosOpen(false);
   }
 
   async function handleSend() {
@@ -197,7 +219,49 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
         </div>
 
         {isOpen && (
-          <div className="border-t bg-background/40 p-3">
+          <div className="relative border-t bg-background/40 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void openModelosDropdown()}
+                disabled={sending}
+              >
+                <ChevronDown className="size-3.5" />
+                Modelos
+              </Button>
+              {modelosOpen && (
+                <div className="absolute bottom-full left-3 z-10 mb-1 max-h-72 w-80 overflow-y-auto rounded-md border bg-popover shadow-lg">
+                  {modelos === null ? (
+                    <p className="p-3 text-xs text-muted-foreground">
+                      Carregando…
+                    </p>
+                  ) : modelos.length === 0 ? (
+                    <p className="p-3 text-xs text-muted-foreground">
+                      Nenhum modelo cadastrado. Crie em <strong>/modelos</strong>.
+                    </p>
+                  ) : (
+                    <ul className="py-1">
+                      {modelos.map((m) => (
+                        <li key={m.id}>
+                          <button
+                            type="button"
+                            onClick={() => insertModelo(m)}
+                            className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent"
+                          >
+                            <span className="font-medium">{m.titulo}</span>
+                            <span className="line-clamp-2 text-xs text-muted-foreground">
+                              {m.conteudo}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="flex items-end gap-2">
               <textarea
                 value={composer}

@@ -6,9 +6,11 @@ import {
   claimAtendimento,
   closeAtendimento,
   getAtendimentoMensagens,
+  getModelosMensagem,
   responderAtendimento,
   transferAtendimento,
   type AtendimentoMensagem,
+  type ModeloMensagem,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -17,6 +19,9 @@ type MensagensResult =
   | { ok: false; error: string };
 type ResponderResult =
   | { ok: true; mensagem: AtendimentoMensagem }
+  | { ok: false; error: string };
+type ModelosResult =
+  | { ok: true; modelos: ModeloMensagem[] }
   | { ok: false; error: string };
 
 function toError(e: unknown): string {
@@ -29,6 +34,15 @@ export async function loadMensagensAction(
   try {
     const data = await getAtendimentoMensagens(atendimentoId);
     return { ok: true, mensagens: data.mensagens };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function loadModelosAction(): Promise<ModelosResult> {
+  try {
+    const data = await getModelosMensagem();
+    return { ok: true, modelos: data.modelos };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

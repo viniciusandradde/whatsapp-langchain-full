@@ -268,6 +268,27 @@ class ClienteAnotacao(BaseModel):
     created_at: datetime
 
 
+class ModeloMensagem(BaseModel):
+    """Texto reutilizável (quick reply) que o operador insere no composer."""
+
+    id: int
+    empresa_id: int
+    titulo: str
+    conteudo: str
+    atalho: str | None = None
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ModeloMensagemInput(BaseModel):
+    """Payload de POST/PUT em /api/modelos."""
+
+    titulo: str = Field(min_length=1, max_length=120)
+    conteudo: str = Field(min_length=1, max_length=4000)
+    atalho: str | None = Field(default=None, max_length=64)
+
+
 class Atendimento(BaseModel):
     """Conversa estruturada — fila de atendimento humano + status."""
 
