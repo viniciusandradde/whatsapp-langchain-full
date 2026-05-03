@@ -80,8 +80,16 @@ async def search_knowledge_base(
     if not results:
         return "Nenhum documento relevante encontrado na base de conhecimento."
 
-    lines = [
-        f"- {doc.titulo} (relevância {score:.2f}): {_snippet(doc.conteudo)}"
-        for doc, score in results
-    ]
-    return "Documentos relevantes:\n" + "\n".join(lines)
+    # M5.c.1: cita doc_id + chunk_idx no contexto pra o agente referenciar
+    # corretamente ("conforme o doc 12 trecho 3, ..."). Inclui reason
+    # do reranker quando disponível.
+    lines: list[str] = []
+    for r in results:
+        meta = (
+            f"doc {r.documento.id}, trecho {r.chunk_idx}, "
+            f"relevância {r.score:.2f}"
+        )
+        if r.reason:
+            meta += f" — {r.reason}"
+        lines.append(f"- [{r.documento.titulo}] ({meta})\n  {_snippet(r.chunk_conteudo)}")
+    return "Trechos relevantes da base de conhecimento:\n" + "\n".join(lines)
