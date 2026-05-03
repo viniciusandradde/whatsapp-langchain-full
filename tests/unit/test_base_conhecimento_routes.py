@@ -187,3 +187,79 @@ def test_routes_require_service_token():
     client = TestClient(app)
     response = client.get("/api/base-conhecimento")
     assert response.status_code in (401, 403)
+
+
+# --- M5.c.2: upload ---
+
+
+def test_upload_creates_documento_from_txt(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.upsert_documento",
+        new=AsyncMock(return_value=_doc(id=99, titulo="manual")),
+    ) as mock_upsert:
+        response = client.post(
+            "/api/base-conhecimento/upload",
+            files={"arquivo": ("manual.txt", b"Conteudo do manual", "text/plain")},
+            data={"tags": "faq,manual"},
+        )
+    assert response.status_code == 201
+    assert response.json()["id"] == 99
+    # upsert_documento foi chamado com titulo derivado do filename
+    body = mock_upsert.await_args.args[2]
+    assert body.titulo == "manual"
+    assert body.tags == ["faq", "manual"]
+    assert "Conteudo do manual" in body.conteudo
+
+
+def test_upload_uses_explicit_titulo_when_provided(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.upsert_documento",
+        new=AsyncMock(return_value=_doc()),
+    ) as mock_upsert:
+        response = client.post(
+            "/api/base-conhecimento/upload",
+            files={"arquivo": ("doc.txt", b"texto", "text/plain")},
+            data={"titulo": "Manual Operacional"},
+        )
+    assert response.status_code == 201
+    body = mock_upsert.await_args.args[2]
+    assert body.titulo == "Manual Operacional"
+
+
+def test_upload_415_on_unsupported_extension(client):
+    response = client.post(
+        "/api/base-conhecimento/upload",
+        files={"arquivo": ("imagem.png", b"\x89PNG", "image/png")},
+    )
+    assert response.status_code == 415
+
+
+def test_upload_422_on_empty_file(client):
+    response = client.post(
+        "/api/base-conhecimento/upload",
+        files={"arquivo": ("vazio.txt", b"", "text/plain")},
+    )
+    assert response.status_code == 422
+
+
+def test_upload_413_when_too_large(client):
+    huge = b"x" * (10 * 1024 * 1024 + 1)
+    response = client.post(
+        "/api/base-conhecimento/upload",
+        files={"arquivo": ("big.txt", huge, "text/plain")},
+    )
+    assert response.status_code == 413
+
+
+def test_upload_filters_empty_tags(client):
+    with patch(
+        "whatsapp_langchain.shared.base_conhecimento.upsert_documento",
+        new=AsyncMock(return_value=_doc()),
+    ) as mock_upsert:
+        client.post(
+            "/api/base-conhecimento/upload",
+            files={"arquivo": ("a.txt", b"x", "text/plain")},
+            data={"tags": "manual,,  ,faq"},
+        )
+    body = mock_upsert.await_args.args[2]
+    assert body.tags == ["manual", "faq"]

@@ -6,8 +6,10 @@ Endpoints escopados pela empresa ativa via cookie. O empresa_id sai do
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
@@ -17,6 +19,12 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.shared import base_conhecimento
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.file_extractor import (
+    FileExtractionError,
+    FileTooLargeError,
+    UnsupportedFileTypeError,
+    extract_text,
+)
 from whatsapp_langchain.shared.models import (
     DocumentoConhecimento,
     DocumentoConhecimentoInput,
@@ -153,3 +161,63 @@ async def buscar_documentos(
             for r in results
         ]
     }
+
+
+@router.post("/upload", status_code=201)
+async def upload_documento(
+    arquivo: UploadFile = File(...),
+    titulo: str | None = Form(default=None),
+    tags: str = Form(default=""),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> DocumentoConhecimento:
+    """Cria documento a partir de upload de PDF/DOCX/MD/TXT (M5.c.2).
+
+    Multipart fields:
+    - `arquivo` (file): obrigatório.
+    - `titulo` (string): opcional. Default = nome do arquivo sem extensão.
+    - `tags` (string): opcional, CSV (ex: "manual,faq").
+
+    O texto extraído passa por `upsert_documento`, que chunkeia + indexa
+    (M5.c.1). Tipo MIME é validado pela extensão do filename.
+    """
+    if not arquivo.filename:
+        raise HTTPException(
+            status_code=422, detail="Arquivo precisa ter nome com extensão."
+        )
+
+    raw = await arquivo.read()
+    try:
+        texto = extract_text(arquivo.filename, raw)
+    except UnsupportedFileTypeError as e:
+        raise HTTPException(status_code=415, detail=str(e)) from e
+    except FileTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e)) from e
+    except FileExtractionError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    titulo_final = (titulo or "").strip() or Path(arquivo.filename).stem
+    tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    body = DocumentoConhecimentoInput(
+        titulo=titulo_final[:200],
+        conteudo=texto,
+        tags=tags_list,
+        ativo=True,
+    )
+
+    pool = await get_pool()
+    out = await base_conhecimento.upsert_documento(
+        pool, empresa_id, body, user_id=user_id
+    )
+    logger.info(
+        "base_conhecimento_uploaded",
+        empresa_id=empresa_id,
+        doc_id=out.id,
+        titulo=out.titulo,
+        filename=arquivo.filename,
+        bytes=len(raw),
+        chars=len(texto),
+        user_id=user_id,
+    )
+    return out
