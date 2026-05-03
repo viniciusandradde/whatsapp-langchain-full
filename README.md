@@ -46,11 +46,13 @@ O objetivo deste repositório é ensinar arquitetura de harness em volta do agen
 - **rate limit distribuído opcional** via Postgres (sliding window por hora) — habilite com `RATE_LIMIT_DISTRIBUTED=true` para multi-instância
 - **suporte a múltiplas mídias** num único webhook (`NumMedia > 1`) — N rows independentes com mesmo `message_id`, processadas em ordem como turns separados pelo agente
 - **smoke test e2e com Twilio real** (opt-in, custa crédito): `make test-twilio-smoke` valida webhook → worker → outbound REAL → `mark_done`
+- **multi-provider WhatsApp** (M2.b): além de Twilio sandbox/prod/WABA, suporta [Evolution API](docs/EVOLUTION.md) (não-oficial, baseada em Baileys) — webhook `/webhook/evolution`, cliente outbound dedicado, multi-instância via `payload_json.instance_name`. Worker resolve cliente por `conexao.provider` via `OutboundClient` Protocol; suporta WhatsApp LID (Linked Identity) automaticamente
 
 O harness foi desenhado para funcionar tanto em desenvolvimento local
 (`sandbox`/`mock`) quanto em ambiente publicado com Twilio real. Para o fluxo
 de cutover para número real, veja [Integração Twilio](docs/TWILIO.md) e
-[Deploy](docs/DEPLOY.md).
+[Deploy](docs/DEPLOY.md). Para integrar Evolution API, veja
+[Integração Evolution](docs/EVOLUTION.md).
 
 ## Arquitetura
 
@@ -269,6 +271,7 @@ Para detalhes técnicos:
 - [Criando Agentes](docs/ADDING_AGENTS.md)
 - [Banco de Dados](docs/DATABASE.md)
 - [Integração Twilio](docs/TWILIO.md)
+- [Integração Evolution API](docs/EVOLUTION.md) — provider WhatsApp não-oficial (Baileys)
 - [Deploy](docs/DEPLOY.md)
 - [Diagramas](docs/diagrams/)
 
