@@ -438,9 +438,20 @@ class DocumentoConhecimentoInput(BaseModel):
     """Payload do POST/PUT /api/empresas/{id}/base-conhecimento."""
 
     titulo: str = Field(min_length=1, max_length=200)
-    conteudo: str = Field(min_length=1, max_length=20000)
+    conteudo: str = Field(min_length=1, max_length=200000)  # sobe de 20k pra 200k pós-chunking
     tags: list[str] = Field(default_factory=list)
     ativo: bool = True
+
+
+class DocumentoConhecimentoChunk(BaseModel):
+    """Trecho indexado de um documento — M5.c.1."""
+
+    id: int
+    documento_id: int
+    empresa_id: int
+    chunk_idx: int
+    conteudo: str
+    created_at: datetime
 
 
 class VariavelAmbiente(BaseModel):
