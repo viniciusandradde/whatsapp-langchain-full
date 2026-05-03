@@ -47,9 +47,35 @@ def _phone_from_jid(jid: str) -> str:
     - `5511999999999@c.us`           → `+5511999999999`
     - `5511999999999`                → `+5511999999999`
     - `+5511999999999`               → `+5511999999999`
+
+    NÃO usar diretamente quando `jid` é `@lid` — Linked Identity é um id
+    interno do WhatsApp e não o número. Para esses casos o caller deve
+    preferir `key.remoteJidAlt` antes de cair aqui.
     """
     digits = jid.split("@", 1)[0].lstrip("+")
     return f"+{digits}" if digits else ""
+
+
+def _resolve_sender_phone(key: dict) -> str:
+    """Resolve o telefone E.164 do remetente a partir do `key` Evolution.
+
+    O WhatsApp introduziu `LID` (Linked Identity) — quando o `remoteJid`
+    termina em `@lid`, o número real fica em `remoteJidAlt`
+    (`<phone>@s.whatsapp.net`). Versões mais novas do Baileys/Evolution
+    incluem `addressingMode: "lid"` no key. Preferimos `remoteJidAlt`
+    sempre que disponível, com fallback pro `remoteJid` direto.
+    """
+    remote_alt = str(key.get("remoteJidAlt") or "").strip()
+    remote_jid = str(key.get("remoteJid") or "").strip()
+    addressing = str(key.get("addressingMode") or "").strip().lower()
+
+    if remote_alt and (addressing == "lid" or remote_jid.endswith("@lid")):
+        return _phone_from_jid(remote_alt)
+    if remote_jid:
+        return _phone_from_jid(remote_jid)
+    if remote_alt:
+        return _phone_from_jid(remote_alt)
+    return ""
 
 
 def _extract_text(message: dict) -> str:
@@ -140,13 +166,13 @@ async def webhook_evolution(
         )
         return Response(status_code=200)
 
-    remote_jid = str(key.get("remoteJid") or "").strip()
-    phone_number = _phone_from_jid(remote_jid) if remote_jid else ""
+    phone_number = _resolve_sender_phone(key)
     if not phone_number:
         logger.warning(
             "evolution_webhook_missing_sender",
             instance=instance,
-            remote_jid=remote_jid,
+            remote_jid=key.get("remoteJid"),
+            remote_jid_alt=key.get("remoteJidAlt"),
         )
         raise HTTPException(status_code=400, detail="Missing sender JID")
 

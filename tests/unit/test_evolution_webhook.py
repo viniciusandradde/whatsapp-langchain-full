@@ -76,6 +76,8 @@ def _payload(
     instance: str = TEST_INSTANCE,
     from_me: bool = False,
     remote_jid: str = "5511999999999@s.whatsapp.net",
+    remote_jid_alt: str | None = None,
+    addressing_mode: str | None = None,
     msg_id: str = "BAE5ABC123",
     conversation: str | None = "Olá!",
     extended_text: str | None = None,
@@ -86,15 +88,20 @@ def _payload(
         message["conversation"] = conversation
     if extended_text is not None:
         message["extendedTextMessage"] = {"text": extended_text}
+    key: dict = {
+        "remoteJid": remote_jid,
+        "fromMe": from_me,
+        "id": msg_id,
+    }
+    if remote_jid_alt is not None:
+        key["remoteJidAlt"] = remote_jid_alt
+    if addressing_mode is not None:
+        key["addressingMode"] = addressing_mode
     return {
         "event": event,
         "instance": instance,
         "data": {
-            "key": {
-                "remoteJid": remote_jid,
-                "fromMe": from_me,
-                "id": msg_id,
-            },
+            "key": key,
             "message": message,
             "pushName": push_name,
             "messageTimestamp": "1730000000",
@@ -194,6 +201,30 @@ def test_extracts_text_from_extendedTextMessage(mock_db):
 def test_normalizes_remote_jid_without_suffix(mock_db):
     """remoteJid sem @suffix também é aceito (algumas variants Evolution)."""
     payload = _payload(remote_jid="5511999999999")
+    response = client.post("/webhook/evolution", json=payload)
+    assert response.status_code == 200
+    assert mock_db.await_args.kwargs["phone_number"] == "+5511999999999"
+
+
+def test_uses_remoteJidAlt_when_lid_addressing(mock_db):
+    """addressingMode=lid → usa remoteJidAlt (que tem o número real, não o LID)."""
+    payload = _payload(
+        remote_jid="264067625254915@lid",
+        remote_jid_alt="5511999999999@s.whatsapp.net",
+        addressing_mode="lid",
+    )
+    response = client.post("/webhook/evolution", json=payload)
+    assert response.status_code == 200
+    # Sem o fix, virava "+264067625254915" (Linked Identity é id interno do WA)
+    assert mock_db.await_args.kwargs["phone_number"] == "+5511999999999"
+
+
+def test_uses_remoteJidAlt_when_lid_suffix_without_addressingMode(mock_db):
+    """remoteJid termina em @lid mesmo sem campo addressingMode → usa Alt."""
+    payload = _payload(
+        remote_jid="264067625254915@lid",
+        remote_jid_alt="5511999999999@s.whatsapp.net",
+    )
     response = client.post("/webhook/evolution", json=payload)
     assert response.status_code == 200
     assert mock_db.await_args.kwargs["phone_number"] == "+5511999999999"
