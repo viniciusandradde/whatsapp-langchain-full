@@ -129,7 +129,11 @@ export interface EmpresasResponse {
   empresas: Empresa[];
 }
 
-export type ConexaoProvider = "twilio_sandbox" | "twilio_prod" | "waba";
+export type ConexaoProvider =
+  | "twilio_sandbox"
+  | "twilio_prod"
+  | "waba"
+  | "evolution";
 export type ConexaoStatus = "active" | "disabled" | "error";
 
 export interface Conexao {
@@ -742,6 +746,24 @@ export async function updateConexao(
 
 export async function disableConexao(id: number): Promise<void> {
   await apiFetch<void>(`/api/conexoes/${id}`, { method: "DELETE" });
+}
+
+export interface TestEvolutionResult {
+  ok: boolean;
+  state?: string | null;
+  instance_name?: string | null;
+  error?: string | null;
+}
+
+export async function testEvolutionConnection(body: {
+  api_url: string;
+  api_key: string;
+  instance_name: string;
+}): Promise<TestEvolutionResult> {
+  return apiFetch<TestEvolutionResult>("/api/conexoes/test-evolution", {
+    method: "POST",
+    body,
+  });
 }
 
 export async function getModels(): Promise<ModelsResponse> {

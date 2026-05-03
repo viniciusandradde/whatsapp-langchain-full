@@ -5,8 +5,10 @@ import { revalidatePath } from "next/cache";
 import {
   createConexao,
   disableConexao,
+  testEvolutionConnection,
   updateConexao,
   type ConexaoInput,
+  type TestEvolutionResult,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -14,6 +16,17 @@ type Result = { ok: true } | { ok: false; error: string };
 function parseInput(form: FormData): ConexaoInput {
   const provider = String(form.get("provider") || "twilio_sandbox") as ConexaoInput["provider"];
   const status = String(form.get("status") || "active") as ConexaoInput["status"];
+
+  // M2.b: provider=evolution carrega instance_name em payload_json
+  // (multi-instância sem precisar de coluna dedicada).
+  const payload_json: Record<string, unknown> = {};
+  if (provider === "evolution") {
+    const instance = String(form.get("instance_name") || "").trim();
+    if (instance) {
+      payload_json.instance_name = instance;
+    }
+  }
+
   return {
     provider,
     sid: (form.get("sid") as string) || null,
@@ -22,6 +35,7 @@ function parseInput(form: FormData): ConexaoInput {
     default_agent_id: String(form.get("default_agent_id") || "vsa_tech"),
     status,
     is_default: form.get("is_default") === "on",
+    payload_json,
   };
 }
 
@@ -56,6 +70,21 @@ export async function disableConexaoAction(
     await disableConexao(conexaoId);
     revalidatePath("/connections");
     return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro desconhecido.",
+    };
+  }
+}
+
+export async function testEvolutionAction(input: {
+  api_url: string;
+  api_key: string;
+  instance_name: string;
+}): Promise<TestEvolutionResult> {
+  try {
+    return await testEvolutionConnection(input);
   } catch (e) {
     return {
       ok: false,

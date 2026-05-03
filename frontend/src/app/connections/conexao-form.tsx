@@ -11,9 +11,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Conexao } from "@/lib/api";
+import type { Conexao, ConexaoProvider, TestEvolutionResult } from "@/lib/api";
 
-import { saveConexao } from "./actions";
+import { saveConexao, testEvolutionAction } from "./actions";
 
 interface Props {
   initial?: Conexao;
@@ -41,6 +41,21 @@ export function ConexaoForm({ initial, onDone }: Props) {
     { kind: "ok" } | { kind: "err"; message: string } | null
   >(null);
 
+  // Re-render quando o usuário troca o provider para mostrar campos
+  // específicos (Evolution: instance_name + url + key + botão de teste).
+  const [provider, setProvider] = useState<ConexaoProvider>(
+    initial?.provider ?? "twilio_sandbox"
+  );
+
+  // Estado do botão "Testar conexão" (provider=evolution apenas).
+  const [evoApiUrl, setEvoApiUrl] = useState("");
+  const [evoApiKey, setEvoApiKey] = useState("");
+  const [evoInstance, setEvoInstance] = useState(
+    String((initial?.payload_json?.instance_name as string | undefined) ?? "")
+  );
+  const [isTesting, startTesting] = useTransition();
+  const [testResult, setTestResult] = useState<TestEvolutionResult | null>(null);
+
   function handleSubmit(formData: FormData) {
     setFeedback(null);
     startTransition(async () => {
@@ -51,6 +66,18 @@ export function ConexaoForm({ initial, onDone }: Props) {
       } else {
         setFeedback({ kind: "err", message: result.error });
       }
+    });
+  }
+
+  function handleTestEvolution() {
+    setTestResult(null);
+    startTesting(async () => {
+      const r = await testEvolutionAction({
+        api_url: evoApiUrl,
+        api_key: evoApiKey,
+        instance_name: evoInstance,
+      });
+      setTestResult(r);
     });
   }
 
@@ -71,13 +98,17 @@ export function ConexaoForm({ initial, onDone }: Props) {
             <select
               id="provider"
               name="provider"
-              defaultValue={initial?.provider ?? "twilio_sandbox"}
+              value={provider}
+              onChange={(e) =>
+                setProvider(e.target.value as ConexaoProvider)
+              }
               className={SELECT_CLASS}
               disabled={isPending}
             >
               <option value="twilio_sandbox">Twilio Sandbox</option>
               <option value="twilio_prod">Twilio Production</option>
               <option value="waba">WhatsApp Business (WABA)</option>
+              <option value="evolution">Evolution API (não-oficial)</option>
             </select>
           </Field>
 
@@ -149,6 +180,89 @@ export function ConexaoForm({ initial, onDone }: Props) {
             />
             Conexão default (usada quando empresa não cita conexão específica)
           </label>
+
+          {provider === "evolution" && (
+            <div className="md:col-span-2 space-y-3 rounded-md border border-white/10 bg-obsidian-900/50 p-4">
+              <div className="text-sm font-medium">Evolution API</div>
+              <p className="text-xs text-muted-foreground">
+                Multi-instância: cada conexão aponta pra uma `instance_name`
+                cadastrada no servidor Evolution. Use o botão abaixo pra
+                validar antes de salvar.
+              </p>
+
+              <Field label="Instance name" htmlFor="instance_name">
+                <input
+                  id="instance_name"
+                  name="instance_name"
+                  required
+                  value={evoInstance}
+                  onChange={(e) => setEvoInstance(e.target.value)}
+                  placeholder="vsa-tecnologia"
+                  className={INPUT_CLASS}
+                  disabled={isPending}
+                />
+              </Field>
+
+              <Field label="API URL (apenas para teste)" htmlFor="evo_api_url">
+                <input
+                  id="evo_api_url"
+                  value={evoApiUrl}
+                  onChange={(e) => setEvoApiUrl(e.target.value)}
+                  placeholder="https://evolutionapi.exemplo.com.br"
+                  className={INPUT_CLASS}
+                  disabled={isPending || isTesting}
+                />
+              </Field>
+
+              <Field label="API key (apenas para teste)" htmlFor="evo_api_key">
+                <input
+                  id="evo_api_key"
+                  type="password"
+                  value={evoApiKey}
+                  onChange={(e) => setEvoApiKey(e.target.value)}
+                  placeholder="6B46C86D..."
+                  className={INPUT_CLASS}
+                  disabled={isPending || isTesting}
+                />
+              </Field>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleTestEvolution}
+                  disabled={
+                    isPending ||
+                    isTesting ||
+                    !evoApiUrl ||
+                    !evoApiKey ||
+                    !evoInstance
+                  }
+                >
+                  {isTesting ? "Testando…" : "Testar conexão"}
+                </Button>
+                <div className="text-xs" aria-live="polite">
+                  {testResult?.ok && (
+                    <span className="text-green-500">
+                      OK — instância `{testResult.instance_name}` em estado
+                      `{testResult.state}`.
+                    </span>
+                  )}
+                  {testResult && !testResult.ok && (
+                    <span className="text-destructive">
+                      {testResult.error}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                URL e API key não são salvos na conexão — vêm do `.env` do
+                servidor (`EVOLUTION_API_URL`, `EVOLUTION_API_KEY`). O
+                campo `instance_name` é gravado em `payload_json`.
+              </p>
+            </div>
+          )}
         </CardContent>
         <CardFooter className="flex items-center justify-between">
           <div aria-live="polite" className="text-sm">
