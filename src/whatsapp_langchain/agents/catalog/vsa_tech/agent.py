@@ -35,7 +35,9 @@ from whatsapp_langchain.agents.tools import (
     get_cliente_anotacoes,
     get_cliente_history,
     get_cliente_profile,
+    read_cliente_memoria,
     read_memory,
+    save_cliente_fato,
     save_memory,
     search_knowledge_base,
     transfer_to_human,
@@ -121,6 +123,11 @@ def build_graph(
             transfer_to_human,
         ]
     )
+
+    # Tools de memória estruturada por cliente (M5.b.2) — sempre habilitadas
+    # via tabela cliente_memoria (M5.b.2). Anti-tenant escape via empresa_id
+    # check na tool.
+    tools.extend([read_cliente_memoria, save_cliente_fato])
 
     # Override do prompt vem do `agente_ia_config` da empresa via loader.
     # Vazio/None = usa o template hardcoded (`SYSTEM_PROMPT`).
