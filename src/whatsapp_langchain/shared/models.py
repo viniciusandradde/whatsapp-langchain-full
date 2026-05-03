@@ -531,3 +531,29 @@ class Feriado(BaseModel):
 class FeriadoInput(BaseModel):
     data: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     descricao: str | None = Field(default=None, max_length=200)
+
+
+# --- M5.b.2 Memória estruturada por cliente ---
+
+
+class ClienteMemoria(BaseModel):
+    """Fato/preferência/perfil de um cliente — buscado semanticamente pelo agente."""
+
+    id: int
+    empresa_id: int
+    cliente_id: int
+    categoria: str  # 'perfil' | 'preferencia' | 'fato'
+    conteudo: str
+    source: str = "agent_explicit"
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClienteMemoriaInput(BaseModel):
+    categoria: str = Field(pattern=r"^(perfil|preferencia|fato)$")
+    conteudo: str = Field(min_length=3, max_length=1000)
+    source: str = Field(
+        default="agent_explicit",
+        pattern=r"^(agent_explicit|agent_extracted|operator)$",
+    )
