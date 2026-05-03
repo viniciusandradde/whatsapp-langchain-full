@@ -227,9 +227,10 @@ def test_upload_uses_explicit_titulo_when_provided(client):
 
 
 def test_upload_415_on_unsupported_extension(client):
+    """M5.c.3: png passou a ser aceito; mp4 ainda não."""
     response = client.post(
         "/api/base-conhecimento/upload",
-        files={"arquivo": ("imagem.png", b"\x89PNG", "image/png")},
+        files={"arquivo": ("video.mp4", b"fake mp4", "video/mp4")},
     )
     assert response.status_code == 415
 

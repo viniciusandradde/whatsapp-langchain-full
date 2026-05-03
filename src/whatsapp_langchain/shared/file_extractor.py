@@ -1,14 +1,18 @@
-"""Extração de texto de arquivos enviados pra base de conhecimento (M5.c.2).
+"""Extração de texto de arquivos enviados pra base de conhecimento.
 
-Suporta PDF, DOCX, MD e TXT. Detecção por extensão do nome (mais robusto
-que content-type que browsers reportam de forma inconsistente).
+M5.c.2: PDF, DOCX, MD, TXT.
+M5.c.3: imagens diretas (PNG/JPG/JPEG/WebP) via OCR + fallback OCR
+quando PDF retorna texto vazio (provavelmente escaneado).
+
+Detecção é por extensão do nome (mais robusto que content-type que
+browsers reportam de forma inconsistente).
 
 Uso:
-    text = extract_text(filename, raw_bytes)
+    text = await extract_text(filename, raw_bytes)
 
 Levanta `UnsupportedFileTypeError` quando a extensão não bate com nenhum
-parser conhecido. Levanta `FileExtractionError` quando o conteúdo não
-parseou (PDF corrompido, .docx vazio, etc).
+parser conhecido, `FileExtractionError` quando o conteúdo não parseou,
+`FileTooLargeError` quando excede o cap.
 """
 
 from __future__ import annotations
@@ -30,8 +34,31 @@ MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 # pra reindexar e o admin provavelmente colou doc errado.
 MAX_TEXT_CHARS = 200_000
 
+# PDF com texto extraído menor que isso → cai no fallback OCR (M5.c.3).
+# 50 chars cobre PDFs escaneados onde pypdf retorna metadata residual.
+OCR_FALLBACK_MIN_CHARS = 50
 
-SUPPORTED_EXTENSIONS = (".pdf", ".docx", ".md", ".markdown", ".txt")
+
+SUPPORTED_EXTENSIONS = (
+    ".pdf",
+    ".docx",
+    ".md",
+    ".markdown",
+    ".txt",
+    # M5.c.3: imagens via OCR
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+)
+
+
+_IMAGE_MIME_BY_EXT = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
 
 
 class UnsupportedFileTypeError(ValueError):
@@ -47,7 +74,7 @@ class FileTooLargeError(ValueError):
 
 
 def detect_kind(filename: str) -> str:
-    """Retorna `pdf` | `docx` | `md` | `txt`. Levanta se não suportado."""
+    """Retorna `pdf` | `docx` | `md` | `txt` | `image`. Levanta se não suportado."""
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
         return "pdf"
@@ -57,14 +84,20 @@ def detect_kind(filename: str) -> str:
         return "md"
     if ext == ".txt":
         return "txt"
+    if ext in _IMAGE_MIME_BY_EXT:
+        return "image"
     raise UnsupportedFileTypeError(
         f"extensão {ext or '<sem extensão>'} não suportada — "
         f"aceitos: {', '.join(SUPPORTED_EXTENSIONS)}"
     )
 
 
-def extract_text(filename: str, raw_bytes: bytes) -> str:
-    """Extrai texto plain do arquivo. Limpa whitespace excessivo no fim."""
+async def extract_text(filename: str, raw_bytes: bytes) -> str:
+    """Extrai texto plain do arquivo. Limpa whitespace excessivo no fim.
+
+    M5.c.3: virou async porque PDF escaneado e imagens caem no OCR
+    (Vision LLM async). MD/TXT/DOCX continuam sync internamente.
+    """
     if len(raw_bytes) > MAX_FILE_SIZE_BYTES:
         raise FileTooLargeError(
             f"arquivo tem {len(raw_bytes)} bytes — máximo é "
@@ -74,22 +107,32 @@ def extract_text(filename: str, raw_bytes: bytes) -> str:
         raise FileExtractionError("arquivo vazio")
 
     kind = detect_kind(filename)
+    used_ocr = False
     if kind == "pdf":
         text = _extract_pdf(raw_bytes)
+        if len(text) < OCR_FALLBACK_MIN_CHARS:
+            logger.info(
+                "file_extractor_pdf_ocr_fallback",
+                filename=filename,
+                pypdf_chars=len(text),
+            )
+            text = await _ocr_pdf(raw_bytes)
+            used_ocr = True
     elif kind == "docx":
         text = _extract_docx(raw_bytes)
-    elif kind == "md":
+    elif kind in ("md", "txt"):
         text = _extract_text_plain(raw_bytes)
-    elif kind == "txt":
-        text = _extract_text_plain(raw_bytes)
+    elif kind == "image":
+        text = await _ocr_image(filename, raw_bytes)
+        used_ocr = True
     else:  # pragma: no cover — detect_kind teria levantado
         raise UnsupportedFileTypeError(kind)
 
     text = _clean_whitespace(text)
     if not text:
         raise FileExtractionError(
-            f"nenhum texto extraído de {filename!r} — arquivo escaneado "
-            "sem OCR? formato corrompido?"
+            f"nenhum texto extraído de {filename!r} — "
+            "OCR não detectou texto legível ou arquivo corrompido."
         )
     if len(text) > MAX_TEXT_CHARS:
         text = text[:MAX_TEXT_CHARS]
@@ -105,6 +148,7 @@ def extract_text(filename: str, raw_bytes: bytes) -> str:
         kind=kind,
         bytes_in=len(raw_bytes),
         chars_out=len(text),
+        used_ocr=used_ocr,
     )
     return text
 
@@ -124,6 +168,28 @@ def _extract_pdf(raw: bytes) -> str:
         except Exception as e:
             logger.warning("pdf_page_extract_failed", error=str(e))
     return "\n\n".join(p.strip() for p in parts if p.strip())
+
+
+async def _ocr_pdf(raw: bytes) -> str:
+    """Fallback pra PDFs escaneados — chama OCR via Vision LLM."""
+    from whatsapp_langchain.shared.ocr import OCRError, ocr_pdf_pages
+
+    try:
+        return await ocr_pdf_pages(raw)
+    except OCRError as e:
+        raise FileExtractionError(f"OCR do PDF falhou: {e}") from e
+
+
+async def _ocr_image(filename: str, raw: bytes) -> str:
+    """OCR direto de upload PNG/JPG/JPEG/WebP."""
+    from whatsapp_langchain.shared.ocr import OCRError, ocr_image_bytes
+
+    ext = Path(filename).suffix.lower()
+    mime = _IMAGE_MIME_BY_EXT.get(ext, "image/png")
+    try:
+        return await ocr_image_bytes(raw, mime_type=mime)
+    except OCRError as e:
+        raise FileExtractionError(f"OCR da imagem falhou: {e}") from e
 
 
 def _extract_docx(raw: bytes) -> str:
@@ -155,9 +221,7 @@ def _clean_whitespace(text: str) -> str:
     """Colapsa espaços/linhas excessivas que pdf parser costuma deixar."""
     if not text:
         return ""
-    # Remove linhas só com espaços em branco
     lines = [line.rstrip() for line in text.splitlines()]
-    # Reduz sequências de 3+ linhas em branco para no máximo 2 (limite de parágrafo).
     out: list[str] = []
     blank_streak = 0
     for line in lines:

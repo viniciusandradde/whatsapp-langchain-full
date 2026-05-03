@@ -188,7 +188,7 @@ async def upload_documento(
 
     raw = await arquivo.read()
     try:
-        texto = extract_text(arquivo.filename, raw)
+        texto = await extract_text(arquivo.filename, raw)
     except UnsupportedFileTypeError as e:
         raise HTTPException(status_code=415, detail=str(e)) from e
     except FileTooLargeError as e:
