@@ -55,6 +55,26 @@ def mock_twilio():
     return twilio
 
 
+@pytest.fixture
+def mock_evolution():
+    """EvolutionClient mock com send_message e send_typing."""
+    evo = AsyncMock()
+    evo.send_typing = AsyncMock(return_value=True)
+    evo.send_message = AsyncMock(return_value="EVO_RESPONSE_456")
+    return evo
+
+
+@pytest.fixture
+def mock_clients(mock_twilio, mock_evolution):
+    """Dict provider→OutboundClient consumido pelo process_message."""
+    return {
+        "twilio_sandbox": mock_twilio,
+        "twilio_prod": mock_twilio,
+        "waba": mock_twilio,
+        "evolution": mock_evolution,
+    }
+
+
 # --- Helpers ---
 
 
@@ -125,9 +145,9 @@ class TestSendMessageMarkDone:
     """Garante que mark_done só ocorre após send_message bem-sucedido."""
 
     async def test_prefixes_message_when_outside_business_hours(
-        self, message, mock_twilio
+        self, message, mock_twilio, mock_clients
     ):
-        """M6.a: is_business_hours=False prepende '[FORA DO EXPEDIENTE] ' no input do agente."""
+        """M6.a: is_business_hours=False prepende '[FORA DO EXPEDIENTE] '."""
         patches = _patch_processor(TEXT_PREPROCESS)
         # Override patches[7] (is_business_hours) pra retornar False
         with (
@@ -156,7 +176,7 @@ class TestSendMessageMarkDone:
                 message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # Verifica o conteúdo passado pro agente
@@ -165,7 +185,9 @@ class TestSendMessageMarkDone:
             assert human_msg.content.startswith("[FORA DO EXPEDIENTE] ")
             assert "Olá!" in human_msg.content
 
-    async def test_mark_done_after_successful_send(self, message, mock_twilio):
+    async def test_mark_done_after_successful_send(
+        self, message, mock_twilio, mock_clients
+    ):
         """Fluxo feliz: send_message ok → mark_done chamado."""
         patches = _patch_processor(TEXT_PREPROCESS)
         with (
@@ -190,7 +212,7 @@ class TestSendMessageMarkDone:
                 message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # send_message chamado com a resposta do agente
@@ -202,7 +224,9 @@ class TestSendMessageMarkDone:
             # mark_failed NÃO chamado
             mock_failed.assert_not_awaited()
 
-    async def test_mark_done_not_called_when_send_fails(self, message, mock_twilio):
+    async def test_mark_done_not_called_when_send_fails(
+        self, message, mock_twilio, mock_clients
+    ):
         """send_message falha → mark_done NÃO é chamado, mark_failed SIM."""
         mock_twilio.send_message = AsyncMock(
             side_effect=TwilioSendError(500, "Internal Server Error")
@@ -231,7 +255,7 @@ class TestSendMessageMarkDone:
                 message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # send_message foi chamado (e falhou)
@@ -243,7 +267,9 @@ class TestSendMessageMarkDone:
             error_arg = mock_failed.call_args[0][2]
             assert "500" in error_arg
 
-    async def test_mark_failed_on_generic_send_exception(self, message, mock_twilio):
+    async def test_mark_failed_on_generic_send_exception(
+        self, message, mock_twilio, mock_clients
+    ):
         """Exceção genérica no send_message → mark_failed."""
         mock_twilio.send_message = AsyncMock(
             side_effect=Exception("Connection timeout")
@@ -272,7 +298,7 @@ class TestSendMessageMarkDone:
                 message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             mock_done.assert_not_awaited()
@@ -286,7 +312,9 @@ class TestSendMessageMarkDone:
 class TestAutoResponseTwilio:
     """Garante que auto-response de mídia também envia via Twilio antes de mark_done."""
 
-    async def test_auto_response_sends_via_twilio(self, media_message, mock_twilio):
+    async def test_auto_response_sends_via_twilio(
+        self, media_message, mock_twilio, mock_clients
+    ):
         """Auto-response de mídia desabilitada envia via Twilio antes de mark_done."""
         patches = _patch_processor(MEDIA_DISABLED_PREPROCESS)
         with (
@@ -305,7 +333,7 @@ class TestAutoResponseTwilio:
                 media_message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # Auto-response enviada via Twilio
@@ -318,7 +346,7 @@ class TestAutoResponseTwilio:
             mock_failed.assert_not_awaited()
 
     async def test_auto_response_mark_failed_when_send_fails(
-        self, media_message, mock_twilio
+        self, media_message, mock_twilio, mock_clients
     ):
         """Auto-response falha no envio → mark_failed (retry)."""
         mock_twilio.send_message = AsyncMock(
@@ -342,7 +370,7 @@ class TestAutoResponseTwilio:
                 media_message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # send_message foi chamado (e falhou)
@@ -379,7 +407,9 @@ class TestHandoffHumano:
             updated_at=now,
         )
 
-    async def test_skips_agent_when_em_andamento_with_assignee(self, mock_twilio):
+    async def test_skips_agent_when_em_andamento_with_assignee(
+        self, mock_twilio, mock_clients
+    ):
         """Atendimento claim'ado: worker marca done com marker, sem invocar agente."""
         msg = MessageQueue(
             id=99,
@@ -412,7 +442,7 @@ class TestHandoffHumano:
                 msg,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # Agente NÃO carregado, Twilio NÃO chamado
@@ -424,7 +454,9 @@ class TestHandoffHumano:
             assert response_arg == HANDOFF_HUMANO_MARKER
             mock_failed.assert_not_awaited()
 
-    async def test_invokes_agent_when_atendimento_aguardando(self, mock_twilio):
+    async def test_invokes_agent_when_atendimento_aguardando(
+        self, mock_twilio, mock_clients
+    ):
         """Atendimento ainda sem operador: agente IA continua respondendo."""
         msg = MessageQueue(
             id=100,
@@ -458,7 +490,7 @@ class TestHandoffHumano:
                 msg,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # Agente carregado e Twilio chamado
@@ -470,7 +502,7 @@ class TestHandoffHumano:
             mock_failed.assert_not_awaited()
 
     async def test_invokes_agent_when_atendimento_id_is_none(
-        self, message, mock_twilio
+        self, message, mock_twilio, mock_clients
     ):
         """Mensagem legacy (atendimento_id=None): caminho normal do agente."""
         # message fixture já tem atendimento_id=None por default
@@ -497,11 +529,175 @@ class TestHandoffHumano:
                 message,
                 AsyncMock(),
                 checkpointer=AsyncMock(),
-                twilio=mock_twilio,
+                clients=mock_clients,
             )
 
             # get_atendimento_by_id NÃO foi consultado (atendimento_id é None)
             mock_atd.assert_not_awaited()
             mock_load.assert_awaited_once()
+            mock_done.assert_awaited_once()
+            mock_failed.assert_not_awaited()
+
+
+# === Provider abstraction (M2.b P3) ===
+
+
+class TestProviderRouting:
+    """conexao_provider escolhe o cliente outbound correto."""
+
+    @staticmethod
+    def _make_message(provider: str | None) -> MessageQueue:
+        return MessageQueue(
+            id=200,
+            phone_number="+5511999999999",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
+            incoming_message="Olá!",
+            conexao_provider=provider,
+        )
+
+    async def test_routes_to_evolution_when_provider_evolution(
+        self, mock_twilio, mock_evolution, mock_clients
+    ):
+        """Mensagem com provider=evolution sai pelo EvolutionClient, não pelo Twilio."""
+        msg = self._make_message("evolution")
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta via Evolution")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                msg,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                clients=mock_clients,
+            )
+
+            mock_evolution.send_message.assert_awaited_once_with(
+                "+5511999999999", "Resposta via Evolution"
+            )
+            mock_twilio.send_message.assert_not_awaited()
+            mock_done.assert_awaited_once()
+            mock_failed.assert_not_awaited()
+
+    async def test_routes_to_twilio_when_provider_waba(
+        self, mock_twilio, mock_evolution, mock_clients
+    ):
+        """provider=waba reusa o cliente Twilio (sandbox/prod/waba compartilham)."""
+        msg = self._make_message("waba")
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta via WABA")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                msg,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                clients=mock_clients,
+            )
+
+            mock_twilio.send_message.assert_awaited_once_with(
+                "+5511999999999", "Resposta via WABA"
+            )
+            mock_evolution.send_message.assert_not_awaited()
+            mock_done.assert_awaited_once()
+
+    async def test_falls_back_to_default_when_provider_is_none(
+        self, mock_twilio, mock_evolution, mock_clients
+    ):
+        """Row legacy sem conexao_provider cai no DEFAULT_PROVIDER (twilio_sandbox)."""
+        msg = self._make_message(None)
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="legado ok")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                msg,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                clients=mock_clients,
+            )
+
+            mock_twilio.send_message.assert_awaited_once()
+            mock_evolution.send_message.assert_not_awaited()
+            mock_done.assert_awaited_once()
+
+    async def test_falls_back_to_default_when_provider_unknown(
+        self, mock_twilio, mock_evolution, mock_clients
+    ):
+        """Provider sem cliente registrado (config inconsistente) cai no default."""
+        msg = self._make_message("provider_inexistente")
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="resposta fallback")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                msg,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+                clients=mock_clients,
+            )
+
+            mock_twilio.send_message.assert_awaited_once()
+            mock_evolution.send_message.assert_not_awaited()
             mock_done.assert_awaited_once()
             mock_failed.assert_not_awaited()

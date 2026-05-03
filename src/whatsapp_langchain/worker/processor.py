@@ -1,18 +1,22 @@
-"""Processador de mensagens — orquestra agente, typing e envio Twilio.
+"""Processador de mensagens — orquestra agente, typing e envio outbound.
 
 Responsável por:
 1. Pré-processar entrada (mídia -> texto)
 2. Enviar typing indicator (best-effort)
 3. Carregar o agente via loader (com checkpointer PostgreSQL)
 4. Executar o agente
-5. Enviar resposta ao usuário via Twilio
+5. Enviar resposta ao usuário via cliente outbound do provider correspondente
 6. Salvar no banco (mark_done somente após envio confirmado)
 
 Decisões arquiteturais:
-- Em production, o envio outbound usa Twilio real.
-- Em desenvolvimento, o worker pode operar em modo mock para validar
-  a via assincrona sem consumir cota externa.
-- Typing e tentado quando o SID inbound tem formato valido (best-effort).
+- Provider abstraction (M2.b): o worker recebe um dict
+  `{provider: OutboundClient}` e resolve por `message.conexao_provider`.
+  Hoje suporta Twilio (sandbox/prod/WABA) e Evolution; novos providers
+  só implementam o protocolo `OutboundClient`.
+- Em production, o envio outbound usa cliente real.
+- Em desenvolvimento, cada provider pode operar em modo mock para
+  validar a via assíncrona sem consumir cota externa.
+- Typing é tentado quando o SID inbound tem formato válido (best-effort).
 - Falha de typing NÃO interrompe o processamento.
 - mark_done ocorre somente após envio outbound bem-sucedido
   (real ou simulado, dependendo do modo do worker).
@@ -25,7 +29,7 @@ Uso:
         message, pool,
         checkpointer=checkpointer,
         store=store,
-        twilio=twilio,
+        clients={"twilio_sandbox": twilio, "evolution": evolution, ...},
     )
 """
 
@@ -49,7 +53,7 @@ from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
     preprocess_incoming_message,
 )
-from whatsapp_langchain.worker.twilio_client import TwilioClient
+from whatsapp_langchain.worker.outbound_client import OutboundClient
 
 logger = structlog.get_logger()
 
@@ -59,6 +63,32 @@ logger = structlog.get_logger()
 # como bolha de resposta automática.
 HANDOFF_HUMANO_MARKER = "[handoff humano — operador respondendo]"
 
+# Provider default pra rows sem conexao_id ou com conexão deletada
+# (mantém comportamento legado pré-M2.b).
+DEFAULT_PROVIDER = "twilio_sandbox"
+
+
+def _resolve_outbound_client(
+    clients: dict[str, OutboundClient], message: MessageQueue
+) -> OutboundClient:
+    """Escolhe o cliente outbound certo pra mensagem.
+
+    Cai no DEFAULT_PROVIDER quando `conexao_provider` é None (rows legacy
+    ou conexão removida) ou quando o provider não tem cliente registrado
+    (situação só possível por config inconsistente — logamos warning).
+    """
+    provider = message.conexao_provider or DEFAULT_PROVIDER
+    client = clients.get(provider)
+    if client is None:
+        logger.warning(
+            "outbound_provider_not_registered",
+            provider=provider,
+            message_id=message.id,
+            fallback=DEFAULT_PROVIDER,
+        )
+        return clients[DEFAULT_PROVIDER]
+    return client
+
 
 async def process_message(
     message: MessageQueue,
@@ -66,13 +96,13 @@ async def process_message(
     *,
     checkpointer: BaseCheckpointSaver,
     store: BaseStore | None = None,
-    twilio: TwilioClient,
+    clients: dict[str, OutboundClient],
 ) -> None:
     """Processa uma mensagem da fila com o agente apropriado.
 
     Faz download de mídia se presente, envia typing, carrega o grafo
     do agente com checkpointer PostgreSQL, executa, envia a resposta
-    via Twilio e salva no banco.
+    via cliente outbound do provider e salva no banco.
 
     Nenhum mark_done ocorre sem envio outbound confirmado.
 
@@ -81,8 +111,9 @@ async def process_message(
         pool: Pool de conexões do psycopg.
         checkpointer: Checkpointer LangGraph já inicializado no boot.
         store: Store LangGraph compartilhado (None se memória desabilitada).
-        twilio: Cliente Twilio para envio (obrigatório).
+        clients: Dict provider→OutboundClient (resolve via conexao_provider).
     """
+    outbound = _resolve_outbound_client(clients, message)
     logger.info(
         "processing_message",
         message_id=message.id,
@@ -111,7 +142,7 @@ async def process_message(
             auto_response = pre.auto_response or AUTO_RESPONSE_MEDIA_FAILURE
 
             # Enviar auto-response via Twilio antes de marcar como done
-            await twilio.send_message(message.phone_number, auto_response)
+            await outbound.send_message(message.phone_number, auto_response)
 
             await mark_done(
                 pool,
@@ -168,7 +199,7 @@ async def process_message(
 
         # 2. Typing indicator (best-effort, falha não interrompe processamento)
         try:
-            await twilio.send_typing(message.phone_number, message.message_id)
+            await outbound.send_typing(message.phone_number, message.message_id)
         except Exception as typing_err:
             logger.warning(
                 "typing_failed",
@@ -216,7 +247,7 @@ async def process_message(
         response_text = result["messages"][-1].content
 
         # 5. Enviar resposta outbound antes de mark_done
-        await twilio.send_message(message.phone_number, response_text)
+        await outbound.send_message(message.phone_number, response_text)
 
         # 6. mark_done somente após envio confirmado
         await mark_done(

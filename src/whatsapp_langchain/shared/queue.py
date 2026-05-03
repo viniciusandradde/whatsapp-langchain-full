@@ -299,7 +299,11 @@ async def claim_next(
                       media_processing_status, media_processing_error,
                       status, process_after, attempts, max_attempts,
                       lease_until, response, error,
-                      created_at, updated_at, processed_at
+                      created_at, updated_at, processed_at,
+                      (
+                          SELECT provider FROM conexao
+                          WHERE id = message_queue.conexao_id
+                      ) AS conexao_provider
             """,
             (lease_until,),
         )
@@ -334,6 +338,7 @@ async def claim_next(
             created_at=row[21],
             updated_at=row[22],
             processed_at=row[23],
+            conexao_provider=row[24],
         )
 
         logger.info(

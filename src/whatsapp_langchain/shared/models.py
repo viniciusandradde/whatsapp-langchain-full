@@ -48,6 +48,10 @@ class MessageQueue(BaseModel):
     agent_id: str = Field(description="Identificador do agente em langgraph.json")
     thread_id: str = Field(description="ID do thread para checkpointer: phone:agent_id")
     incoming_message: str
+    # M2.b — provider resolvido via JOIN com `conexao` no claim. None em rows
+    # sem conexao_id ou quando a conexão foi removida; o worker cai no default
+    # `twilio_sandbox` pra preservar comportamento legado.
+    conexao_provider: str | None = None
     media_url: str | None = None
     media_type: str | None = None
     normalized_input: str | None = None

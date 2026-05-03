@@ -97,7 +97,7 @@ class TestProcessorMemoryFlag:
                 mock_pool,
                 checkpointer=mock_checkpointer,
                 store=None,
-                twilio=mock_twilio,
+                clients={"twilio_sandbox": mock_twilio},
             )
 
             mock_preprocess.assert_awaited_once()

@@ -191,7 +191,7 @@ class TwilioClient:
 
         return last_sid
 
-    async def send_typing(self, to: str, message_sid: str | None = None) -> bool:
+    async def send_typing(self, to: str, message_id: str | None = None) -> bool:
         """Envia indicador de digitação via Twilio (Public Beta, out/2025).
 
         Usa o endpoint /v2/Indicators/Typing.json com dois parâmetros:
@@ -203,7 +203,7 @@ class TwilioClient:
 
         Args:
             to: Número destino em E.164 (usado apenas para logging).
-            message_sid: SID da mensagem inbound sendo respondida.
+            message_id: SID da mensagem inbound sendo respondida.
 
         Returns:
             True se o indicador foi enviado, False caso contrário.
@@ -212,14 +212,14 @@ class TwilioClient:
             logger.debug("twilio_typing_skipped", to=to, reason="mock_mode")
             return False
 
-        if not message_sid:
-            logger.debug("twilio_typing_skipped", to=to, reason="no message_sid")
+        if not message_id:
+            logger.debug("twilio_typing_skipped", to=to, reason="no message_id")
             return False
-        if not TWILIO_MESSAGE_SID_RE.match(message_sid):
+        if not TWILIO_MESSAGE_SID_RE.match(message_id):
             logger.debug(
                 "twilio_typing_skipped",
                 to=to,
-                message_sid=message_sid,
+                message_sid=message_id,
                 reason="invalid_message_sid_format",
             )
             return False
@@ -230,20 +230,20 @@ class TwilioClient:
                     TWILIO_TYPING_URL,
                     auth=(self.api_key_sid, self.api_key_secret),
                     data={
-                        "messageId": message_sid,
+                        "messageId": message_id,
                         "channel": "whatsapp",
                     },
                     timeout=5.0,
                 )
 
             if response.is_success:
-                logger.info("twilio_typing_sent", to=to, message_sid=message_sid)
+                logger.info("twilio_typing_sent", to=to, message_sid=message_id)
                 return True
 
             logger.warning(
                 "twilio_typing_failed",
                 to=to,
-                message_sid=message_sid,
+                message_sid=message_id,
                 status_code=response.status_code,
                 detail=response.text[:200],
             )

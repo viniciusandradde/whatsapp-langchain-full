@@ -22,6 +22,8 @@ from whatsapp_langchain.shared.db import (
 )
 from whatsapp_langchain.shared.observability import setup_logging
 from whatsapp_langchain.worker.consumer import claim_next_message
+from whatsapp_langchain.worker.evolution_client import EvolutionClient
+from whatsapp_langchain.worker.outbound_client import OutboundClient
 from whatsapp_langchain.worker.processor import process_message
 from whatsapp_langchain.worker.twilio_client import TwilioClient
 
@@ -78,16 +80,55 @@ async def main() -> None:
         from_number=settings.twilio_from_number,
         delivery_mode=outbound_mode,
     )
+
+    # M2.b — Evolution client paralelo. Sem credenciais → mock automático
+    # (rows com provider=evolution caem em log-only sem derrubar o worker).
+    evolution_api_key = (
+        settings.evolution_api_key.get_secret_value()
+        if settings.evolution_api_key is not None
+        else ""
+    )
+    evolution_mode = settings.evolution_outbound_mode.strip().lower() or "mock"
+    if evolution_mode == "real" and not (
+        settings.evolution_api_url
+        and evolution_api_key
+        and settings.evolution_instance_name
+    ):
+        logger.warning(
+            "evolution_credentials_missing_falling_back_to_mock",
+            api_url=bool(settings.evolution_api_url),
+            api_key=bool(evolution_api_key),
+            instance_name=bool(settings.evolution_instance_name),
+        )
+        evolution_mode = "mock"
+
+    evolution = EvolutionClient(
+        api_url=settings.evolution_api_url,
+        api_key=evolution_api_key,
+        instance_name=settings.evolution_instance_name,
+        delivery_mode=evolution_mode,
+    )
+
+    clients_by_provider: dict[str, OutboundClient] = {
+        "twilio_sandbox": twilio,
+        "twilio_prod": twilio,
+        "waba": twilio,
+        "evolution": evolution,
+    }
+
     logger.info(
-        "twilio_client_ready",
-        outbound_mode=outbound_mode,
-        from_number=settings.twilio_from_number or None,
+        "clients_ready",
+        twilio_mode=outbound_mode,
+        twilio_from_number=settings.twilio_from_number or None,
+        evolution_mode=evolution_mode,
+        evolution_instance=settings.evolution_instance_name or None,
     )
 
     logger.info(
         "worker_ready",
         poll_interval=settings.poll_interval_seconds,
         memory_enabled=store is not None,
+        providers=sorted(clients_by_provider.keys()),
     )
 
     try:
@@ -103,7 +144,7 @@ async def main() -> None:
                 pool,
                 checkpointer=checkpointer,
                 store=store,
-                twilio=twilio,
+                clients=clients_by_provider,
             )
 
     except KeyboardInterrupt:
