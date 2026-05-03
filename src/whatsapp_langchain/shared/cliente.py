@@ -214,18 +214,24 @@ async def add_anotacao(
 
 
 async def list_anotacoes(
-    pool: AsyncConnectionPool, cliente_id: int
+    pool: AsyncConnectionPool,
+    cliente_id: int,
+    *,
+    limit: int | None = None,
 ) -> list[ClienteAnotacao]:
+    """Anotações do cliente em ordem DESC. `limit` opcional pra tools do agente."""
+    sql = """
+        SELECT id, cliente_id, user_id, conteudo, created_at
+          FROM cliente_anotacao
+         WHERE cliente_id = %s
+         ORDER BY created_at DESC, id DESC
+    """
+    params: tuple = (cliente_id,)
+    if limit is not None:
+        sql += " LIMIT %s"
+        params = (cliente_id, int(limit))
     async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT id, cliente_id, user_id, conteudo, created_at
-              FROM cliente_anotacao
-             WHERE cliente_id = %s
-             ORDER BY created_at DESC, id DESC
-            """,
-            (cliente_id,),
-        )
+        cur = await conn.execute(sql, params)
         rows = await cur.fetchall()
     return [
         ClienteAnotacao(
