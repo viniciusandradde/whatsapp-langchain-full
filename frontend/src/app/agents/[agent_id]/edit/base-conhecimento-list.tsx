@@ -348,22 +348,30 @@ export function BaseConhecimentoList({
                   Nenhum documento relevante para essa pergunta.
                 </p>
               ) : (
-                resultados.map((r) => (
+                resultados.map((r, i) => (
                   <div
-                    key={r.documento.id}
+                    key={`${r.documento.id}-${r.chunk_idx}-${i}`}
                     className="rounded-md border bg-muted/20 p-3 text-sm"
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">
                         {r.documento.titulo}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          trecho {r.chunk_idx}
+                        </span>
                       </span>
                       <Badge variant="outline">
                         relevância {r.score.toFixed(2)}
                       </Badge>
                     </div>
-                    <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
-                      {r.documento.conteudo}
-                    </p>
+                    {r.reason && (
+                      <p className="mt-1 text-xs italic text-muted-foreground">
+                        Reranker: {r.reason}
+                      </p>
+                    )}
+                    <pre className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">
+                      {r.chunk_conteudo}
+                    </pre>
                   </div>
                 ))
               )}

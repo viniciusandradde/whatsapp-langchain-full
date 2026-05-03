@@ -406,7 +406,11 @@ export interface DocumentosConhecimentoResponse {
 
 export interface BuscarDocumentoResultado {
   documento: DocumentoConhecimento;
+  // M5.c.1: busca retorna chunk individual + reason do reranker
+  chunk_idx: number;
+  chunk_conteudo: string;
   score: number;
+  reason: string | null;
 }
 
 export interface BuscarDocumentosResponse {
