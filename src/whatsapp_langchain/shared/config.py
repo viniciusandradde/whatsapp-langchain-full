@@ -137,6 +137,23 @@ class Settings(BaseSettings):
     embedding_dims: int = 1536
     memory_search_limit: int = 5
 
+    # --- M2.b Evolution API (WhatsApp não-oficial) ---
+    # Vazio desativa a integração — endpoints respondem 503 e o worker
+    # não inicializa cliente Evolution. Quando preenchido + ao menos
+    # uma conexão `provider='evolution'` cadastrada, mensagens fluem
+    # pelo pipeline normal.
+    evolution_api_url: str = ""
+    evolution_api_key: SecretStr | None = None
+    # Instance default — só pra teste rápido / pré-cadastro UI. Em
+    # produção o instance_name vem da `conexao.payload_json`.
+    evolution_instance_name: str = ""
+    evolution_phone_number: str = ""
+    # mock = log only; real = HTTP de fato. Default safe em dev.
+    evolution_outbound_mode: str = "mock"
+    # Quando true, valida header `apikey` no /webhook/evolution.
+    # Obrigatório true em produção (validate_runtime_settings checa).
+    evolution_validate_apikey: bool = False
+
     @property
     def frontend_origins_list(self) -> list[str]:
         """Retorna a lista de origens CORS a partir do CSV em FRONTEND_ORIGINS."""
