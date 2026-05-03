@@ -35,19 +35,24 @@ from whatsapp_langchain.server.routes.departamento import (
 from whatsapp_langchain.server.routes.empresa_admin import (
     router as empresa_admin_router,
 )
+from whatsapp_langchain.server.routes.evolution_webhook import (
+    router as evolution_webhook_router,
+)
 from whatsapp_langchain.server.routes.health import router as health_router
 from whatsapp_langchain.server.routes.hook import router as hook_router
 from whatsapp_langchain.server.routes.horario import (
     router_feriado as feriado_router,
+)
+from whatsapp_langchain.server.routes.horario import (
     router_horario as horario_router,
 )
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
+from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.variavel import (
     router as variavel_router,
 )
-from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.webhook import router as webhook_router
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import (
@@ -123,6 +128,7 @@ async def agent_not_found_handler(
 # Routers
 app.include_router(health_router)
 app.include_router(webhook_router)
+app.include_router(evolution_webhook_router)
 app.include_router(admin_router)
 app.include_router(empresa_admin_router)
 app.include_router(conexao_router)

@@ -80,6 +80,29 @@ async def get_conexao_by_from_number(
     return _row_to_conexao(row) if row else None
 
 
+async def get_conexao_by_evolution_instance(
+    pool: AsyncConnectionPool, instance_name: str
+) -> Conexao | None:
+    """Resolve a conexão Evolution pelo nome da instância (M2.b).
+
+    O webhook Evolution traz `instance` no payload — buscamos a conexão
+    com `provider='evolution'` cujo `payload_json.instance_name` casa.
+    Multi-instância: cada conexão grava sua instance_name no JSONB.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {_SELECT_COLS} FROM conexao
+             WHERE provider = 'evolution'
+               AND payload_json->>'instance_name' = %s
+             LIMIT 1
+            """,
+            (instance_name,),
+        )
+        row = await cur.fetchone()
+    return _row_to_conexao(row) if row else None
+
+
 async def upsert_conexao(
     pool: AsyncConnectionPool, empresa_id: int, data: ConexaoInput
 ) -> Conexao:
