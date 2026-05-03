@@ -25,13 +25,21 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.middleware import get_context_middleware
 from whatsapp_langchain.agents.tools import (
+    add_cliente_tag,
     calendar_cancel_event,
     calendar_create_event,
     calendar_find_free_slots,
     calendar_get_current_time,
+    close_atendimento,
+    create_cliente_anotacao,
+    get_cliente_anotacoes,
+    get_cliente_history,
+    get_cliente_profile,
     read_memory,
     save_memory,
     search_knowledge_base,
+    transfer_to_human,
+    update_cliente,
 )
 from whatsapp_langchain.shared.llm import create_chat_model
 
@@ -97,6 +105,22 @@ def build_graph(
     # (loader.py decide via DB e passa `knowledge_enabled=True`).
     if knowledge_enabled:
         tools.append(search_knowledge_base)
+
+    # Tools de cliente/atendimento (M5.b.1) — sempre habilitadas porque
+    # M3 já criou as tabelas pra todas as empresas. As tools validam
+    # empresa_id no runtime pra anti-tenant escape.
+    tools.extend(
+        [
+            get_cliente_profile,
+            get_cliente_history,
+            get_cliente_anotacoes,
+            create_cliente_anotacao,
+            add_cliente_tag,
+            update_cliente,
+            close_atendimento,
+            transfer_to_human,
+        ]
+    )
 
     # Override do prompt vem do `agente_ia_config` da empresa via loader.
     # Vazio/None = usa o template hardcoded (`SYSTEM_PROMPT`).
