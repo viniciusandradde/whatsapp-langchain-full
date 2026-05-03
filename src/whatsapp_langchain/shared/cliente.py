@@ -94,6 +94,51 @@ async def get_cliente_by_id(
     return _row_to_cliente(row, tags=[r[0] for r in tag_rows])
 
 
+async def update_cliente_partial(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    cliente_id: int,
+    *,
+    nome: str | None = None,
+    email: str | None = None,
+    doc: str | None = None,
+) -> Cliente | None:
+    """Update parcial — só campos não-None são tocados (M5.b.1).
+
+    Usado pelas tools do agente quando o cliente diz nome/email durante a
+    conversa. Filtra por (id, empresa_id) pra anti-cross-tenant.
+    """
+    sets: list[str] = []
+    params: list = []
+    if nome is not None:
+        sets.append("nome = %s")
+        params.append(nome)
+    if email is not None:
+        sets.append("email = %s")
+        params.append(email)
+    if doc is not None:
+        sets.append("doc = %s")
+        params.append(doc)
+    if not sets:
+        return await get_cliente_by_id(pool, cliente_id)
+    sets.append("updated_at = NOW()")
+    params.extend([cliente_id, empresa_id])
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            UPDATE cliente SET {", ".join(sets)}
+             WHERE id = %s AND empresa_id = %s
+            RETURNING {_SELECT_COLS}
+            """,  # type: ignore[arg-type]
+            tuple(params),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    # Re-lê tags pra retornar lista atualizada.
+    return await get_cliente_by_id(pool, cliente_id)
+
+
 async def get_cliente_by_telefone(
     pool: AsyncConnectionPool, empresa_id: int, telefone: str
 ) -> Cliente | None:

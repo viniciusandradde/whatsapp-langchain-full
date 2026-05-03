@@ -189,6 +189,41 @@ async def get_atendimento_by_id(
     return _row_to_atendimento(row, with_cliente=True) if row else None
 
 
+async def list_atendimentos_by_cliente(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    cliente_id: int,
+    *,
+    limit: int = 10,
+    exclude_id: int | None = None,
+) -> list[Atendimento]:
+    """Histórico de atendimentos do cliente — usado por tools do agente (M5.b.1).
+
+    `exclude_id` permite o agente pedir "histórico exceto o atendimento
+    atual" pra não se citar a si próprio.
+    """
+    where = "WHERE a.empresa_id = %s AND a.cliente_id = %s"
+    params: list = [empresa_id, cliente_id]
+    if exclude_id is not None:
+        where += " AND a.id <> %s"
+        params.append(exclude_id)
+    params.append(limit)
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {_JOIN_COLS}
+              FROM atendimento a
+              LEFT JOIN cliente c ON c.id = a.cliente_id
+            {where}
+            ORDER BY a.created_at DESC
+            LIMIT %s
+            """,  # type: ignore[arg-type]
+            tuple(params),
+        )
+        rows = await cur.fetchall()
+    return [_row_to_atendimento(r, with_cliente=True) for r in rows]
+
+
 async def claim_atendimento(
     pool: AsyncConnectionPool, atendimento_id: int, user_id: str
 ) -> Atendimento | None:

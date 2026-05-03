@@ -11,6 +11,7 @@ from whatsapp_langchain.shared.atendimento import (
     get_atendimento_by_id,
     list_atendimento_mensagens,
     list_atendimentos,
+    list_atendimentos_by_cliente,
     open_or_attach_atendimento,
     transfer_atendimento,
 )
@@ -214,3 +215,39 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
     args = conn.execute.await_args.args[1]
     assert args[0] == 7
     assert args[1] == 42
+
+
+# --- list_atendimentos_by_cliente (M5.b.1) ---
+
+
+@pytest.mark.asyncio
+async def test_list_atendimentos_by_cliente_filters_empresa_e_cliente():
+    pool, conn = _mock_pool(
+        [_row_with_cliente(id_=10), _row_with_cliente(id_=11)]
+    )
+    out = await list_atendimentos_by_cliente(pool, 1, 5)
+    assert [a.id for a in out] == [10, 11]
+    sql = conn.execute.await_args.args[0]
+    assert "WHERE a.empresa_id = %s AND a.cliente_id = %s" in sql
+    params = conn.execute.await_args.args[1]
+    assert params[0] == 1
+    assert params[1] == 5
+
+
+@pytest.mark.asyncio
+async def test_list_atendimentos_by_cliente_exclude_id():
+    pool, conn = _mock_pool([_row_with_cliente(id_=11)])
+    await list_atendimentos_by_cliente(pool, 1, 5, exclude_id=99, limit=3)
+    sql = conn.execute.await_args.args[0]
+    params = conn.execute.await_args.args[1]
+    assert "AND a.id <> %s" in sql
+    assert 99 in params
+    assert params[-1] == 3  # limit
+
+
+@pytest.mark.asyncio
+async def test_list_atendimentos_by_cliente_orders_desc_by_created_at():
+    pool, conn = _mock_pool([])
+    await list_atendimentos_by_cliente(pool, 1, 5)
+    sql = conn.execute.await_args.args[0]
+    assert "ORDER BY a.created_at DESC" in sql
