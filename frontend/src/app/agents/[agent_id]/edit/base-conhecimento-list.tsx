@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -29,6 +30,7 @@ import {
   buscarDocumentosAction,
   deleteDocumentoAction,
   saveDocumentoAction,
+  uploadDocumentoAction,
 } from "./actions";
 
 interface Props {
@@ -40,7 +42,8 @@ interface Props {
 type EditState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; doc: DocumentoConhecimento };
+  | { mode: "edit"; doc: DocumentoConhecimento }
+  | { mode: "upload" };
 
 export function BaseConhecimentoList({
   agentId,
@@ -90,6 +93,22 @@ export function BaseConhecimentoList({
     });
   }
 
+  function handleUpload(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    clearMessages();
+    const form = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const r = await uploadDocumentoAction(agentId, form);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      setDocs((prev) => [r.documento, ...prev]);
+      setEdit({ mode: "closed" });
+      setSuccess("Arquivo enviado e indexado.");
+    });
+  }
+
   function handleDelete(id: number) {
     if (!confirm("Excluir este documento? Essa ação não pode ser desfeita."))
       return;
@@ -136,18 +155,33 @@ export function BaseConhecimentoList({
               </p>
             </div>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              clearMessages();
-              setEdit({ mode: "create" });
-            }}
-            disabled={isPending || edit.mode !== "closed"}
-          >
-            <Plus className="size-3.5" />
-            Adicionar
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                clearMessages();
+                setEdit({ mode: "upload" });
+              }}
+              disabled={isPending || edit.mode !== "closed"}
+            >
+              <Upload className="size-3.5" />
+              Upload
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                clearMessages();
+                setEdit({ mode: "create" });
+              }}
+              disabled={isPending || edit.mode !== "closed"}
+            >
+              <Plus className="size-3.5" />
+              Adicionar
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -159,7 +193,82 @@ export function BaseConhecimentoList({
         {error && <p className="text-sm text-destructive">{error}</p>}
         {success && <p className="text-sm text-emerald-300">{success}</p>}
 
-        {edit.mode !== "closed" && (
+        {edit.mode === "upload" && (
+          <form
+            onSubmit={handleUpload}
+            className="space-y-3 rounded-md border bg-muted/20 p-4"
+          >
+            <div>
+              <label
+                htmlFor="arquivo"
+                className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
+              >
+                Arquivo (PDF, DOCX, MD ou TXT)
+              </label>
+              <input
+                id="arquivo"
+                name="arquivo"
+                type="file"
+                required
+                accept=".pdf,.docx,.md,.markdown,.txt"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-xs file:text-primary"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Limite 10 MB. PDFs escaneados sem OCR não funcionam.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="upload_titulo"
+                  className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
+                >
+                  Título{" "}
+                  <span className="normal-case">
+                    (opcional — usa nome do arquivo se vazio)
+                  </span>
+                </label>
+                <input
+                  id="upload_titulo"
+                  name="titulo"
+                  maxLength={200}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="upload_tags"
+                  className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
+                >
+                  Tags <span className="normal-case">(CSV)</span>
+                </label>
+                <input
+                  id="upload_tags"
+                  name="tags"
+                  placeholder="manual, faq"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setEdit({ mode: "closed" })}
+                disabled={isPending}
+              >
+                <X className="size-3.5" />
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                <Upload className="size-3.5" />
+                {isPending ? "Enviando…" : "Enviar e indexar"}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {(edit.mode === "create" || edit.mode === "edit") && (
           <form
             onSubmit={handleSubmit}
             className="space-y-3 rounded-md border bg-muted/20 p-4"

@@ -9,6 +9,7 @@ import {
   resetAgenteIAConfig,
   updateAgenteIAConfig,
   updateDocumentoConhecimento,
+  uploadDocumentoConhecimento,
   type AgenteIAConfigInput,
   type BuscarDocumentosResponse,
   type DocumentoConhecimento,
@@ -120,6 +121,31 @@ export async function buscarDocumentosAction(
   try {
     const data = await buscarDocumentosConhecimento(query);
     return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function uploadDocumentoAction(
+  agentId: string,
+  formData: FormData
+): Promise<SaveDocumentoResult> {
+  try {
+    const arquivo = formData.get("arquivo");
+    if (!(arquivo instanceof File) || !arquivo.size) {
+      return { ok: false, error: "Selecione um arquivo." };
+    }
+    const titulo = String(formData.get("titulo") || "").trim() || undefined;
+    const tagsRaw = String(formData.get("tags") || "").trim();
+    const tags = tagsRaw
+      ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+      : undefined;
+    const documento = await uploadDocumentoConhecimento(arquivo, {
+      titulo,
+      tags,
+    });
+    revalidatePath(`/agents/${agentId}/edit`);
+    return { ok: true, documento };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

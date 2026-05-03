@@ -1030,6 +1030,51 @@ export async function buscarDocumentosConhecimento(
   });
 }
 
+export async function uploadDocumentoConhecimento(
+  arquivo: File,
+  options: { titulo?: string; tags?: string[] } = {}
+): Promise<DocumentoConhecimento> {
+  ensureFrontendRuntimeConfig();
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+  };
+  try {
+    const session = await auth.api.getSession({ headers: await nextHeaders() });
+    if (session?.user?.id) headers["X-User-Id"] = session.user.id;
+  } catch {
+    /* sem sessão — backend devolve 401 */
+  }
+  try {
+    const empresaCookie = (await cookies()).get(ACTIVE_EMPRESA_COOKIE)?.value;
+    if (empresaCookie) headers["X-Empresa-Id"] = empresaCookie;
+  } catch {
+    /* sem cookies — backend usa default */
+  }
+
+  const form = new FormData();
+  form.append("arquivo", arquivo);
+  if (options.titulo) form.append("titulo", options.titulo);
+  if (options.tags?.length) form.append("tags", options.tags.join(","));
+
+  const response = await fetch(`${API_URL}/api/base-conhecimento/upload`, {
+    method: "POST",
+    headers,
+    body: form,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      /* response não é JSON */
+    }
+    throw new Error(`Upload falhou (${response.status}): ${detail}`);
+  }
+  return (await response.json()) as DocumentoConhecimento;
+}
+
 // --- M5.d: Variáveis de Ambiente ---
 
 export async function getVariaveis(): Promise<VariaveisResponse> {
