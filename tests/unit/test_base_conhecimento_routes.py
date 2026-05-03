@@ -145,11 +145,19 @@ def test_delete_documento_404_when_missing(client):
     assert response.status_code == 404
 
 
-def test_buscar_documentos_returns_pairs(client):
-    pair = (_doc(id=1, titulo="A"), 0.85)
+def test_buscar_documentos_returns_search_results(client):
+    from whatsapp_langchain.shared.base_conhecimento import SearchResult
+
+    result = SearchResult(
+        documento=_doc(id=1, titulo="A"),
+        chunk_idx=0,
+        chunk_conteudo="trecho relevante",
+        score=0.85,
+        reason="bate exato",
+    )
     with patch(
         "whatsapp_langchain.shared.base_conhecimento.search_relevant",
-        new=AsyncMock(return_value=[pair]),
+        new=AsyncMock(return_value=[result]),
     ) as mock_search:
         response = client.post(
             "/api/base-conhecimento/buscar", json={"query": "trocas"}
@@ -157,10 +165,14 @@ def test_buscar_documentos_returns_pairs(client):
     assert response.status_code == 200
     data = response.json()
     assert len(data["resultados"]) == 1
-    assert data["resultados"][0]["score"] == pytest.approx(0.85)
-    assert data["resultados"][0]["documento"]["titulo"] == "A"
+    r = data["resultados"][0]
+    assert r["score"] == pytest.approx(0.85)
+    assert r["chunk_idx"] == 0
+    assert r["chunk_conteudo"] == "trecho relevante"
+    assert r["reason"] == "bate exato"
+    assert r["documento"]["titulo"] == "A"
     kwargs = mock_search.await_args.kwargs
-    assert kwargs == {"k": 3}
+    assert kwargs == {"k": 3, "rerank": True}
 
 
 def test_buscar_validates_query(client):

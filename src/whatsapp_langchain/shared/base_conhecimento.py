@@ -452,8 +452,85 @@ async def search_relevant(
     return await _llm_rerank(query, candidates, top_k=k)
 
 
+async def backfill_chunks(
+    pool: AsyncConnectionPool, *, only_doc_id: int | None = None
+) -> dict[str, int]:
+    """One-shot backfill — chunkeia + indexa docs que ainda não têm chunks.
+
+    Útil pra migrar dados de M5.c (1 vetor por doc) pra M5.c.1 (chunks).
+    Idempotente: docs que já têm ≥1 chunk são pulados. Quando
+    `only_doc_id` é fornecido, força re-indexação só desse doc (útil pra
+    debug ou correção pontual).
+
+    Retorna `{processed, skipped, failed}` pra logging/CLI.
+    """
+    async with pool.connection() as conn:
+        if only_doc_id is not None:
+            cur = await conn.execute(
+                f"SELECT {_SELECT_COLS} FROM documento_conhecimento WHERE id = %s",
+                (only_doc_id,),
+            )
+        else:
+            cur = await conn.execute(
+                f"""
+                SELECT {_SELECT_COLS} FROM documento_conhecimento d
+                 WHERE NOT EXISTS (
+                       SELECT 1 FROM documento_conhecimento_chunk c
+                        WHERE c.documento_id = d.id
+                       )
+                """
+            )
+        rows = await cur.fetchall()
+
+    counters = {"processed": 0, "skipped": 0, "failed": 0}
+    for row in rows:
+        doc = _row_to_documento(row)
+        try:
+            chunks_text = split_text(doc.conteudo)
+            if not chunks_text:
+                counters["skipped"] += 1
+                continue
+            chunks_text = [
+                f"{doc.titulo}\n\n{chunks_text[0]}",
+                *chunks_text[1:],
+            ]
+            embeddings = await _embed_batch(chunks_text)
+            async with pool.connection() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        "DELETE FROM documento_conhecimento_chunk WHERE documento_id = %s",
+                        (doc.id,),
+                    )
+                    for idx, (chunk, vec) in enumerate(zip(chunks_text, embeddings)):
+                        await conn.execute(
+                            """
+                            INSERT INTO documento_conhecimento_chunk
+                                (documento_id, empresa_id, chunk_idx, conteudo, embedding)
+                            VALUES (%s, %s, %s, %s, %s::vector)
+                            """,
+                            (doc.id, doc.empresa_id, idx, chunk, _vector_literal(vec)),
+                        )
+            counters["processed"] += 1
+            logger.info(
+                "rag_chunks_backfilled",
+                doc_id=doc.id,
+                empresa_id=doc.empresa_id,
+                num_chunks=len(chunks_text),
+            )
+        except Exception as e:
+            counters["failed"] += 1
+            logger.warning(
+                "rag_chunks_backfill_failed",
+                doc_id=doc.id,
+                empresa_id=doc.empresa_id,
+                error=str(e),
+            )
+    return counters
+
+
 __all__ = [
     "SearchResult",
+    "backfill_chunks",
     "delete_documento",
     "get_documento",
     "has_active_documents",

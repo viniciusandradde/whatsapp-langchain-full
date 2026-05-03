@@ -118,11 +118,17 @@ async def delete_documento(
 class _BuscarBody(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     k: int = Field(default=3, ge=1, le=10)
+    rerank: bool = True
 
 
 class _BuscarResultado(BaseModel):
+    """M5.c.1: resposta da busca agora carrega chunk + reason do reranker."""
+
     documento: DocumentoConhecimento
+    chunk_idx: int
+    chunk_conteudo: str
     score: float
+    reason: str | None = None
 
 
 @router.post("/buscar")
@@ -133,10 +139,17 @@ async def buscar_documentos(
     """Endpoint de teste — espelha o que a tool do agente vê."""
     pool = await get_pool()
     results = await base_conhecimento.search_relevant(
-        pool, empresa_id, body.query, k=body.k
+        pool, empresa_id, body.query, k=body.k, rerank=body.rerank
     )
     return {
         "resultados": [
-            _BuscarResultado(documento=d, score=s) for d, s in results
+            _BuscarResultado(
+                documento=r.documento,
+                chunk_idx=r.chunk_idx,
+                chunk_conteudo=r.chunk_conteudo,
+                score=r.score,
+                reason=r.reason,
+            )
+            for r in results
         ]
     }

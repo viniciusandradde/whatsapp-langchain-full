@@ -1,4 +1,4 @@
-.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows clean
+.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows backfill-rag clean
 
 # Cores para output
 CYAN := \033[36m
@@ -105,6 +105,10 @@ test-flows: ## Roda testes de fluxo realista (requer stack Docker)
 
 test-twilio-smoke: ## Smoke test e2e com Twilio real (custos $$$). Requer TWILIO_LIVE_TESTS=1 e stack Docker.
 	uv run pytest tests/integration/test_twilio_smoke.py -v -s -m twilio_real
+
+##@ RAG
+backfill-rag: ## Re-chunka docs sem chunks (pós migration 018). --doc-id N força um.
+	uv run python scripts/backfill_rag_chunks.py $(ARGS)
 
 ##@ Limpeza
 clean: ## Remove arquivos de cache do Python
