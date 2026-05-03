@@ -3,8 +3,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# curl necessário para o healthcheck do Docker Compose
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# curl: healthcheck do Docker Compose
+# poppler-utils: pdf2image precisa pra rasterizar páginas PDF (M5.c.3 OCR)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 # Instala uv para gerenciar dependências
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
