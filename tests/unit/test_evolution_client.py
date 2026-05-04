@@ -253,7 +253,11 @@ class TestSendTyping:
         assert result is True
 
     async def test_sends_correct_presence_payload(self, client, monkeypatch):
-        """Payload usa formato options{delay,presence,number} da doc oficial."""
+        """Payload Evolution v2.3.x: presence/delay no nível raiz do body.
+
+        Versões anteriores (v2.2.x) aceitavam dentro de `options`, mas
+        v2.3.7 rejeita com 400 'instance requires property presence/delay'.
+        """
         captured = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -268,9 +272,10 @@ class TestSendTyping:
         assert captured["url"] == client.send_presence_url
         assert captured["apikey"] == TEST_API_KEY
         assert captured["body"]["number"] == "5511999999999"
-        assert captured["body"]["options"]["presence"] == "composing"
-        assert captured["body"]["options"]["delay"] == EVOLUTION_TYPING_DELAY_MS
-        assert captured["body"]["options"]["number"] == "5511999999999"
+        assert captured["body"]["presence"] == "composing"
+        assert captured["body"]["delay"] == EVOLUTION_TYPING_DELAY_MS
+        # `options` não deve mais estar no body (formato antigo).
+        assert "options" not in captured["body"]
 
     async def test_returns_false_on_error(self, client, monkeypatch):
         """Typing best-effort — 4xx vira False sem levantar exceção."""

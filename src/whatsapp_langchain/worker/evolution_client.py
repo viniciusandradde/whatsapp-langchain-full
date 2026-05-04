@@ -248,16 +248,16 @@ class EvolutionClient:
         normalized_to = normalize_to_number(to)
         try:
             async with httpx.AsyncClient() as http:
+                # Evolution v2.3.x mudou o contrato: presence/delay vão no
+                # nível raiz do body, não dentro de `options`. Versões
+                # anteriores aceitavam ambos os formatos.
                 response = await http.post(
                     self.send_presence_url,
                     headers={"apikey": self.api_key},
                     json={
                         "number": normalized_to,
-                        "options": {
-                            "delay": EVOLUTION_TYPING_DELAY_MS,
-                            "presence": "composing",
-                            "number": normalized_to,
-                        },
+                        "delay": EVOLUTION_TYPING_DELAY_MS,
+                        "presence": "composing",
                     },
                     timeout=5.0,
                 )
