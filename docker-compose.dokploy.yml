@@ -50,6 +50,12 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    deploy:
+      replicas: 4
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
   frontend:
     build:
