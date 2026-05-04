@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -76,10 +76,68 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     setLoading(false);
   }
 
+  // Silent reload: usado pelo polling — não toca em `loading` pra evitar
+  // flicker no UI a cada 3s. Erros transitórios são engolidos pra não
+  // poluir o painel com banner vermelho a cada falha de rede.
+  const reloadingRef = useRef(false);
+  async function silentReload() {
+    if (reloadingRef.current) return;
+    reloadingRef.current = true;
+    try {
+      const r = await loadMensagensAction(atendimento.id);
+      if (r.ok) setMensagens(r.mensagens);
+    } finally {
+      reloadingRef.current = false;
+    }
+  }
+
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atendimento.id]);
+
+  // Polling 3s enquanto drawer aberto + atendimento ativo + aba focada.
+  // Pausa em background (Page Visibility API) pra não consumir API à toa
+  // quando operador troca de aba; retoma + faz reload imediato ao voltar.
+  // Para automaticamente quando atendimento é fechado/abandonado.
+  useEffect(() => {
+    const isActive =
+      atendimento.status === "aguardando" ||
+      atendimento.status === "em_andamento";
+    if (!isActive) return;
+
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    function start() {
+      if (timer) return;
+      timer = setInterval(() => {
+        if (document.visibilityState === "visible") void silentReload();
+      }, 3000);
+    }
+    function stop() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void silentReload();
+        start();
+      } else {
+        stop();
+      }
+    }
+
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atendimento.id, atendimento.status]);
 
   function runAction(fn: () => Promise<{ ok: true } | { ok: false; error: string }>) {
     setError(null);
