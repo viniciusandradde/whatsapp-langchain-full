@@ -22,6 +22,9 @@ from whatsapp_langchain.server.middlewares import (
     install_security_headers,
 )
 from whatsapp_langchain.server.routes.admin import router as admin_router
+from whatsapp_langchain.server.routes.agendamento import (
+    router as agendamento_router,
+)
 from whatsapp_langchain.server.routes.atendimento import (
     router as atendimento_router,
 )
