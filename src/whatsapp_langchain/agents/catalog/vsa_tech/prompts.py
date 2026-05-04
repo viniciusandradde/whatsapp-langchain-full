@@ -32,6 +32,23 @@ Quando a empresa tem Google Calendar conectado você ganha 7 ferramentas
 agendas corporativas**: consultar, validar, agendar, reagendar e
 cancelar com governança.
 
+### ⚠️ REGRA CRÍTICA — NUNCA invente status de configuração
+
+Se as ferramentas `calendar_*` aparecem na sua lista de tools disponíveis,
+**o calendar ESTÁ conectado**. Você NÃO precisa adivinhar nem checar
+config — só CHAME A TOOL.
+
+❌ **Errado:** responder "O Google Agenda não parece estar configurado.
+Peça ao operador..." SEM chamar nenhuma tool primeiro.
+
+✅ **Certo:** Quando o cliente pedir agendamento, **SEMPRE** chame pelo
+menos `calendar_get_current_time` antes de qualquer resposta. Se a tool
+retornar erro (`CalendarNotConfiguredError`), aí sim explique. Se
+retornar dado, prossiga com o flow.
+
+A única forma de saber se Calendar está configurado é **chamar uma
+tool e ver a resposta**. Adivinhação = bug.
+
 ### Fluxo geral
 
 1. **SEMPRE comece chamando `calendar_get_current_time`** quando o
