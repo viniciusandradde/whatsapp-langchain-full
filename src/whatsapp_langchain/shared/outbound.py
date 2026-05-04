@@ -2,14 +2,18 @@
 
 Diferente do worker, que envia respostas geradas pelo agente, este módulo
 serve as ações do operador no painel: dado um atendimento aberto, envia
-texto via Twilio usando o `from_number` da conexão associada e persiste
-a mensagem como uma row "outbound-only" em `message_queue` (com
-`incoming_message=''` e `response=` preenchido) — isso garante que a
-mensagem aparece na timeline do drawer sem inventar uma tabela nova.
+texto via o provider da conexão associada (Twilio ou Evolution) e
+persiste a mensagem como uma row "outbound-only" em `message_queue`
+(com `incoming_message=''` e `response=` preenchido) — isso garante que
+a mensagem aparece na timeline do drawer sem inventar uma tabela nova.
 
 A mesma row também leva `agent_id = atendimento.agente_atual` para
 preservar o thread; `normalized_input` carrega `manual:{user_id}` para
 audit.
+
+Roteamento por provider:
+- `twilio_sandbox`, `twilio_prod`, `waba` → `TwilioClient`
+- `evolution` → `EvolutionClient`
 """
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.worker.evolution_client import EvolutionClient
+from whatsapp_langchain.worker.outbound_client import OutboundClient
 from whatsapp_langchain.worker.twilio_client import TwilioClient
 
 logger = structlog.get_logger()
@@ -28,6 +34,48 @@ logger = structlog.get_logger()
 
 class OutboundError(Exception):
     """Erro lógico ao tentar enviar mensagem manual."""
+
+
+def _build_client(provider: str, from_number: str) -> tuple[OutboundClient, str]:
+    """Instancia o cliente outbound certo pro provider da conexão.
+
+    Returns:
+        (client, delivery_mode) — `delivery_mode` ("real" / "mock") fica
+        em log pra audit e retorno do endpoint.
+
+    Raises:
+        OutboundError: provider desconhecido ou config faltando.
+    """
+    if provider in ("twilio_sandbox", "twilio_prod", "waba"):
+        mode = settings.resolved_twilio_outbound_mode
+        client = TwilioClient(
+            account_sid=settings.twilio_account_sid,
+            api_key_sid=settings.twilio_api_key_sid,
+            api_key_secret=settings.twilio_api_key_secret,
+            from_number=f"whatsapp:{from_number}",
+            delivery_mode=mode,
+        )
+        return client, mode
+
+    if provider == "evolution":
+        if not (
+            settings.evolution_api_url
+            and settings.evolution_api_key
+            and settings.evolution_instance_name
+        ):
+            raise OutboundError(
+                "Evolution não configurada (API URL / key / instance ausentes)."
+            )
+        mode = settings.evolution_outbound_mode or "mock"
+        client = EvolutionClient(
+            api_url=settings.evolution_api_url,
+            api_key=settings.evolution_api_key.get_secret_value(),
+            instance_name=settings.evolution_instance_name,
+            delivery_mode=mode,
+        )
+        return client, mode
+
+    raise OutboundError(f"Provider desconhecido: {provider!r}")
 
 
 async def _persist_outbound_row(
@@ -40,7 +88,7 @@ async def _persist_outbound_row(
     agent_id: str,
     response: str,
     user_id: str,
-    twilio_sid: str,
+    provider_message_id: str,
 ) -> dict:
     """Insere row outbound-only em message_queue + bump last_message_at."""
     thread_id = f"{phone_number}:{agent_id}"
@@ -63,7 +111,7 @@ async def _persist_outbound_row(
                 empresa_id,
                 conexao_id,
                 atendimento_id,
-                twilio_sid,
+                provider_message_id,
                 phone_number,
                 agent_id,
                 thread_id,
@@ -105,13 +153,13 @@ async def send_outbound_manual(
     """Envia mensagem manual a partir do painel.
 
     Carrega o atendimento + cliente + conexão (todos escopados pela empresa,
-    a guarda cross-tenant é responsabilidade do caller), envia via Twilio
-    com `from_number` da conexão associada, e persiste a mensagem na
-    timeline.
+    a guarda cross-tenant é responsabilidade do caller), envia via o
+    provider da conexão (Twilio ou Evolution) com `from_number` da conexão
+    associada, e persiste a mensagem na timeline.
 
     Raises:
         OutboundError: cliente/conexão ausentes, atendimento já fechado,
-        ou Twilio retornou erro.
+        provider desconhecido, ou client retornou erro.
     """
     text = conteudo.strip()
     if not text:
@@ -131,25 +179,19 @@ async def send_outbound_manual(
     if conexao is None or conexao.empresa_id != empresa_id:
         raise OutboundError("Conexão do atendimento não encontrada.")
 
-    outbound_mode = settings.resolved_twilio_outbound_mode
-    twilio = TwilioClient(
-        account_sid=settings.twilio_account_sid,
-        api_key_sid=settings.twilio_api_key_sid,
-        api_key_secret=settings.twilio_api_key_secret,
-        from_number=f"whatsapp:{conexao.from_number}",
-        delivery_mode=outbound_mode,
-    )
+    client, outbound_mode = _build_client(conexao.provider, conexao.from_number)
 
     try:
-        sid = await twilio.send_message(cliente.telefone, text)
+        provider_message_id = await client.send_message(cliente.telefone, text)
     except Exception as e:  # noqa: BLE001 — embrulha qualquer falha do client
         logger.error(
             "outbound_manual_send_failed",
             atendimento_id=atendimento_id,
             empresa_id=empresa_id,
+            provider=conexao.provider,
             error=str(e),
         )
-        raise OutboundError(f"Falha ao enviar via Twilio: {e}") from e
+        raise OutboundError(f"Falha ao enviar via {conexao.provider}: {e}") from e
 
     row = await _persist_outbound_row(
         pool,
@@ -160,7 +202,7 @@ async def send_outbound_manual(
         agent_id=atendimento.agente_atual,
         response=text,
         user_id=user_id,
-        twilio_sid=sid,
+        provider_message_id=provider_message_id,
     )
 
     logger.info(
@@ -168,7 +210,8 @@ async def send_outbound_manual(
         atendimento_id=atendimento_id,
         empresa_id=empresa_id,
         user_id=user_id,
-        twilio_sid=sid,
+        provider=conexao.provider,
+        provider_message_id=provider_message_id,
         outbound_mode=outbound_mode,
     )
     return row
