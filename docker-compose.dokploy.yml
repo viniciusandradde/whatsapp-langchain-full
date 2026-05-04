@@ -36,8 +36,7 @@ services:
       retries: 5
       start_period: 15s
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     restart: unless-stopped
 
   worker:
@@ -49,8 +48,7 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
       LOG_JSON: "true"
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     restart: unless-stopped
 
   frontend:
@@ -63,8 +61,7 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
       PORT: "3000"
     depends_on:
-      api:
-        condition: service_healthy
+      - api
     restart: unless-stopped
 
 volumes:
