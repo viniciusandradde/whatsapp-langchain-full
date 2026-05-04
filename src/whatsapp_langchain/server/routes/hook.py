@@ -20,11 +20,15 @@ from whatsapp_langchain.shared.hook import (
     EVENTOS_VALIDOS,
     create_hook,
     delete_hook,
+    get_dead_letter,
     get_hook_by_id,
+    list_dead_letter,
     list_hooks,
     list_logs,
+    update_dead_letter_status,
     update_hook,
 )
+from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Hook, HookInput, HookLog
 
 logger = structlog.get_logger()
@@ -146,3 +150,97 @@ async def read_logs(
     pool = await get_pool()
     logs = await list_logs(pool, hook_id, limit=limit)
     return {"logs": logs}
+
+
+# ---------------------------------------------------------------------------
+# Dead Letter Queue (E1.4)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dead-letter")
+async def list_dlq(
+    status: str | None = Query(default="pending"),
+    limit: int = Query(default=100, ge=1, le=500),
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict[str, list[dict]]:
+    """Lista entradas DLQ da empresa.
+
+    `status` aceita pending|retrying|done|archived. None retorna todos.
+    """
+    pool = await get_pool()
+    try:
+        items = await list_dead_letter(
+            pool, empresa_id, status=status, limit=limit
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"items": items}
+
+
+@router.post("/dead-letter/{dlq_id}/retry", status_code=202)
+async def retry_dlq(
+    dlq_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Reagenda entrega do hook da DLQ entry.
+
+    Marca a row como `retrying` e dispara `dispatch_event` de novo.
+    Se a nova tentativa falhar, vira nova entry DLQ separada (a antiga
+    permanece com status retrying pra evidência). Operador deve `archive`
+    pra limpar quando ok.
+    """
+    pool = await get_pool()
+    item = await get_dead_letter(pool, dlq_id, empresa_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="DLQ entry não encontrada.")
+    if item["status"] not in ("pending", "retrying"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"DLQ entry com status {item['status']!r} não pode ser retentada.",
+        )
+
+    await update_dead_letter_status(
+        pool, dlq_id, empresa_id, status="retrying", bump_retry_at=True
+    )
+
+    # Dispatch fire-and-forget — usa o pipeline normal (com retry+DLQ),
+    # então se a nova tentativa esgotar de novo, vira NOVA row DLQ.
+    await dispatch_event(pool, empresa_id, item["evento"], item["payload"])
+
+    logger.info(
+        "hook_dlq_retry_triggered",
+        empresa_id=empresa_id,
+        dlq_id=dlq_id,
+        hook_id=item["hook_id"],
+        evento=item["evento"],
+        user_id=user_id,
+    )
+    return {"status": "retrying"}
+
+
+@router.post("/dead-letter/{dlq_id}/archive", status_code=200)
+async def archive_dlq(
+    dlq_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Marca DLQ entry como `archived` (operador decidiu ignorar)."""
+    pool = await get_pool()
+    item = await get_dead_letter(pool, dlq_id, empresa_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="DLQ entry não encontrada.")
+
+    affected = await update_dead_letter_status(
+        pool, dlq_id, empresa_id, status="archived"
+    )
+    if not affected:
+        raise HTTPException(status_code=404, detail="DLQ entry não encontrada.")
+
+    logger.info(
+        "hook_dlq_archived",
+        empresa_id=empresa_id,
+        dlq_id=dlq_id,
+        user_id=user_id,
+    )
+    return {"status": "archived"}

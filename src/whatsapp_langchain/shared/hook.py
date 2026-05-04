@@ -222,3 +222,116 @@ async def insert_log(
                 duration_ms,
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Dead Letter Queue (E1.4)
+# ---------------------------------------------------------------------------
+
+DLQ_VALID_STATUS: Final[frozenset[str]] = frozenset(
+    {"pending", "retrying", "done", "archived"}
+)
+
+_DLQ_SELECT_COLS = (
+    "id, empresa_id, hook_id, evento, payload, attempts, "
+    "last_status_code, last_response_body, last_error, status, "
+    "created_at, updated_at, last_retry_at"
+)
+
+
+async def list_dead_letter(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    status: str | None = "pending",
+    limit: int = 100,
+) -> list[dict]:
+    """Lista entradas DLQ de uma empresa, opcionalmente filtradas por status."""
+    params: list = [empresa_id]
+    where = "WHERE empresa_id = %s"
+    if status is not None:
+        if status not in DLQ_VALID_STATUS:
+            raise ValueError(f"status inválido: {status!r}")
+        where += " AND status = %s"
+        params.append(status)
+    params.append(limit)
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {_DLQ_SELECT_COLS}
+              FROM hook_dead_letter
+              {where}
+             ORDER BY created_at DESC, id DESC
+             LIMIT %s
+            """,
+            params,
+        )
+        rows = await cur.fetchall()
+
+    return [_row_to_dlq(r) for r in rows]
+
+
+async def get_dead_letter(
+    pool: AsyncConnectionPool, dlq_id: int, empresa_id: int
+) -> dict | None:
+    """Busca uma entrada DLQ por id, escopada por empresa_id."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {_DLQ_SELECT_COLS}
+              FROM hook_dead_letter
+             WHERE id = %s AND empresa_id = %s
+            """,
+            (dlq_id, empresa_id),
+        )
+        row = await cur.fetchone()
+    return _row_to_dlq(row) if row else None
+
+
+async def update_dead_letter_status(
+    pool: AsyncConnectionPool,
+    dlq_id: int,
+    empresa_id: int,
+    *,
+    status: str,
+    bump_retry_at: bool = False,
+) -> bool:
+    """Atualiza status (e opcionalmente last_retry_at). Retorna True se afetou row."""
+    if status not in DLQ_VALID_STATUS:
+        raise ValueError(f"status inválido: {status!r}")
+
+    last_retry_clause = ", last_retry_at = NOW()" if bump_retry_at else ""
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            UPDATE hook_dead_letter
+               SET status = %s,
+                   updated_at = NOW()
+                   {last_retry_clause}
+             WHERE id = %s AND empresa_id = %s
+            """,
+            (status, dlq_id, empresa_id),
+        )
+        await conn.commit()
+        return cur.rowcount > 0
+
+
+def _row_to_dlq(row) -> dict:
+    """Converte row do hook_dead_letter pra dict serializável."""
+    return {
+        "id": row[0],
+        "empresa_id": row[1],
+        "hook_id": row[2],
+        "evento": row[3],
+        "payload": row[4],
+        "attempts": row[5],
+        "last_status_code": row[6],
+        "last_response_body": row[7],
+        "last_error": row[8],
+        "status": row[9],
+        "created_at": row[10].isoformat() if row[10] else None,
+        "updated_at": row[11].isoformat() if row[11] else None,
+        "last_retry_at": row[12].isoformat() if row[12] else None,
+    }
