@@ -385,6 +385,10 @@ class EmpresaCalendarConfig(BaseModel):
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
+    # S4: telefone E.164 do gestor que recebe pedidos de aprovação via
+    # WhatsApp. NULL = sem fluxo de aprovação ativo (mesmo se
+    # agendamento_regras.requer_aprovacao=true).
+    aprovador_telefone: str | None = None
 
 
 class CalendarConfigPublic(BaseModel):

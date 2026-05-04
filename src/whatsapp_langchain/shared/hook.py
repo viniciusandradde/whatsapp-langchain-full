@@ -29,6 +29,10 @@ EVENTOS_VALIDOS: Final[frozenset[str]] = frozenset(
         # (Slack, ERP, BI) via webhook configurável em /hooks.
         "agendamento.criado",
         "agendamento.cancelado",
+        # S4 Calendar v2: dispatch quando gestor aprova ou rejeita pedido
+        # via WhatsApp (regex APROVAR/REJEITAR <token> em processor.py).
+        "agendamento.aprovado",
+        "agendamento.rejeitado",
     }
 )
 

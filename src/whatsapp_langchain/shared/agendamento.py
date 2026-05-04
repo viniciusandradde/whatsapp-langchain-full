@@ -341,3 +341,258 @@ async def validate_request(
         )
 
     return True, None
+
+
+# ---------------------------------------------------------------------------
+# S4: Aprovação via WhatsApp
+# ---------------------------------------------------------------------------
+
+
+async def find_pending_approval_by_token(
+    pool: AsyncConnectionPool, token: str
+) -> dict | None:
+    """Busca aprovação pendente por token (UUID em string).
+
+    Retorna dict com campos da row + `agendamento` aninhado, ou None
+    se não existe ou já decidida.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT ap.id, ap.agendamento_id, ap.gestor_telefone,
+                   ap.status, ap.token, ap.created_at,
+                   ag.empresa_id, ag.summary, ag.data_inicio, ag.data_fim,
+                   ag.calendar_id, ag.cliente_id, ag.descricao
+              FROM agendamento_aprovacao ap
+              JOIN agendamento ag ON ag.id = ap.agendamento_id
+             WHERE ap.token = %s AND ap.status = 'pendente'
+            """,
+            (token,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    return {
+        "aprovacao_id": row[0],
+        "agendamento_id": row[1],
+        "gestor_telefone": row[2],
+        "status": row[3],
+        "token": str(row[4]),
+        "created_at": row[5],
+        "empresa_id": row[6],
+        "summary": row[7],
+        "data_inicio": row[8],
+        "data_fim": row[9],
+        "calendar_id": row[10],
+        "cliente_id": row[11],
+        "descricao": row[12],
+    }
+
+
+async def find_pending_approval_by_phone(
+    pool: AsyncConnectionPool, phone: str
+) -> dict | None:
+    """Busca aprovação pendente por telefone do gestor (E.164).
+
+    Usado quando a regex falha em capturar token mas o phone bate. Pega
+    a mais antiga pendente (FIFO).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT ap.id, ap.agendamento_id, ap.gestor_telefone,
+                   ap.status, ap.token, ap.created_at,
+                   ag.empresa_id, ag.summary, ag.data_inicio, ag.data_fim,
+                   ag.calendar_id, ag.cliente_id, ag.descricao
+              FROM agendamento_aprovacao ap
+              JOIN agendamento ag ON ag.id = ap.agendamento_id
+             WHERE ap.gestor_telefone = %s AND ap.status = 'pendente'
+             ORDER BY ap.created_at ASC
+             LIMIT 1
+            """,
+            (phone,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    return {
+        "aprovacao_id": row[0],
+        "agendamento_id": row[1],
+        "gestor_telefone": row[2],
+        "status": row[3],
+        "token": str(row[4]),
+        "created_at": row[5],
+        "empresa_id": row[6],
+        "summary": row[7],
+        "data_inicio": row[8],
+        "data_fim": row[9],
+        "calendar_id": row[10],
+        "cliente_id": row[11],
+        "descricao": row[12],
+    }
+
+
+async def update_approval_status(
+    pool: AsyncConnectionPool,
+    aprovacao_id: int,
+    *,
+    status: str,
+    motivo: str | None = None,
+) -> bool:
+    """Atualiza status da aprovação. Aceita aprovado|rejeitado|expirado."""
+    if status not in ("aprovado", "rejeitado", "expirado"):
+        raise ValueError(f"status inválido: {status!r}")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE agendamento_aprovacao
+               SET status = %s, motivo = %s, decided_at = NOW()
+             WHERE id = %s AND status = 'pendente'
+            """,
+            (status, motivo, aprovacao_id),
+        )
+        await conn.commit()
+        return cur.rowcount > 0
+
+
+async def create_pending_approval(
+    pool: AsyncConnectionPool,
+    *,
+    agendamento_id: int,
+    gestor_telefone: str,
+    gestor_user_id: str | None = None,
+) -> dict:
+    """Cria row de aprovação pendente com token novo. Retorna dict com token."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO agendamento_aprovacao
+                (agendamento_id, gestor_telefone, gestor_user_id, status)
+            VALUES (%s, %s, %s, 'pendente')
+            RETURNING id, token
+            """,
+            (agendamento_id, gestor_telefone, gestor_user_id),
+        )
+        row = await cur.fetchone()
+        await conn.commit()
+    assert row is not None
+    return {"aprovacao_id": row[0], "token": str(row[1])}
+
+
+async def set_approval_message_id(
+    pool: AsyncConnectionPool, aprovacao_id: int, mensagem_id: str
+) -> None:
+    """Persiste id retornado pelo OutboundClient após o envio."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE agendamento_aprovacao SET mensagem_id_outbound = %s WHERE id = %s",
+            (mensagem_id, aprovacao_id),
+        )
+        await conn.commit()
+
+
+async def update_gestor_notificado(
+    pool: AsyncConnectionPool, agendamento_id: int
+) -> None:
+    """Marca o agendamento como gestor_notificado=true."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE agendamento SET gestor_notificado = TRUE, updated_at = NOW() WHERE id = %s",
+            (agendamento_id,),
+        )
+        await conn.commit()
+
+
+async def notify_gestor(
+    pool: AsyncConnectionPool,
+    *,
+    agendamento_id: int,
+    empresa_id: int,
+    summary: str,
+    data_inicio: datetime,
+    data_fim: datetime,
+    cliente_nome: str | None = None,
+) -> str | None:
+    """Cria pedido de aprovação + envia WhatsApp pro gestor.
+
+    Pré-requisito: `empresa_calendar_config.aprovador_telefone` deve
+    estar preenchido E existir Conexão ativa da empresa pra usar como
+    transporte. Se faltar qualquer dos dois, loga warning e retorna
+    None (caller decide o que fazer — provavelmente seguir o agendamento
+    SEM aprovação ou rejeitar a criação).
+
+    Returns:
+        token (UUID em string) se notificação enviada com sucesso, None
+        caso contrário.
+    """
+    # Lazy imports pra evitar ciclos
+    from whatsapp_langchain.shared.calendar_integration import get_calendar_config
+    from whatsapp_langchain.shared.conexao import list_conexoes
+    from whatsapp_langchain.shared.outbound import _build_client
+
+    cal_config = await get_calendar_config(pool, empresa_id)
+    if not cal_config or not cal_config.aprovador_telefone:
+        logger.warning(
+            "notify_gestor_no_aprovador",
+            empresa_id=empresa_id,
+            agendamento_id=agendamento_id,
+        )
+        return None
+
+    # Resolve conexão ativa (default first) pra mandar WhatsApp
+    conexoes = await list_conexoes(pool, empresa_id)
+    ativa = next((c for c in conexoes if c.status == "active"), None)
+    if ativa is None:
+        logger.warning(
+            "notify_gestor_no_active_conexao",
+            empresa_id=empresa_id,
+            agendamento_id=agendamento_id,
+        )
+        return None
+
+    # Cria row de aprovação com token novo
+    aprov = await create_pending_approval(
+        pool,
+        agendamento_id=agendamento_id,
+        gestor_telefone=cal_config.aprovador_telefone,
+    )
+
+    # Monta texto da mensagem
+    cliente_label = cliente_nome or "cliente"
+    inicio_local = data_inicio.strftime("%d/%m %H:%M")
+    fim_local = data_fim.strftime("%H:%M")
+    texto = (
+        f"📅 *Pedido de agendamento*\n\n"
+        f"Cliente: {cliente_label}\n"
+        f"Data: {inicio_local} → {fim_local}\n"
+        f"Assunto: {summary}\n\n"
+        f"Para responder:\n"
+        f"`APROVAR {aprov['token']}`\n"
+        f"ou\n"
+        f"`REJEITAR {aprov['token']}`"
+    )
+
+    # Envia via OutboundClient resolvido pelo provider da Conexão
+    try:
+        client, _mode = _build_client(ativa.provider, ativa.from_number)
+        msg_id = await client.send_message(cal_config.aprovador_telefone, texto)
+        await set_approval_message_id(pool, aprov["aprovacao_id"], msg_id)
+        await update_gestor_notificado(pool, agendamento_id)
+        logger.info(
+            "gestor_notified",
+            empresa_id=empresa_id,
+            agendamento_id=agendamento_id,
+            aprovacao_id=aprov["aprovacao_id"],
+            gestor_telefone=cal_config.aprovador_telefone,
+            provider=ativa.provider,
+            mensagem_id=msg_id,
+        )
+        return aprov["token"]
+    except Exception as e:  # noqa: BLE001 — falha de envio não derruba o agendamento
+        logger.error(
+            "notify_gestor_send_failed",
+            empresa_id=empresa_id,
+            agendamento_id=agendamento_id,
+            error=str(e),
+        )
+        return None

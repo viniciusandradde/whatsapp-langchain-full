@@ -227,7 +227,7 @@ async def get_calendar_config(
             """
             SELECT empresa_id, oauth_credentials_json, google_email,
                    calendar_id, timezone, ativo, created_by_user_id,
-                   created_at, updated_at
+                   created_at, updated_at, aprovador_telefone
               FROM empresa_calendar_config
              WHERE empresa_id = %s
             """,
@@ -246,6 +246,7 @@ async def get_calendar_config(
         created_by_user_id=row[6],
         created_at=row[7],
         updated_at=row[8],
+        aprovador_telefone=row[9],
     )
 
 
@@ -468,7 +469,14 @@ async def create_event(
     if not ok:
         raise CalendarIntegrationError(f"Regra de negócio: {motivo}")
 
-    # 3. INSERT local primeiro (source-of-truth)
+    # 3. Decide se precisa de aprovação (S4): lê requer_aprovacao das regras
+    from whatsapp_langchain.shared.agendamento_regras import get as _get_regras
+
+    regras = await _get_regras(pool, empresa_id)
+    requer_aprovacao = regras.requer_aprovacao
+
+    # 3. INSERT local primeiro (source-of-truth). Status depende do
+    # fluxo: 'pendente' se vai esperar aprovação, 'confirmado' direto.
     ag = await _agendamento_helpers.create(
         pool,
         empresa_id=empresa_id,
@@ -479,8 +487,65 @@ async def create_event(
         data_fim=dt_fim,
         user_id_criador=user_id_criador,
         cliente_id=cliente_id,
-        status="confirmado",
+        status="pendente" if requer_aprovacao else "confirmado",
+        aprovado=not requer_aprovacao,
     )
+
+    # 3a. Fluxo de aprovação: dispara WhatsApp pro gestor + retorna early
+    #     SEM tocar no Google. Só cria evento Google após APROVAR.
+    if requer_aprovacao:
+        # Resolve nome do cliente pra mensagem mais útil
+        cliente_nome = None
+        if cliente_id:
+            from whatsapp_langchain.shared.cliente import get_cliente_by_id
+
+            cli = await get_cliente_by_id(pool, cliente_id)
+            cliente_nome = (cli.nome if cli else None) or (cli.telefone if cli else None)
+
+        token = await _agendamento_helpers.notify_gestor(
+            pool,
+            agendamento_id=ag.id,
+            empresa_id=empresa_id,
+            summary=summary,
+            data_inicio=dt_inicio,
+            data_fim=dt_fim,
+            cliente_nome=cliente_nome,
+        )
+
+        # Hook agendamento.criado dispara mesmo no caminho pendente
+        from whatsapp_langchain.shared.hook_dispatcher import (
+            dispatch_event as _dispatch,
+        )
+        await _dispatch(
+            pool,
+            empresa_id,
+            "agendamento.criado",
+            {
+                "agendamento_id": ag.id,
+                "cliente_id": cliente_id,
+                "summary": summary,
+                "data_inicio": ag.data_inicio.isoformat(),
+                "data_fim": ag.data_fim.isoformat(),
+                "status": "pendente",
+                "requer_aprovacao": True,
+                "aprovacao_token": token,
+            },
+        )
+
+        return {
+            "id": None,                         # ainda sem evento Google
+            "htmlLink": None,
+            "agendamento_id": ag.id,
+            "status": "pendente",
+            "requer_aprovacao": True,
+            "mensagem": (
+                "Agendamento registrado e enviado pra aprovação do gestor. "
+                "Cliente será notificado quando o gestor decidir."
+                if token
+                else "Agendamento registrado, mas notificação ao gestor falhou. "
+                "Verifique aprovador_telefone e Conexão ativa."
+            ),
+        }
 
     # 4. POST events.insert no Google
     service = _calendar_service(creds)
@@ -541,6 +606,97 @@ async def create_event(
         },
     )
 
+    return {
+        "id": evento_id,
+        "htmlLink": ev.get("htmlLink"),
+        "agendamento_id": ag.id,
+    }
+
+
+async def confirm_pending_event(
+    pool: AsyncConnectionPool, empresa_id: int, agendamento_id: int
+) -> dict:
+    """Cria evento no Google após APROVAR (S4). Atualiza local pra confirmado.
+
+    Lê dados do `agendamento` row pendente, monta body Google, faz
+    events.insert, atualiza local com evento_id_externo + payload.
+    Em caso de falha: marca local como cancelado + log drift.
+    """
+    from whatsapp_langchain.shared import agendamento as _agendamento_helpers
+    from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
+    ag = await _agendamento_helpers.get_by_id(pool, agendamento_id, empresa_id)
+    if ag is None:
+        raise CalendarIntegrationError(
+            f"Agendamento {agendamento_id} não encontrado."
+        )
+    if ag.status != "pendente":
+        raise CalendarIntegrationError(
+            f"Agendamento {agendamento_id} já tem status {ag.status!r}, não pode confirmar."
+        )
+
+    config, creds = await _resolve_credentials(pool, empresa_id)
+    service = _calendar_service(creds)
+    body: dict = {
+        "summary": ag.summary,
+        "start": {"dateTime": ag.data_inicio.isoformat(), "timeZone": config.timezone},
+        "end": {"dateTime": ag.data_fim.isoformat(), "timeZone": config.timezone},
+    }
+    if ag.descricao:
+        body["description"] = ag.descricao
+
+    try:
+        ev = (
+            service.events()
+            .insert(calendarId=ag.calendar_id, body=body)
+            .execute()
+        )
+    except HttpError as e:
+        await _agendamento_helpers.cancel_local(pool, ag.id, empresa_id)
+        logger.error(
+            "agendamento_drift_confirm_failed",
+            agendamento_id=ag.id,
+            empresa_id=empresa_id,
+            error=str(e),
+        )
+        raise CalendarIntegrationError(f"events.insert (confirm) falhou: {e}") from e
+
+    evento_id = ev.get("id") or ""
+    await _agendamento_helpers.update_external_event(
+        pool,
+        ag.id,
+        evento_id_externo=evento_id,
+        payload_externo={
+            "htmlLink": ev.get("htmlLink"),
+            "organizer": ev.get("organizer"),
+            "attendees": ev.get("attendees", []),
+            "status": ev.get("status"),
+        },
+    )
+    # Status: pendente → confirmado + aprovado=true
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE agendamento
+               SET status = 'confirmado', aprovado = TRUE, updated_at = NOW()
+             WHERE id = %s
+            """,
+            (ag.id,),
+        )
+        await conn.commit()
+
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "agendamento.aprovado",
+        {
+            "agendamento_id": ag.id,
+            "evento_id_externo": evento_id,
+            "summary": ag.summary,
+            "data_inicio": ag.data_inicio.isoformat(),
+            "status": "confirmado",
+        },
+    )
     return {
         "id": evento_id,
         "htmlLink": ev.get("htmlLink"),

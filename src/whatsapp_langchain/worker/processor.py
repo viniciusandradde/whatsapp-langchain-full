@@ -33,6 +33,8 @@ Uso:
     )
 """
 
+import re
+
 import structlog
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -56,6 +58,147 @@ from whatsapp_langchain.worker.media import (
 from whatsapp_langchain.worker.outbound_client import OutboundClient
 
 logger = structlog.get_logger()
+
+
+# S4: regex pra detectar resposta do gestor pra aprovação de agendamento.
+# Aceita "APROVAR <uuid>", "REJEITAR <uuid>" (case-insensitive), opcionalmente
+# seguido de motivo. Token UUID v4 padrão.
+_APPROVAL_RE = re.compile(
+    r"^\s*(APROVAR|REJEITAR)\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*(.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+async def _try_handle_approval(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+) -> bool:
+    """Detecta resposta APROVAR/REJEITAR <token> do gestor (S4 Calendar v2).
+
+    Se a mensagem bate o padrão E o phone bate com `gestor_telefone` da
+    aprovação pendente, processa a decisão (cria/cancela evento Google),
+    responde confirmação ao gestor, marca done e retorna True (não chama
+    agente).
+
+    Retorna False quando não é resposta de aprovação OU token inválido
+    (deixa cair no fluxo normal do agente).
+    """
+    from whatsapp_langchain.shared import (
+        agendamento as _agendamento_helpers,
+        calendar_integration as _cal,
+    )
+
+    text = (message.incoming_message or "").strip()
+    m = _APPROVAL_RE.match(text)
+    if not m:
+        return False
+
+    decisao = m.group(1).upper()
+    token = m.group(2).lower()
+    motivo = m.group(3).strip() or None
+
+    aprov = await _agendamento_helpers.find_pending_approval_by_token(pool, token)
+    if not aprov:
+        # Token desconhecido — pode ser tentativa de fraude ou já decidido.
+        # Não responde aqui; deixa cair pro agente que vai dizer "não entendi".
+        logger.info(
+            "approval_token_invalid",
+            phone=message.phone_number,
+            token=token,
+        )
+        return False
+
+    # Confere phone do remetente bate com gestor cadastrado
+    if message.phone_number != aprov["gestor_telefone"]:
+        logger.warning(
+            "approval_token_wrong_phone",
+            expected=aprov["gestor_telefone"],
+            got=message.phone_number,
+            token=token,
+        )
+        return False
+
+    if decisao == "APROVAR":
+        # Atualiza aprovação + cria evento Google
+        try:
+            ev = await _cal.confirm_pending_event(
+                pool, aprov["empresa_id"], aprov["agendamento_id"]
+            )
+            await _agendamento_helpers.update_approval_status(
+                pool, aprov["aprovacao_id"], status="aprovado", motivo=motivo
+            )
+            resposta = (
+                f"✅ Aprovado!\n\n"
+                f"Evento criado: {aprov['summary']}\n"
+                f"Data: {aprov['data_inicio'].strftime('%d/%m %H:%M')}"
+            )
+            if ev.get("htmlLink"):
+                resposta += f"\nLink: {ev['htmlLink']}"
+        except Exception as e:  # noqa: BLE001
+            logger.error(
+                "approval_confirm_failed",
+                token=token,
+                error=str(e),
+            )
+            resposta = (
+                f"❌ Erro ao confirmar evento no Google: {e}\n\n"
+                f"Aprovação registrada mas evento não foi criado. "
+                "Tente reagendar manualmente ou verifique a conexão Calendar."
+            )
+    else:
+        # REJEITAR
+        await _agendamento_helpers.update_approval_status(
+            pool, aprov["aprovacao_id"], status="rejeitado", motivo=motivo
+        )
+        await _agendamento_helpers.cancel_local(
+            pool, aprov["agendamento_id"], aprov["empresa_id"]
+        )
+        # Hook agendamento.rejeitado
+        from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
+        await dispatch_event(
+            pool,
+            aprov["empresa_id"],
+            "agendamento.rejeitado",
+            {
+                "agendamento_id": aprov["agendamento_id"],
+                "motivo": motivo,
+                "status": "cancelado",
+            },
+        )
+        resposta = (
+            f"❌ Rejeitado.\n\n"
+            f"Agendamento '{aprov['summary']}' cancelado."
+        )
+        if motivo:
+            resposta += f"\nMotivo registrado: {motivo}"
+
+    # Envia confirmação pro gestor
+    try:
+        await outbound.send_message(message.phone_number, resposta)
+    except Exception as e:  # noqa: BLE001
+        logger.error("approval_response_send_failed", error=str(e))
+
+    # Marca message_queue como done (sem chamar agente)
+    await mark_done(
+        pool,
+        message.id,
+        resposta,
+        normalized_input=text,
+        media_processing_status=None,
+        media_processing_error=None,
+    )
+
+    logger.info(
+        "approval_handled",
+        message_id=message.id,
+        phone=message.phone_number,
+        token=token,
+        decisao=decisao,
+        agendamento_id=aprov["agendamento_id"],
+    )
+    return True
 
 
 # Marcador na coluna `response` quando o worker pula o agente IA por
@@ -123,6 +266,12 @@ async def process_message(
     )
 
     try:
+        # S4: detecta resposta APROVAR/REJEITAR <token> do gestor ANTES de
+        # tudo. Se for, processa a decisão (cria/cancela evento Google),
+        # responde, marca done e retorna early (não chama agente).
+        if await _try_handle_approval(message, pool, outbound):
+            return
+
         # 0. Resolver modelos do agente escopados pela empresa da mensagem
         # (hot reload via DB; fallback pra env quando row ausente).
         _, midia_model = await get_agent_llm_config(
