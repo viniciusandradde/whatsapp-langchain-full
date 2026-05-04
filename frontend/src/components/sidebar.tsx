@@ -23,6 +23,7 @@ import {
   Building2,
   Braces,
   Building,
+  CalendarDays,
   Clock,
   ListOrdered,
   Plug,
@@ -68,6 +69,7 @@ const NAV_SECTIONS: NavSection[] = [
       // /models (modelos LLM por agente). Rota /modelos preservada.
       { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },
       { href: "/chats", label: "Conversas", icon: MessageSquare },
+      { href: "/agendamentos", label: "Agendamentos", icon: CalendarDays },
     ],
   },
   {
@@ -89,6 +91,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/companies", label: "Empresas", icon: Building2 },
       { href: "/settings/integracoes", label: "Integrações", icon: Plug },
+      { href: "/settings/calendar-rules", label: "Regras Calendar", icon: Clock },
       { href: "/settings/variaveis", label: "Variáveis", icon: Braces },
       { href: "/settings/departamentos", label: "Departamentos", icon: Building },
       { href: "/settings/horarios", label: "Horário", icon: Clock },

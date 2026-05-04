@@ -525,6 +525,7 @@ export interface GoogleCalendarConfig {
   calendar_id: string;
   timezone: string;
   ativo: boolean;
+  aprovador_telefone?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1019,6 +1020,103 @@ export async function getGoogleCalendarOAuthUrl(): Promise<{ authorize_url: stri
 
 export async function disconnectGoogleCalendar(): Promise<void> {
   await apiFetch<void>("/api/google-calendar/config", { method: "DELETE" });
+}
+
+export async function updateGoogleCalendarConfig(body: {
+  aprovador_telefone?: string | null;
+}): Promise<GoogleCalendarConfig> {
+  return apiFetch<GoogleCalendarConfig>("/api/google-calendar/config", {
+    method: "PUT",
+    body,
+  });
+}
+
+// --- Calendar Regras (S3) ---
+
+export interface CalendarRegras {
+  empresa_id: number;
+  hora_inicio: string;
+  hora_fim: string;
+  antecedencia_minima_minutos: number;
+  intervalo_entre_minutos: number;
+  dias_semana_permitidos: number[];
+  dias_bloqueados: string[];
+  requer_aprovacao: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getCalendarRegras(): Promise<CalendarRegras> {
+  return apiFetch<CalendarRegras>("/api/calendar/regras");
+}
+
+export async function updateCalendarRegras(body: {
+  hora_inicio?: string;
+  hora_fim?: string;
+  antecedencia_minima_minutos?: number;
+  intervalo_entre_minutos?: number;
+  dias_semana_permitidos?: number[];
+  dias_bloqueados?: string[];
+  requer_aprovacao?: boolean;
+}): Promise<CalendarRegras> {
+  return apiFetch<CalendarRegras>("/api/calendar/regras", {
+    method: "PUT",
+    body,
+  });
+}
+
+// --- Agendamentos (S2/S5) ---
+
+export interface Agendamento {
+  id: number;
+  empresa_id: number;
+  calendar_id: string;
+  user_id_criador: string | null;
+  cliente_id: number | null;
+  evento_id_externo: string | null;
+  summary: string;
+  descricao: string | null;
+  data_inicio: string;
+  data_fim: string;
+  status: "pendente" | "confirmado" | "cancelado";
+  aprovado: boolean;
+  gestor_notificado: boolean;
+  payload_externo: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getAgendamentos(params?: {
+  inicio?: string;
+  fim?: string;
+  status?: string;
+  cliente_id?: number;
+  limit?: number;
+}): Promise<{ items: Agendamento[] }> {
+  const qs = new URLSearchParams();
+  if (params?.inicio) qs.set("inicio", params.inicio);
+  if (params?.fim) qs.set("fim", params.fim);
+  if (params?.status) qs.set("status", params.status);
+  if (params?.cliente_id) qs.set("cliente_id", String(params.cliente_id));
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<{ items: Agendamento[] }>(`/api/agendamentos${suffix}`);
+}
+
+export interface AgendamentoHistorico {
+  id: number;
+  action: string;
+  actor_user_id: string | null;
+  payload_diff: Record<string, unknown>;
+  at: string | null;
+}
+
+export async function getAgendamentoHistorico(
+  id: number
+): Promise<{ items: AgendamentoHistorico[] }> {
+  return apiFetch<{ items: AgendamentoHistorico[] }>(
+    `/api/agendamentos/${id}/historico`
+  );
 }
 
 // --- AgenteIA configurável ---

@@ -399,8 +399,15 @@ class CalendarConfigPublic(BaseModel):
     calendar_id: str
     timezone: str
     ativo: bool
+    aprovador_telefone: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class CalendarConfigInput(BaseModel):
+    """Payload pra PUT /api/google-calendar/config (S4 UI)."""
+
+    aprovador_telefone: str | None = None
 
 
 HookEvento = str  # validado em runtime contra CHECK constraint da tabela

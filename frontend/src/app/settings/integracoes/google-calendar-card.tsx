@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Calendar, CheckCircle2, ExternalLink, Unplug } from "lucide-react";
+import { Calendar, CheckCircle2, ExternalLink, Save, Unplug } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import type { GoogleCalendarConfig } from "@/lib/api";
 import {
   disconnectGoogleCalendarAction,
   startGoogleCalendarOAuthAction,
+  updateAprovadorTelefoneAction,
 } from "./actions";
 
 interface Props {
@@ -24,6 +25,8 @@ interface Props {
 
 export function GoogleCalendarCard({ config }: Props) {
   const [error, setError] = useState<string | null>(null);
+  const [aprovador, setAprovador] = useState(config?.aprovador_telefone ?? "");
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleConnect() {
@@ -51,6 +54,23 @@ export function GoogleCalendarCard({ config }: Props) {
     });
   }
 
+  function handleSaveAprovador() {
+    setError(null);
+    setSavedMsg(null);
+    startTransition(async () => {
+      const r = await updateAprovadorTelefoneAction(aprovador.trim());
+      if (!r.ok) {
+        setError(r.error);
+      } else {
+        setSavedMsg(
+          aprovador.trim()
+            ? "Telefone do aprovador salvo."
+            : "Telefone removido (fluxo de aprovação desativado)."
+        );
+      }
+    });
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -74,15 +94,50 @@ export function GoogleCalendarCard({ config }: Props) {
       </CardHeader>
       <CardContent className="space-y-3">
         {config ? (
-          <div className="space-y-1.5 text-sm">
-            <Row label="Conta Google" value={config.google_email ?? "—"} mono />
-            <Row label="Calendário" value={config.calendar_id} mono />
-            <Row label="Fuso horário" value={config.timezone} />
-            <Row
-              label="Conectado em"
-              value={new Date(config.created_at).toLocaleString("pt-BR")}
-            />
-          </div>
+          <>
+            <div className="space-y-1.5 text-sm">
+              <Row label="Conta Google" value={config.google_email ?? "—"} mono />
+              <Row label="Calendário" value={config.calendar_id} mono />
+              <Row label="Fuso horário" value={config.timezone} />
+              <Row
+                label="Conectado em"
+                value={new Date(config.created_at).toLocaleString("pt-BR")}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+              <label className="text-sm font-medium" htmlFor="aprovador">
+                Telefone do gestor aprovador (opcional)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Se preenchido + regra <code>requer_aprovacao</code> ativa,
+                o sistema manda WhatsApp pra esse número antes de criar
+                o evento. Formato E.164 (<code>+5567984249725</code>).
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  id="aprovador"
+                  type="text"
+                  value={aprovador}
+                  onChange={(e) => setAprovador(e.target.value)}
+                  placeholder="+55..."
+                  className="flex-1 rounded-md border border-white/10 bg-obsidian-800 px-3 py-1.5 text-sm font-mono"
+                  disabled={isPending}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSaveAprovador}
+                  disabled={isPending}
+                >
+                  <Save className="size-3.5" />
+                  Salvar
+                </Button>
+              </div>
+              {savedMsg && (
+                <p className="text-xs text-emerald-400">{savedMsg}</p>
+              )}
+            </div>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">
             Nenhuma conta conectada. Conecte uma conta Google pra que o

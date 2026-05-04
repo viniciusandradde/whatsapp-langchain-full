@@ -39,7 +39,10 @@ from whatsapp_langchain.shared.calendar_integration import (
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
-from whatsapp_langchain.shared.models import CalendarConfigPublic
+from whatsapp_langchain.shared.models import (
+    CalendarConfigInput,
+    CalendarConfigPublic,
+)
 
 logger = structlog.get_logger()
 
@@ -191,3 +194,53 @@ async def delete_config(
         user_id=user_id,
         deleted=deleted,
     )
+
+
+@router.put(
+    "/config",
+    dependencies=[Depends(verify_service_token)],
+    response_model=CalendarConfigPublic,
+)
+async def update_config(
+    body: "CalendarConfigInput",
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> CalendarConfigPublic:
+    """Atualiza campos editáveis da config (S4 UI: aprovador_telefone)."""
+    from whatsapp_langchain.shared.calendar_integration import (
+        update_aprovador_telefone,
+    )
+    from whatsapp_langchain.shared.empresa import is_admin_of
+
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só admin pode alterar config Calendar."
+        )
+
+    config = await get_calendar_config(pool, empresa_id)
+    if config is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Calendar não conectado. Conecte primeiro via OAuth.",
+        )
+
+    if body.aprovador_telefone is not None:
+        # Validação simples: vazia ou E.164 com +55XXXXXXXXX
+        v = body.aprovador_telefone.strip()
+        if v and not (v.startswith("+") and len(v) >= 10):
+            raise HTTPException(
+                status_code=422,
+                detail="aprovador_telefone deve estar em E.164 (ex: +5567984249725) ou vazio.",
+            )
+        await update_aprovador_telefone(pool, empresa_id, v)
+        logger.info(
+            "google_calendar_aprovador_changed",
+            empresa_id=empresa_id,
+            user_id=user_id,
+            telefone_set=bool(v),
+        )
+
+    config = await get_calendar_config(pool, empresa_id)
+    assert config is not None
+    return to_public(config)

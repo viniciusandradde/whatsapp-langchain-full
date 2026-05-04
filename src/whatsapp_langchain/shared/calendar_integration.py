@@ -258,9 +258,36 @@ def to_public(config: EmpresaCalendarConfig) -> CalendarConfigPublic:
         calendar_id=config.calendar_id,
         timezone=config.timezone,
         ativo=config.ativo,
+        aprovador_telefone=config.aprovador_telefone,
         created_at=config.created_at,
         updated_at=config.updated_at,
     )
+
+
+async def update_aprovador_telefone(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    aprovador_telefone: str | None,
+) -> bool:
+    """Atualiza coluna aprovador_telefone (S4 fluxo de aprovação WhatsApp).
+
+    `None` ou string vazia limpam o telefone (desativa fluxo). Retorna
+    True se afetou row.
+    """
+    value = aprovador_telefone.strip() if aprovador_telefone else None
+    if value == "":
+        value = None
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE empresa_calendar_config
+               SET aprovador_telefone = %s, updated_at = NOW()
+             WHERE empresa_id = %s
+            """,
+            (value, empresa_id),
+        )
+        await conn.commit()
+        return cur.rowcount > 0
 
 
 async def disconnect_calendar(pool: AsyncConnectionPool, empresa_id: int) -> bool:
