@@ -1,29 +1,48 @@
-"""Cenarios de stress test para a API WhatsApp LangChain.
+"""Cenários de stress test para a API WhatsApp LangChain.
 
-Usa Locust para simular multiplos usuarios enviando mensagens via webhook
-do Twilio. Cada request e assinado com HMAC-SHA1 para passar pela validacao
-de seguranca da API (mesma logica que o Twilio usa em producao).
+Suporta dois providers de webhook inbound:
 
-Variaveis de ambiente necessarias:
-    TWILIO_AUTH_TOKEN: Token de autenticacao do Twilio (mesmo configurado na API).
-    TWILIO_WEBHOOK_URL: URL base para computo da assinatura.
-                        Ex: http://localhost:8000 ou URL do Railway.
+- **Twilio** (`/webhook/twilio`) — payload form-urlencoded com assinatura
+  HMAC-SHA1 via header `X-Twilio-Signature`. Validação de assinatura
+  controlada por `VALIDATE_TWILIO_SIGNATURE` na API.
+
+- **Evolution API** (`/webhook/evolution`) — payload JSON
+  (`event/instance/data.{key,message,pushName,messageTimestamp}`).
+  Sem assinatura por padrão; opcionalmente com header `apikey` se
+  `EVOLUTION_VALIDATE_APIKEY=true` na API.
+
+Selecione qual provider rodar via `LOCUST_PROVIDER`:
+
+- `twilio` — só usuários Twilio (default, compat com legado)
+- `evolution` — só usuários Evolution
+- `both` — usuários dos dois providers ao mesmo tempo
+
+Variáveis de ambiente:
+
+| Variável | Default | Descrição |
+|---|---|---|
+| `LOCUST_PROVIDER` | `twilio` | `twilio` / `evolution` / `both` |
+| `TWILIO_AUTH_TOKEN` | `""` | Token Twilio pra assinar requests |
+| `TWILIO_WEBHOOK_URL` | `http://localhost:8000` | URL base do webhook Twilio (usado no cálculo da assinatura) |
+| `EVOLUTION_INSTANCE_NAME` | `vsa-tecnologia` | Nome da instância no campo `instance` do payload |
+| `EVOLUTION_API_KEY` | `""` | Header `apikey` (só usado se a API exigir) |
 
 Uso:
+
     cd stress
     uv venv && source .venv/bin/activate
     uv pip install -r requirements.txt
-    locust
+    LOCUST_PROVIDER=evolution locust -f locustfile.py --host https://api.vsanexus.com
 """
 
 from dotenv import load_dotenv
 
-# Carrega .env do diretório stress/ (se existir)
 load_dotenv()
 
 import base64
 import hashlib
 import hmac
+import json
 import os
 import random
 import time
@@ -32,90 +51,49 @@ import uuid
 from faker import Faker
 from locust import HttpUser, between, task
 
-# Faker com locale pt_BR para gerar dados realistas em portugues
 fake = Faker("pt_BR")
 
-# --- Configuracao via variaveis de ambiente ---
+# --- Configuração via ambiente ---
 
-# Token de autenticacao do Twilio — necessario para gerar assinaturas validas.
-# Deve ser o MESMO token configurado na API (TWILIO_AUTH_TOKEN).
-AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+PROVIDER = os.environ.get("LOCUST_PROVIDER", "twilio").lower()
+if PROVIDER not in ("twilio", "evolution", "both"):
+    raise ValueError(
+        f"LOCUST_PROVIDER inválido: {PROVIDER!r}. Use twilio|evolution|both."
+    )
 
-# URL base do webhook — usada para montar a URL completa na assinatura.
-# Atras de proxy/tunel, a URL publica difere do host interno do Locust.
-WEBHOOK_URL = os.environ.get("TWILIO_WEBHOOK_URL", "http://localhost:8000")
+# Twilio
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_WEBHOOK_URL = os.environ.get("TWILIO_WEBHOOK_URL", "http://localhost:8000")
+TWILIO_PATH = "/webhook/twilio?agent=vsa_tech"
 
-# Endpoint do webhook com o agente padrao
-WEBHOOK_PATH = "/webhook/twilio?agent=vsa_tech"
+# Evolution
+EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE_NAME", "vsa-tecnologia")
+EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
+EVOLUTION_PATH = "/webhook/evolution"
+
+
+# --- Helpers Twilio ---
 
 
 def generate_twilio_signature(url: str, params: dict[str, str], auth_token: str) -> str:
-    """Gera assinatura X-Twilio-Signature valida para testes de stress.
-
-    O algoritmo segue exatamente o que o Twilio faz em producao:
-    1. Comeca com a URL completa do webhook (incluindo query params)
-    2. Ordena os parametros POST alfabeticamente por chave
-    3. Concatena cada par chave+valor a URL (sem separadores)
-    4. Assina a string resultante com HMAC-SHA1 usando o auth token
-    5. Codifica o resultado em Base64
-
-    Isso permite que nossos testes passem pela validacao de assinatura
-    sem precisar desativa-la, simulando trafego realista.
-
-    Args:
-        url: URL completa do webhook (ex: http://localhost:8000/webhook/twilio?agent=vsa_tech).
-        params: Parametros POST do formulario (Body, From, To, etc.).
-        auth_token: Token de autenticacao do Twilio.
-
-    Returns:
-        Assinatura Base64 compativel com X-Twilio-Signature.
-    """
-    # Monta a string de dados: URL + params ordenados concatenados
+    """Gera X-Twilio-Signature válida (HMAC-SHA1 sobre URL + params ordenados)."""
     data = url
     for key in sorted(params.keys()):
         data += key + params[key]
-
-    # HMAC-SHA1 com o auth token como chave
-    # Twilio usa SHA1 por razoes historicas — suficiente para validacao de webhook
     signature = hmac.new(
         auth_token.encode("utf-8"),
         data.encode("utf-8"),
         hashlib.sha1,
     ).digest()
-
     return base64.b64encode(signature).decode("utf-8")
 
 
-def build_webhook_url() -> str:
-    """Monta a URL completa do webhook para computo da assinatura.
-
-    A URL deve incluir o path E os query params, pois o Twilio
-    inclui tudo isso no calculo da assinatura.
-
-    Returns:
-        URL completa (ex: http://localhost:8000/webhook/twilio?agent=vsa_tech).
-    """
-    base = WEBHOOK_URL.rstrip("/")
-    return f"{base}{WEBHOOK_PATH}"
+def build_twilio_url() -> str:
+    return f"{TWILIO_WEBHOOK_URL.rstrip('/')}{TWILIO_PATH}"
 
 
 def make_twilio_payload(body: str, phone: str) -> dict[str, str]:
-    """Cria payload no formato que o Twilio envia para webhooks.
-
-    Simula os campos que o Twilio inclui em cada POST ao webhook:
-    - MessageSid: ID unico da mensagem (geramos um UUID)
-    - From: Numero do remetente no formato whatsapp:+XXXXXXXXXXX
-    - To: Numero do bot (fixo para testes)
-    - Body: Texto da mensagem
-    - NumMedia: Quantidade de midias anexas (sempre 0 nos testes de texto)
-
-    Args:
-        body: Texto da mensagem.
-        phone: Numero de telefone no formato E.164 (ex: +5511999999999).
-
-    Returns:
-        Dicionario com os campos do formulario Twilio.
-    """
+    """Payload form-urlencoded compatível com webhook Twilio."""
     return {
         "MessageSid": f"SM{uuid.uuid4().hex[:32]}",
         "From": f"whatsapp:{phone}",
@@ -125,147 +103,167 @@ def make_twilio_payload(body: str, phone: str) -> dict[str, str]:
     }
 
 
+# --- Helpers Evolution ---
+
+
+def make_evolution_payload(body: str, phone: str) -> dict:
+    """Payload JSON compatível com webhook Evolution v2 (MESSAGES_UPSERT)."""
+    digits = phone.lstrip("+")
+    return {
+        "event": "messages.upsert",
+        "instance": EVOLUTION_INSTANCE,
+        "data": {
+            "key": {
+                "remoteJid": f"{digits}@s.whatsapp.net",
+                "fromMe": False,
+                "id": f"STRESS-{uuid.uuid4().hex[:24]}",
+            },
+            "message": {"conversation": body},
+            "pushName": "Stress Test",
+            "messageTimestamp": int(time.time()),
+        },
+    }
+
+
+def evolution_headers() -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if EVOLUTION_API_KEY:
+        headers["apikey"] = EVOLUTION_API_KEY
+    return headers
+
+
+# --- Twilio: cenário normal ---
+
+
 class TwilioWebhookUser(HttpUser):
-    """Simula um usuario do WhatsApp enviando mensagens via webhook Twilio.
+    """Usuário Twilio típico (mensagens curtas + esporádicas longas)."""
 
-    Cada instancia representa um numero de telefone unico (gerado via Faker)
-    que envia mensagens com intervalos de 1 a 3 segundos.
-
-    Dois cenarios com pesos diferentes:
-    - Mensagem normal (peso 10): frases curtas, simula conversa casual
-    - Mensagem longa (peso 1): paragrafos extensos, testa limites de texto
-
-    A base esta preparada para ser estendida com cenarios adicionais:
-    - INT-187: cenario assincrono (webhook async)
-    - INT-188: cenario sincrono (webhook sync)
-    - INT-189: cenario de burst (rajada de mensagens)
-    """
-
-    # Intervalo entre requisicoes: 1 a 3 segundos (simula digitacao humana)
     wait_time = between(1, 3)
+    weight = 1
 
     def on_start(self) -> None:
-        """Configuracao inicial de cada usuario virtual.
-
-        Gera um numero de telefone brasileiro unico para este usuario,
-        garantindo que cada instancia do Locust simule um remetente diferente.
-        """
-        # Gera numero brasileiro unico no formato E.164
         self.phone = f"+55{fake.msisdn()[4:]}"
-
-        if not AUTH_TOKEN:
-            # Alerta visivel no log — sem token, a API vai rejeitar com 403
+        if not TWILIO_AUTH_TOKEN:
             print(
-                "[AVISO] TWILIO_AUTH_TOKEN nao configurado. "
-                "Requests serao rejeitados se a validacao de assinatura estiver ativa."
+                "[AVISO Twilio] TWILIO_AUTH_TOKEN não configurado — "
+                "requests serão rejeitados se VALIDATE_TWILIO_SIGNATURE=true."
             )
 
     def send_message(self, body: str) -> None:
-        """Envia uma mensagem para o webhook com assinatura Twilio valida.
-
-        Monta o payload, gera a assinatura HMAC-SHA1 e faz o POST.
-        Esse metodo centraliza a logica de envio para todos os cenarios.
-
-        Args:
-            body: Texto da mensagem a enviar.
-        """
-        url = build_webhook_url()
+        url = build_twilio_url()
         params = make_twilio_payload(body, self.phone)
-        signature = generate_twilio_signature(url, params, AUTH_TOKEN)
-
+        signature = generate_twilio_signature(url, params, TWILIO_AUTH_TOKEN)
         self.client.post(
-            WEBHOOK_PATH,
+            TWILIO_PATH,
             data=params,
             headers={"X-Twilio-Signature": signature},
+            name="POST /webhook/twilio (normal)",
         )
 
     @task(10)
     def send_normal_message(self) -> None:
-        """Envia mensagem curta — simula conversa casual do dia a dia.
-
-        Peso 10: este e o cenario mais comum. Gera frases de 3 a 15 palavras,
-        representando perguntas rapidas ou respostas curtas tipicas do WhatsApp.
-        """
-        word_count = fake.random_int(min=3, max=15)
-        body = fake.sentence(nb_words=word_count)
+        body = fake.sentence(nb_words=fake.random_int(min=3, max=15))
         self.send_message(body)
 
     @task(1)
     def send_long_message(self) -> None:
-        """Envia mensagem longa — testa processamento de textos extensos.
-
-        Peso 1: cenario menos frequente. Gera paragrafo com ~10 frases,
-        simulando usuarios que enviam textos longos de uma vez.
-        Util para testar limites de tamanho e tempo de processamento.
-        """
         body = fake.paragraph(nb_sentences=10)
         self.send_message(body)
 
 
-# --- Cenario de rajada (burst) ---
+class TwilioBurstUser(HttpUser):
+    """Twilio com rajadas de 5-20 mensagens em <1s."""
 
-
-class BurstUser(HttpUser):
-    """Simula rajadas de mensagens rapidas no webhook async.
-
-    Testa o comportamento do sistema quando um usuario envia muitas mensagens
-    em sequencia rapida (ex: copia e cola varias linhas, ou envia mensagens
-    freneticas). Esse padrao e comum no WhatsApp e estressa especificamente:
-
-    - Rate limiting: o sistema deve rejeitar ou enfileirar sem perder mensagens
-    - Crescimento da fila: muitas mensagens entram de uma vez, o worker precisa
-      drenar a fila sem acumular backlog indefinidamente
-    - Debounce: se houver logica de agrupamento, ela deve funcionar sob pressao
-    - Estabilidade do banco: muitas escritas simultaneas no PostgreSQL
-
-    O padrao e: rajada de 5-20 mensagens rapidas (0.1-0.5s entre cada),
-    depois pausa de 5-15 segundos antes da proxima rajada.
-    """
-
-    # Pausa ENTRE rajadas: 5 a 15 segundos para o sistema respirar
     wait_time = between(5, 15)
-
-    # Peso padrao — gera trafego comparavel ao TwilioWebhookUser
     weight = 1
 
     def on_start(self) -> None:
-        """Gera numero de telefone unico para este usuario virtual."""
         self.phone = f"+55{fake.msisdn()[4:]}"
-
-        if not AUTH_TOKEN:
-            print(
-                "[AVISO] TWILIO_AUTH_TOKEN nao configurado. "
-                "Requests do BurstUser serao rejeitados se a validacao estiver ativa."
-            )
 
     @task
     def send_burst(self) -> None:
-        """Envia rajada de 5-20 mensagens com intervalo minimo entre elas.
-
-        Cada mensagem e assinada individualmente (assim como o Twilio faria).
-        O intervalo entre mensagens dentro da rajada e de 0.1 a 0.5 segundos,
-        simulando um usuario digitando/colando rapidamente.
-
-        Apos a rajada, o Locust aplica o wait_time (5-15s) automaticamente
-        antes de chamar send_burst novamente.
-        """
         burst_size = random.randint(5, 20)
-
         for i in range(burst_size):
-            word_count = fake.random_int(min=2, max=10)
-            body = fake.sentence(nb_words=word_count)
-
-            url = build_webhook_url()
+            body = fake.sentence(nb_words=fake.random_int(min=2, max=10))
+            url = build_twilio_url()
             params = make_twilio_payload(body, self.phone)
-            signature = generate_twilio_signature(url, params, AUTH_TOKEN)
-
+            signature = generate_twilio_signature(url, params, TWILIO_AUTH_TOKEN)
             self.client.post(
-                WEBHOOK_PATH,
+                TWILIO_PATH,
                 data=params,
                 headers={"X-Twilio-Signature": signature},
+                name="POST /webhook/twilio (burst)",
             )
-
-            # Pequena pausa entre mensagens da rajada (0.1 a 0.5s)
-            # Simula a velocidade de digitacao/colagem rapida
             if i < burst_size - 1:
                 time.sleep(random.uniform(0.1, 0.5))
+
+
+# --- Evolution: cenário normal ---
+
+
+class EvolutionWebhookUser(HttpUser):
+    """Usuário Evolution típico (MESSAGES_UPSERT JSON, mensagens variadas)."""
+
+    wait_time = between(1, 3)
+    weight = 1
+
+    def on_start(self) -> None:
+        self.phone = f"+55{fake.msisdn()[4:]}"
+
+    def send_message(self, body: str) -> None:
+        payload = make_evolution_payload(body, self.phone)
+        self.client.post(
+            EVOLUTION_PATH,
+            data=json.dumps(payload),
+            headers=evolution_headers(),
+            name="POST /webhook/evolution (normal)",
+        )
+
+    @task(10)
+    def send_normal_message(self) -> None:
+        body = fake.sentence(nb_words=fake.random_int(min=3, max=15))
+        self.send_message(body)
+
+    @task(1)
+    def send_long_message(self) -> None:
+        body = fake.paragraph(nb_sentences=10)
+        self.send_message(body)
+
+
+class EvolutionBurstUser(HttpUser):
+    """Evolution com rajadas (testa debounce e crescimento da fila)."""
+
+    wait_time = between(5, 15)
+    weight = 1
+
+    def on_start(self) -> None:
+        self.phone = f"+55{fake.msisdn()[4:]}"
+
+    @task
+    def send_burst(self) -> None:
+        burst_size = random.randint(5, 20)
+        for i in range(burst_size):
+            body = fake.sentence(nb_words=fake.random_int(min=2, max=10))
+            payload = make_evolution_payload(body, self.phone)
+            self.client.post(
+                EVOLUTION_PATH,
+                data=json.dumps(payload),
+                headers=evolution_headers(),
+                name="POST /webhook/evolution (burst)",
+            )
+            if i < burst_size - 1:
+                time.sleep(random.uniform(0.1, 0.5))
+
+
+# --- Filtro de classes pelo PROVIDER ---
+# Locust pega todas as subclasses concretas de HttpUser; pra "esconder"
+# as que não pertencem ao provider selecionado, sobrescrevemos com classe
+# abstract (que o Locust ignora ao spawnar usuários).
+
+if PROVIDER == "twilio":
+    EvolutionWebhookUser = type("EvolutionWebhookUser", (HttpUser,), {"abstract": True})
+    EvolutionBurstUser = type("EvolutionBurstUser", (HttpUser,), {"abstract": True})
+elif PROVIDER == "evolution":
+    TwilioWebhookUser = type("TwilioWebhookUser", (HttpUser,), {"abstract": True})
+    TwilioBurstUser = type("TwilioBurstUser", (HttpUser,), {"abstract": True})
+# else "both": deixa as 4 classes ativas

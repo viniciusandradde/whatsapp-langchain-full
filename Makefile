@@ -1,4 +1,4 @@
-.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows backfill-rag clean
+.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows backfill-rag stress stress-evolution stress-twilio stress-both clean
 
 # Cores para output
 CYAN := \033[36m
@@ -109,6 +109,45 @@ test-twilio-smoke: ## Smoke test e2e com Twilio real (custos $$$). Requer TWILIO
 ##@ RAG
 backfill-rag: ## Re-chunka docs sem chunks (pós migration 018). --doc-id N força um.
 	uv run python scripts/backfill_rag_chunks.py $(ARGS)
+
+##@ Stress (Locust headless)
+# Defaults: -u 10 -r 2 -t 60s contra api.vsanexus.com
+# Sobrescreva via:
+#   make stress-evolution USERS=20 RATE=5 TIME=120s HOST=https://outra.url
+USERS  ?= 10
+RATE   ?= 2
+TIME   ?= 60s
+HOST   ?= https://api.vsanexus.com
+LOCUST  = cd stress && uv run --with locust --with faker --with python-dotenv \
+          locust --headless -u $(USERS) -r $(RATE) -t $(TIME) -f locustfile.py --host $(HOST)
+
+stress-evolution: ## Stress test do webhook Evolution (default: 10u, 2/s, 60s)
+	LOCUST_PROVIDER=evolution $(LOCUST)
+
+stress-twilio: ## Stress test do webhook Twilio (precisa TWILIO_AUTH_TOKEN)
+	LOCUST_PROVIDER=twilio $(LOCUST)
+
+stress-both: ## Stress nos dois providers ao mesmo tempo
+	LOCUST_PROVIDER=both $(LOCUST)
+
+stress: stress-evolution ## Alias do stress-evolution (default)
+
+# Alternativa via Docker (sem precisar de uv local)
+LOCUST_DOCKER = sg docker -c "docker build -q -t whatsapp-stress stress >/dev/null && \
+                docker run --rm \
+                -e LOCUST_PROVIDER=$$LOCUST_PROVIDER \
+                -e EVOLUTION_INSTANCE_NAME=$${EVOLUTION_INSTANCE_NAME:-vsa-tecnologia} \
+                -e EVOLUTION_API_KEY \
+                -e TWILIO_AUTH_TOKEN \
+                -e TWILIO_WEBHOOK_URL \
+                whatsapp-stress \
+                locust --headless -u $(USERS) -r $(RATE) -t $(TIME) -f locustfile.py --host $(HOST)"
+
+stress-evolution-docker: ## Stress Evolution via Docker (sem uv)
+	LOCUST_PROVIDER=evolution $(LOCUST_DOCKER)
+
+stress-twilio-docker: ## Stress Twilio via Docker (precisa TWILIO_AUTH_TOKEN no env)
+	LOCUST_PROVIDER=twilio $(LOCUST_DOCKER)
 
 ##@ Limpeza
 clean: ## Remove arquivos de cache do Python
