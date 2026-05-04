@@ -117,12 +117,19 @@ export interface EmpresaUpdateInput {
   status?: string;
 }
 
+export type UserStatus = "active" | "disabled";
+
 export interface EmpresaMembro {
   empresa_id: number;
   user_id: string;
   role: "admin" | "operator" | "viewer";
   is_default: boolean;
   joined_at: string;
+  /** Email do user (JOIN com auth.user em list_members). */
+  email?: string | null;
+  /** Status do user — "active" | "disabled". Pode ser undefined em
+   * payloads antigos antes da migration 024. */
+  status?: UserStatus | null;
 }
 
 export interface EmpresasResponse {
@@ -728,8 +735,6 @@ export async function removeEmpresaMember(
     { method: "DELETE" }
   );
 }
-
-export type UserStatus = "active" | "disabled";
 
 export async function setMemberStatus(
   empresaId: number,
