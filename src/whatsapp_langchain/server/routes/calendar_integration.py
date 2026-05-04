@@ -96,6 +96,19 @@ async def oauth_init(
     return {"authorize_url": url}
 
 
+def _frontend_redirect(path: str) -> str:
+    """Monta URL absoluta no host do frontend pra redirect pós-OAuth.
+
+    O callback Google roda em `api.vsanexus.com` (porque é onde a rota
+    está registrada), mas o painel UI vive em `chat.vsanexus.com` —
+    redirect relativo iria pra `api.vsanexus.com/settings/...` (404).
+    Usa a primeira origem de `FRONTEND_ORIGINS` como base.
+    """
+    origins = settings.frontend_origins_list
+    base = origins[0].rstrip("/") if origins else ""
+    return f"{base}{path}"
+
+
 @router.get("/oauth/callback")
 async def oauth_callback(
     code: str = Query(default=""),
@@ -112,7 +125,9 @@ async def oauth_callback(
         # Esperado quando user clica "Cancelar" no consent — não é bug.
         logger.info("google_oauth_user_denied", error=error)
         return RedirectResponse(
-            url="/settings/integracoes?google_calendar_error=user_denied"
+            url=_frontend_redirect(
+                "/settings/integracoes?google_calendar_error=user_denied"
+            )
         )
     if not code or not state:
         raise HTTPException(status_code=400, detail="code/state ausentes no callback.")
@@ -139,8 +154,10 @@ async def oauth_callback(
         user_id=user_id,
         google_email=email,
     )
-    # Redireciona pro painel com sucesso.
-    return RedirectResponse(url="/settings/integracoes?google_calendar=ok")
+    # Redireciona pro painel com sucesso (URL absoluta no host do frontend).
+    return RedirectResponse(
+        url=_frontend_redirect("/settings/integracoes?google_calendar=ok")
+    )
 
 
 @router.get(
