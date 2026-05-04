@@ -750,6 +750,41 @@ export async function getMemberStatus(
   );
 }
 
+export interface LoginEvent {
+  id: number;
+  user_id: string | null;
+  email: string | null;
+  event_type:
+    | "login_success"
+    | "login_failed"
+    | "logout"
+    | "password_reset_requested"
+    | "password_changed"
+    | "session_blocked_disabled";
+  ip_address: string | null;
+  user_agent: string | null;
+  reason: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+export async function getLoginEvents(params?: {
+  userId?: string;
+  email?: string;
+  eventType?: string;
+  limit?: number;
+}): Promise<{ events: LoginEvent[] }> {
+  const qs = new URLSearchParams();
+  if (params?.userId) qs.set("user_id", params.userId);
+  if (params?.email) qs.set("email", params.email);
+  if (params?.eventType) qs.set("event_type", params.eventType);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return apiFetch<{ events: LoginEvent[] }>(
+    `/api/security/login-events${suffix}`
+  );
+}
+
 export async function getConexoes(): Promise<ConexoesResponse> {
   return apiFetch<ConexoesResponse>("/api/conexoes");
 }

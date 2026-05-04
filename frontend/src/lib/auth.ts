@@ -34,7 +34,53 @@ async function ensureUserActive(userId: string): Promise<void> {
   );
   const status = result.rows[0]?.status;
   if (status === "disabled") {
+    // E1.8: registra a tentativa de login bloqueada antes de abortar.
+    await recordLoginEvent({
+      userId,
+      eventType: "session_blocked_disabled",
+      reason: "user account disabled",
+    });
     throw new Error("Conta desativada. Contate o administrador.");
+  }
+}
+
+/**
+ * Insert em auth_login_event (E1.8). Best-effort: erros de DB não
+ * propagam pra não quebrar o login fluxo principal.
+ */
+async function recordLoginEvent(params: {
+  userId?: string | null;
+  email?: string | null;
+  eventType:
+    | "login_success"
+    | "login_failed"
+    | "logout"
+    | "password_reset_requested"
+    | "password_changed"
+    | "session_blocked_disabled";
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<void> {
+  try {
+    await authPool.query(
+      `INSERT INTO auth_login_event
+        (user_id, email, event_type, ip_address, user_agent, reason, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [
+        params.userId ?? null,
+        params.email ?? null,
+        params.eventType,
+        params.ipAddress ?? null,
+        params.userAgent ?? null,
+        params.reason ?? null,
+        params.metadata ? JSON.stringify(params.metadata) : null,
+      ]
+    );
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[auth] recordLoginEvent failed", e);
   }
 }
 
@@ -73,15 +119,23 @@ export const auth = betterAuth({
     },
   },
 
-  // Hook de sessão: bloqueia login de users com status=disabled.
-  // Quando admin desativa, set_user_status() já remove sessões existentes
-  // (auth.session DELETE cascata); este hook fecha o caminho de re-login.
+  // Hook de sessão: bloqueia login de users com status=disabled (E1.7)
+  // E registra eventos de login no auth_login_event (E1.8).
   databaseHooks: {
     session: {
       create: {
         before: async (session) => {
           await ensureUserActive(session.userId);
           return { data: session };
+        },
+        after: async (session) => {
+          // Login bem sucedido — registra evento com IP/UA da session.
+          await recordLoginEvent({
+            userId: session.userId,
+            eventType: "login_success",
+            ipAddress: session.ipAddress ?? null,
+            userAgent: session.userAgent ?? null,
+          });
         },
       },
     },

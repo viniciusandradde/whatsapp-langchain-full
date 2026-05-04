@@ -94,6 +94,11 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/settings/horarios", label: "Horário", icon: Clock },
       { href: "/queue", label: "Fila", icon: ListOrdered },
       { href: "/settings", label: "Segurança", icon: ShieldCheck },
+      {
+        href: "/settings/security/login-history",
+        label: "Histórico de acesso",
+        icon: Activity,
+      },
     ],
   },
 ];
