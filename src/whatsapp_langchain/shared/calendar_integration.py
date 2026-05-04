@@ -317,25 +317,37 @@ async def find_free_slots(
     *,
     days_ahead: int = 7,
     slot_minutes: int = 60,
-    work_start_hour: int = 9,
-    work_end_hour: int = 18,
     max_slots: int = 6,
 ) -> list[dict]:
-    """Calcula horários livres na agenda da empresa.
+    """Calcula horários livres na agenda da empresa, respeitando regras (S3).
 
     Algoritmo: pega busy_intervals do Calendar API (`freebusy.query`)
-    pros próximos `days_ahead` dias dentro da janela de trabalho, depois
-    fatia em slots de `slot_minutes` minutos pulando os ocupados.
+    pros próximos `days_ahead` dias dentro da janela de trabalho
+    configurada em `agendamento_regras` (default 08-18) e dias da
+    semana permitidos. Aplica antecedência mínima e pula dias bloqueados.
 
-    Retorna lista de dicts `{start, end}` em ISO 8601 timezone-aware.
+    Retorna lista de dicts `{start, end}` em ISO 8601 timezone-aware
+    (timezone da empresa).
     """
+    from zoneinfo import ZoneInfo as _ZoneInfo
+
+    from whatsapp_langchain.shared.agendamento_regras import get as _get_regras
+
     config, creds = await _resolve_credentials(pool, empresa_id)
     service = _calendar_service(creds)
+    regras = await _get_regras(pool, empresa_id)
 
-    now = datetime.now(UTC)
-    horizon = now + timedelta(days=days_ahead)
+    try:
+        tz = _ZoneInfo(config.timezone)
+    except Exception:
+        tz = _ZoneInfo("America/Sao_Paulo")
+
+    now_utc = datetime.now(UTC)
+    minimo = now_utc + timedelta(minutes=regras.antecedencia_minima_minutos)
+    horizon = now_utc + timedelta(days=days_ahead)
+
     body = {
-        "timeMin": now.isoformat(),
+        "timeMin": now_utc.isoformat(),
         "timeMax": horizon.isoformat(),
         "timeZone": config.timezone,
         "items": [{"id": config.calendar_id}],
@@ -354,17 +366,41 @@ async def find_free_slots(
         for b in busy
     ]
 
-    # Itera dia por dia dentro da janela de trabalho.
+    # Janela horária local (HH:MM → hour/minute)
+    h_inicio_h, h_inicio_m = (int(x) for x in regras.hora_inicio.split(":"))
+    h_fim_h, h_fim_m = (int(x) for x in regras.hora_fim.split(":"))
+
     slots: list[dict] = []
-    cursor_day = now.date()
-    end_day = horizon.date()
+    # Itera dia por dia em hora LOCAL pra respeitar regras de horário comercial.
+    cursor_day = now_utc.astimezone(tz).date()
+    end_day = horizon.astimezone(tz).date()
     while cursor_day <= end_day and len(slots) < max_slots:
-        day_start = datetime.combine(
-            cursor_day, datetime.min.time(), tzinfo=UTC
-        ).replace(hour=work_start_hour)
-        day_end = day_start.replace(hour=work_end_hour)
-        # Pula horários no passado.
-        slot_cursor = max(day_start, now)
+        # Pula dia da semana não permitido
+        if cursor_day.isoweekday() not in regras.dias_semana_permitidos:
+            cursor_day += timedelta(days=1)
+            continue
+        # Pula dia bloqueado
+        if cursor_day.isoformat() in regras.dias_bloqueados:
+            cursor_day += timedelta(days=1)
+            continue
+
+        # Constrói início/fim do expediente em hora local, depois converte UTC
+        day_start_local = datetime.combine(
+            cursor_day,
+            datetime.min.time().replace(hour=h_inicio_h, minute=h_inicio_m),
+            tzinfo=tz,
+        )
+        day_end_local = datetime.combine(
+            cursor_day,
+            datetime.min.time().replace(hour=h_fim_h, minute=h_fim_m),
+            tzinfo=tz,
+        )
+        day_start = day_start_local.astimezone(UTC)
+        day_end = day_end_local.astimezone(UTC)
+
+        # Aplica antecedência mínima: cursor mínimo é max(day_start, agora+ant.)
+        slot_cursor = max(day_start, minimo)
+
         while (
             slot_cursor + timedelta(minutes=slot_minutes) <= day_end
             and len(slots) < max_slots
@@ -377,8 +413,8 @@ async def find_free_slots(
             if not collides:
                 slots.append(
                     {
-                        "start": slot_cursor.isoformat(),
-                        "end": slot_end.isoformat(),
+                        "start": slot_cursor.astimezone(tz).isoformat(),
+                        "end": slot_end.astimezone(tz).isoformat(),
                     }
                 )
             slot_cursor = slot_end
@@ -416,10 +452,8 @@ async def create_event(
 
     config, creds = await _resolve_credentials(pool, empresa_id)
 
-    # 1. INSERT local primeiro (source-of-truth)
+    # 1. Parse das datas
     try:
-        # Parse das datas pra timestamptz (psycopg aceita datetime).
-        # `fromisoformat` aceita ISO 8601 com timezone.
         dt_inicio = _dt.fromisoformat(start_iso.replace("Z", "+00:00"))
         dt_fim = _dt.fromisoformat(end_iso.replace("Z", "+00:00"))
     except ValueError as e:
@@ -427,6 +461,14 @@ async def create_event(
             f"Datas inválidas (esperado ISO 8601): {e}"
         ) from e
 
+    # 2. Valida regras de negócio (S3) — recusa antes de tocar no Google
+    ok, motivo = await _agendamento_helpers.validate_request(
+        pool, empresa_id, start=dt_inicio, end=dt_fim
+    )
+    if not ok:
+        raise CalendarIntegrationError(f"Regra de negócio: {motivo}")
+
+    # 3. INSERT local primeiro (source-of-truth)
     ag = await _agendamento_helpers.create(
         pool,
         empresa_id=empresa_id,
@@ -440,7 +482,7 @@ async def create_event(
         status="confirmado",
     )
 
-    # 2. POST events.insert no Google
+    # 4. POST events.insert no Google
     service = _calendar_service(creds)
     body: dict = {
         "summary": summary,
@@ -459,7 +501,7 @@ async def create_event(
             .execute()
         )
     except HttpError as e:
-        # 3b. Drift compensado: marca local como cancelado pra não ficar
+        # 5b. Drift compensado: marca local como cancelado pra não ficar
         # ghost row. Logger crítico pra investigação.
         await _agendamento_helpers.cancel_local(pool, ag.id, empresa_id)
         logger.error(
@@ -470,7 +512,7 @@ async def create_event(
         )
         raise CalendarIntegrationError(f"events.insert falhou: {e}") from e
 
-    # 3a. Sucesso — atualiza local com id e dispara hook
+    # 5a. Sucesso — atualiza local com id e dispara hook
     evento_id = ev.get("id") or ""
     await _agendamento_helpers.update_external_event(
         pool,

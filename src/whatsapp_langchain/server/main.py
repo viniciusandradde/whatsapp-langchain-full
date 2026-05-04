@@ -25,6 +25,9 @@ from whatsapp_langchain.server.routes.admin import router as admin_router
 from whatsapp_langchain.server.routes.agendamento import (
     router as agendamento_router,
 )
+from whatsapp_langchain.server.routes.agendamento_regras import (
+    router as agendamento_regras_router,
+)
 from whatsapp_langchain.server.routes.atendimento import (
     router as atendimento_router,
 )
@@ -158,6 +161,7 @@ app.include_router(feriado_router)
 app.include_router(traces_router)
 app.include_router(security_router)
 app.include_router(agendamento_router)
+app.include_router(agendamento_regras_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.

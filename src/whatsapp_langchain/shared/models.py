@@ -281,6 +281,38 @@ class ClienteAnotacao(BaseModel):
     created_at: datetime
 
 
+class AgendamentoRegras(BaseModel):
+    """Regras de negócio por empresa pra agendamento (S3 Calendar v2).
+
+    Single row por empresa. Defaults: janela 08-18, seg-sex, antecedência
+    60min. `dias_semana_permitidos` usa ISO weekday (1=seg, 7=dom).
+    `dias_bloqueados` é lista de strings YYYY-MM-DD.
+    """
+
+    empresa_id: int
+    hora_inicio: str  # "HH:MM" formato (psycopg pode trazer time obj — converter)
+    hora_fim: str
+    antecedencia_minima_minutos: int = 60
+    intervalo_entre_minutos: int = 0
+    dias_semana_permitidos: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    dias_bloqueados: list[str] = Field(default_factory=list)
+    requer_aprovacao: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgendamentoRegrasInput(BaseModel):
+    """Payload de PUT /api/calendar/regras."""
+
+    hora_inicio: str | None = None
+    hora_fim: str | None = None
+    antecedencia_minima_minutos: int | None = Field(default=None, ge=0)
+    intervalo_entre_minutos: int | None = Field(default=None, ge=0)
+    dias_semana_permitidos: list[int] | None = None
+    dias_bloqueados: list[str] | None = None
+    requer_aprovacao: bool | None = None
+
+
 class Agendamento(BaseModel):
     """Agendamento espelhado do Google Calendar com governança local (S2).
 

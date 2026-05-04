@@ -1,9 +1,13 @@
-"""CRUD de agendamentos espelhados do Google Calendar (S2 Calendar v2).
+"""CRUD + validação de regras de agendamentos (S2/S3 Calendar v2).
 
 Source-of-truth interno. `calendar_integration.create_event` insere aqui
 ANTES de chamar o Google e atualiza com `evento_id_externo` retornado.
 Em caso de falha do Google, marca `status='cancelado'` (drift compensado)
 e dispara warning estruturado.
+
+S3 adiciona `validate_request(empresa_id, start, end)` que aplica regras
+da tabela `agendamento_regras` antes de chamar Google: janela de horário,
+antecedência mínima, dias permitidos, dias bloqueados.
 
 Padrão segue `shared/cliente.py` e outros módulos de domínio.
 """
@@ -11,8 +15,9 @@ Padrão segue `shared/cliente.py` e outros módulos de domínio.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, time, timedelta, timezone
 from typing import Final
+from zoneinfo import ZoneInfo
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -233,3 +238,106 @@ async def get_by_external_id(
         )
         row = await cur.fetchone()
     return _row_to_agendamento(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# S3: Validação de regras de negócio
+# ---------------------------------------------------------------------------
+
+
+def _parse_hora(hora_str: str) -> time:
+    """Converte 'HH:MM' em time. Já validado em `agendamento_regras`."""
+    h, m = hora_str.split(":")
+    return time(int(h), int(m))
+
+
+async def validate_request(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    start: datetime,
+    end: datetime,
+) -> tuple[bool, str | None]:
+    """Aplica regras de `agendamento_regras` e timezone da empresa.
+
+    Returns:
+        `(True, None)` quando OK; `(False, motivo)` quando recusado. O
+        motivo é uma string amigável que vai parar na resposta da tool
+        (`calendar_create_event`) e o agente repassa ao cliente.
+
+    Regras (em ordem de checagem):
+    1. `start < end` (sanity)
+    2. Antecedência mínima: `start >= now + antecedencia_minima_minutos`
+    3. Dia da semana permitido (ISO 1-7, default seg-sex)
+    4. Dia não está em `dias_bloqueados` (YYYY-MM-DD lista)
+    5. Janela de horário comercial em hora LOCAL (timezone da empresa)
+    """
+    # Lazy imports pra evitar ciclo
+    from whatsapp_langchain.shared.agendamento_regras import get as _get_regras
+    from whatsapp_langchain.shared.calendar_integration import (
+        get_calendar_config as _get_cal_config,
+    )
+
+    if start >= end:
+        return False, "Início precisa ser antes do fim."
+
+    regras = await _get_regras(pool, empresa_id)
+
+    # Timezone da empresa (default America/Sao_Paulo se sem config)
+    cal_config = await _get_cal_config(pool, empresa_id)
+    tz_name = cal_config.timezone if cal_config else "America/Sao_Paulo"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Sao_Paulo")
+
+    # Garante que start/end sejam timezone-aware
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+
+    # Antecedência mínima
+    now = datetime.now(timezone.utc)
+    minimo = now + timedelta(minutes=regras.antecedencia_minima_minutos)
+    if start < minimo:
+        return (
+            False,
+            f"Antecedência mínima é de {regras.antecedencia_minima_minutos} "
+            "minutos. Escolha um horário mais distante.",
+        )
+
+    # Converte pra hora local
+    start_local = start.astimezone(tz)
+    end_local = end.astimezone(tz)
+
+    # Dia da semana permitido (1=seg, 7=dom no padrão ISO; Python isoweekday faz 1=seg, 7=dom)
+    dia_semana = start_local.isoweekday()
+    if dia_semana not in regras.dias_semana_permitidos:
+        nomes = {1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sáb", 7: "dom"}
+        permitidos = [nomes.get(d, str(d)) for d in regras.dias_semana_permitidos]
+        return (
+            False,
+            f"Não atendemos {nomes.get(dia_semana, dia_semana)}. "
+            f"Dias permitidos: {', '.join(permitidos)}.",
+        )
+
+    # Dias bloqueados (feriados/férias)
+    data_iso = start_local.date().isoformat()
+    if data_iso in regras.dias_bloqueados:
+        return (
+            False,
+            f"Dia {data_iso} está bloqueado (feriado/férias). Escolha outro.",
+        )
+
+    # Janela horária local
+    hora_inicio = _parse_hora(regras.hora_inicio)
+    hora_fim = _parse_hora(regras.hora_fim)
+    if start_local.time() < hora_inicio or end_local.time() > hora_fim:
+        return (
+            False,
+            f"Horário fora da janela {regras.hora_inicio}-{regras.hora_fim}. "
+            "Sugira um slot dentro do expediente.",
+        )
+
+    return True, None
