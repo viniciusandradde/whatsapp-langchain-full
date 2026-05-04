@@ -281,6 +281,31 @@ class ClienteAnotacao(BaseModel):
     created_at: datetime
 
 
+class Agendamento(BaseModel):
+    """Agendamento espelhado do Google Calendar com governança local (S2).
+
+    `evento_id_externo` é populado após o INSERT no Google. Pode ser NULL
+    transitoriamente (se Google falhar, o row local fica como `cancelado`).
+    """
+
+    id: int
+    empresa_id: int
+    calendar_id: str
+    user_id_criador: str | None = None
+    cliente_id: int | None = None
+    evento_id_externo: str | None = None
+    summary: str
+    descricao: str | None = None
+    data_inicio: datetime
+    data_fim: datetime
+    status: str = "confirmado"
+    aprovado: bool = True
+    gestor_notificado: bool = False
+    payload_externo: dict = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
 class AgenteIAConfig(BaseModel):
     """Override de comportamento do agente por (empresa, agent_id) — M5.b.
 

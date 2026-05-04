@@ -24,6 +24,11 @@ EVENTOS_VALIDOS: Final[frozenset[str]] = frozenset(
         "atendimento.atendido",
         "atendimento.fechado",
         "atendimento.transferido",
+        # S2 Calendar v2: dispatch quando agente/operador cria ou cancela
+        # agendamento. Permite integração com sistemas externos
+        # (Slack, ERP, BI) via webhook configurável em /hooks.
+        "agendamento.criado",
+        "agendamento.cancelado",
     }
 )
 

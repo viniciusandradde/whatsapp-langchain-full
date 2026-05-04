@@ -395,9 +395,52 @@ async def create_event(
     end_iso: str,
     description: str | None = None,
     attendee_email: str | None = None,
+    user_id_criador: str | None = None,
+    cliente_id: int | None = None,
 ) -> dict:
-    """Cria evento no calendar default da empresa. Retorna {id, htmlLink}."""
+    """Cria evento no Google Calendar + espelha em `agendamento` (S2).
+
+    Fluxo:
+    1. INSERT local em `agendamento` (status='confirmado', evento_id_externo=NULL)
+    2. POST events.insert no Google
+    3a. Sucesso → UPDATE local com evento_id_externo + payload + dispara
+        hook `agendamento.criado`
+    3b. Falha → UPDATE local pra status='cancelado' + log drift, propaga erro
+
+    Retorna `{id, htmlLink, agendamento_id}`.
+    """
+    from datetime import datetime as _dt
+
+    from whatsapp_langchain.shared import agendamento as _agendamento_helpers
+    from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
     config, creds = await _resolve_credentials(pool, empresa_id)
+
+    # 1. INSERT local primeiro (source-of-truth)
+    try:
+        # Parse das datas pra timestamptz (psycopg aceita datetime).
+        # `fromisoformat` aceita ISO 8601 com timezone.
+        dt_inicio = _dt.fromisoformat(start_iso.replace("Z", "+00:00"))
+        dt_fim = _dt.fromisoformat(end_iso.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise CalendarIntegrationError(
+            f"Datas inválidas (esperado ISO 8601): {e}"
+        ) from e
+
+    ag = await _agendamento_helpers.create(
+        pool,
+        empresa_id=empresa_id,
+        calendar_id=config.calendar_id,
+        summary=summary,
+        descricao=description,
+        data_inicio=dt_inicio,
+        data_fim=dt_fim,
+        user_id_criador=user_id_criador,
+        cliente_id=cliente_id,
+        status="confirmado",
+    )
+
+    # 2. POST events.insert no Google
     service = _calendar_service(creds)
     body: dict = {
         "summary": summary,
@@ -408,16 +451,72 @@ async def create_event(
         body["description"] = description
     if attendee_email:
         body["attendees"] = [{"email": attendee_email}]
+
     try:
-        ev = service.events().insert(calendarId=config.calendar_id, body=body).execute()
+        ev = (
+            service.events()
+            .insert(calendarId=config.calendar_id, body=body)
+            .execute()
+        )
     except HttpError as e:
+        # 3b. Drift compensado: marca local como cancelado pra não ficar
+        # ghost row. Logger crítico pra investigação.
+        await _agendamento_helpers.cancel_local(pool, ag.id, empresa_id)
+        logger.error(
+            "agendamento_drift_google_insert_failed",
+            agendamento_id=ag.id,
+            empresa_id=empresa_id,
+            error=str(e),
+        )
         raise CalendarIntegrationError(f"events.insert falhou: {e}") from e
-    return {"id": ev.get("id"), "htmlLink": ev.get("htmlLink")}
+
+    # 3a. Sucesso — atualiza local com id e dispara hook
+    evento_id = ev.get("id") or ""
+    await _agendamento_helpers.update_external_event(
+        pool,
+        ag.id,
+        evento_id_externo=evento_id,
+        payload_externo={
+            "htmlLink": ev.get("htmlLink"),
+            "organizer": ev.get("organizer"),
+            "attendees": ev.get("attendees", []),
+            "status": ev.get("status"),
+        },
+    )
+    # Hook fire-and-forget (E1.4 traz retry+DLQ)
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "agendamento.criado",
+        {
+            "agendamento_id": ag.id,
+            "cliente_id": cliente_id,
+            "summary": summary,
+            "data_inicio": ag.data_inicio.isoformat(),
+            "data_fim": ag.data_fim.isoformat(),
+            "evento_id_externo": evento_id,
+            "status": "confirmado",
+        },
+    )
+
+    return {
+        "id": evento_id,
+        "htmlLink": ev.get("htmlLink"),
+        "agendamento_id": ag.id,
+    }
 
 
 async def cancel_event(
     pool: AsyncConnectionPool, empresa_id: int, *, event_id: str
 ) -> bool:
+    """Cancela evento no Google + atualiza `agendamento.status='cancelado'`.
+
+    Lookup do row local via `evento_id_externo`. Se não achar (evento
+    criado fora do sistema), só cancela no Google e loga warning.
+    """
+    from whatsapp_langchain.shared import agendamento as _agendamento_helpers
+    from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
     config, creds = await _resolve_credentials(pool, empresa_id)
     service = _calendar_service(creds)
     try:
@@ -426,8 +525,35 @@ async def cancel_event(
         ).execute()
     except HttpError as e:
         if e.resp.status == 404:
+            # Evento já não existe no Google. Marca local também e segue.
+            ag = await _agendamento_helpers.get_by_external_id(
+                pool, empresa_id, event_id
+            )
+            if ag:
+                await _agendamento_helpers.cancel_local(pool, ag.id, empresa_id)
             return False
         raise CalendarIntegrationError(f"events.delete falhou: {e}") from e
+
+    ag = await _agendamento_helpers.get_by_external_id(pool, empresa_id, event_id)
+    if ag is None:
+        logger.warning(
+            "agendamento_cancel_no_local_row",
+            empresa_id=empresa_id,
+            evento_id_externo=event_id,
+        )
+        return True
+
+    await _agendamento_helpers.cancel_local(pool, ag.id, empresa_id)
+    await dispatch_event(
+        pool,
+        empresa_id,
+        "agendamento.cancelado",
+        {
+            "agendamento_id": ag.id,
+            "evento_id_externo": event_id,
+            "status": "cancelado",
+        },
+    )
     return True
 
 

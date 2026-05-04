@@ -154,6 +154,7 @@ app.include_router(horario_router)
 app.include_router(feriado_router)
 app.include_router(traces_router)
 app.include_router(security_router)
+app.include_router(agendamento_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.
