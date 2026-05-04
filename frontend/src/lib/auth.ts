@@ -92,6 +92,20 @@ export const auth = betterAuth({
 
   trustedOrigins,
 
+  // SSO Google (E1.9). Reusa o OAuth Client do Calendar (M5.a) — basta
+  // adicionar o redirect URI `https://chat.vsanexus.com/api/auth/callback/google`
+  // no Google Cloud Console. Variáveis GOOGLE_OAUTH_CLIENT_ID/SECRET já
+  // estão no .env. Se vazias, o provider é silenciosamente desabilitado
+  // (Better Auth não requer plugin extra).
+  socialProviders: process.env.GOOGLE_OAUTH_CLIENT_ID
+    ? {
+        google: {
+          clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? "",
+        },
+      }
+    : undefined,
+
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,
