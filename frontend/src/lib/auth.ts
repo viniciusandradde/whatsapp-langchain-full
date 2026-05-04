@@ -49,6 +49,28 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,
+
+    // Reset de senha sem SMTP (E1.7 finalizar):
+    // O Better Auth chama este callback ao invés de mandar email; aqui
+    // persistimos o link em auth.password_reset_pending pro admin
+    // ler via /api/admin/users/{id}/reset-link (server action) e
+    // compartilhar com o user pelo canal que preferir.
+    //
+    // O link persiste até o user usar OU expirar (1h padrão).
+    sendResetPassword: async ({ user, url, token }) => {
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1h
+      await authPool.query(
+        `INSERT INTO auth.password_reset_pending
+            (user_id, token, url, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_id) DO UPDATE
+            SET token = EXCLUDED.token,
+                url = EXCLUDED.url,
+                expires_at = EXCLUDED.expires_at,
+                created_at = NOW()`,
+        [user.id, token, url, expiresAt]
+      );
+    },
   },
 
   // Hook de sessão: bloqueia login de users com status=disabled.

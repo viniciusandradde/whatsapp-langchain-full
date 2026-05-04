@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Trash2, UserPlus } from "lucide-react";
+import { CheckCircle2, KeyRound, Trash2, UserPlus, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,9 @@ import type { EmpresaMembro } from "@/lib/api";
 import {
   addMemberAction,
   changeMemberRoleAction,
+  generateResetLinkAction,
   removeMemberAction,
+  setMemberStatusAction,
 } from "./actions";
 
 interface Props {
@@ -61,6 +63,36 @@ export function MembersList({ empresaId, members }: Props) {
       const result = await removeMemberAction(empresaId, userId);
       if (!result.ok) setError(result.error);
     });
+  }
+
+  function handleToggleStatus(userId: string, currentStatus: string | null) {
+    const next = currentStatus === "disabled" ? "active" : "disabled";
+    const verb = next === "disabled" ? "Desativar" : "Reativar";
+    if (!confirm(`${verb} ${userId}?`)) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await setMemberStatusAction(empresaId, userId, next);
+      if (!result.ok) setError(result.error);
+    });
+  }
+
+  async function handleGenerateResetLink(userId: string) {
+    if (
+      !confirm(
+        "Gerar link de reset de senha?\n\nO link será mostrado pra você " +
+          "copiar e enviar ao usuário pelo canal que preferir (WhatsApp, etc). " +
+          "Expira em 1 hora.",
+      )
+    )
+      return;
+    setError(null);
+    const result = await generateResetLinkAction(userId);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    // Mostra prompt com o link pra cópia (textarea pra facilitar select all).
+    window.prompt("Link de reset (copie e envie ao usuário):", result.link);
   }
 
   return (
@@ -139,47 +171,92 @@ export function MembersList({ empresaId, members }: Props) {
         <table className="w-full text-sm">
           <thead className="bg-white/[0.02] text-left text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 font-medium">User ID</th>
+              <th className="px-3 py-2 font-medium">Email</th>
               <th className="px-3 py-2 font-medium">Role</th>
+              <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Default</th>
               <th className="px-3 py-2 font-medium">Joined</th>
-              <th className="px-3 py-2" />
+              <th className="px-3 py-2 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {members.map((m) => (
-              <tr key={m.user_id} className="border-t border-white/[0.06]">
-                <td className="px-3 py-2 font-mono text-xs">{m.user_id}</td>
-                <td className="px-3 py-2">
-                  <select
-                    defaultValue={m.role}
-                    onChange={(e) => handleChangeRole(m.user_id, e.target.value)}
-                    className={SELECT_CLASS}
-                    disabled={isPending}
-                  >
-                    <option value="admin">admin</option>
-                    <option value="operator">operator</option>
-                    <option value="viewer">viewer</option>
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  {m.is_default && <Badge variant="outline">default</Badge>}
-                </td>
-                <td className="px-3 py-2 text-xs text-muted-foreground">
-                  {new Date(m.joined_at).toISOString().slice(0, 10)}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemove(m.user_id)}
-                    disabled={isPending}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
+            {members.map((m) => {
+              const isDisabled = m.status === "disabled";
+              return (
+                <tr key={m.user_id} className="border-t border-white/[0.06]">
+                  <td className="px-3 py-2">
+                    <div className="text-sm">{m.email ?? "(sem email)"}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {m.user_id}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      defaultValue={m.role}
+                      onChange={(e) =>
+                        handleChangeRole(m.user_id, e.target.value)
+                      }
+                      className={SELECT_CLASS}
+                      disabled={isPending || isDisabled}
+                    >
+                      <option value="admin">admin</option>
+                      <option value="operator">operator</option>
+                      <option value="viewer">viewer</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    {isDisabled ? (
+                      <Badge variant="destructive">desativado</Badge>
+                    ) : (
+                      <Badge variant="outline">ativo</Badge>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {m.is_default && <Badge variant="outline">default</Badge>}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    {new Date(m.joined_at).toISOString().slice(0, 10)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={isDisabled ? "Reativar" : "Desativar"}
+                        onClick={() =>
+                          handleToggleStatus(m.user_id, m.status ?? null)
+                        }
+                        disabled={isPending}
+                      >
+                        {isDisabled ? (
+                          <CheckCircle2 className="size-3.5" />
+                        ) : (
+                          <XCircle className="size-3.5" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Gerar link de reset de senha"
+                        onClick={() => handleGenerateResetLink(m.user_id)}
+                        disabled={isPending}
+                      >
+                        <KeyRound className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Remover membro"
+                        onClick={() => handleRemove(m.user_id)}
+                        disabled={isPending}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -231,13 +231,21 @@ async def update_empresa(
 async def list_members(
     pool: AsyncConnectionPool, empresa_id: int
 ) -> list[EmpresaMembro]:
+    """Lista membros com JOIN em auth.user pra trazer email + status.
+
+    Evita N+1 da UI. LEFT JOIN protege contra membership órfã (user
+    apagado mas membership não), embora o ON DELETE CASCADE no FK
+    deveria evitar isso.
+    """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT empresa_id, user_id, role, is_default, joined_at
-              FROM empresa_membro
-             WHERE empresa_id = %s
-             ORDER BY role ASC, joined_at ASC
+            SELECT em.empresa_id, em.user_id, em.role, em.is_default, em.joined_at,
+                   u.email, u.status
+              FROM empresa_membro em
+              LEFT JOIN auth."user" u ON u.id = em.user_id
+             WHERE em.empresa_id = %s
+             ORDER BY em.role ASC, em.joined_at ASC
             """,
             (empresa_id,),
         )
@@ -249,6 +257,8 @@ async def list_members(
             role=r[2],
             is_default=r[3],
             joined_at=r[4],
+            email=r[5],
+            status=r[6],
         )
         for r in rows
     ]

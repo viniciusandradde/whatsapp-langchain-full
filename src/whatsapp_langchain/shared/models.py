@@ -202,6 +202,9 @@ class EmpresaMembro(BaseModel):
     `is_default=True` marca a empresa que entra automático na sessão quando
     o user não envia X-Empresa-Id. Roles seguem o convention: admin (full
     control), operator (atendimento), viewer (read-only).
+
+    `email` e `status` são opcionais e populados por `list_members` (JOIN
+    com auth.user) pra evitar N+1 na UI.
     """
 
     empresa_id: int
@@ -209,6 +212,8 @@ class EmpresaMembro(BaseModel):
     role: str
     is_default: bool
     joined_at: datetime
+    email: str | None = None
+    status: str | None = None
 
 
 # --- Multi-conexão WhatsApp ---
