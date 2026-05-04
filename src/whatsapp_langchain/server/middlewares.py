@@ -1,5 +1,6 @@
 """Middlewares HTTP para hardening de segurança."""
 
+import uuid
 from collections.abc import Awaitable, Callable
 
 import structlog
@@ -14,6 +15,10 @@ from whatsapp_langchain.shared.rate_limit import (
 )
 
 logger = structlog.get_logger()
+
+
+REQUEST_ID_HEADER = "X-Request-Id"
+REQUEST_ID_MAX_LEN = 100  # mitiga abuse: client passando ID gigante
 
 # Paths que recebem rate limit por user_id. Webhooks (twilio, evolution)
 # têm rate limit próprio por phone_number e ficam fora.
@@ -111,3 +116,48 @@ def install_admin_rate_limit(app: ASGIApp, *, limit_per_minute: int) -> None:
         return await admin_rate_limit_middleware(
             request, call_next, limit_per_minute=limit_per_minute
         )
+
+
+async def correlation_id_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Propaga `X-Request-Id` em todas as requisições.
+
+    Aceita ID enviado pelo client (frontend Next.js, integração externa);
+    gera UUID4 quando ausente. Faz `bind_contextvars` no structlog pra
+    que TODOS os logs daquela request tenham `request_id=<id>` —
+    permite correlacionar webhook → enqueue → claim → llm → outbound em
+    grep / Grafana.
+
+    Header `X-Request-Id` da resposta sempre carrega o ID final pra que
+    o client possa logar/exibir e referenciar em incidentes.
+    """
+    # Aceita ID do client se válido (curto, não vazio); senão gera.
+    client_id = request.headers.get(REQUEST_ID_HEADER, "").strip()
+    if client_id and len(client_id) <= REQUEST_ID_MAX_LEN:
+        request_id = client_id
+    else:
+        request_id = uuid.uuid4().hex[:16]
+
+    # Bind no contextvars — TODA chamada logger.* dentro deste request
+    # vai ter request_id como campo extra.
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    try:
+        response = await call_next(request)
+    finally:
+        structlog.contextvars.unbind_contextvars("request_id")
+
+    response.headers[REQUEST_ID_HEADER] = request_id
+    return response
+
+
+def install_correlation_id(app: ASGIApp) -> None:
+    """Registra o middleware de correlation_id no app."""
+
+    @app.middleware("http")  # type: ignore[attr-defined]
+    async def _wrapper(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        return await correlation_id_middleware(request, call_next)

@@ -128,7 +128,8 @@ async def webhook_twilio(
 
     # Rejeita webhook sem identidade de remetente (From e WaId ambos vazios)
     if not phone_number:
-        logger.warning(
+        # Payload Twilio sem sender — raro, geralmente probe/teste.
+        logger.info(
             "webhook_missing_sender",
             message_sid=msg_sid,
             from_raw=from_raw,
@@ -147,7 +148,9 @@ async def webhook_twilio(
     # mensagens em buckets sem dono.
     conexao = await get_conexao_by_from_number(pool, to_number) if to_number else None
     if conexao is None or conexao.status != "active":
-        logger.warning(
+        # Conexão desconhecida ou inativa — esperado em probes ou
+        # quando alguém aponta webhook de teste.
+        logger.info(
             "webhook_unknown_conexao",
             to=to_number,
             status=conexao.status if conexao else None,

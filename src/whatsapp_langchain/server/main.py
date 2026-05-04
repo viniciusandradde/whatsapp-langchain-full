@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from whatsapp_langchain.agents.loader import AgentNotFoundError
 from whatsapp_langchain.server.middlewares import (
     install_admin_rate_limit,
+    install_correlation_id,
     install_security_headers,
 )
 from whatsapp_langchain.server.routes.admin import router as admin_router
@@ -114,6 +115,10 @@ app.add_middleware(
 
 install_security_headers(app, is_production=settings.is_production)
 install_admin_rate_limit(app, limit_per_minute=settings.admin_rate_limit_per_minute)
+# Correlation ID: registrado por último pra rodar PRIMEIRO no request
+# (Starlette empilha middlewares LIFO). Assim os logs do rate_limit e
+# security_headers já têm `request_id` no contextvars.
+install_correlation_id(app)
 
 
 # Exception handlers

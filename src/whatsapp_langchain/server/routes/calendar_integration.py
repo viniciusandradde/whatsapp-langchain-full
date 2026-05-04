@@ -109,7 +109,8 @@ async def oauth_callback(
     obrigatoriedade de a empresa_id existir no payload.
     """
     if error:
-        logger.warning("google_oauth_user_denied", error=error)
+        # Esperado quando user clica "Cancelar" no consent — não é bug.
+        logger.info("google_oauth_user_denied", error=error)
         return RedirectResponse(
             url="/settings/integracoes?google_calendar_error=user_denied"
         )

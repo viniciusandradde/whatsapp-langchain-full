@@ -153,13 +153,16 @@ async def webhook_evolution(
         return Response(status_code=200)
 
     if not instance:
-        logger.warning("evolution_webhook_missing_instance", payload_event=event)
+        # Payload Evolution malformado — provável probe/teste.
+        logger.info("evolution_webhook_missing_instance", payload_event=event)
         raise HTTPException(status_code=400, detail="Missing instance")
 
     pool = await get_pool()
     conexao = await get_conexao_by_evolution_instance(pool, instance)
     if conexao is None or conexao.status != "active":
-        logger.warning(
+        # Instância não cadastrada na empresa — esperado quando server
+        # Evolution dispara pra múltiplos consumidores.
+        logger.info(
             "evolution_webhook_unknown_instance",
             instance=instance,
             status=conexao.status if conexao else None,
@@ -168,7 +171,8 @@ async def webhook_evolution(
 
     phone_number = _resolve_sender_phone(key)
     if not phone_number:
-        logger.warning(
+        # Payload sem JID válido — raro, descartar silenciosamente.
+        logger.info(
             "evolution_webhook_missing_sender",
             instance=instance,
             remote_jid=key.get("remoteJid"),
