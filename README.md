@@ -47,6 +47,20 @@ O objetivo deste repositório é ensinar arquitetura de harness em volta do agen
 - **suporte a múltiplas mídias** num único webhook (`NumMedia > 1`) — N rows independentes com mesmo `message_id`, processadas em ordem como turns separados pelo agente
 - **smoke test e2e com Twilio real** (opt-in, custa crédito): `make test-twilio-smoke` valida webhook → worker → outbound REAL → `mark_done`
 - **multi-provider WhatsApp** (M2.b): além de Twilio sandbox/prod/WABA, suporta [Evolution API](docs/EVOLUTION.md) (não-oficial, baseada em Baileys) — webhook `/webhook/evolution`, cliente outbound dedicado, multi-instância via `payload_json.instance_name`. Worker resolve cliente por `conexao.provider` via `OutboundClient` Protocol; suporta WhatsApp LID (Linked Identity) automaticamente
+- **rate limit em endpoints admin** (60 req/min/user) e login Better Auth (5 tentativas/15 min por IP) — sliding window distribuído via tabela `rate_limit_bucket` (migration 022)
+- **hooks com retry exponencial + DLQ**: backoff 1s/5s/25s, 3 tentativas; falhas finais persistidas em `hook_dead_letter` (migration 023) com endpoints `GET/POST /api/hooks/dead-letter` pra retry manual
+- **gestão de usuários**: coluna `auth.user.status` (active/disabled) bloqueia login e mata sessões em <30s; reset de senha sem SMTP via "link manual" (`auth.password_reset_pending`); botões UI em `/companies/[id]/members`; histórico de acesso com IP/User-Agent em `/settings/security/login-history` (migration 026)
+- **SSO Google** (opcional): reusa o mesmo OAuth Client do Calendar — basta adicionar redirect URI `https://<domínio>/api/auth/callback/google` no Google Cloud Console. Veja [docs/AUTH.md](docs/AUTH.md)
+- **correlation ID** propagado API↔worker via header `X-Request-Id` + bind no structlog contextvars (todos logs do request ganham `request_id=X`)
+- **outbound manual roteado por provider**: composer no painel envia via Twilio OU Evolution conforme `Conexao.provider`, não mais hardcoded
+- **Calendar Agent v2** (S1+S2 entregues, plano de 5 sprints):
+  - 7 tools no agente: `calendar_get_current_time`, `calendar_list_calendars`, `calendar_set_active_calendar`, `calendar_list_events`, `calendar_find_free_slots`, `calendar_create_event`, `calendar_cancel_event`
+  - Source-of-truth interno em tabela `agendamento` (migration 027): INSERT local antes de chamar Google, drift compensation se Google falha
+  - Hooks `agendamento.criado` e `agendamento.cancelado` em `EVENTOS_VALIDOS`
+  - Endpoint `GET /api/agendamentos?inicio&fim&status&cliente_id` pra UI/integração externa
+  - Pendentes (próximos sprints): regras de negócio configuráveis (S3), aprovação via WhatsApp ao gestor (S4), sync periódico Google→DB + reschedule + audit (S5)
+- **stress test com Locust** (Evolution + Twilio): `make stress-evolution`, `make stress-twilio`, `make stress-both` com defaults `-u 10 -r 2 -t 60s` (sobrescrevíveis via `USERS=`, `RATE=`, `TIME=`, `HOST=`); fallback Docker pra ambientes sem `uv`
+- **deploy Dokploy** documentado em [docs/DOKPLOY.md](docs/DOKPLOY.md): compose dedicado (`docker-compose.dokploy.yml`), passo a passo de Project + Compose service + Domains + envs
 
 O harness foi desenhado para funcionar tanto em desenvolvimento local
 (`sandbox`/`mock`) quanto em ambiente publicado com Twilio real. Para o fluxo
