@@ -90,10 +90,14 @@ def build_authorization_url(state: str) -> str:
         raise CalendarIntegrationError(
             "Google OAuth não configurado (GOOGLE_OAUTH_CLIENT_ID/SECRET ausentes)."
         )
+    # autogenerate_code_verifier=False: desabilita PKCE. Como o callback
+    # é stateless (cria Flow novo), guardar o verifier exigiria DB/cookie
+    # extra — e PKCE é opcional pra OAuth Web Server (já temos secret).
     flow = Flow.from_client_config(
         _client_config(),
         scopes=SCOPES,
         redirect_uri=settings.google_oauth_redirect_uri,
+        autogenerate_code_verifier=False,
     )
     auth_url, _ = flow.authorization_url(
         access_type="offline",
@@ -108,10 +112,13 @@ def exchange_code_for_credentials(code: str) -> Credentials:
     """Troca o `code` do callback por `Credentials` (com refresh_token)."""
     if not is_oauth_configured():
         raise CalendarIntegrationError("Google OAuth não configurado.")
+    # Mesma flag autogenerate_code_verifier=False usada em
+    # build_authorize_url — o flow precisa ser consistente.
     flow = Flow.from_client_config(
         _client_config(),
         scopes=SCOPES,
         redirect_uri=settings.google_oauth_redirect_uri,
+        autogenerate_code_verifier=False,
     )
     flow.fetch_token(code=code)
     # `flow.credentials` é tipado como union (external_account | oauth2);
