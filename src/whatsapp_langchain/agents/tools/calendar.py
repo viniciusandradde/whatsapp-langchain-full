@@ -168,3 +168,122 @@ async def calendar_cancel_event(
     except CalendarIntegrationError as e:
         return f"Não consegui cancelar: {e}"
     return "Evento cancelado." if ok else "Evento não encontrado (já cancelado?)."
+
+
+# ---------------------------------------------------------------------------
+# S1: novas tools (list_calendars, set_active_calendar, list_events)
+# ---------------------------------------------------------------------------
+
+
+@tool
+async def calendar_list_calendars(
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Lista todos os calendários disponíveis na conta Google da empresa.
+
+    Use quando o cliente perguntar quais calendários existem ou quando
+    o operador pedir pra trocar de calendário ativo. Retorna nome,
+    id, timezone e marca o ativo (`primary=true` ou correspondente
+    ao `calendar_id` da config).
+    """
+    empresa_id = _extract_empresa_id(runtime)
+    if empresa_id is None:
+        return "empresa_id ausente no contexto."
+    pool = await get_pool()
+    try:
+        cals = await calendar_integration.list_calendars(pool, empresa_id)
+    except CalendarNotConfiguredError:
+        return "Empresa não tem Google Calendar conectado."
+    except CalendarIntegrationError as e:
+        logger.warning("calendar_list_calendars_failed", error=str(e))
+        return f"Não consegui listar calendários: {e}"
+
+    if not cals:
+        return "Nenhum calendário encontrado na conta."
+    lines = []
+    for c in cals:
+        marker = " [ativo]" if c.get("primary") else ""
+        lines.append(
+            f"- {c.get('summary')!r} (id={c.get('id')}, tz={c.get('timeZone')}){marker}"
+        )
+    return "Calendários disponíveis:\n" + "\n".join(lines)
+
+
+@tool
+async def calendar_set_active_calendar(
+    calendar_id: str,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Define qual calendário será usado pra agendar/listar eventos.
+
+    Argumento: `calendar_id` exato (use `calendar_list_calendars`
+    primeiro pra ver os ids disponíveis). Aceita 'primary' ou
+    endereços tipo 'comercial@empresa.com'.
+    """
+    empresa_id = _extract_empresa_id(runtime)
+    if empresa_id is None:
+        return "empresa_id ausente no contexto."
+    pool = await get_pool()
+    try:
+        meta = await calendar_integration.set_active_calendar(
+            pool, empresa_id, calendar_id
+        )
+    except CalendarNotConfiguredError:
+        return "Empresa não tem Google Calendar conectado."
+    except CalendarIntegrationError as e:
+        return f"Não consegui ativar o calendário: {e}"
+    return (
+        f"Calendário ativo agora é {meta.get('summary')!r} "
+        f"(id={meta.get('id')}, tz={meta.get('timeZone')})."
+    )
+
+
+@tool
+async def calendar_list_events(
+    time_min_iso: str,
+    time_max_iso: str,
+    max_results: int = 50,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Lista eventos do calendário ativo entre duas datas (ISO 8601).
+
+    Use quando o cliente perguntar "Quais reuniões tenho amanhã?",
+    "Tenho algo na quinta?", etc. Diferente de `find_free_slots`,
+    retorna o que está OCUPADO. Argumentos:
+    - time_min_iso: início da janela (ISO com timezone)
+    - time_max_iso: fim da janela
+    - max_results: limite (default 50)
+    """
+    empresa_id = _extract_empresa_id(runtime)
+    if empresa_id is None:
+        return "empresa_id ausente no contexto."
+    pool = await get_pool()
+    try:
+        events = await calendar_integration.list_events(
+            pool,
+            empresa_id,
+            time_min_iso=time_min_iso,
+            time_max_iso=time_max_iso,
+            max_results=max_results,
+        )
+    except CalendarNotConfiguredError:
+        return "Empresa não tem Google Calendar conectado."
+    except CalendarIntegrationError as e:
+        logger.warning("calendar_list_events_failed", error=str(e))
+        return f"Não consegui listar eventos: {e}"
+
+    if not events:
+        return f"Nenhum evento entre {time_min_iso} e {time_max_iso}."
+    lines = []
+    for e in events:
+        attendees = (
+            f" com {', '.join(e['attendees'])}" if e.get("attendees") else ""
+        )
+        lines.append(
+            f"- {e.get('summary') or '(sem título)'} "
+            f"({e.get('start')} → {e.get('end')}){attendees}"
+        )
+    return f"Eventos no período:\n" + "\n".join(lines)

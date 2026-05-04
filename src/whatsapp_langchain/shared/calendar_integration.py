@@ -437,3 +437,139 @@ async def get_current_time(pool: AsyncConnectionPool, empresa_id: int) -> dict:
     tz = config.timezone if config else "America/Sao_Paulo"
     now = datetime.now(UTC)
     return {"now_utc": now.isoformat(), "timezone": tz}
+
+
+# ---------------------------------------------------------------------------
+# S1: list_calendars + set_active_calendar + list_events
+# ---------------------------------------------------------------------------
+
+
+async def list_calendars(pool: AsyncConnectionPool, empresa_id: int) -> list[dict]:
+    """Lista todos os calendários da conta Google conectada à empresa.
+
+    Retorna lista de dicts com `id`, `summary`, `description`,
+    `timeZone`, `primary` (bool), `accessRole`. Útil pro agente oferecer
+    "qual calendário você quer usar?" e pra UI mostrar opções.
+    """
+    _, creds = await _resolve_credentials(pool, empresa_id)
+    service = _calendar_service(creds)
+    try:
+        items = service.calendarList().list().execute().get("items", [])
+    except HttpError as e:
+        raise CalendarIntegrationError(f"calendarList.list falhou: {e}") from e
+    return [
+        {
+            "id": item.get("id"),
+            "summary": item.get("summary"),
+            "description": item.get("description"),
+            "timeZone": item.get("timeZone"),
+            "primary": bool(item.get("primary", False)),
+            "accessRole": item.get("accessRole"),
+        }
+        for item in items
+    ]
+
+
+async def set_active_calendar(
+    pool: AsyncConnectionPool, empresa_id: int, calendar_id: str
+) -> dict:
+    """Atualiza `empresa_calendar_config.calendar_id` após validar.
+
+    Valida via `calendarList.get(calendarId)` que o calendário existe
+    e que a conta tem acesso. Sem isso, gravar um id inválido faria
+    todos os flows futuros (find_free_slots, create_event) falharem.
+
+    Retorna metadata do calendário ativo pra confirmação ao chamador.
+    """
+    cid = calendar_id.strip()
+    if not cid:
+        raise CalendarIntegrationError("calendar_id não pode ser vazio.")
+
+    _, creds = await _resolve_credentials(pool, empresa_id)
+    service = _calendar_service(creds)
+    try:
+        meta = service.calendarList().get(calendarId=cid).execute()
+    except HttpError as e:
+        if e.resp.status == 404:
+            raise CalendarIntegrationError(
+                f"Calendário {cid!r} não encontrado ou sem acesso."
+            ) from e
+        raise CalendarIntegrationError(f"calendarList.get falhou: {e}") from e
+
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE empresa_calendar_config
+               SET calendar_id = %s, updated_at = NOW()
+             WHERE empresa_id = %s
+            """,
+            (cid, empresa_id),
+        )
+        await conn.commit()
+
+    logger.info(
+        "calendar_active_changed",
+        empresa_id=empresa_id,
+        calendar_id=cid,
+        calendar_summary=meta.get("summary"),
+    )
+
+    return {
+        "id": meta.get("id"),
+        "summary": meta.get("summary"),
+        "timeZone": meta.get("timeZone"),
+        "primary": bool(meta.get("primary", False)),
+    }
+
+
+async def list_events(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    time_min_iso: str,
+    time_max_iso: str,
+    max_results: int = 50,
+) -> list[dict]:
+    """Lista eventos do calendário ativo entre `time_min_iso` e `time_max_iso`.
+
+    Atende perguntas tipo "Quais reuniões tenho amanhã?" sem precisar
+    fazer freebusy + raciocínio de slot livre. Inclui id, summary,
+    start/end, organizer, attendees.
+    """
+    config, creds = await _resolve_credentials(pool, empresa_id)
+    service = _calendar_service(creds)
+    try:
+        resp = (
+            service.events()
+            .list(
+                calendarId=config.calendar_id,
+                timeMin=time_min_iso,
+                timeMax=time_max_iso,
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=max_results,
+            )
+            .execute()
+        )
+    except HttpError as e:
+        raise CalendarIntegrationError(f"events.list falhou: {e}") from e
+
+    out: list[dict] = []
+    for ev in resp.get("items", []):
+        start = ev.get("start", {}) or {}
+        end = ev.get("end", {}) or {}
+        out.append(
+            {
+                "id": ev.get("id"),
+                "summary": ev.get("summary"),
+                "start": start.get("dateTime") or start.get("date"),
+                "end": end.get("dateTime") or end.get("date"),
+                "status": ev.get("status"),
+                "htmlLink": ev.get("htmlLink"),
+                "organizer_email": (ev.get("organizer") or {}).get("email"),
+                "attendees": [
+                    a.get("email") for a in (ev.get("attendees") or []) if a.get("email")
+                ],
+            }
+        )
+    return out

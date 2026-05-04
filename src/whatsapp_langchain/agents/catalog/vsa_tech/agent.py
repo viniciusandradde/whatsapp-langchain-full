@@ -30,6 +30,9 @@ from whatsapp_langchain.agents.tools import (
     calendar_create_event,
     calendar_find_free_slots,
     calendar_get_current_time,
+    calendar_list_calendars,
+    calendar_list_events,
+    calendar_set_active_calendar,
     close_atendimento,
     create_cliente_anotacao,
     get_cliente_anotacoes,
@@ -98,6 +101,9 @@ def build_graph(
         tools.extend(
             [
                 calendar_get_current_time,
+                calendar_list_calendars,
+                calendar_set_active_calendar,
+                calendar_list_events,
                 calendar_find_free_slots,
                 calendar_create_event,
                 calendar_cancel_event,
