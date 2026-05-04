@@ -63,9 +63,9 @@ async function createBootstrapAdmin(): Promise<boolean> {
 
     await client.query(
       `INSERT INTO auth."user"
-        (id, name, email, "emailVerified", image, "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [userId, name, email, false, null, now, now]
+        (id, name, email, "emailVerified", image, "createdAt", "updatedAt", is_superadmin)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [userId, name, email, true, null, now, now, true]
     );
 
     await client.query(
@@ -87,6 +87,24 @@ async function createBootstrapAdmin(): Promise<boolean> {
        VALUES
         ($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL, $5, $6, $7)`,
       [accountId, userId, "credential", userId, passwordHash, now, now]
+    );
+
+    // Bootstrap multi-tenant: liga o admin à empresa default (id=1, criada
+    // pela migration 007). Sem isso, todo endpoint /api/* retorna 403
+    // porque get_empresa_context exige membership ou is_superadmin.
+    // Dois INSERTs idempotentes pra cobrir cenário onde a row já existe
+    // (ex: re-execução parcial após crash).
+    await client.query(
+      `INSERT INTO empresa (id, nome, slug, plano)
+       VALUES (1, 'VSA Tech', 'vsa-tech', 'enterprise')
+       ON CONFLICT (id) DO NOTHING`
+    );
+
+    await client.query(
+      `INSERT INTO empresa_membro (empresa_id, user_id, role, is_default)
+       VALUES (1, $1, 'admin', TRUE)
+       ON CONFLICT (empresa_id, user_id) DO NOTHING`,
+      [userId]
     );
 
     await client.query("COMMIT");
