@@ -241,6 +241,45 @@ async def calendar_set_active_calendar(
 
 
 @tool
+async def calendar_reschedule_event(
+    agendamento_id: int,
+    novo_inicio_iso: str,
+    novo_fim_iso: str,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Reagenda um agendamento existente pra novo horário.
+
+    Use quando cliente pedir pra remarcar. Argumentos:
+    - agendamento_id: id retornado por list_events ou create_event
+    - novo_inicio_iso, novo_fim_iso: ISO 8601 com timezone
+
+    Aplica regras de negócio (S3) ao novo horário antes de chamar Google.
+    Versiona em agendamento_historico (audit).
+    """
+    empresa_id = _extract_empresa_id(runtime)
+    if empresa_id is None:
+        return "empresa_id ausente no contexto."
+    pool = await get_pool()
+    try:
+        ev = await calendar_integration.reschedule_event(
+            pool,
+            empresa_id,
+            agendamento_id=agendamento_id,
+            novo_inicio_iso=novo_inicio_iso,
+            novo_fim_iso=novo_fim_iso,
+        )
+    except CalendarNotConfiguredError:
+        return "Empresa não tem Google Calendar conectado."
+    except CalendarIntegrationError as e:
+        return f"Não consegui reagendar: {e}"
+    return (
+        f"✅ Reagendado pra {novo_inicio_iso} → {novo_fim_iso}. "
+        f"Link: {ev.get('htmlLink') or 'sem link'}"
+    )
+
+
+@tool
 async def calendar_list_events(
     time_min_iso: str,
     time_max_iso: str,

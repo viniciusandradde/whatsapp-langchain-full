@@ -7,6 +7,7 @@ from whatsapp_langchain.agents.tools.calendar import (
     calendar_get_current_time,
     calendar_list_calendars,
     calendar_list_events,
+    calendar_reschedule_event,
     calendar_set_active_calendar,
 )
 from whatsapp_langchain.agents.tools.cliente_atendimento import (
@@ -34,6 +35,7 @@ __all__ = [
     "calendar_get_current_time",
     "calendar_list_calendars",
     "calendar_list_events",
+    "calendar_reschedule_event",
     "calendar_set_active_calendar",
     "close_atendimento",
     "create_cliente_anotacao",

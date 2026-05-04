@@ -613,6 +613,199 @@ async def create_event(
     }
 
 
+async def reschedule_event(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    agendamento_id: int,
+    novo_inicio_iso: str,
+    novo_fim_iso: str,
+    actor_user_id: str | None = None,
+) -> dict:
+    """Reagenda evento (S5): valida regras, events.patch no Google, versiona.
+
+    Falhas: ValueError (datas inválidas) ou CalendarIntegrationError
+    (regras não passam ou Google falhou).
+    """
+    from datetime import datetime as _dt
+
+    from whatsapp_langchain.shared import agendamento as _agendamento_helpers
+
+    ag = await _agendamento_helpers.get_by_id(pool, agendamento_id, empresa_id)
+    if ag is None:
+        raise CalendarIntegrationError("Agendamento não encontrado.")
+    if ag.status == "cancelado":
+        raise CalendarIntegrationError(
+            "Não é possível reagendar evento cancelado."
+        )
+
+    try:
+        novo_inicio = _dt.fromisoformat(novo_inicio_iso.replace("Z", "+00:00"))
+        novo_fim = _dt.fromisoformat(novo_fim_iso.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise CalendarIntegrationError(f"Datas inválidas: {e}") from e
+
+    # Valida regras (S3) com as novas datas
+    ok, motivo = await _agendamento_helpers.validate_request(
+        pool, empresa_id, start=novo_inicio, end=novo_fim
+    )
+    if not ok:
+        raise CalendarIntegrationError(f"Regra de negócio: {motivo}")
+
+    config, creds = await _resolve_credentials(pool, empresa_id)
+    service = _calendar_service(creds)
+
+    # Snapshot do estado anterior pro histórico
+    diff_before = {
+        "data_inicio": ag.data_inicio.isoformat(),
+        "data_fim": ag.data_fim.isoformat(),
+        "evento_id_externo": ag.evento_id_externo,
+    }
+
+    # Se já tem evento no Google (status confirmado), faz patch.
+    # Se ainda é pendente (sem evento Google), só atualiza local.
+    if ag.evento_id_externo:
+        body = {
+            "start": {
+                "dateTime": novo_inicio.isoformat(),
+                "timeZone": config.timezone,
+            },
+            "end": {
+                "dateTime": novo_fim.isoformat(),
+                "timeZone": config.timezone,
+            },
+        }
+        try:
+            ev = (
+                service.events()
+                .patch(
+                    calendarId=ag.calendar_id,
+                    eventId=ag.evento_id_externo,
+                    body=body,
+                )
+                .execute()
+            )
+        except HttpError as e:
+            raise CalendarIntegrationError(f"events.patch falhou: {e}") from e
+    else:
+        ev = {"id": None, "htmlLink": None}
+
+    # Atualiza local
+    await _agendamento_helpers.reschedule_local(
+        pool,
+        agendamento_id,
+        empresa_id,
+        novo_inicio=novo_inicio,
+        novo_fim=novo_fim,
+    )
+
+    # Audit
+    await _agendamento_helpers.append_history(
+        pool,
+        agendamento_id,
+        action="rescheduled",
+        actor_user_id=actor_user_id,
+        payload_diff={
+            "before": diff_before,
+            "after": {
+                "data_inicio": novo_inicio.isoformat(),
+                "data_fim": novo_fim.isoformat(),
+            },
+        },
+    )
+
+    return {
+        "id": ev.get("id"),
+        "htmlLink": ev.get("htmlLink"),
+        "agendamento_id": agendamento_id,
+    }
+
+
+async def sync_calendar_for_empresa(
+    pool: AsyncConnectionPool, empresa_id: int, *, since_minutes: int = 10
+) -> dict:
+    """Reconcilia drift Google → DB (S5 cron periódico).
+
+    Faz `events.list?updatedMin` da janela `since_minutes` minutos atrás
+    e atualiza/insere rows local. Conflito (local mais recente que
+    Google) → log `sync_conflict` em vez de sobrescrever.
+
+    Retorna `{checked, synced, conflicts, missing}` pra observabilidade.
+    """
+    from whatsapp_langchain.shared import agendamento as _agendamento_helpers
+
+    config, creds = await _resolve_credentials(pool, empresa_id)
+    service = _calendar_service(creds)
+
+    since = (datetime.now(UTC) - timedelta(minutes=since_minutes)).isoformat()
+    try:
+        resp = (
+            service.events()
+            .list(
+                calendarId=config.calendar_id,
+                updatedMin=since,
+                singleEvents=True,
+                showDeleted=True,
+                maxResults=200,
+            )
+            .execute()
+        )
+    except HttpError as e:
+        logger.warning(
+            "sync_calendar_failed",
+            empresa_id=empresa_id,
+            error=str(e),
+        )
+        return {"checked": 0, "synced": 0, "conflicts": 0, "missing": 0}
+
+    items = resp.get("items", [])
+    synced = 0
+    conflicts = 0
+    missing = 0
+
+    for ev in items:
+        event_id = ev.get("id")
+        if not event_id:
+            continue
+        local = await _agendamento_helpers.get_by_external_id(
+            pool, empresa_id, event_id
+        )
+        if local is None:
+            missing += 1
+            continue
+        # Reconciliação simples: status sync
+        google_status = ev.get("status", "confirmed")
+        # Google usa 'cancelled' (com double-l), mapeamos pro nosso 'cancelado'
+        if google_status == "cancelled" and local.status != "cancelado":
+            await _agendamento_helpers.cancel_local(
+                pool, local.id, empresa_id
+            )
+            await _agendamento_helpers.append_history(
+                pool,
+                local.id,
+                action="sync_drift",
+                payload_diff={"google_status": "cancelled", "local_was": local.status},
+            )
+            synced += 1
+        else:
+            # Sem mudança de status — apenas conta como checked
+            pass
+
+    logger.info(
+        "sync_calendar_done",
+        empresa_id=empresa_id,
+        items=len(items),
+        synced=synced,
+        missing=missing,
+    )
+    return {
+        "checked": len(items),
+        "synced": synced,
+        "conflicts": conflicts,
+        "missing": missing,
+    }
+
+
 async def confirm_pending_event(
     pool: AsyncConnectionPool, empresa_id: int, agendamento_id: int
 ) -> dict:

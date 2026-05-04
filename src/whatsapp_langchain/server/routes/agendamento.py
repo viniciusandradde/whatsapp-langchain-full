@@ -20,7 +20,12 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
-from whatsapp_langchain.shared.agendamento import VALID_STATUS, list_by_period
+from whatsapp_langchain.shared.agendamento import (
+    VALID_STATUS,
+    get_by_id,
+    list_by_period,
+    list_history,
+)
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import Agendamento
 
@@ -75,3 +80,22 @@ async def list_agendamentos(
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     return {"items": items}
+
+
+@router.get("/{agendamento_id}/historico")
+async def get_historico(
+    agendamento_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict[str, list[dict]]:
+    """Histórico de mudanças do agendamento (S5).
+
+    Inclui: created, approved, rescheduled, cancelled, sync_drift, etc.
+    Cada row tem `payload_diff` com before/after quando aplicável.
+    """
+    pool = await get_pool()
+    ag = await get_by_id(pool, agendamento_id, empresa_id)
+    if ag is None:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
+    rows = await list_history(pool, agendamento_id, limit=limit)
+    return {"items": rows}

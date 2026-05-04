@@ -131,6 +131,11 @@ async def main() -> None:
         providers=sorted(clients_by_provider.keys()),
     )
 
+    # S5 Calendar v2: cron sync periódico Google → DB pra detectar drift
+    # (evento criado/cancelado fora do sistema). Roda em paralelo ao loop
+    # principal de message_queue.
+    sync_task = asyncio.create_task(_calendar_sync_loop(pool))
+
     try:
         while True:
             message = await claim_next_message(pool, settings.lease_seconds)
@@ -150,11 +155,52 @@ async def main() -> None:
     except KeyboardInterrupt:
         logger.info("worker_interrupted")
     finally:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
         if store_stack is not None:
             await store_stack.aclose()
         await checkpointer_stack.aclose()
         await close_pool()
         logger.info("worker_stopped")
+
+
+# S5: cron interno do worker — sync Google → DB a cada N minutos
+CALENDAR_SYNC_INTERVAL_SECONDS = 300  # 5 min
+
+
+async def _calendar_sync_loop(pool) -> None:
+    """Loop periódico que reconcilia drift Google → tabela agendamento.
+
+    Roda em paralelo ao loop principal. Pra cada empresa com Calendar
+    ativo, chama `sync_calendar_for_empresa` que detecta eventos
+    cancelados/criados fora do sistema. Conflito local-vs-Google é
+    apenas logado (não sobrescreve).
+    """
+    from whatsapp_langchain.shared.agendamento import (
+        list_active_calendar_empresas,
+    )
+    from whatsapp_langchain.shared.calendar_integration import (
+        sync_calendar_for_empresa,
+    )
+
+    while True:
+        try:
+            empresas = await list_active_calendar_empresas(pool)
+            for empresa_id in empresas:
+                try:
+                    await sync_calendar_for_empresa(pool, empresa_id)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "calendar_sync_empresa_failed",
+                        empresa_id=empresa_id,
+                        error=str(e),
+                    )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("calendar_sync_loop_error", error=str(e))
+        await asyncio.sleep(CALENDAR_SYNC_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

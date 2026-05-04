@@ -503,6 +503,106 @@ async def update_gestor_notificado(
         await conn.commit()
 
 
+# ---------------------------------------------------------------------------
+# S5: Histórico (audit trail) + reschedule + sync helpers
+# ---------------------------------------------------------------------------
+
+
+async def append_history(
+    pool: AsyncConnectionPool,
+    agendamento_id: int,
+    *,
+    action: str,
+    actor_user_id: str | None = None,
+    payload_diff: dict | None = None,
+) -> None:
+    """Insere row em agendamento_historico. Best-effort (errors são logados)."""
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                """
+                INSERT INTO agendamento_historico
+                    (agendamento_id, action, actor_user_id, payload_diff)
+                VALUES (%s, %s, %s, %s::jsonb)
+                """,
+                (
+                    agendamento_id,
+                    action,
+                    actor_user_id,
+                    json.dumps(payload_diff or {}),
+                ),
+            )
+            await conn.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            "agendamento_historico_persist_failed",
+            agendamento_id=agendamento_id,
+            action=action,
+            error=str(e),
+        )
+
+
+async def list_history(
+    pool: AsyncConnectionPool, agendamento_id: int, *, limit: int = 100
+) -> list[dict]:
+    """Lista entradas do histórico do agendamento (ordem desc por at)."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, action, actor_user_id, payload_diff, at
+              FROM agendamento_historico
+             WHERE agendamento_id = %s
+             ORDER BY at DESC, id DESC
+             LIMIT %s
+            """,
+            (agendamento_id, limit),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "id": r[0],
+            "action": r[1],
+            "actor_user_id": r[2],
+            "payload_diff": r[3] or {},
+            "at": r[4].isoformat() if r[4] else None,
+        }
+        for r in rows
+    ]
+
+
+async def reschedule_local(
+    pool: AsyncConnectionPool,
+    agendamento_id: int,
+    empresa_id: int,
+    *,
+    novo_inicio: datetime,
+    novo_fim: datetime,
+) -> None:
+    """Atualiza data_inicio/fim do agendamento local. Caller cuida do Google."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE agendamento
+               SET data_inicio = %s, data_fim = %s, updated_at = NOW()
+             WHERE id = %s AND empresa_id = %s
+            """,
+            (novo_inicio, novo_fim, agendamento_id, empresa_id),
+        )
+        await conn.commit()
+
+
+async def list_active_calendar_empresas(
+    pool: AsyncConnectionPool,
+) -> list[int]:
+    """Lista empresa_ids com Google Calendar conectado e ativo (S5 sync)."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT empresa_id FROM empresa_calendar_config WHERE ativo = TRUE"
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows]
+
+
 async def notify_gestor(
     pool: AsyncConnectionPool,
     *,
