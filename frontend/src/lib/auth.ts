@@ -22,6 +22,22 @@ const trustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
   .map((o) => o.trim())
   .filter(Boolean);
 
+/**
+ * Hook that blocks session creation when the user is `disabled` (E1.7).
+ * Better Auth chama este callback antes de criar a row em auth.session;
+ * lançar um Error aborta o sign-in flow com 401.
+ */
+async function ensureUserActive(userId: string): Promise<void> {
+  const result = await authPool.query<{ status: string }>(
+    `SELECT status FROM auth."user" WHERE id = $1`,
+    [userId]
+  );
+  const status = result.rows[0]?.status;
+  if (status === "disabled") {
+    throw new Error("Conta desativada. Contate o administrador.");
+  }
+}
+
 export const auth = betterAuth({
   // Conecta ao mesmo PostgreSQL, mas usa o schema "auth" para separação lógica.
   // O search_path garante que as tabelas do Better Auth (user, session, account, etc.)
@@ -33,6 +49,20 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,
+  },
+
+  // Hook de sessão: bloqueia login de users com status=disabled.
+  // Quando admin desativa, set_user_status() já remove sessões existentes
+  // (auth.session DELETE cascata); este hook fecha o caminho de re-login.
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (session) => {
+          await ensureUserActive(session.userId);
+          return { data: session };
+        },
+      },
+    },
   },
 
   // Rate limit nativo do Better Auth pra mitigar brute-force no /sign-in.

@@ -729,6 +729,27 @@ export async function removeEmpresaMember(
   );
 }
 
+export type UserStatus = "active" | "disabled";
+
+export async function setMemberStatus(
+  empresaId: number,
+  userId: string,
+  status: UserStatus
+): Promise<{ user_id: string; status: UserStatus }> {
+  return apiFetch<{ user_id: string; status: UserStatus }>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/status`,
+    { method: "PUT", body: { status } }
+  );
+}
+
+export async function getMemberStatus(
+  userId: string
+): Promise<{ user_id: string; status: UserStatus }> {
+  return apiFetch<{ user_id: string; status: UserStatus }>(
+    `/api/empresas/users/${encodeURIComponent(userId)}/status`
+  );
+}
+
 export async function getConexoes(): Promise<ConexoesResponse> {
   return apiFetch<ConexoesResponse>("/api/conexoes");
 }

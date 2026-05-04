@@ -362,3 +362,50 @@ async def is_admin_of(
         return True
     m = await get_empresa_membership(pool, empresa_id, user_id)
     return m is not None and m.role == "admin"
+
+
+# ---------------------------------------------------------------------------
+# User status (E1.7 — ativar/desativar)
+# ---------------------------------------------------------------------------
+
+
+async def get_user_status(pool: AsyncConnectionPool, user_id: str) -> str | None:
+    """Retorna `status` do auth.user (active|disabled) ou None se não existe."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            'SELECT status FROM auth."user" WHERE id = %s',
+            (user_id,),
+        )
+        row = await cur.fetchone()
+    return row[0] if row else None
+
+
+async def set_user_status(
+    pool: AsyncConnectionPool, user_id: str, *, status: str
+) -> bool:
+    """Ativa/desativa user. Status válidos: 'active', 'disabled'.
+
+    Retorna True se afetou row. Quando desativa, expira todas as sessões
+    Better Auth do user (delete em auth.session) — força relogin que será
+    bloqueado pelo session check no Better Auth.
+    """
+    if status not in ("active", "disabled"):
+        raise ValueError(f"status inválido: {status!r}")
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            'UPDATE auth."user" SET status = %s, "updatedAt" = NOW() WHERE id = %s',
+            (status, user_id),
+        )
+        affected = cur.rowcount > 0
+
+        if affected and status == "disabled":
+            # Mata sessões ativas — Better Auth lê auth.session pra
+            # validar cookie; sem row, próximo /me retorna 401.
+            await conn.execute(
+                'DELETE FROM auth.session WHERE "userId" = %s',
+                (user_id,),
+            )
+
+        await conn.commit()
+        return affected

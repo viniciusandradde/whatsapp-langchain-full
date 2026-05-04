@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   addEmpresaMember,
   removeEmpresaMember,
+  setMemberStatus,
   updateMemberRole,
+  type UserStatus,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -70,6 +72,23 @@ export async function removeMemberAction(
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Erro ao remover membro.",
+    };
+  }
+}
+
+export async function setMemberStatusAction(
+  empresaId: number,
+  userId: string,
+  status: UserStatus
+): Promise<Result> {
+  try {
+    await setMemberStatus(empresaId, userId, status);
+    revalidatePath(`/companies/${empresaId}/members`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao mudar status.",
     };
   }
 }

@@ -19,10 +19,12 @@ from whatsapp_langchain.shared.empresa import (
     add_member,
     create_empresa,
     get_empresa_by_id,
+    get_user_status,
     is_admin_of,
     is_superadmin,
     list_members,
     remove_member,
+    set_user_status,
     update_empresa,
     update_member_role,
 )
@@ -187,3 +189,88 @@ async def remove_member_endpoint(
             status_code=409,
             detail="Membro não existe ou seria o último admin (não removível).",
         )
+
+
+# ---------------------------------------------------------------------------
+# Status do user — ativar/desativar (E1.7)
+# ---------------------------------------------------------------------------
+
+
+class UpdateStatusInput(BaseModel):
+    status: str = Field(pattern="^(active|disabled)$")
+
+
+@router.put("/{empresa_id}/membros/{member_user_id}/status")
+async def update_member_status(
+    empresa_id: int,
+    member_user_id: str,
+    body: UpdateStatusInput,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Ativa/desativa user (auth.user.status).
+
+    Desativar: remove sessões ativas + bloqueia novos logins até reativar.
+    Ativar: libera login (sessões antigas continuam expiradas — user
+    precisa logar de novo).
+
+    Proteções:
+    - Só admin da empresa OU superadmin pode mudar status
+    - Não permite desativar a si mesmo (evita lockout acidental)
+    - Não permite desativar o último admin da empresa (proteção paralela
+      ao update_member_role)
+    """
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Só admin pode mudar status.")
+
+    if member_user_id == user_id and body.status == "disabled":
+        raise HTTPException(
+            status_code=409,
+            detail="Você não pode desativar a si mesmo. Peça para outro admin.",
+        )
+
+    # Quando desativando, validar que não é o último admin da empresa
+    if body.status == "disabled":
+        members = await list_members(pool, empresa_id)
+        admins_ativos = [
+            m
+            for m in members
+            if m.role == "admin" and m.user_id != member_user_id
+        ]
+        target_member = next((m for m in members if m.user_id == member_user_id), None)
+        if target_member and target_member.role == "admin" and not admins_ativos:
+            raise HTTPException(
+                status_code=409,
+                detail="Não pode desativar o último admin da empresa.",
+            )
+
+    affected = await set_user_status(pool, member_user_id, status=body.status)
+    if not affected:
+        raise HTTPException(status_code=404, detail="User não encontrado.")
+
+    logger.info(
+        "user_status_changed",
+        target_user_id=member_user_id,
+        new_status=body.status,
+        actor_user_id=user_id,
+        empresa_id=empresa_id,
+    )
+    return {"user_id": member_user_id, "status": body.status}
+
+
+@router.get("/users/{member_user_id}/status")
+async def get_status(
+    member_user_id: str,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Lê status do user. Acessível por superadmin OU pelo próprio user."""
+    pool = await get_pool()
+    if member_user_id != user_id and not await is_superadmin(pool, user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Só superadmin ou o próprio user pode ver status.",
+        )
+    status = await get_user_status(pool, member_user_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="User não encontrado.")
+    return {"user_id": member_user_id, "status": status}
