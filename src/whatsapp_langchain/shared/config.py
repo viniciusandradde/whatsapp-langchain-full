@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     # Migration 005_rate_limit_buckets.sql precisa estar aplicada.
     rate_limit_distributed: bool = False
 
+    # Rate limit pra endpoints admin (/api/*) por user_id.
+    # Generoso pra UX normal, bloqueia scraping/abuso por sessão comprometida.
+    # Migration 022_rate_limit_generic.sql precisa estar aplicada.
+    admin_rate_limit_per_minute: int = 60
+
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
 

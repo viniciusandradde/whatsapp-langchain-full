@@ -35,6 +35,21 @@ export const auth = betterAuth({
     disableSignUp: true,
   },
 
+  // Rate limit nativo do Better Auth pra mitigar brute-force no /sign-in.
+  // Padrão é por IP; configuração custom em /sign-in/email é mais agressiva
+  // (5 tentativas / 15 min) que o default global (10 / minuto).
+  rateLimit: {
+    enabled: true,
+    window: 60, // 60s window default
+    max: 30,    // 30 req/min por IP em qualquer rota auth
+    customRules: {
+      "/sign-in/email": { window: 900, max: 5 },         // 5 tentativas / 15 min
+      "/sign-up/email": { window: 900, max: 3 },         // 3 / 15 min (mesmo com disableSignUp)
+      "/forget-password": { window: 3600, max: 3 },      // 3 / hora
+      "/reset-password": { window: 3600, max: 5 },       // 5 / hora
+    },
+  },
+
   // nextCookies permite que Server Actions e Route Handlers
   // gerenciem cookies de sessão automaticamente
   plugins: [nextCookies()],

@@ -16,7 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError
-from whatsapp_langchain.server.middlewares import install_security_headers
+from whatsapp_langchain.server.middlewares import (
+    install_admin_rate_limit,
+    install_security_headers,
+)
 from whatsapp_langchain.server.routes.admin import router as admin_router
 from whatsapp_langchain.server.routes.atendimento import (
     router as atendimento_router,
@@ -110,6 +113,7 @@ app.add_middleware(
 )
 
 install_security_headers(app, is_production=settings.is_production)
+install_admin_rate_limit(app, limit_per_minute=settings.admin_rate_limit_per_minute)
 
 
 # Exception handlers
