@@ -60,13 +60,39 @@ from whatsapp_langchain.worker.outbound_client import OutboundClient
 logger = structlog.get_logger()
 
 
-# S4: regex pra detectar resposta do gestor pra aprovação de agendamento.
-# Aceita "APROVAR <uuid>", "REJEITAR <uuid>" (case-insensitive), opcionalmente
-# seguido de motivo. Token UUID v4 padrão.
-_APPROVAL_RE = re.compile(
+# S4 / E2.E: detecta resposta do gestor pra aprovação de agendamento.
+# Dois padrões aceitos:
+#   1. Explícito: "APROVAR <uuid>" ou "REJEITAR <uuid>" — sempre desambígua,
+#      usado quando há múltiplas aprovações pendentes pro mesmo gestor.
+#   2. Numérico: "1" (aprovar) ou "2" (rejeitar) — UX simplificada, só
+#      funciona quando há exatamente 1 aprovação pendente pro gestor.
+_APPROVAL_EXPLICIT_RE = re.compile(
     r"^\s*(APROVAR|REJEITAR)\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*(.*)$",
     re.IGNORECASE | re.DOTALL,
 )
+# Match estrito: texto inteiro é só "1" ou "2", com pontuação opcional.
+# Evita disparar em conversa normal ("1 hora amanhã", "2 reuniões", etc).
+_APPROVAL_NUMERIC_RE = re.compile(r"^\s*([12])[.\s]*$")
+
+
+def _match_approval_intent(text: str) -> dict | None:
+    """Decide se a mensagem é tentativa de aprovação. Retorna dict ou None.
+
+    - {"kind": "explicit", "action": "APROVAR"|"REJEITAR", "token": str, "motivo": str|None}
+    - {"kind": "numeric", "choice": "1"|"2"}
+    """
+    m = _APPROVAL_EXPLICIT_RE.match(text)
+    if m:
+        return {
+            "kind": "explicit",
+            "action": m.group(1).upper(),
+            "token": m.group(2).lower(),
+            "motivo": m.group(3).strip() or None,
+        }
+    m = _APPROVAL_NUMERIC_RE.match(text)
+    if m:
+        return {"kind": "numeric", "choice": m.group(1)}
+    return None
 
 
 async def _try_handle_approval(
