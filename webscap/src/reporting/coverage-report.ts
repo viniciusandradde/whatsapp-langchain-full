@@ -23,22 +23,42 @@ import type {
 
 const TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?\s*\(/gi;
 
-/** Aliases pra categorias ZigChat que não batem 1:1 com tabela Nexus. */
+/**
+ * Aliases pra categorias ZigChat que não batem 1:1 com tabela Nexus.
+ * Refinado a partir do schema real (151 queries / 74 mutations) capturado
+ * em 2026-04-29 — ver webscap/legacy/playwright/output/schema-summary.md.
+ *
+ * Convenção: categoria sempre lower-case, sem espaços. Lista vazia =
+ * conhecida mas SEM equivalente no Nexus → status "missing" no report.
+ */
 const CATEGORY_TO_TABLE: Record<string, string[]> = {
-  // ZigChat → tabela(s) Nexus equivalentes
+  // --- COVERED no Nexus (Etapas 1+2 entregues) ---
   cliente: ["cliente"],
+  clienteanotacao: ["cliente_anotacao"],
+  clientemencao: ["cliente_anotacao"],
+  tag: ["cliente_tag"],
   atendimento: ["atendimento"],
+  atendimentomensagem: ["message_queue"],
+  atendimentotransferencia: ["atendimento"],
   mensagem: ["message_queue"],
   conexao: ["conexao"],
+  canal: ["conexao"],
+  canalexterno: ["conexao"],
+  telegram: ["conexao"],
   hook: ["hook", "hook_log", "hook_dead_letter"],
+  hooktask: ["hook_log", "hook_dead_letter"],
+  hookurl: ["hook"],
   campanha: ["campanha", "campanha_destinatario"],
   modelomensagem: ["modelo_mensagem"],
   modelo: ["modelo_mensagem"],
   template: ["modelo_mensagem", "waba_template"],
   waba: ["waba_template"],
+  wabatemplate: ["waba_template"],
   agente: ["agente_ia_config"],
   agenteia: ["agente_ia_config"],
   ia: ["agente_ia_config"],
+  iaexecucao: ["agente_ia_config"],
+  iauso: ["agente_ia_config"],
   baseconhecimento: ["documento_conhecimento"],
   documento: ["documento_conhecimento"],
   conhecimento: ["documento_conhecimento"],
@@ -48,22 +68,61 @@ const CATEGORY_TO_TABLE: Record<string, string[]> = {
   horario: ["horario_funcionamento"],
   horariofuncionamento: ["horario_funcionamento"],
   feriado: ["feriado"],
+  turno: ["horario_funcionamento"],
   empresa: ["empresa", "empresa_membro"],
   usuario: ["empresa_membro"],
+  usuariocliente: ["empresa_membro"],
+  vinculousuariocliente: ["empresa_membro"],
   user: ["empresa_membro"],
   pasta: ["pasta"],
   arquivo: ["documento_conhecimento", "pasta"],
   perfil: ["perfil_acesso"],
   permissao: ["permissao"],
+  gruposistema: ["perfil_acesso", "permissao"],
+  grupo: ["perfil_acesso"],
   calendario: ["empresa_calendar_config", "agendamento"],
+  calendarioevento: ["agendamento"],
   agendamento: ["agendamento"],
   aprovacao: ["agendamento_aprovacao"],
-  // Heurísticas pra entities sem tabela equivalente
+  rate: ["rate_limit_bucket"],
+
+  // --- MISSING no Nexus (gap real, ordem do ROADMAP) ---
+  // E-commerce / catálogo (fora do MVP no roadmap original)
   produto: [],
   pedido: [],
   transacao: [],
   categoriaproduto: [],
+
+  // Coleta de dados / forms
+  formpadrao: [],
+  formpadraoatendimento: [],
+
+  // Chatbot menu (não-IA — abordagem alternativa ao agente)
+  menu: [],
+  item: [],
+  menuitem: [],
+  menuitemarquivo: [],
+  atendimentomenuhistorico: [],
+
+  // Notificações / mensagens automáticas
+  aviso: [],
+  sistemamensagem: [],
+
+  // Auditoria
+  geral: [],
+  geralog: [],
+  geral_log: [],
+  apptraces: [],
+  trace: [],
+
+  // Misc
+  cidade: [],
+  termo: [],
+  ultimotermo: [],
+
+  // MCP servers (mencionado no ROADMAP M5 mas ainda backlog)
   mcpserver: [],
+  mcp: [],
 };
 
 export function loadNexusEntities(migrationsDir: string): NexusEntity[] {

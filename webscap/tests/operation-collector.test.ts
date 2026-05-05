@@ -8,12 +8,23 @@ import {
 import type { CapturedOperation } from "../src/types.js";
 
 describe("categorize", () => {
-  it("strip de verbos comuns", () => {
+  it("strip de verbos comuns (EN)", () => {
     expect(categorize("getCliente")).toBe("cliente");
     expect(categorize("listAtendimentos")).toBe("atendimento");
     expect(categorize("createCampanha")).toBe("campanha");
     expect(categorize("updateModeloMensagem")).toBe("modelo");
     expect(categorize("deleteHook")).toBe("hook");
+  });
+
+  it("strip de verbos PT (ZigChat usa português)", () => {
+    expect(categorize("filtrarCliente")).toBe("cliente");
+    expect(categorize("buscarClientePorId")).toBe("cliente");
+    expect(categorize("listarDepartamentos")).toBe("departamento");
+    expect(categorize("criarEmpresaVerifyToken")).toBe("empresa");
+    expect(categorize("carregarMensagens")).toBe("mensagem");
+    expect(categorize("contarAtendimentosAbertosUsuario")).toBe(
+      "atendimento",
+    );
   });
 
   it("extrai primeiro chunk camelCase pra categoria", () => {
