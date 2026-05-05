@@ -59,6 +59,7 @@ from whatsapp_langchain.server.routes.horario import (
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
+from whatsapp_langchain.server.routes.pasta import router as pasta_router
 from whatsapp_langchain.server.routes.perfil import router as perfil_router
 from whatsapp_langchain.server.routes.security import router as security_router
 from whatsapp_langchain.server.routes.traces import router as traces_router
@@ -175,6 +176,7 @@ app.include_router(traces_router)
 app.include_router(security_router)
 app.include_router(agendamento_router)
 app.include_router(perfil_router)
+app.include_router(pasta_router)
 app.include_router(agendamento_regras_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
