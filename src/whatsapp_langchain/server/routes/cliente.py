@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.shared.audit import diff_dicts, record_audit
 from whatsapp_langchain.shared.cliente import (
     add_anotacao,
     add_tag,
@@ -23,9 +24,19 @@ from whatsapp_langchain.shared.cliente import (
     list_anotacoes,
     list_clientes,
     remove_tag,
+    update_cliente_partial,
 )
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import Cliente, ClienteAnotacao
+from whatsapp_langchain.shared.validators_br import (
+    is_valid_cep,
+    is_valid_cnpj,
+    is_valid_cpf,
+    is_valid_uf,
+    normalize_cep,
+    normalize_cnpj,
+    normalize_cpf,
+)
 
 logger = structlog.get_logger()
 
@@ -87,6 +98,164 @@ async def read_cliente(
     pool = await get_pool()
     anotacoes = await list_anotacoes(pool, cliente_id)
     return ClienteDetail(cliente=cliente, anotacoes=anotacoes)
+
+
+class ClienteUpdateInput(BaseModel):
+    """Update parcial do cliente (Fase 1.A — ficha enriquecida).
+
+    Todos opcionais: send only what changes. Validators normalizam
+    CPF/CNPJ/CEP (strip de máscara) e UF (uppercase).
+    """
+
+    nome: str | None = Field(default=None, max_length=200)
+    email: str | None = Field(default=None, max_length=200)
+
+    tipo_pessoa: str | None = Field(default=None, pattern=r"^(PF|PJ)?$")
+    cpf: str | None = None
+    cnpj: str | None = None
+    rg: str | None = Field(default=None, max_length=30)
+    razao_social: str | None = Field(default=None, max_length=200)
+    nome_fantasia: str | None = Field(default=None, max_length=200)
+    data_nascimento: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    genero: str | None = Field(default=None, max_length=30)
+
+    cep: str | None = None
+    logradouro: str | None = Field(default=None, max_length=200)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=200)
+    bairro: str | None = Field(default=None, max_length=120)
+    cidade: str | None = Field(default=None, max_length=120)
+    uf: str | None = None
+    pais: str | None = Field(default=None, max_length=2)
+
+    segmento: str | None = Field(default=None, max_length=120)
+    lifecycle_stage: str | None = Field(
+        default=None,
+        pattern=r"^(lead|qualified|opportunity|customer|evangelist|churned)?$",
+    )
+    score: int | None = Field(default=None, ge=0, le=100)
+    source: str | None = Field(default=None, max_length=120)
+    responsavel_user_id: str | None = None
+    valor_estimado_brl: float | None = Field(default=None, ge=0)
+
+    instagram: str | None = Field(default=None, max_length=200)
+    linkedin: str | None = Field(default=None, max_length=200)
+    facebook: str | None = Field(default=None, max_length=200)
+    website: str | None = Field(default=None, max_length=300)
+    email_alternativo: str | None = Field(default=None, max_length=200)
+    telefone_alternativo: str | None = Field(default=None, max_length=30)
+
+    locale: str | None = Field(default=None, max_length=10)
+    timezone: str | None = Field(default=None, max_length=60)
+    avatar_url: str | None = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=4000)
+
+
+@router.put("/{cliente_id}")
+async def update_cliente_endpoint(
+    cliente_id: int,
+    body: ClienteUpdateInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    request: __import__("fastapi").Request = None,  # type: ignore[assignment]
+) -> Cliente:
+    """Atualiza ficha do cliente (Fase 1.A enriquecida).
+
+    Valida CPF/CNPJ/CEP/UF — campos inválidos retornam 422.
+    Audit log automático: grava `cliente.update` com payload_diff.
+    """
+    cliente_atual = await _load_cliente_in_empresa(cliente_id, empresa_id)
+
+    # Validações domínio BR
+    cpf_norm = body.cpf
+    if body.cpf is not None and body.cpf != "":
+        if not is_valid_cpf(body.cpf):
+            raise HTTPException(status_code=422, detail="CPF inválido")
+        cpf_norm = normalize_cpf(body.cpf)
+
+    cnpj_norm = body.cnpj
+    if body.cnpj is not None and body.cnpj != "":
+        if not is_valid_cnpj(body.cnpj):
+            raise HTTPException(status_code=422, detail="CNPJ inválido")
+        cnpj_norm = normalize_cnpj(body.cnpj)
+
+    cep_norm = body.cep
+    if body.cep is not None and body.cep != "":
+        if not is_valid_cep(body.cep):
+            raise HTTPException(status_code=422, detail="CEP inválido (8 dígitos)")
+        cep_norm = normalize_cep(body.cep)
+
+    uf_norm = body.uf
+    if body.uf is not None and body.uf != "":
+        if not is_valid_uf(body.uf):
+            raise HTTPException(status_code=422, detail="UF inválida (2 chars BR)")
+        uf_norm = body.uf.upper()
+
+    # Aplica update
+    pool = await get_pool()
+    updated = await update_cliente_partial(
+        pool,
+        empresa_id,
+        cliente_id,
+        nome=body.nome,
+        email=body.email,
+        tipo_pessoa=body.tipo_pessoa or None,
+        cpf=cpf_norm,
+        cnpj=cnpj_norm,
+        rg=body.rg,
+        razao_social=body.razao_social,
+        nome_fantasia=body.nome_fantasia,
+        data_nascimento=body.data_nascimento,
+        genero=body.genero,
+        cep=cep_norm,
+        logradouro=body.logradouro,
+        numero=body.numero,
+        complemento=body.complemento,
+        bairro=body.bairro,
+        cidade=body.cidade,
+        uf=uf_norm,
+        pais=body.pais,
+        segmento=body.segmento,
+        lifecycle_stage=body.lifecycle_stage or None,
+        score=body.score,
+        source=body.source,
+        responsavel_user_id=body.responsavel_user_id,
+        valor_estimado_brl=body.valor_estimado_brl,
+        instagram=body.instagram,
+        linkedin=body.linkedin,
+        facebook=body.facebook,
+        website=body.website,
+        email_alternativo=body.email_alternativo,
+        telefone_alternativo=body.telefone_alternativo,
+        locale=body.locale,
+        timezone=body.timezone,
+        avatar_url=body.avatar_url,
+        notes=body.notes,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+
+    # Audit log com diff completo
+    await record_audit(
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="cliente.update",
+        entity_type="cliente",
+        entity_id=str(cliente_id),
+        payload_diff=diff_dicts(
+            cliente_atual.model_dump(),
+            updated.model_dump(),
+        ),
+        request=request,
+    )
+    logger.info(
+        "cliente_updated",
+        empresa_id=empresa_id,
+        cliente_id=cliente_id,
+        user_id=user_id,
+    )
+    return updated
 
 
 @router.post("/{cliente_id}/anotacoes", status_code=201)

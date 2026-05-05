@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { getCliente } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { ClienteDetailClient } from "./cliente-detail-client";
+import { ClienteEnrichedForm } from "./cliente-enriched-form";
 
 export const dynamic = "force-dynamic";
 
@@ -74,34 +74,15 @@ export default async function ClienteDetailPage({ params }: PageProps) {
         </p>
       </div>
 
-      <Card>
-        <CardContent className="grid grid-cols-1 gap-3 py-5 sm:grid-cols-2">
-          <Field label="E-mail" value={cliente.email} />
-          <Field label="Documento" value={cliente.doc} />
-          <Field label="Status" value={cliente.status} />
-          <Field
-            label="Cadastrado em"
-            value={new Date(cliente.created_at).toLocaleString("pt-BR")}
-          />
-        </CardContent>
-      </Card>
+      {/* Fase 1.A: ficha enriquecida (4 tabs editáveis) */}
+      <ClienteEnrichedForm initialCliente={cliente} />
 
+      {/* Tags + anotações continuam no client legacy */}
       <ClienteDetailClient
         clienteId={cliente.id}
         initialTags={cliente.tags}
         anotacoes={anotacoes}
       />
-    </div>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <span className="text-sm">{value ?? "—"}</span>
     </div>
   );
 }

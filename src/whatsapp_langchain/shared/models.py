@@ -9,7 +9,7 @@ Uso:
     msg = MessageQueue(phone_number="+5511999999999", agent_id="vsa_tech", ...)
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -258,19 +258,69 @@ class ConexaoInput(BaseModel):
 
 
 class Cliente(BaseModel):
-    """Pessoa cadastrada na empresa (1 row por empresa+telefone)."""
+    """Pessoa cadastrada na empresa (1 row por empresa+telefone).
+
+    Schema expandido na Fase 1.A enterprise (mig 038): PF/PJ + endereço
+    estruturado + lifecycle/score + social + responsável. Todos os campos
+    novos são opcionais — webhook continua criando cliente só com telefone.
+    """
 
     id: int
     empresa_id: int
     telefone: str
     nome: str | None = None
     email: str | None = None
-    doc: str | None = None
+    doc: str | None = None  # Legacy — mantido pra compat; novos: cpf/cnpj
     status: str = "active"
     config: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     tags: list[str] = Field(default_factory=list)
+
+    # ---- Fase 1.A: PF/PJ ----
+    tipo_pessoa: str | None = None  # 'PF' | 'PJ' | None
+    cpf: str | None = None  # só dígitos (11)
+    cnpj: str | None = None  # só dígitos (14)
+    rg: str | None = None
+    razao_social: str | None = None
+    nome_fantasia: str | None = None
+    data_nascimento: date | None = None
+    genero: str | None = None
+
+    # ---- Endereço estruturado ----
+    cep: str | None = None  # só dígitos (8)
+    logradouro: str | None = None
+    numero: str | None = None
+    complemento: str | None = None
+    bairro: str | None = None
+    cidade: str | None = None
+    uf: str | None = None  # 2 chars
+    pais: str = "BR"
+
+    # ---- Comercial / lifecycle ----
+    segmento: str | None = None
+    lifecycle_stage: str | None = None  # lead|qualified|opportunity|customer|evangelist|churned
+    score: int | None = None  # 0-100
+    source: str | None = None  # whatsapp|website|indicacao|...
+    responsavel_user_id: str | None = None
+    valor_estimado_brl: float | None = None
+
+    # ---- Social / canais alternativos ----
+    instagram: str | None = None
+    linkedin: str | None = None
+    facebook: str | None = None
+    website: str | None = None
+    email_alternativo: str | None = None
+    telefone_alternativo: str | None = None
+
+    # ---- Localização ----
+    locale: str = "pt-BR"
+    timezone: str = "America/Sao_Paulo"
+    avatar_url: str | None = None
+
+    # ---- Tracking ----
+    last_interaction_at: datetime | None = None
+    notes: str | None = None
 
 
 class ClienteAnotacao(BaseModel):

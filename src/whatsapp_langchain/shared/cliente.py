@@ -20,11 +20,20 @@ logger = structlog.get_logger()
 
 
 _SELECT_COLS = (
-    "id, empresa_id, telefone, nome, email, doc, status, config, created_at, updated_at"
+    "id, empresa_id, telefone, nome, email, doc, status, config, "
+    "created_at, updated_at, "
+    # Fase 1.A enrich
+    "tipo_pessoa, cpf, cnpj, rg, razao_social, nome_fantasia, "
+    "data_nascimento, genero, "
+    "cep, logradouro, numero, complemento, bairro, cidade, uf, pais, "
+    "segmento, lifecycle_stage, score, source, responsavel_user_id, valor_estimado_brl, "
+    "instagram, linkedin, facebook, website, email_alternativo, telefone_alternativo, "
+    "locale, timezone, avatar_url, last_interaction_at, notes"
 )
 
 
 def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
+    """Mapeia row do SELECT pro Pydantic. Fase 1.A: 32 campos extras."""
     return Cliente(
         id=row[0],
         empresa_id=row[1],
@@ -37,6 +46,40 @@ def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
         created_at=row[8],
         updated_at=row[9],
         tags=tags or [],
+        # ----- enrich -----
+        tipo_pessoa=row[10],
+        cpf=row[11],
+        cnpj=row[12],
+        rg=row[13],
+        razao_social=row[14],
+        nome_fantasia=row[15],
+        data_nascimento=row[16],
+        genero=row[17],
+        cep=row[18],
+        logradouro=row[19],
+        numero=row[20],
+        complemento=row[21],
+        bairro=row[22],
+        cidade=row[23],
+        uf=row[24],
+        pais=row[25] or "BR",
+        segmento=row[26],
+        lifecycle_stage=row[27],
+        score=row[28],
+        source=row[29],
+        responsavel_user_id=row[30],
+        valor_estimado_brl=float(row[31]) if row[31] is not None else None,
+        instagram=row[32],
+        linkedin=row[33],
+        facebook=row[34],
+        website=row[35],
+        email_alternativo=row[36],
+        telefone_alternativo=row[37],
+        locale=row[38] or "pt-BR",
+        timezone=row[39] or "America/Sao_Paulo",
+        avatar_url=row[40],
+        last_interaction_at=row[41],
+        notes=row[42],
     )
 
 
@@ -99,26 +142,94 @@ async def update_cliente_partial(
     empresa_id: int,
     cliente_id: int,
     *,
+    # Legacy + tools agente
     nome: str | None = None,
     email: str | None = None,
     doc: str | None = None,
+    # Fase 1.A enrich — todos opcionais
+    tipo_pessoa: str | None = None,
+    cpf: str | None = None,
+    cnpj: str | None = None,
+    rg: str | None = None,
+    razao_social: str | None = None,
+    nome_fantasia: str | None = None,
+    data_nascimento: str | None = None,  # ISO date string
+    genero: str | None = None,
+    cep: str | None = None,
+    logradouro: str | None = None,
+    numero: str | None = None,
+    complemento: str | None = None,
+    bairro: str | None = None,
+    cidade: str | None = None,
+    uf: str | None = None,
+    pais: str | None = None,
+    segmento: str | None = None,
+    lifecycle_stage: str | None = None,
+    score: int | None = None,
+    source: str | None = None,
+    responsavel_user_id: str | None = None,
+    valor_estimado_brl: float | None = None,
+    instagram: str | None = None,
+    linkedin: str | None = None,
+    facebook: str | None = None,
+    website: str | None = None,
+    email_alternativo: str | None = None,
+    telefone_alternativo: str | None = None,
+    locale: str | None = None,
+    timezone: str | None = None,
+    avatar_url: str | None = None,
+    notes: str | None = None,
 ) -> Cliente | None:
-    """Update parcial — só campos não-None são tocados (M5.b.1).
+    """Update parcial — só campos não-None são tocados (M5.b.1 + Fase 1.A).
 
-    Usado pelas tools do agente quando o cliente diz nome/email durante a
-    conversa. Filtra por (id, empresa_id) pra anti-cross-tenant.
+    Usado por:
+    - Tools do agente (nome/email/doc) — comportamento original
+    - PUT /api/clientes/{id} — todos os campos da ficha enriquecida
     """
     sets: list[str] = []
     params: list = []
-    if nome is not None:
-        sets.append("nome = %s")
-        params.append(nome)
-    if email is not None:
-        sets.append("email = %s")
-        params.append(email)
-    if doc is not None:
-        sets.append("doc = %s")
-        params.append(doc)
+
+    def _add(field: str, value):
+        if value is not None:
+            sets.append(f"{field} = %s")
+            params.append(value)
+
+    _add("nome", nome)
+    _add("email", email)
+    _add("doc", doc)
+    _add("tipo_pessoa", tipo_pessoa)
+    _add("cpf", cpf)
+    _add("cnpj", cnpj)
+    _add("rg", rg)
+    _add("razao_social", razao_social)
+    _add("nome_fantasia", nome_fantasia)
+    _add("data_nascimento", data_nascimento)
+    _add("genero", genero)
+    _add("cep", cep)
+    _add("logradouro", logradouro)
+    _add("numero", numero)
+    _add("complemento", complemento)
+    _add("bairro", bairro)
+    _add("cidade", cidade)
+    _add("uf", uf)
+    _add("pais", pais)
+    _add("segmento", segmento)
+    _add("lifecycle_stage", lifecycle_stage)
+    _add("score", score)
+    _add("source", source)
+    _add("responsavel_user_id", responsavel_user_id)
+    _add("valor_estimado_brl", valor_estimado_brl)
+    _add("instagram", instagram)
+    _add("linkedin", linkedin)
+    _add("facebook", facebook)
+    _add("website", website)
+    _add("email_alternativo", email_alternativo)
+    _add("telefone_alternativo", telefone_alternativo)
+    _add("locale", locale)
+    _add("timezone", timezone)
+    _add("avatar_url", avatar_url)
+    _add("notes", notes)
+
     if not sets:
         return await get_cliente_by_id(pool, cliente_id)
     sets.append("updated_at = NOW()")

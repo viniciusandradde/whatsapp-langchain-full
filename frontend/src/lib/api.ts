@@ -221,13 +221,70 @@ export interface Cliente {
   telefone: string;
   nome: string | null;
   email: string | null;
-  doc: string | null;
+  doc: string | null; // legacy
   status: string;
   config: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   tags: string[];
+  // Fase 1.A enrich
+  tipo_pessoa: "PF" | "PJ" | null;
+  cpf: string | null;
+  cnpj: string | null;
+  rg: string | null;
+  razao_social: string | null;
+  nome_fantasia: string | null;
+  data_nascimento: string | null;
+  genero: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  pais: string;
+  segmento: string | null;
+  lifecycle_stage:
+    | "lead"
+    | "qualified"
+    | "opportunity"
+    | "customer"
+    | "evangelist"
+    | "churned"
+    | null;
+  score: number | null;
+  source: string | null;
+  responsavel_user_id: string | null;
+  valor_estimado_brl: number | null;
+  instagram: string | null;
+  linkedin: string | null;
+  facebook: string | null;
+  website: string | null;
+  email_alternativo: string | null;
+  telefone_alternativo: string | null;
+  locale: string;
+  timezone: string;
+  avatar_url: string | null;
+  last_interaction_at: string | null;
+  notes: string | null;
 }
+
+export type ClienteUpdateInput = Partial<
+  Omit<
+    Cliente,
+    | "id"
+    | "empresa_id"
+    | "telefone"
+    | "doc"
+    | "status"
+    | "config"
+    | "created_at"
+    | "updated_at"
+    | "tags"
+    | "last_interaction_at"
+  >
+>;
 
 export interface ClienteAnotacao {
   id: number;
@@ -909,6 +966,16 @@ export async function getClientes(params: {
   if (params.offset) q.set("offset", String(params.offset));
   const qs = q.toString();
   return apiFetch<ClientesResponse>(`/api/clientes${qs ? `?${qs}` : ""}`);
+}
+
+export async function updateCliente(
+  id: number,
+  body: ClienteUpdateInput
+): Promise<Cliente> {
+  return apiFetch<Cliente>(`/api/clientes/${id}`, {
+    method: "PUT",
+    body,
+  });
 }
 
 export async function getCliente(id: number): Promise<ClienteDetail> {
