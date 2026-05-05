@@ -1,0 +1,47 @@
+name: atendimento-explorar
+description: Abre painel de atendimento, percorre 4 abas (Meus/Aguardando/Grupos/Outros), captura mensagens
+tags: [atendimento, read]
+safe_mode: true
+
+steps:
+  - goto: /dashboard/atendimento
+    wait:
+      networkidle: true
+      timeout_ms: 15000
+
+  - capture_payload: filtrarAtendimentoMensagem
+    timeout_ms: 5000
+  - screenshot: 01-meus
+
+  # Aba Aguardando
+  - click: text="Aguardando", [role="tab"]:has-text("Aguardando")
+  - wait:
+      networkidle: true
+      timeout_ms: 8000
+  - capture_payload: filtrarAtendimentosLazy
+    timeout_ms: 5000
+  - screenshot: 02-aguardando
+
+  # Aba Grupos
+  - click: text="Grupos", [role="tab"]:has-text("Grupos")
+  - wait:
+      ms: 2000
+  - screenshot: 03-grupos
+
+  # Aba Outros
+  - click: text="Outros", [role="tab"]:has-text("Outros")
+  - wait:
+      ms: 2000
+  - screenshot: 04-outros
+
+  # Volta pra Meus + abre 1ª conversa (read-only)
+  - click: text="Meus", [role="tab"]:has-text("Meus")
+  - wait:
+      ms: 1500
+  - click: tbody tr:first-child, .conversa-item:first-child
+  - wait:
+      networkidle: true
+      timeout_ms: 8000
+  - capture_payload: carregarMensagens
+    timeout_ms: 5000
+  - screenshot: 05-conversa-aberta

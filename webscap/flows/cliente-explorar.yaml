@@ -1,0 +1,35 @@
+name: cliente-explorar
+description: Abre lista de clientes, captura filtros, abre ficha de 1 cliente, captura anotações
+tags: [cliente, crud, read]
+safe_mode: true
+
+steps:
+  - goto: /dashboard/cliente
+    wait:
+      networkidle: true
+      timeout_ms: 15000
+
+  - capture_payload: filtrarCliente
+    timeout_ms: 8000
+  - screenshot: 01-lista-clientes
+
+  # Abre filtros se houver — botão típico PrimeNG
+  - hover: button[aria-label="Filtros"]
+  - screenshot: 02-filtros-abertos
+
+  # Abre 1ª linha da tabela (read-only — sem efeito colateral)
+  - click: tbody tr:first-child a, tbody tr:first-child button.p-button-link
+  - wait:
+      networkidle: true
+      timeout_ms: 10000
+  - capture_payload: buscarClientePorId
+    timeout_ms: 5000
+  - screenshot: 03-ficha-cliente
+
+  # Tenta abrir aba de anotações
+  - click: text="Anotações", a[href*="anotacao"]
+  - wait:
+      ms: 1500
+  - capture_payload: filtrarClienteAnotacao
+    timeout_ms: 5000
+  - screenshot: 04-anotacoes

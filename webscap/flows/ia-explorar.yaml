@@ -1,0 +1,47 @@
+name: ia-explorar
+description: Módulo IA — agentes, bases de conhecimento, MCP servers, variáveis, execuções
+tags: [ia, agente, mcp, read]
+safe_mode: true
+
+steps:
+  - goto: /dashboard/ia
+    wait:
+      networkidle: true
+      timeout_ms: 15000
+  - screenshot: 01-ia-home
+
+  # Aba Agentes
+  - click: text="Agentes", [role="tab"]:has-text("Agente")
+  - wait:
+      ms: 1500
+  - capture_payload: listarAgentesIA
+    timeout_ms: 5000
+  - screenshot: 02-agentes
+
+  # Aba Bases de Conhecimento
+  - click: text="Conhecimento", text="Bases", [role="tab"]:has-text("Base")
+  - wait:
+      ms: 1500
+  - capture_payload: filtrarBaseConhecimento
+    timeout_ms: 5000
+  - screenshot: 03-bases
+
+  # Aba MCP servers
+  - click: text="MCP", [role="tab"]:has-text("MCP")
+  - wait:
+      ms: 1500
+  - capture_payload: filtrarMcpServer
+    timeout_ms: 5000
+  - screenshot: 04-mcp
+
+  # Aba Variáveis
+  - click: text="Variáveis", [role="tab"]:has-text("Variá")
+  - wait:
+      ms: 1500
+  - screenshot: 05-variaveis
+
+  # Aba Execuções
+  - click: text="Execuções", [role="tab"]:has-text("Execu")
+  - wait:
+      ms: 1500
+  - screenshot: 06-execucoes

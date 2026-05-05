@@ -1,0 +1,31 @@
+name: sistema-explorar
+description: Sistema — usuários, departamentos, perfis/permissões, empresa
+tags: [sistema, admin, read]
+safe_mode: true
+
+steps:
+  - goto: /dashboard/sistema/usuario
+    wait:
+      networkidle: true
+      timeout_ms: 15000
+  - capture_payload: filtrarUsuario
+    timeout_ms: 5000
+  - screenshot: 01-usuarios
+
+  # Departamentos
+  - goto: /dashboard/sistema/departamento
+    wait:
+      networkidle: true
+      timeout_ms: 10000
+  - capture_payload: filtrarDepartamento
+    timeout_ms: 5000
+  - screenshot: 02-departamentos
+
+  # Permissões
+  - goto: /dashboard/sistema/grupo-sistema
+    wait:
+      networkidle: true
+      timeout_ms: 10000
+  - capture_payload: filtrarGrupoSistema
+    timeout_ms: 5000
+  - screenshot: 03-grupos

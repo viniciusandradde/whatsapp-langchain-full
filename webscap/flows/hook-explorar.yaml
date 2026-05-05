@@ -1,0 +1,29 @@
+name: hook-explorar
+description: 3 abas do módulo de Hooks (Formatação / URLs / Entregas) + modal de criação
+tags: [hook, read]
+safe_mode: true
+
+steps:
+  - goto: /dashboard/hk/hook
+    wait:
+      networkidle: true
+      timeout_ms: 15000
+  - capture_payload: filtrarHook
+    timeout_ms: 5000
+  - screenshot: 01-formatacao
+
+  # URLs
+  - click: text="URLs", [role="tab"]:has-text("URL")
+  - wait:
+      ms: 1500
+  - capture_payload: filtrarHookUrl
+    timeout_ms: 5000
+  - screenshot: 02-urls
+
+  # Entregas
+  - click: text="Entregas", text="Tasks", [role="tab"]:has-text("Entrega")
+  - wait:
+      ms: 1500
+  - capture_payload: filtrarHookTask
+    timeout_ms: 5000
+  - screenshot: 03-entregas

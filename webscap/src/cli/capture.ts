@@ -19,6 +19,7 @@ import {
   discoverRoutes,
   STATIC_ROUTES_FALLBACK,
 } from "../crawler/route-discovery.js";
+import { probeInteractions } from "../crawler/interaction-prober.js";
 import { dedupe } from "../graphql/operation-collector.js";
 import { savePayloadSamples } from "../graphql/payload-sampler.js";
 import { log } from "../lib/logger.js";
@@ -29,6 +30,11 @@ import {
 import { withRetry } from "../lib/retry.js";
 import { attachGraphqlInterceptor } from "../network/interceptor.js";
 import { rateLimiter } from "../network/rate-limiter.js";
+import {
+  buildComponentInventory,
+  detectComponentsOnPage,
+  renderComponentInventoryMd,
+} from "../ui/component-mapper.js";
 import {
   DEFAULT_CONFIG,
   type CaptureInventory,
@@ -45,6 +51,10 @@ const config = {
 };
 const enableHar = process.env["ENABLE_HAR"] === "true";
 const enableDiscovery = process.env["DISCOVER_ROUTES"] !== "false";
+const enableProbe = process.env["PROBE_INTERACTIONS"] === "true";
+const enableComponents = process.env["DETECT_COMPONENTS"] !== "false";
+const crawlDepth = Number(process.env["CRAWL_DEPTH"] ?? "2");
+const includeStaticSeeds = process.env["INCLUDE_STATIC_SEEDS"] !== "false";
 
 ensureStorageFileExists(config.authStorageFile);
 const paths = createRunPaths(config.outputDir);
@@ -82,12 +92,17 @@ try {
   log.info("session_alive");
 
   // Descoberta de rotas (default true; cai pro fallback se discovery falhar)
+  // CRAWL_DEPTH=2 default — visita seed → descobre links → visita esses
+  // INCLUDE_STATIC_SEEDS=true — mescla com lista expandida hardcoded
   let routes: string[];
   if (enableDiscovery) {
     try {
-      const discovered = await discoverRoutes(page, config.baseUrl);
+      const discovered = await discoverRoutes(page, config.baseUrl, {
+        depth: crawlDepth,
+        extraSeeds: includeStaticSeeds ? STATIC_ROUTES_FALLBACK : [],
+      });
       routes = discovered.length > 0 ? discovered : STATIC_ROUTES_FALLBACK;
-      log.info("routes_discovered", { count: routes.length });
+      log.info("routes_discovered", { count: routes.length, depth: crawlDepth });
     } catch (e) {
       log.warn("discovery_failed_using_fallback", { error: String(e) });
       routes = STATIC_ROUTES_FALLBACK;
@@ -103,11 +118,29 @@ try {
 
   const limiter = rateLimiter(config.rateLimitRps);
   const visits: RouteVisit[] = [];
+  const componentsByPage = new Map<string, string[]>();
 
   for (const route of routes) {
     await limiter.acquire();
     const visit = await visitRoute(page, route);
     visits.push(visit);
+
+    if (visit.ok && enableComponents) {
+      try {
+        const tags = await detectComponentsOnPage(page);
+        componentsByPage.set(route, tags);
+      } catch (e) {
+        log.debug("component_detect_failed", { route, error: String(e) });
+      }
+    }
+
+    if (visit.ok && enableProbe) {
+      try {
+        await probeInteractions({ page });
+      } catch (e) {
+        log.debug("probe_failed", { route, error: String(e) });
+      }
+    }
   }
 
   // Dedupe + payload samples
@@ -132,11 +165,28 @@ try {
   );
   fs.writeFileSync(paths.routesJson, JSON.stringify(inventory, null, 2));
 
+  // Components
+  let componentsCount = 0;
+  if (enableComponents && componentsByPage.size > 0) {
+    const inv = buildComponentInventory(componentsByPage);
+    componentsCount = inv.totalUniqueTags;
+    fs.writeFileSync(
+      path.join(paths.runDir, "components.md"),
+      renderComponentInventoryMd(inv),
+    );
+    fs.writeFileSync(
+      path.join(paths.runDir, "components.json"),
+      JSON.stringify(inv, null, 2),
+    );
+  }
+
   updateLatestSymlink(config.outputDir, paths.runDir);
   console.log(`\n✓ Run ${paths.runId}`);
   console.log(`  ${routes.length} rotas (${visits.filter((v) => v.ok).length} ok)`);
-  console.log(`  ${deduped.length} operations únicas`);
+  console.log(`  ${deduped.length} operations únicas (${interceptor.operations.length} brutas)`);
   console.log(`  ${savedSamples} payload samples`);
+  if (enableComponents) console.log(`  ${componentsCount} PrimeNG tags únicas`);
+  if (enableProbe) console.log(`  interaction probing ativo`);
   console.log(`  ${paths.runDir}\n`);
 } finally {
   // Importante fechar o context pra HAR ser flushed

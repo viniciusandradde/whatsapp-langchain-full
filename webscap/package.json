@@ -2,8 +2,8 @@
   "name": "zigchat-scrap",
   "private": true,
   "type": "module",
-  "version": "0.2.0",
-  "description": "ZigChat inventory scraper — Playwright + GraphQL introspection + coverage report cruzando com Nexus Chat AI",
+  "version": "0.3.0",
+  "description": "ZigChat inventory scraper v0.3 — TS + Playwright + GraphQL introspection + flow runner YAML + coverage + visual/schema diff + HTML report",
   "engines": {
     "node": ">=20"
   },
@@ -12,13 +12,23 @@
     "introspect": "tsx src/cli/introspect.ts",
     "capture": "tsx src/cli/capture.ts",
     "coverage": "tsx src/cli/coverage.ts",
-    "all": "npm run introspect && npm run capture && npm run coverage",
+    "flows": "tsx src/cli/run-flows.ts",
+    "report": "tsx src/cli/report.ts",
+    "baseline": "tsx src/cli/baseline.ts",
+    "diff:schema": "tsx src/cli/diff-schema.ts",
+    "diff:visual": "tsx src/cli/diff-visual.ts",
+    "all": "npm run introspect && npm run capture && npm run coverage && npm run report",
+    "all:full": "npm run introspect && npm run capture && npm run flows && npm run coverage && npm run report",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
+    "pixelmatch": "^5.3.0",
     "playwright": "^1.49.1",
+    "pngjs": "^7.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0",
     "vitest": "^1.6.0"

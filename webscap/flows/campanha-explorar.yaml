@@ -1,0 +1,25 @@
+name: campanha-explorar
+description: Abre lista de campanhas + tela de criação (modal aberto, NÃO submete)
+tags: [campanha, read, modal]
+safe_mode: true
+
+steps:
+  - goto: /dashboard/cp/campanha
+    wait:
+      networkidle: true
+      timeout_ms: 15000
+  - screenshot: 01-lista
+
+  # Tenta abrir modal de "Nova campanha" — captura ops do builder
+  # safe_mode bloqueia o submit (botão Salvar/Disparar) automaticamente
+  - click: button:has-text("Novo"), button:has-text("Nova"), button[aria-label*="adicionar"]
+  - wait:
+      ms: 2000
+  - screenshot: 02-modal-novo
+  - capture_payload: listarWabaTemplate
+    timeout_ms: 5000
+
+  # Cancela o modal sem salvar
+  - press: Escape
+  - wait:
+      ms: 800
