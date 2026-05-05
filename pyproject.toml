@@ -25,13 +25,14 @@ dependencies = [
     # M5.c.3 — OCR de PDFs escaneados + imagens (PNG/JPG)
     "pdf2image==1.17.0",
     "Pillow==11.0.0",
-    # Fase 0 enterprise — observabilidade
-    "prometheus-client==0.21.1",
-    "opentelemetry-api==1.29.0",
-    "opentelemetry-sdk==1.29.0",
-    "opentelemetry-instrumentation-fastapi==0.50b0",
-    # OTLP exporter opcional — só ativa se OTEL_EXPORTER_OTLP_ENDPOINT setado
-    "opentelemetry-exporter-otlp-proto-http==1.29.0",
+    # Fase 0 enterprise — observabilidade.
+    # OTel sem version pin pra evitar conflito protobuf (resolver acha mais
+    # nova compatível com langgraph/grpc deps); pinned no uv.lock após resolve.
+    "prometheus-client>=0.21,<1.0",
+    "opentelemetry-api>=1.30",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-instrumentation-fastapi>=0.51b0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
 ]
 
 [project.optional-dependencies]
