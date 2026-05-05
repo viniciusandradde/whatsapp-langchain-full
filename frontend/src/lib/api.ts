@@ -399,6 +399,7 @@ export interface DocumentoConhecimento {
   conteudo: string;
   tags: string[];
   ativo: boolean;
+  pasta_id: number | null;
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
@@ -409,10 +410,34 @@ export interface DocumentoConhecimentoInput {
   conteudo: string;
   tags?: string[];
   ativo?: boolean;
+  pasta_id?: number | null;
 }
 
 export interface DocumentosConhecimentoResponse {
   documentos: DocumentoConhecimento[];
+}
+
+// E2.C M7: Pastas da base de conhecimento
+export interface Pasta {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  parent_id: number | null;
+  descricao: string | null;
+  created_by_user_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  docs_count: number | null;
+}
+
+export interface PastasResponse {
+  items: Pasta[];
+}
+
+export interface PastaInput {
+  nome: string;
+  parent_id?: number | null;
+  descricao?: string | null;
 }
 
 export interface BuscarDocumentoResultado {
@@ -1193,8 +1218,50 @@ export async function transferAtendimento(
 
 // --- M5.c: Base de Conhecimento ---
 
-export async function getDocumentosConhecimento(): Promise<DocumentosConhecimentoResponse> {
-  return apiFetch<DocumentosConhecimentoResponse>(`/api/base-conhecimento`);
+export async function getDocumentosConhecimento(opts?: {
+  pastaId?: number | null;
+  raiz?: boolean;
+  incluirSubpastas?: boolean;
+}): Promise<DocumentosConhecimentoResponse> {
+  const params = new URLSearchParams();
+  if (opts?.pastaId != null) params.set("pasta_id", String(opts.pastaId));
+  if (opts?.raiz) params.set("raiz", "true");
+  if (opts?.incluirSubpastas) params.set("incluir_subpastas", "true");
+  const q = params.toString();
+  return apiFetch<DocumentosConhecimentoResponse>(
+    `/api/base-conhecimento${q ? "?" + q : ""}`
+  );
+}
+
+// E2.C M7: Pastas
+export async function getPastas(opts?: {
+  comDocs?: boolean;
+}): Promise<PastasResponse> {
+  const q = opts?.comDocs ? "?com_docs=true" : "";
+  return apiFetch<PastasResponse>(`/api/pastas${q}`);
+}
+
+export async function createPasta(body: PastaInput): Promise<Pasta> {
+  return apiFetch<Pasta>(`/api/pastas`, { method: "POST", body });
+}
+
+export async function updatePasta(id: number, body: PastaInput): Promise<Pasta> {
+  return apiFetch<Pasta>(`/api/pastas/${id}`, { method: "PUT", body });
+}
+
+export async function deletePasta(id: number): Promise<void> {
+  await apiFetch<void>(`/api/pastas/${id}`, { method: "DELETE" });
+}
+
+export async function moveDocumentoToPasta(
+  docId: number,
+  pastaId: number | null
+): Promise<{ ok: boolean; doc_id: number; pasta_id: number | null }> {
+  // pasta_id=0 sinaliza "raiz" no endpoint backend
+  const target = pastaId == null ? 0 : pastaId;
+  return apiFetch(`/api/pastas/${target}/documentos/${docId}`, {
+    method: "POST",
+  });
 }
 
 export async function createDocumentoConhecimento(
@@ -1232,7 +1299,7 @@ export async function buscarDocumentosConhecimento(
 
 export async function uploadDocumentoConhecimento(
   arquivo: File,
-  options: { titulo?: string; tags?: string[] } = {}
+  options: { titulo?: string; tags?: string[]; pastaId?: number | null } = {}
 ): Promise<DocumentoConhecimento> {
   ensureFrontendRuntimeConfig();
   const headers: Record<string, string> = {
@@ -1255,6 +1322,7 @@ export async function uploadDocumentoConhecimento(
   form.append("arquivo", arquivo);
   if (options.titulo) form.append("titulo", options.titulo);
   if (options.tags?.length) form.append("tags", options.tags.join(","));
+  if (options.pastaId != null) form.append("pasta_id", String(options.pastaId));
 
   const response = await fetch(`${API_URL}/api/base-conhecimento/upload`, {
     method: "POST",

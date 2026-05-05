@@ -506,6 +506,7 @@ class DocumentoConhecimento(BaseModel):
     conteudo: str
     tags: list[str] = []
     ativo: bool = True
+    pasta_id: int | None = None
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -518,6 +519,7 @@ class DocumentoConhecimentoInput(BaseModel):
     conteudo: str = Field(min_length=1, max_length=200000)  # sobe de 20k pra 200k pós-chunking
     tags: list[str] = Field(default_factory=list)
     ativo: bool = True
+    pasta_id: int | None = None
 
 
 class DocumentoConhecimentoChunk(BaseModel):

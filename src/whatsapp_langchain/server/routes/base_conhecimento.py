@@ -42,10 +42,45 @@ router = APIRouter(
 @router.get("")
 async def list_documentos(
     empresa_id: int = Depends(get_empresa_context),
+    pasta_id: int | None = None,
+    raiz: bool = False,
+    incluir_subpastas: bool = False,
 ) -> dict[str, list[DocumentoConhecimento]]:
-    """Lista todos os docs da empresa, ativos e inativos."""
+    """Lista docs da empresa (E2.C).
+
+    Filtros opcionais:
+    - `raiz=true` ⇒ só docs sem pasta (pasta_id IS NULL).
+    - `pasta_id=N` ⇒ só docs daquela pasta. Combinado com
+      `incluir_subpastas=true` aplica recursive CTE pra incluir descendentes.
+    - Sem filtros ⇒ todos os docs da empresa (compat).
+    """
     pool = await get_pool()
-    docs = await base_conhecimento.list_documentos(pool, empresa_id)
+
+    pasta_ids: set[int] | None = None
+    pasta_id_set = False
+    target_pasta_id: int | None = None
+
+    if pasta_id is not None:
+        if incluir_subpastas:
+            from whatsapp_langchain.shared.pasta import get_descendant_ids
+
+            pasta_ids = await get_descendant_ids(pool, empresa_id, [pasta_id])
+            if not pasta_ids:
+                # Não existe ou não há subpastas — devolve nada
+                return {"documentos": []}
+        else:
+            pasta_id_set = True
+            target_pasta_id = pasta_id
+    elif raiz:
+        pasta_id_set = True
+
+    docs = await base_conhecimento.list_documentos(
+        pool,
+        empresa_id,
+        pasta_id=target_pasta_id,
+        pasta_id_set=pasta_id_set,
+        pasta_ids=pasta_ids,
+    )
     return {"documentos": docs}
 
 
@@ -168,6 +203,7 @@ async def upload_documento(
     arquivo: UploadFile = File(...),
     titulo: str | None = Form(default=None),
     tags: str = Form(default=""),
+    pasta_id: int | None = Form(default=None),
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> DocumentoConhecimento:
@@ -204,6 +240,7 @@ async def upload_documento(
         conteudo=texto,
         tags=tags_list,
         ativo=True,
+        pasta_id=pasta_id,
     )
 
     pool = await get_pool()

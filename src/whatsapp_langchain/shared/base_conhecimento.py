@@ -32,7 +32,7 @@ logger = structlog.get_logger()
 
 _SELECT_COLS = (
     "id, empresa_id, titulo, conteudo, tags, ativo, "
-    "created_by_user_id, created_at, updated_at"
+    "created_by_user_id, created_at, updated_at, pasta_id"
 )
 
 
@@ -69,6 +69,7 @@ def _row_to_documento(row) -> DocumentoConhecimento:
         created_by_user_id=row[6],
         created_at=row[7],
         updated_at=row[8],
+        pasta_id=row[9] if len(row) > 9 else None,
     )
 
 
@@ -111,11 +112,32 @@ async def list_documentos(
     empresa_id: int,
     *,
     apenas_ativos: bool = False,
+    pasta_id: int | None = None,
+    pasta_id_set: bool = False,
+    pasta_ids: set[int] | None = None,
 ) -> list[DocumentoConhecimento]:
+    """Lista docs da empresa.
+
+    Filtros (E2.C):
+    - `pasta_id_set=True` + `pasta_id=None` ⇒ só docs em RAIZ (pasta_id IS NULL).
+    - `pasta_id_set=True` + `pasta_id=N` ⇒ só docs daquela pasta.
+    - `pasta_ids` ⇒ docs em qualquer pasta do set (usado pra subárvore
+      via `pasta.get_descendant_ids`).
+    - Default ⇒ todos os docs da empresa.
+    """
     where = "empresa_id = %s"
     params: list = [empresa_id]
     if apenas_ativos:
         where += " AND ativo"
+    if pasta_ids is not None:
+        where += " AND pasta_id = ANY(%s)"
+        params.append(list(pasta_ids))
+    elif pasta_id_set:
+        if pasta_id is None:
+            where += " AND pasta_id IS NULL"
+        else:
+            where += " AND pasta_id = %s"
+            params.append(pasta_id)
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT {_SELECT_COLS} FROM documento_conhecimento "
@@ -188,8 +210,8 @@ async def upsert_documento(
                     f"""
                     INSERT INTO documento_conhecimento
                         (empresa_id, titulo, conteudo, tags, ativo,
-                         created_by_user_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                         created_by_user_id, pasta_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING {_SELECT_COLS}
                     """,
                     (
@@ -199,6 +221,7 @@ async def upsert_documento(
                         tags,
                         data.ativo,
                         user_id,
+                        data.pasta_id,
                     ),
                 )
             else:
@@ -209,6 +232,7 @@ async def upsert_documento(
                            conteudo = %s,
                            tags = %s,
                            ativo = %s,
+                           pasta_id = %s,
                            updated_at = NOW()
                      WHERE id = %s AND empresa_id = %s
                     RETURNING {_SELECT_COLS}
@@ -218,6 +242,7 @@ async def upsert_documento(
                         data.conteudo,
                         tags,
                         data.ativo,
+                        data.pasta_id,
                         doc_id,
                         empresa_id,
                     ),
