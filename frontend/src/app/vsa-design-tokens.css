@@ -201,8 +201,12 @@
   --obsidian-600: #cbd5e1;            /* divisores */
 
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  /* slate-800 (em vez de slate-600) pra que opacities baixas (/40, /50, /60)
+     usadas no sidebar ainda dêem contraste razoável em fundo branco. */
+  --text-secondary: #1e293b;
+  /* slate-600 (em vez de slate-400) pra que --muted-foreground em chunks
+     de help-text fique legível (5.7:1 vs antes 2.5:1). */
+  --text-muted: #475569;
 
   --border-subtle: rgba(0, 0, 0, 0.06);
   --border-default: rgba(0, 0, 0, 0.10);
