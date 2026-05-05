@@ -5,6 +5,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
 import { EmpresaSwitcher } from "@/components/empresa-switcher";
 import { getMyEmpresas } from "@/lib/api";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
@@ -54,6 +55,11 @@ export default async function RootLayout({
   const empresaSwitcher = await resolveEmpresaSwitcher();
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        {/* Anti-FOUC: aplica data-theme do localStorage antes do React
+            montar. Sem isso há flash escuro→claro no carregamento. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         suppressHydrationWarning

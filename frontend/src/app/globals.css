@@ -164,10 +164,13 @@
     @apply border-border outline-ring/50;
   }
   body {
-    background-color: var(--obsidian-950);
-    color: var(--text-primary);
+    /* var(--background) responde ao data-theme; antes era hardcoded em
+       --obsidian-950 e quebrava o tema light. */
+    background-color: var(--background);
+    color: var(--foreground);
     min-height: 100dvh;
     font-family: var(--vsa-font-body);
+    transition: background-color 200ms ease, color 200ms ease;
   }
   html {
     @apply font-sans;

@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 import { signOut } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -236,6 +237,7 @@ export function Sidebar({
         {/* Footer */}
         <div className="px-3 pb-4">
           <div className="mx-1 mb-3 h-px bg-sidebar-border" />
+          <ThemeSwitcher />
           <button
             type="button"
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground disabled:opacity-50"
