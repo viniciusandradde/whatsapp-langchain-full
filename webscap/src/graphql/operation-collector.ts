@@ -97,36 +97,77 @@ const VERB_PREFIXES = [
   "deactivate",
 ];
 
-/** Tira o verbo prefixo + camelCase first lower → categoria. */
+/** Tira verbo + qualifiers + singulariza → categoria. */
 export function categorize(operationName: string): string {
   let s = operationName;
-  // Remove "GraphQL" suffix se houver
   s = s.replace(/(?:Query|Mutation|GQL|Operation)$/i, "");
 
-  // Remove verbo prefixo (case-insensitive, primeira letra após verbo
-  // pode ser maiúscula OU já lower-case e a próxima vir maiúscula).
   const lower = s.toLowerCase();
   for (const v of VERB_PREFIXES) {
     if (lower.startsWith(v) && s.length > v.length) {
-      // Aceita "buscarCliente" (Cliente maiúsculo) e "buscarcliente"
-      // (em prática raro, mas já cobre).
       s = s.slice(v.length);
       break;
     }
   }
 
-  // Tira "Por*" qualifiers comuns (PorId, PorTelefone, PorNomeOuTel...)
-  s = s.replace(/^Por[A-Z][a-zA-Z]*$/, "");
+  // Strip qualifiers que aparecem em QUALQUER posição: Por<algo>
+  // (PorId, PorTelefone, PorNomeOuTel, PorUsuarioId, PorIbge…)
+  s = s.replace(/Por[A-Z][a-zA-Z]*/g, "");
 
-  // Trata plurais simples (ClientesQuery → cliente)
-  s = s.replace(/s$/, "");
+  // Strip suffixes técnicos comuns no schema ZigChat
+  s = s.replace(
+    /(Lazy|Count|Ativos?|Vinculados?|Historicos?|Final|Empresa)$/i,
+    "",
+  );
 
-  // camelCase → primeiro chunk pra categoria
-  // Ex: "AtendimentoMensagem" → "atendimento"
-  // Ex: "ClientePorTelefoneFinal" → "cliente"
+  // Quebra em chunks camelCase
   const tokens = s.match(/[A-Z][a-z]*|^[a-z]+/g) ?? [s];
-  const head = tokens[0]?.toLowerCase() ?? operationName.toLowerCase();
-  return head || "uncategorized";
+  if (tokens.length === 0) return "uncategorized";
+
+  // Pula primeiro chunk se for qualificador conhecido (atualizarStatusConexao
+  // → conexao, não status). Forma e Campo aparecem em "buscarCamposCliente".
+  const SKIP_FIRST = new Set([
+    "status",
+    "total",
+    "limite",
+    "campos",
+    "campo",
+    "form",
+    "ultimo",
+    "primeiro",
+  ]);
+  let chosen = tokens[0]!.toLowerCase();
+  if (SKIP_FIRST.has(chosen) && tokens.length > 1) {
+    chosen = tokens[1]!.toLowerCase();
+  }
+
+  return singularizePtBr(chosen);
+}
+
+/**
+ * Singularização heurística PT-BR + EN. Não cobre 100% (português é
+ * cheio de exceções) mas pega os padrões comuns no schema do ZigChat.
+ *
+ * Ordem importa: regras mais específicas primeiro.
+ */
+export function singularizePtBr(word: string): string {
+  if (word.length <= 3) return word;
+  // PT-BR
+  if (word.endsWith("oes")) return word.slice(0, -3) + "ao"; // conexoes → conexao
+  if (word.endsWith("aes")) return word.slice(0, -3) + "ao"; // capitaes → capitao
+  if (word.endsWith("eis")) return word.slice(0, -3) + "el"; // papeis → papel
+  if (word.endsWith("ais")) return word.slice(0, -3) + "al"; // animais → animal
+  if (word.endsWith("ois")) return word.slice(0, -3) + "ol"; // anzois → anzol
+  if (word.endsWith("uis")) return word.slice(0, -3) + "ul";
+  // "ens" → "em" (mensagens → mensagem, jovens → jovem)
+  if (word.endsWith("ens")) return word.slice(0, -3) + "em";
+  if (word.endsWith("res")) return word.slice(0, -2); // setores → setor
+  if (word.endsWith("ses")) return word.slice(0, -2); // meses → mes
+  if (word.endsWith("zes")) return word.slice(0, -2); // luzes → luz
+  if (word.endsWith("ies")) return word.slice(0, -3) + "y"; // categories → category (EN)
+  if (word.endsWith("s") && !word.endsWith("ss"))
+    return word.slice(0, -1); // genérico (atendimentos → atendimento)
+  return word;
 }
 
 export function dedupe(captured: CapturedOperation[]): DedupedOperation[] {

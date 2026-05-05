@@ -120,6 +120,11 @@ const CATEGORY_TO_TABLE: Record<string, string[]> = {
   termo: [],
   ultimotermo: [],
 
+  // Aliases extras vistos no schema real do ZigChat:
+  base: ["documento_conhecimento"], // filtrarBaseConhecimento → "base"
+  basedeconhecimento: ["documento_conhecimento"],
+  contador: [], // buscarContadorPorNome — utility, sem entity equivalente
+  aba: [], // browser tabs do ZigChat — N/A no Nexus
   // MCP servers (mencionado no ROADMAP M5 mas ainda backlog)
   mcpserver: [],
   mcp: [],
