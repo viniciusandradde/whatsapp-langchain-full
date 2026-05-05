@@ -98,45 +98,66 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atendimento.id]);
 
-  // Polling 3s enquanto drawer aberto + atendimento ativo + aba focada.
-  // Pausa em background (Page Visibility API) pra não consumir API à toa
-  // quando operador troca de aba; retoma + faz reload imediato ao voltar.
-  // Para automaticamente quando atendimento é fechado/abandonado.
+  // E2.E SSE: substitui polling 3s por EventSource. Backend dispara
+  // eventos via Postgres LISTEN/NOTIFY (mig 035) — chega <1s do INSERT
+  // da mensagem. Fallback automático: EventSource reconecta sozinho se
+  // a conexão cair, e em erro fatal a gente cai pra polling 5s como
+  // safety net.
   useEffect(() => {
     const isActive =
       atendimento.status === "aguardando" ||
       atendimento.status === "em_andamento";
     if (!isActive) return;
 
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let es: EventSource | null = null;
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+    let openedOk = false;
 
-    function start() {
-      if (timer) return;
-      timer = setInterval(() => {
+    function startFallbackPolling() {
+      if (fallbackTimer) return;
+      fallbackTimer = setInterval(() => {
         if (document.visibilityState === "visible") void silentReload();
-      }, 3000);
+      }, 5000);
     }
-    function stop() {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-    }
-    function onVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        void silentReload();
-        start();
-      } else {
-        stop();
+
+    function stopFallback() {
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer);
+        fallbackTimer = null;
       }
     }
 
-    if (document.visibilityState === "visible") start();
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    function connectSse() {
+      es = new EventSource(`/api/sse/atendimento/${atendimento.id}`);
+
+      es.addEventListener("connected", () => {
+        openedOk = true;
+        stopFallback();
+        // Sync de baseline (caso tenha perdido eventos antes da conexão)
+        void silentReload();
+      });
+
+      es.addEventListener("mensagem", () => {
+        if (document.visibilityState === "visible") void silentReload();
+      });
+
+      es.addEventListener("status_changed", () => {
+        if (document.visibilityState === "visible") void silentReload();
+      });
+
+      es.onerror = () => {
+        // EventSource auto-reconecta. Mas se nunca abriu (ex: 401, 500),
+        // entra em loop de reconexão ineficiente — ativa polling fallback
+        // após 1ª falha.
+        if (!openedOk) startFallbackPolling();
+      };
+    }
+
+    connectSse();
 
     return () => {
-      stop();
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      es?.close();
+      stopFallback();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atendimento.id, atendimento.status]);

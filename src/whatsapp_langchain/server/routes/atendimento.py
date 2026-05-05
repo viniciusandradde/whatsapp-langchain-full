@@ -104,6 +104,88 @@ async def read_atendimento(
     return await _load_atendimento_in_empresa(atendimento_id, empresa_id)
 
 
+# ---- E2.E SSE ----
+
+
+@router.get("/{atendimento_id}/events")
+async def sse_events(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+):
+    """Stream de eventos do atendimento via SSE (E2.E).
+
+    Substitui o polling 3s do AtendimentoDrawer. Backend ouve canal
+    Postgres `atendimento_event` (alimentado por triggers da mig 035) e
+    relay eventos cujo `atendimento_id` bate com o requested.
+
+    Conexão dedicada (psycopg async standalone), fora do pool — LISTEN
+    bloqueia a conexão pra outros usos. Heartbeat a cada 25s pra
+    sobreviver ao Traefik (idle timeout default 60s).
+
+    Frontend acessa via Next.js API route proxy (/api/sse/...) que
+    adiciona Authorization + X-User-Id headers — EventSource nativo
+    não suporta headers custom.
+    """
+    import asyncio
+    import json
+
+    import psycopg
+    from fastapi.responses import StreamingResponse
+
+    from whatsapp_langchain.shared.config import settings
+
+    # Valida ANTES de abrir o stream (retorna 4xx imediato se acesso negado)
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+
+    async def event_generator():
+        try:
+            async with await psycopg.AsyncConnection.connect(
+                settings.database_url, autocommit=True
+            ) as conn:
+                await conn.execute("LISTEN atendimento_event")
+                yield (
+                    f"event: connected\n"
+                    f"data: {json.dumps({'atendimento_id': atendimento_id})}\n\n"
+                )
+
+                # psycopg.notifies(timeout=N) retorna AsyncGenerator que
+                # *termina* quando o timeout expira. Loop externo re-abre
+                # o generator + emite heartbeat a cada ciclo (25s).
+                while True:
+                    async for notify in conn.notifies(timeout=25):
+                        try:
+                            payload = json.loads(notify.payload)
+                        except (ValueError, TypeError):
+                            continue
+                        if payload.get("atendimento_id") != atendimento_id:
+                            continue
+                        evt_name = payload.get("event", "update")
+                        yield f"event: {evt_name}\ndata: {notify.payload}\n\n"
+                    yield ": heartbeat\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "sse_atendimento_failed",
+                atendimento_id=atendimento_id,
+                error=str(exc),
+            )
+            yield (
+                f"event: error\n"
+                f"data: {json.dumps({'error': str(exc)[:200]})}\n\n"
+            )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.get("/{atendimento_id}/mensagens")
 async def read_atendimento_mensagens(
     atendimento_id: int,
