@@ -639,9 +639,18 @@ async def notify_gestor(
         )
         return None
 
-    # Resolve conexão ativa (default first) pra mandar WhatsApp
+    # Resolve conexão ativa (default first) pra mandar WhatsApp.
+    # Twilio Sandbox NÃO entrega outbound proativo — destino precisa ter
+    # mandado "join <code>" antes; mesmo SID gerado é engolido. Pra
+    # notificação automática de gestor, preferir QUALQUER conexão ativa
+    # de produção (waba, evolution, twilio_prod) sobre sandbox. Sandbox
+    # vira fallback só se for a única opção (ex: dev local).
     conexoes = await list_conexoes(pool, empresa_id)
-    ativa = next((c for c in conexoes if c.status == "active"), None)
+    ativas = [c for c in conexoes if c.status == "active"]
+    ativa = next(
+        (c for c in ativas if c.provider != "twilio_sandbox"),
+        None,
+    ) or next(iter(ativas), None)
     if ativa is None:
         logger.warning(
             "notify_gestor_no_active_conexao",
@@ -649,6 +658,13 @@ async def notify_gestor(
             agendamento_id=agendamento_id,
         )
         return None
+    if ativa.provider == "twilio_sandbox":
+        logger.warning(
+            "notify_gestor_using_sandbox_fallback",
+            empresa_id=empresa_id,
+            agendamento_id=agendamento_id,
+            note="destino precisa ter feito 'join <code>' no sandbox antes",
+        )
 
     # Cria row de aprovação com token novo
     aprov = await create_pending_approval(
