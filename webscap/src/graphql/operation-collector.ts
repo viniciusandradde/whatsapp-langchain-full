@@ -9,43 +9,7 @@
 
 import type { CapturedOperation, DedupedOperation } from "../types.js";
 
-// Verbos PT (ZigChat usa nomenclatura em português) e EN.
-// Ordem importa: primeiro match ganha — verbos mais longos antes dos
-// curtos pra evitar match prematuro (ex: "buscar" precisa vir antes
-// de "buscar*" se "buscar" for prefixo de outra palavra).
 const VERB_PREFIXES = [
-  // PT — comuns no ZigChat
-  "filtrar",
-  "buscar",
-  "listar",
-  "carregar",
-  "criar",
-  "atualizar",
-  "salvar",
-  "deletar",
-  "remover",
-  "apagar",
-  "enviar",
-  "marcar",
-  "contar",
-  "sincronizar",
-  "importar",
-  "exportar",
-  "validar",
-  "verificar",
-  "limite",
-  "aprovar",
-  "rejeitar",
-  "cancelar",
-  "fechar",
-  "abrir",
-  "transferir",
-  "atribuir",
-  "ativar",
-  "desativar",
-  "habilitar",
-  "desabilitar",
-  // EN — fallback (rest APIs, ops que escapam o padrão)
   "get",
   "list",
   "find",
@@ -103,27 +67,23 @@ export function categorize(operationName: string): string {
   // Remove "GraphQL" suffix se houver
   s = s.replace(/(?:Query|Mutation|GQL|Operation)$/i, "");
 
-  // Remove verbo prefixo (case-insensitive, primeira letra após verbo
-  // pode ser maiúscula OU já lower-case e a próxima vir maiúscula).
+  // Remove verbo prefixo
   const lower = s.toLowerCase();
   for (const v of VERB_PREFIXES) {
     if (lower.startsWith(v) && s.length > v.length) {
-      // Aceita "buscarCliente" (Cliente maiúsculo) e "buscarcliente"
-      // (em prática raro, mas já cobre).
-      s = s.slice(v.length);
-      break;
+      const next = s.charAt(v.length);
+      if (next === next.toUpperCase()) {
+        s = s.slice(v.length);
+        break;
+      }
     }
   }
-
-  // Tira "Por*" qualifiers comuns (PorId, PorTelefone, PorNomeOuTel...)
-  s = s.replace(/^Por[A-Z][a-zA-Z]*$/, "");
 
   // Trata plurais simples (ClientesQuery → cliente)
   s = s.replace(/s$/, "");
 
-  // camelCase → primeiro chunk pra categoria
+  // camelCase → snake (mas só pega primeiro chunk pra categoria)
   // Ex: "AtendimentoMensagem" → "atendimento"
-  // Ex: "ClientePorTelefoneFinal" → "cliente"
   const tokens = s.match(/[A-Z][a-z]*|^[a-z]+/g) ?? [s];
   const head = tokens[0]?.toLowerCase() ?? operationName.toLowerCase();
   return head || "uncategorized";
