@@ -6,8 +6,11 @@ import {
   abortCampanha,
   createCampanha,
   dispatchCampanha,
+  getCampanha,
+  getCampanhaDestinatarios,
   type Campanha,
   type CampanhaCreateInput,
+  type CampanhaDestinatario,
 } from "@/lib/api";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -46,6 +49,25 @@ export async function abortCampanhaAction(id: number): Promise<OkResult> {
     revalidatePath("/campanhas");
     revalidatePath(`/campanhas/${id}`);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// Wrappers server-side pra polling em Client Component
+// (não pode importar @/lib/api direto porque ele puxa server-only).
+export async function refreshCampanhaAction(
+  id: number
+): Promise<
+  | { ok: true; campanha: Campanha; destinatarios: CampanhaDestinatario[] }
+  | { ok: false; error: string }
+> {
+  try {
+    const [campanha, dest] = await Promise.all([
+      getCampanha(id),
+      getCampanhaDestinatarios(id),
+    ]);
+    return { ok: true, campanha, destinatarios: dest.items };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

@@ -12,16 +12,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  type Campanha,
-  type CampanhaDestinatario,
-  getCampanha,
-  getCampanhaDestinatarios,
-} from "@/lib/api";
+import type { Campanha, CampanhaDestinatario } from "@/lib/api";
 
 import {
   abortCampanhaAction,
   dispatchCampanhaAction,
+  refreshCampanhaAction,
 } from "../actions";
 
 interface Props {
@@ -52,15 +48,10 @@ export function CampanhaDetailClient({
   useEffect(() => {
     if (c.status !== "running") return;
     const interval = setInterval(async () => {
-      try {
-        const [fresh, freshDest] = await Promise.all([
-          getCampanha(c.id),
-          getCampanhaDestinatarios(c.id),
-        ]);
-        setC(fresh);
-        setDest(freshDest.items);
-      } catch {
-        /* ignore polling errors */
+      const r = await refreshCampanhaAction(c.id);
+      if (r.ok) {
+        setC(r.campanha);
+        setDest(r.destinatarios);
       }
     }, 2000);
     return () => clearInterval(interval);
