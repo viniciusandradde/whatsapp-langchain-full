@@ -1357,3 +1357,102 @@ export async function createFeriado(
 export async function deleteFeriado(id: number): Promise<void> {
   await apiFetch<void>(`/api/feriados/${id}`, { method: "DELETE" });
 }
+
+// ---------------- RBAC (E2.A) ----------------
+
+export interface PermissaoCatalogo {
+  codigo: string;
+  descricao: string;
+  modulo: string;
+}
+
+export interface PermissaoCatalogoResponse {
+  items: PermissaoCatalogo[];
+}
+
+export interface PerfilAcesso {
+  id: number;
+  nome: string;
+  descricao: string | null;
+  is_system: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  perms_count: number;
+  users_count: number;
+  permissoes?: string[];
+}
+
+export interface PerfisResponse {
+  items: PerfilAcesso[];
+}
+
+export interface MyPermissionsResponse {
+  permissoes: string[];
+  perfis: { id: number; nome: string }[];
+}
+
+export async function getPermissoesCatalogo(): Promise<PermissaoCatalogoResponse> {
+  return apiFetch<PermissaoCatalogoResponse>(`/api/permissoes`);
+}
+
+export async function getPerfis(): Promise<PerfisResponse> {
+  return apiFetch<PerfisResponse>(`/api/perfis`);
+}
+
+export async function getPerfil(id: number): Promise<PerfilAcesso> {
+  return apiFetch<PerfilAcesso>(`/api/perfis/${id}`);
+}
+
+export async function createPerfil(body: {
+  nome: string;
+  descricao?: string | null;
+  permissoes: string[];
+}): Promise<PerfilAcesso> {
+  return apiFetch<PerfilAcesso>(`/api/perfis`, { method: "POST", body });
+}
+
+export async function updatePerfil(
+  id: number,
+  body: { permissoes: string[]; descricao?: string | null }
+): Promise<PerfilAcesso> {
+  return apiFetch<PerfilAcesso>(`/api/perfis/${id}`, { method: "PUT", body });
+}
+
+export async function deletePerfil(id: number): Promise<void> {
+  await apiFetch<void>(`/api/perfis/${id}`, { method: "DELETE" });
+}
+
+export async function getMyPermissions(): Promise<MyPermissionsResponse> {
+  return apiFetch<MyPermissionsResponse>(`/api/perfis/me`);
+}
+
+export async function assignPerfil(
+  perfilId: number,
+  userId: string
+): Promise<void> {
+  await apiFetch<void>(`/api/perfis/${perfilId}/users`, {
+    method: "POST",
+    body: { user_id: userId },
+  });
+}
+
+export async function unassignPerfil(
+  perfilId: number,
+  userId: string
+): Promise<void> {
+  await apiFetch<void>(`/api/perfis/${perfilId}/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function migrateRBAC(empresaId: number): Promise<{
+  converted: number;
+  skipped: number;
+  total_membros: number;
+}> {
+  return apiFetch<{
+    converted: number;
+    skipped: number;
+    total_membros: number;
+  }>(`/api/empresas/${empresaId}/migrate-rbac`, { method: "POST" });
+}
