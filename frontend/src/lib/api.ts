@@ -1787,3 +1787,110 @@ export async function upsertFeatureFlag(
 export async function deleteFeatureFlag(key: string): Promise<void> {
   await apiFetch<void>(`/api/v1/feature-flags/${key}`, { method: "DELETE" });
 }
+
+// ---------------- Sub-fase A: agente_ia cadastrável ----------------
+
+export type EstiloResposta =
+  | "preciso"
+  | "equilibrado"
+  | "criativo"
+  | "muito_criativo";
+
+export type LimiteCustoAcao =
+  | "solicitar_humano"
+  | "encerrar"
+  | "continuar"
+  | "bloquear";
+
+export interface AgenteIA {
+  id: number;
+  empresa_id: number;
+  slug: string;
+  nome: string;
+  descricao: string | null;
+  template_catalog: string;
+  prompt_override: string | null;
+  modelo: string | null;
+  estilo_resposta: EstiloResposta;
+  temperatura_override: number | null;
+  max_tokens: number | null;
+  top_p_override: number | null;
+  tools_enabled: string[];
+  tools_config: Record<string, unknown>;
+  aceita_imagem: boolean;
+  aceita_audio: boolean;
+  aceita_documento: boolean;
+  base_conhecimento_ids: number[];
+  variavel_ids: number[];
+  mcp_server_ids: number[];
+  limite_custo_acao: LimiteCustoAcao;
+  ativo: boolean;
+  is_default: boolean;
+  created_by_user_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Derivados (computados no backend baseado em estilo + override)
+  temperatura_efetiva: number;
+  top_p_efetivo: number;
+}
+
+export interface AgenteIACreateInput {
+  slug: string;
+  nome: string;
+  descricao?: string | null;
+  template_catalog?: string;
+}
+
+export type AgenteIAUpdateInput = Partial<
+  Omit<
+    AgenteIA,
+    | "id"
+    | "empresa_id"
+    | "slug"
+    | "created_by_user_id"
+    | "created_at"
+    | "updated_at"
+    | "temperatura_efetiva"
+    | "top_p_efetivo"
+  >
+>;
+
+export async function getAgentesIA(opts?: {
+  onlyActive?: boolean;
+}): Promise<{ items: AgenteIA[] }> {
+  const q = opts?.onlyActive ? "?only_active=true" : "";
+  return apiFetch<{ items: AgenteIA[] }>(`/api/v1/agentes${q}`);
+}
+
+export async function getAgenteIA(slug: string): Promise<AgenteIA> {
+  return apiFetch<AgenteIA>(`/api/v1/agentes/${slug}`);
+}
+
+export async function createAgenteIA(
+  body: AgenteIACreateInput
+): Promise<AgenteIA> {
+  return apiFetch<AgenteIA>(`/api/v1/agentes`, { method: "POST", body });
+}
+
+export async function updateAgenteIA(
+  slug: string,
+  body: AgenteIAUpdateInput
+): Promise<AgenteIA> {
+  return apiFetch<AgenteIA>(`/api/v1/agentes/${slug}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteAgenteIA(slug: string): Promise<void> {
+  await apiFetch<void>(`/api/v1/agentes/${slug}`, { method: "DELETE" });
+}
+
+export async function setDefaultAgenteIA(
+  slug: string
+): Promise<{ ok: boolean; slug: string }> {
+  return apiFetch<{ ok: boolean; slug: string }>(
+    `/api/v1/agentes/${slug}/set-default`,
+    { method: "POST" }
+  );
+}
