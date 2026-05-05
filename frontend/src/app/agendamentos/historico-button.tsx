@@ -4,7 +4,9 @@ import { useState } from "react";
 import { History, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getAgendamentoHistorico, type AgendamentoHistorico } from "@/lib/api";
+import type { AgendamentoHistorico } from "@/lib/api";
+
+import { loadHistoricoAction } from "./actions";
 
 const ACTION_LABEL: Record<string, string> = {
   created: "Criado",
@@ -30,14 +32,10 @@ export function HistoricoButton({ agendamentoId }: { agendamentoId: number }) {
     setOpen(true);
     if (items === null) {
       setLoading(true);
-      try {
-        const r = await getAgendamentoHistorico(agendamentoId);
-        setItems(r.items);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erro ao carregar histórico.");
-      } finally {
-        setLoading(false);
-      }
+      const r = await loadHistoricoAction(agendamentoId);
+      if (r.ok) setItems(r.items);
+      else setError(r.error);
+      setLoading(false);
     }
   }
 
