@@ -1644,3 +1644,79 @@ export async function migrateRBAC(empresaId: number): Promise<{
     total_membros: number;
   }>(`/api/empresas/${empresaId}/migrate-rbac`, { method: "POST" });
 }
+
+// ---------------- Fase 0 enterprise — Audit log + Feature flags ----------------
+
+export interface AuditLog {
+  id: number;
+  empresa_id: number;
+  user_id: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  payload_diff: Record<string, unknown>;
+  ip: string | null;
+  user_agent: string | null;
+  request_id: string | null;
+  at: string;
+}
+
+export interface AuditLogResponse {
+  items: AuditLog[];
+  limit: number;
+  offset: number;
+}
+
+export async function getAuditLog(opts?: {
+  entityType?: string;
+  entityId?: string;
+  userId?: string;
+  action?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<AuditLogResponse> {
+  const params = new URLSearchParams();
+  if (opts?.entityType) params.set("entity_type", opts.entityType);
+  if (opts?.entityId) params.set("entity_id", opts.entityId);
+  if (opts?.userId) params.set("user_id", opts.userId);
+  if (opts?.action) params.set("action", opts.action);
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  const q = params.toString();
+  return apiFetch<AuditLogResponse>(`/api/v1/audit${q ? "?" + q : ""}`);
+}
+
+export interface FeatureFlag {
+  id: number;
+  empresa_id: number;
+  key: string;
+  value: unknown;
+  descricao: string | null;
+  ativo: boolean;
+  created_by_user_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function getFeatureFlags(): Promise<{ items: FeatureFlag[] }> {
+  return apiFetch<{ items: FeatureFlag[] }>(`/api/v1/feature-flags`);
+}
+
+export async function upsertFeatureFlag(
+  key: string,
+  body: {
+    key: string;
+    value: unknown;
+    descricao?: string | null;
+    ativo?: boolean;
+  }
+): Promise<FeatureFlag> {
+  return apiFetch<FeatureFlag>(`/api/v1/feature-flags/${key}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteFeatureFlag(key: string): Promise<void> {
+  await apiFetch<void>(`/api/v1/feature-flags/${key}`, { method: "DELETE" });
+}

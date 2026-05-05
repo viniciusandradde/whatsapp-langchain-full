@@ -95,6 +95,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         json_output=settings.log_json,
     )
     settings.validate_runtime_settings()
+
+    # Fase 0 enterprise — OpenTelemetry. Init ANTES de outros setups
+    # pra que spans cubram bootstrap completo. No-op se OTLP não
+    # configurado em prod (logs ficam só local).
+    from whatsapp_langchain.shared.telemetry import init_telemetry
+
+    init_telemetry(
+        service_name="nexus-chat-ai-api",
+        environment=settings.environment,
+    )
+
     logger.info("server_starting", port=settings.port)
 
     pool = await get_pool()
@@ -143,6 +154,49 @@ install_admin_rate_limit(app, limit_per_minute=settings.admin_rate_limit_per_min
 # (Starlette empilha middlewares LIFO). Assim os logs do rate_limit e
 # security_headers já têm `request_id` no contextvars.
 install_correlation_id(app)
+
+# Fase 0 enterprise — instrumentação OTel pro app inteiro. Cria span
+# por request automaticamente. Excluí /health e /metrics pra não poluir
+# traces com health-checks de monitoring.
+from whatsapp_langchain.shared.telemetry import instrument_fastapi
+
+instrument_fastapi(app)
+
+
+# Middleware Prometheus — conta + cronometra cada request HTTP.
+# Antes dos handlers e dos middlewares de erro pra capturar tudo.
+@app.middleware("http")
+async def prometheus_middleware(request, call_next):  # type: ignore[no-untyped-def]
+    """Conta + cronometra cada request HTTP nas métricas Prometheus."""
+    import time as _time
+
+    from whatsapp_langchain.shared.metrics import (
+        http_request_duration_seconds,
+        http_requests_total,
+    )
+
+    # Path pra label (sem query) — limita cardinalidade pra evitar
+    # explosão (path com IDs vira "<id>")
+    path = request.url.path
+    if path.startswith("/api/health") or path == "/health" or path == "/metrics":
+        # Health/metrics não vão pras métricas (evita ruído + recursão)
+        return await call_next(request)
+
+    method = request.method
+    start = _time.perf_counter()
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+    except Exception:
+        status = "500"
+        raise
+    finally:
+        elapsed = _time.perf_counter() - start
+        http_requests_total.labels(method=method, path=path, status=status).inc()
+        http_request_duration_seconds.labels(method=method, path=path).observe(
+            elapsed
+        )
+    return response
 
 
 # Exception handlers
