@@ -184,8 +184,12 @@ async def _try_handle_approval(
             )
             return False
 
-        # Confere phone do remetente bate com gestor cadastrado
-        if message.phone_number != aprov["gestor_telefone"]:
+        # Confere phone do remetente bate com gestor cadastrado.
+        # Aceita variantes BR do "9 extra" mobile — phone gravado como
+        # +5567996460034 bate com +556796460034 e vice-versa.
+        from whatsapp_langchain.shared.phone_br import phone_equivalent
+
+        if not phone_equivalent(message.phone_number, aprov["gestor_telefone"]):
             logger.warning(
                 "approval_token_wrong_phone",
                 expected=aprov["gestor_telefone"],
@@ -499,11 +503,18 @@ async def process_message(
         )
 
     except Exception as e:
+        # str(e) pode vir vazia em exceptions construídas sem args
+        # (ex: HTTPError 4xx do provider sem detail). Garante que o
+        # campo `error` na DB sempre tem informação útil pra debug —
+        # antes ficavam rows com error='' e admins viam "falhou sem
+        # explicação" no painel.
+        err_msg = str(e) or f"{type(e).__name__}: <no message>"
         logger.error(
             "message_processing_error",
             message_id=message.id,
             phone=message.phone_number,
             agent_id=message.agent_id,
-            error=str(e),
+            error=err_msg,
+            error_type=type(e).__name__,
         )
-        await mark_failed(pool, message.id, str(e))
+        await mark_failed(pool, message.id, err_msg)

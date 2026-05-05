@@ -397,7 +397,14 @@ async def list_pending_approvals_by_phone(
     Usado pelo handler "1/2" pra desambiguar quando o gestor tem mais
     de um pedido pendente — sem isso, apertar "1" aprovaria silenciosamente
     o mais antigo (alto risco de aprovar o pedido errado).
+
+    Aceita variantes BR do "9 extra" mobile — phone cadastrado como
+    `+5567996460034` casa com `+556796460034` (formato pré-2012) e
+    vice-versa.
     """
+    from whatsapp_langchain.shared.phone_br import phone_variants
+
+    variants = phone_variants(phone)
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -407,10 +414,10 @@ async def list_pending_approvals_by_phone(
                    ag.calendar_id, ag.cliente_id, ag.descricao
               FROM agendamento_aprovacao ap
               JOIN agendamento ag ON ag.id = ap.agendamento_id
-             WHERE ap.gestor_telefone = %s AND ap.status = 'pendente'
+             WHERE ap.gestor_telefone = ANY(%s) AND ap.status = 'pendente'
              ORDER BY ap.created_at ASC
             """,
-            (phone,),
+            (variants,),
         )
         rows = await cur.fetchall()
     return [
@@ -439,8 +446,11 @@ async def find_pending_approval_by_phone(
     """Busca aprovação pendente por telefone do gestor (E.164).
 
     Usado quando a regex falha em capturar token mas o phone bate. Pega
-    a mais antiga pendente (FIFO).
+    a mais antiga pendente (FIFO). Aceita variantes BR do "9 extra".
     """
+    from whatsapp_langchain.shared.phone_br import phone_variants
+
+    variants = phone_variants(phone)
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -450,11 +460,11 @@ async def find_pending_approval_by_phone(
                    ag.calendar_id, ag.cliente_id, ag.descricao
               FROM agendamento_aprovacao ap
               JOIN agendamento ag ON ag.id = ap.agendamento_id
-             WHERE ap.gestor_telefone = %s AND ap.status = 'pendente'
+             WHERE ap.gestor_telefone = ANY(%s) AND ap.status = 'pendente'
              ORDER BY ap.created_at ASC
              LIMIT 1
             """,
-            (phone,),
+            (variants,),
         )
         row = await cur.fetchone()
     if not row:

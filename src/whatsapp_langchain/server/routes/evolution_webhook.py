@@ -152,6 +152,26 @@ async def webhook_evolution(
         )
         return Response(status_code=200)
 
+    # Mensagens de grupo WhatsApp: remoteJid termina em @g.us (grupos),
+    # @broadcast (lista) ou @newsletter (canal). Não atendemos esses
+    # canais — o handler de outbound não sabe responder pro JID de grupo,
+    # e o agente não tem contexto de "quem dentro do grupo está falando".
+    # Resposta 200 (não 4xx) pra evitar retries do Evolution.
+    remote_jid_check = str(key.get("remoteJid") or "")
+    remote_alt_check = str(key.get("remoteJidAlt") or "")
+    GROUP_JID_SUFFIXES = ("@g.us", "@broadcast", "@newsletter")
+    if any(
+        remote_jid_check.endswith(s) or remote_alt_check.endswith(s)
+        for s in GROUP_JID_SUFFIXES
+    ):
+        logger.info(
+            "evolution_webhook_group_ignored",
+            instance=instance,
+            remote_jid=remote_jid_check,
+            participant=key.get("participant"),
+        )
+        return Response(status_code=200)
+
     if not instance:
         # Payload Evolution malformado — provável probe/teste.
         logger.info("evolution_webhook_missing_instance", payload_event=event)
