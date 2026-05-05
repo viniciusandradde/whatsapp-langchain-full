@@ -52,59 +52,70 @@ type NavSection = {
   items: NavItem[];
 };
 
-// Layout do sidebar agrupado por área funcional. Ordem e nomes
-// validados pelo plano /home/vps/.claude/plans/velvety-dazzling-tiger.md.
+// Layout do sidebar agrupado por TIPO DE FUNÇÃO do módulo. Ordem
+// validada pelo plano em /home/opc/.claude/plans/como-est-a-base-jazzy-sketch.md
+// (reorganização 2026-05-05). URLs preservadas — só labels/agrupamento mudaram.
 const NAV_SECTIONS: NavSection[] = [
   {
     label: null,
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/atendimento", label: "Atendimentos", icon: Headphones },
-      { href: "/agents", label: "Agentes", icon: Bot },
     ],
   },
   {
-    label: "Atendimento",
+    // Operação diária — o que operador acessa todo dia
+    label: "Operação",
     items: [
-      { href: "/clientes", label: "Clientes", icon: UsersRound },
-      // Rótulo "Quick Replies" no sidebar pra evitar ambiguidade com
-      // /models (modelos LLM por agente). Rota /modelos preservada.
-      { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },
+      { href: "/atendimento", label: "Atendimentos", icon: Headphones },
       { href: "/chats", label: "Conversas", icon: MessageSquare },
+      { href: "/clientes", label: "Clientes", icon: UsersRound },
       { href: "/agendamentos", label: "Agendamentos", icon: CalendarDays },
       { href: "/campanhas", label: "Campanhas", icon: Megaphone },
     ],
   },
   {
-    label: "IA & Observabilidade",
+    // Insumos que alimentam as respostas do agente
+    label: "Conteúdo & IA",
     items: [
+      { href: "/agents", label: "Agentes", icon: Bot },
       { href: "/models", label: "Modelos LLM", icon: Brain },
-      { href: "/traces", label: "Traces", icon: Activity },
+      // Rótulo "Quick Replies" pra evitar ambiguidade com /models.
+      // Rota /modelos preservada.
+      { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },
+      { href: "/settings/pastas", label: "Base de Conhecimento", icon: FolderTree },
+      { href: "/settings/variaveis", label: "Variáveis", icon: Braces },
     ],
   },
   {
-    label: "Integrações",
+    // Entrada/saída do sistema com terceiros
+    label: "Conectividade",
     items: [
       { href: "/connections", label: "Conexões", icon: Smartphone },
+      { href: "/settings/integracoes", label: "Integrações Externas", icon: Plug },
       { href: "/hooks", label: "Webhooks", icon: Webhook },
     ],
   },
   {
-    label: "Configurações",
+    // Regras de negócio + permissões + tenants
+    label: "Governança",
     items: [
       { href: "/companies", label: "Empresas", icon: Building2 },
-      { href: "/settings/integracoes", label: "Integrações", icon: Plug },
-      { href: "/settings/calendar-rules", label: "Regras Calendar", icon: Clock },
       { href: "/settings/perfis", label: "Perfis (RBAC)", icon: ShieldCheck },
-      { href: "/settings/pastas", label: "Pastas (KB)", icon: FolderTree },
-      { href: "/settings/variaveis", label: "Variáveis", icon: Braces },
       { href: "/settings/departamentos", label: "Departamentos", icon: Building },
-      { href: "/settings/horarios", label: "Horário", icon: Clock },
-      { href: "/queue", label: "Fila", icon: ListOrdered },
+      { href: "/settings/horarios", label: "Horário de Atendimento", icon: Clock },
+      { href: "/settings/calendar-rules", label: "Regras de Agendamento", icon: Clock },
       { href: "/settings", label: "Segurança", icon: ShieldCheck },
+    ],
+  },
+  {
+    // Debug + audit — investigação operacional
+    label: "Observabilidade",
+    items: [
+      { href: "/traces", label: "Traces", icon: Activity },
+      { href: "/queue", label: "Fila", icon: ListOrdered },
       {
         href: "/settings/security/login-history",
-        label: "Histórico de acesso",
+        label: "Histórico de Acesso",
         icon: Activity,
       },
     ],
