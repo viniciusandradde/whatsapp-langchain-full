@@ -74,8 +74,11 @@ typecheck: ## Verifica tipos estáticos (pyright) — não altera arquivos
 check: ## Verifica tudo (lint + format + types) — não altera arquivos
 	uv run ruff check . && uv run ruff format --check . && uv run pyright src/
 
-ci: ## CI/CD: verifica tudo + roda testes — não altera arquivos
-	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo and not twilio_real"
+ci: ## CI/CD: verifica tudo + roda testes com gate de coverage 50%
+	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-fail-under=50
+
+cov: ## Roda tests + relatório HTML de coverage (htmlcov/index.html)
+	uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-report=html --cov-report=term-missing
 
 ##@ Testes
 test: ## Roda todos os testes

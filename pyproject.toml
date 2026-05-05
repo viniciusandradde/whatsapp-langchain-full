@@ -36,6 +36,7 @@ dev = [
     "pyright==1.1.408",
     "pytest==8.3.5",
     "pytest-asyncio==0.25.3",
+    "pytest-cov==6.0.0",
     "httpx==0.28.1",
 ]
 
@@ -60,3 +61,27 @@ markers = [
     "docker_demo: testes demonstrativos que exigem API/Worker/DB rodando em Docker",
     "twilio_real: smoke tests que enviam mensagens reais via Twilio (requer TWILIO_LIVE_TESTS=1)",
 ]
+
+[tool.coverage.run]
+source = ["src/whatsapp_langchain"]
+omit = [
+    # Entry points cobertos por integration, não por unit
+    "src/whatsapp_langchain/server/main.py",
+    "src/whatsapp_langchain/worker/main.py",
+    # Pool/migrations testados via integration
+    "src/whatsapp_langchain/shared/db.py",
+]
+
+[tool.coverage.report]
+# Política mínima Fase 0 — gate em 50%; sobe pra 60% até Fase 4 (vide
+# memory feedback_testing_policy.md).
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "@abstractmethod",
+    "@overload",
+]
+show_missing = true
+skip_covered = false
