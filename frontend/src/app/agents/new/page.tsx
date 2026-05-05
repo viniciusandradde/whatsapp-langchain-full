@@ -9,8 +9,14 @@ import { createAgenteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewAgentePage() {
+interface PageProps {
+  searchParams: Promise<{ error?: string }>;
+}
+
+export default async function NewAgentePage({ searchParams }: PageProps) {
   await requireSession();
+  const params = await searchParams;
+  const errorMsg = params.error ?? null;
 
   return (
     <div className="space-y-6">
@@ -40,6 +46,11 @@ export default async function NewAgentePage() {
           <CardTitle className="text-base">Dados básicos</CardTitle>
         </CardHeader>
         <CardContent>
+          {errorMsg && (
+            <p className="mb-3 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              {errorMsg}
+            </p>
+          )}
           <form action={createAgenteAction} className="space-y-4">
             <div>
               <label
