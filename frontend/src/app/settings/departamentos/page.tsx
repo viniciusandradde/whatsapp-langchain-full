@@ -15,7 +15,7 @@ export default async function DepartamentosPage() {
   >["departamentos"] = [];
   let error: string | null = null;
   try {
-    const data = await getDepartamentos();
+    const data = await getDepartamentos({ comUsers: true });
     departamentos = data.departamentos;
   } catch (e) {
     error =

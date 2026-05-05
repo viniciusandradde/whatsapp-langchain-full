@@ -555,13 +555,19 @@ class VariavelAmbienteInput(BaseModel):
 
 
 class Departamento(BaseModel):
-    """Categorização opcional de atendimento (suporte, vendas, etc) — M6.a."""
+    """Categorização opcional de atendimento (suporte, vendas, etc) — M6.a.
+
+    `parent_id` adicionado em E2.B pra hierarquia em árvore. NULL = root.
+    `users_count` é populado quando o handler explicita o JOIN.
+    """
 
     id: int
     empresa_id: int
     nome: str
     descricao: str | None = None
     ativo: bool = True
+    parent_id: int | None = None
+    users_count: int | None = None
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -571,6 +577,7 @@ class DepartamentoInput(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
     descricao: str | None = Field(default=None, max_length=200)
     ativo: bool = True
+    parent_id: int | None = None
 
 
 class HorarioFuncionamento(BaseModel):

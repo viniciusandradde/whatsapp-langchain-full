@@ -124,6 +124,7 @@ async def list_atendimentos(
     current_user_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    scope_departamento_ids: set[int] | None = None,
 ) -> list[Atendimento]:
     """Lista atendimentos filtrados por tipo de visualização.
 
@@ -132,9 +133,20 @@ async def list_atendimentos(
     - `grupos`: placeholder (vazio até M-grupos chegar)
     - `outros`: status IN aguardando|em_andamento, fora dos meus
 
+    `scope_departamento_ids` (E2.B):
+    - None ⇒ sem filtro (vê todos os departamentos da empresa).
+    - set vazio ⇒ user com scope mas sem departamento → retorna [].
+    - set com IDs ⇒ filtra `WHERE departamento_id ∈ ids`.
+      `departamento_id IS NULL` (atendimentos sem departamento) NÃO
+      aparece pra users com scope — política de "default-deny" pra
+      garantir isolamento.
+
     Faz LEFT JOIN com cliente pra preencher nome/telefone na resposta.
     """
     if tipo == "grupos":
+        return []
+
+    if scope_departamento_ids is not None and not scope_departamento_ids:
         return []
 
     where = "WHERE a.empresa_id = %s"
@@ -154,6 +166,10 @@ async def list_atendimentos(
                 " AND (a.assigned_to_user_id IS NULL OR a.assigned_to_user_id <> %s)"
             )
             params.append(current_user_id)
+
+    if scope_departamento_ids is not None:
+        where += " AND a.departamento_id = ANY(%s)"
+        params.append(list(scope_departamento_ids))
 
     params.extend([limit, offset])
     async with pool.connection() as conn:

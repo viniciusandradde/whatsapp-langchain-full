@@ -461,6 +461,8 @@ export interface Departamento {
   nome: string;
   descricao: string | null;
   ativo: boolean;
+  parent_id: number | null;
+  users_count: number | null;
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
@@ -470,10 +472,18 @@ export interface DepartamentoInput {
   nome: string;
   descricao?: string | null;
   ativo?: boolean;
+  parent_id?: number | null;
 }
 
 export interface DepartamentosResponse {
   departamentos: Departamento[];
+}
+
+export interface DepartamentoUser {
+  user_id: string;
+  email: string | null;
+  name: string | null;
+  assigned_at: string | null;
 }
 
 export interface HorarioFuncionamento {
@@ -1296,8 +1306,38 @@ export async function deleteVariavel(id: number): Promise<void> {
 
 // --- M6.a: Departamentos / Horários / Feriados ---
 
-export async function getDepartamentos(): Promise<DepartamentosResponse> {
-  return apiFetch<DepartamentosResponse>(`/api/departamentos`);
+export async function getDepartamentos(opts?: {
+  comUsers?: boolean;
+}): Promise<DepartamentosResponse> {
+  const q = opts?.comUsers ? "?com_users=true" : "";
+  return apiFetch<DepartamentosResponse>(`/api/departamentos${q}`);
+}
+
+export async function getDepartamentoUsers(
+  depId: number
+): Promise<{ items: DepartamentoUser[] }> {
+  return apiFetch<{ items: DepartamentoUser[] }>(
+    `/api/departamentos/${depId}/users`
+  );
+}
+
+export async function assignDepartamentoUser(
+  depId: number,
+  userId: string
+): Promise<{ ok: boolean; inserted: boolean }> {
+  return apiFetch<{ ok: boolean; inserted: boolean }>(
+    `/api/departamentos/${depId}/users`,
+    { method: "POST", body: { user_id: userId } }
+  );
+}
+
+export async function unassignDepartamentoUser(
+  depId: number,
+  userId: string
+): Promise<void> {
+  await apiFetch<void>(`/api/departamentos/${depId}/users/${userId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function createDepartamento(
