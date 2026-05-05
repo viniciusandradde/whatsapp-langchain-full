@@ -59,6 +59,7 @@ from whatsapp_langchain.server.routes.horario import (
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
+from whatsapp_langchain.server.routes.perfil import router as perfil_router
 from whatsapp_langchain.server.routes.security import router as security_router
 from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.variavel import (
@@ -95,6 +96,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pool = await get_pool()
     await run_migrations(pool)
     await bootstrap_langgraph_schema()
+    # E2.A: sincroniza catálogo de permissões + seed perfis system
+    # pra empresa default (id=1). Idempotente em ambos.
+    from whatsapp_langchain.shared.permissoes import (
+        seed_default_perfis,
+        sync_catalogo,
+    )
+
+    await sync_catalogo(pool)
+    try:
+        await seed_default_perfis(pool, 1)
+    except Exception as exc:
+        logger.warning("rbac_seed_default_failed", error=str(exc))
     logger.info("server_ready")
 
     yield
@@ -161,6 +174,7 @@ app.include_router(feriado_router)
 app.include_router(traces_router)
 app.include_router(security_router)
 app.include_router(agendamento_router)
+app.include_router(perfil_router)
 app.include_router(agendamento_regras_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.

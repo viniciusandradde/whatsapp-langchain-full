@@ -92,6 +92,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/companies", label: "Empresas", icon: Building2 },
       { href: "/settings/integracoes", label: "Integrações", icon: Plug },
       { href: "/settings/calendar-rules", label: "Regras Calendar", icon: Clock },
+      { href: "/settings/perfis", label: "Perfis (RBAC)", icon: ShieldCheck },
       { href: "/settings/variaveis", label: "Variáveis", icon: Braces },
       { href: "/settings/departamentos", label: "Departamentos", icon: Building },
       { href: "/settings/horarios", label: "Horário", icon: Clock },
