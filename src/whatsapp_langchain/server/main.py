@@ -22,6 +22,7 @@ from whatsapp_langchain.server.middlewares import (
     install_security_headers,
 )
 from whatsapp_langchain.server.routes.admin import router as admin_router
+from whatsapp_langchain.server.routes.audit import router as audit_router
 from whatsapp_langchain.server.routes.agendamento import (
     router as agendamento_router,
 )
@@ -60,6 +61,7 @@ from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
 from whatsapp_langchain.server.routes.campanha import router as campanha_router
+from whatsapp_langchain.server.routes.feature_flag import router as feature_flag_router
 from whatsapp_langchain.server.routes.pasta import router as pasta_router
 from whatsapp_langchain.server.routes.perfil import router as perfil_router
 from whatsapp_langchain.server.routes.security import router as security_router
@@ -180,6 +182,8 @@ app.include_router(perfil_router)
 app.include_router(pasta_router)
 app.include_router(campanha_router)
 app.include_router(agendamento_regras_router)
+app.include_router(audit_router)
+app.include_router(feature_flag_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.
