@@ -7,6 +7,7 @@ import {
   closeAtendimento,
   getAtendimentoMensagens,
   getModelosMensagem,
+  resetAtendimentoThread,
   responderAtendimento,
   transferAtendimento,
   type AtendimentoMensagem,
@@ -94,6 +95,21 @@ export async function transferAction(
     await transferAtendimento(atendimentoId, userId);
     revalidatePath("/atendimento");
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type ResetResult =
+  | { ok: true; rowsDeleted: number; threadId: string }
+  | { ok: false; error: string };
+
+export async function resetThreadAction(
+  atendimentoId: number
+): Promise<ResetResult> {
+  try {
+    const r = await resetAtendimentoThread(atendimentoId);
+    return { ok: true, rowsDeleted: r.rows_deleted, threadId: r.thread_id };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

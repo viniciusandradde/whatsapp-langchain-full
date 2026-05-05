@@ -27,10 +27,13 @@ from whatsapp_langchain.shared.atendimento import (
     list_atendimentos,
     transfer_atendimento,
 )
+from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.empresa import is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
+from whatsapp_langchain.shared.queue import reset_thread_checkpoint
 from whatsapp_langchain.shared.variavel import build_render_context, render_template
 
 logger = structlog.get_logger()
@@ -259,3 +262,57 @@ async def transfer(
         },
     )
     return out
+
+
+@router.post("/{atendimento_id}/reset-thread")
+async def reset_thread(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Apaga checkpoint LangGraph do thread (phone:agent_id) do atendimento.
+
+    Útil quando o agente "decora" um pattern errado das últimas mensagens
+    (ex: respondeu "não tenho info" sem chamar tool, e modelo passa a
+    replicar). Limpar força próxima mensagem a começar do zero com prompt
+    + tools atuais.
+
+    Não toca em message_queue, conversations, langgraph.store nem
+    cliente_memoria. Só admin da empresa pode executar.
+    """
+    pool = await get_pool()
+
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Só admin pode resetar conversa.",
+        )
+
+    atd = await get_atendimento_by_id(pool, atendimento_id)
+    if atd is None or atd.empresa_id != empresa_id:
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado.")
+
+    cliente = await get_cliente_by_id(pool, atd.cliente_id)
+    if cliente is None or cliente.empresa_id != empresa_id:
+        raise HTTPException(
+            status_code=404, detail="Cliente do atendimento não encontrado."
+        )
+
+    rows_deleted = await reset_thread_checkpoint(
+        pool, cliente.telefone, atd.agente_atual
+    )
+
+    logger.info(
+        "thread_checkpoint_reset",
+        empresa_id=empresa_id,
+        atendimento_id=atendimento_id,
+        actor_user_id=user_id,
+        phone=cliente.telefone,
+        agent_id=atd.agente_atual,
+        rows_deleted=rows_deleted,
+    )
+    return {
+        "ok": True,
+        "rows_deleted": rows_deleted,
+        "thread_id": f"{cliente.telefone}:{atd.agente_atual}",
+    }

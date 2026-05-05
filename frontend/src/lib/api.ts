@@ -1111,6 +1111,15 @@ export interface AgendamentoHistorico {
   at: string | null;
 }
 
+export async function resetAtendimentoThread(
+  atendimentoId: number
+): Promise<{ ok: boolean; rows_deleted: number; thread_id: string }> {
+  return apiFetch<{ ok: boolean; rows_deleted: number; thread_id: string }>(
+    `/api/atendimentos/${atendimentoId}/reset-thread`,
+    { method: "POST" }
+  );
+}
+
 export async function getAgendamentoHistorico(
   id: number
 ): Promise<{ items: AgendamentoHistorico[] }> {

@@ -496,3 +496,34 @@ async def upsert_conversation(
             (empresa_id, phone_number, agent_id, thread_id, last_message),
         )
         await conn.commit()
+
+
+async def reset_thread_checkpoint(
+    pool, phone_number: str, agent_id: str
+) -> int:
+    """Apaga o checkpoint LangGraph do thread (phone:agent).
+
+    Usado quando o agente "decora" um pattern errado nas últimas N
+    mensagens (ex: respondeu "não tenho info" sem chamar tool, e o
+    modelo passa a replicar). Limpar o checkpoint força próxima
+    mensagem a começar do zero com prompt + tools atuais.
+
+    Não toca em:
+    - `message_queue` (histórico de mensagens enfileiradas)
+    - `conversations` (resumo pra UI)
+    - `langgraph.store` (memórias semânticas cross-thread)
+    - `cliente_memoria` (memória estruturada por cliente)
+
+    Retorna o total de rows removidas (somando as 3 tabelas LangGraph).
+    """
+    thread_id = f"{phone_number}:{agent_id}"
+    total = 0
+    async with pool.connection() as conn:
+        for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+            cur = await conn.execute(
+                f"DELETE FROM {table} WHERE thread_id = %s",
+                (thread_id,),
+            )
+            total += cur.rowcount or 0
+        await conn.commit()
+    return total

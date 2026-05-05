@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CheckCircle2,
   ChevronDown,
+  Eraser,
   Hand,
   RefreshCw,
   Send,
@@ -27,6 +28,7 @@ import {
   closeAction,
   loadMensagensAction,
   loadModelosAction,
+  resetThreadAction,
   responderAction,
   transferAction,
 } from "./actions";
@@ -169,6 +171,30 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     runAction(() => closeAction(atendimento.id, status));
   }
 
+  async function handleResetThread() {
+    if (
+      !confirm(
+        "Resetar conversa do agente?\n\n" +
+          "Apaga o histórico LangGraph (checkpoint) deste número.\n" +
+          "Próxima mensagem começa do zero — útil quando o agente está\n" +
+          "replicando padrão errado das últimas respostas.\n\n" +
+          "Não afeta: mensagens da timeline, memórias semânticas, dados do cliente."
+      )
+    )
+      return;
+    setError(null);
+    const r = await resetThreadAction(atendimento.id);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    alert(
+      `✅ Conversa resetada (${r.rowsDeleted} rows removidas).\n` +
+        `Thread: ${r.threadId}\n\n` +
+        "Próxima mensagem do cliente vai começar do zero."
+    );
+  }
+
   async function openModelosDropdown() {
     if (modelos === null) {
       const r = await loadModelosAction();
@@ -242,15 +268,27 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
               Conversa
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void reload()}
-              disabled={loading}
-            >
-              <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
-              Atualizar
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void handleResetThread()}
+                disabled={loading || isPending}
+                title="Resetar histórico do agente (admin only)"
+              >
+                <Eraser className="size-3.5" />
+                Resetar
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void reload()}
+                disabled={loading}
+              >
+                <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+                Atualizar
+              </Button>
+            </div>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
