@@ -1,0 +1,8 @@
+node_modules/
+output/runs/
+output/latest
+output/baseline/
+output/*.html
+auth.json
+*.log
+.DS_Store
