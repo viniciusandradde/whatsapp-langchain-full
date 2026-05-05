@@ -90,34 +90,83 @@ async def _try_handle_approval(
     )
 
     text = (message.incoming_message or "").strip()
-    m = _APPROVAL_RE.match(text)
-    if not m:
+    intent = _match_approval_intent(text)
+    if intent is None:
         return False
 
-    decisao = m.group(1).upper()
-    token = m.group(2).lower()
-    motivo = m.group(3).strip() or None
-
-    aprov = await _agendamento_helpers.find_pending_approval_by_token(pool, token)
-    if not aprov:
-        # Token desconhecido — pode ser tentativa de fraude ou já decidido.
-        # Não responde aqui; deixa cair pro agente que vai dizer "não entendi".
-        logger.info(
-            "approval_token_invalid",
-            phone=message.phone_number,
-            token=token,
+    if intent["kind"] == "numeric":
+        # "1" ou "2" sozinho. Resolve via FIFO mas SÓ se houver exatamente
+        # 1 pending — múltiplas pending exigem token explícito pra não
+        # aprovar o errado silenciosamente.
+        pending = await _agendamento_helpers.list_pending_approvals_by_phone(
+            pool, message.phone_number
         )
-        return False
+        if not pending:
+            logger.info(
+                "approval_numeric_no_pending",
+                phone=message.phone_number,
+                choice=intent["choice"],
+            )
+            return False  # cai pro agente
+        if len(pending) > 1:
+            ambig = (
+                f"Você tem {len(pending)} pedidos de aprovação pendentes. "
+                "Pra não aprovar o errado, responda com o token explícito:\n\n"
+                "APROVAR <token>\nou\nREJEITAR <token>\n\n"
+                "Pedidos pendentes:\n"
+                + "\n".join(
+                    f"• {p['summary']} ({p['data_inicio'].strftime('%d/%m %H:%M')}) — {p['token']}"
+                    for p in pending
+                )
+            )
+            try:
+                await outbound.send_message(message.phone_number, ambig)
+            except Exception as e:  # noqa: BLE001
+                logger.error("approval_ambiguous_send_failed", error=str(e))
+            await mark_done(
+                pool,
+                message.id,
+                ambig,
+                normalized_input=text,
+                media_processing_status=None,
+                media_processing_error=None,
+            )
+            logger.info(
+                "approval_ambiguous",
+                phone=message.phone_number,
+                pending_count=len(pending),
+            )
+            return True
+        aprov = pending[0]
+        decisao = "APROVAR" if intent["choice"] == "1" else "REJEITAR"
+        token = aprov["token"]
+        motivo = None
+    else:
+        # explicit
+        decisao = intent["action"]
+        token = intent["token"]
+        motivo = intent["motivo"]
 
-    # Confere phone do remetente bate com gestor cadastrado
-    if message.phone_number != aprov["gestor_telefone"]:
-        logger.warning(
-            "approval_token_wrong_phone",
-            expected=aprov["gestor_telefone"],
-            got=message.phone_number,
-            token=token,
-        )
-        return False
+        aprov = await _agendamento_helpers.find_pending_approval_by_token(pool, token)
+        if not aprov:
+            # Token desconhecido — pode ser tentativa de fraude ou já decidido.
+            # Não responde aqui; deixa cair pro agente que vai dizer "não entendi".
+            logger.info(
+                "approval_token_invalid",
+                phone=message.phone_number,
+                token=token,
+            )
+            return False
+
+        # Confere phone do remetente bate com gestor cadastrado
+        if message.phone_number != aprov["gestor_telefone"]:
+            logger.warning(
+                "approval_token_wrong_phone",
+                expected=aprov["gestor_telefone"],
+                got=message.phone_number,
+                token=token,
+            )
+            return False
 
     if decisao == "APROVAR":
         # Atualiza aprovação + cria evento Google

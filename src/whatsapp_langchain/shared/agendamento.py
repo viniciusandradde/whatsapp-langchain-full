@@ -389,6 +389,50 @@ async def find_pending_approval_by_token(
     }
 
 
+async def list_pending_approvals_by_phone(
+    pool: AsyncConnectionPool, phone: str
+) -> list[dict]:
+    """Lista TODAS as aprovações pendentes pra um telefone (FIFO).
+
+    Usado pelo handler "1/2" pra desambiguar quando o gestor tem mais
+    de um pedido pendente — sem isso, apertar "1" aprovaria silenciosamente
+    o mais antigo (alto risco de aprovar o pedido errado).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT ap.id, ap.agendamento_id, ap.gestor_telefone,
+                   ap.status, ap.token, ap.created_at,
+                   ag.empresa_id, ag.summary, ag.data_inicio, ag.data_fim,
+                   ag.calendar_id, ag.cliente_id, ag.descricao
+              FROM agendamento_aprovacao ap
+              JOIN agendamento ag ON ag.id = ap.agendamento_id
+             WHERE ap.gestor_telefone = %s AND ap.status = 'pendente'
+             ORDER BY ap.created_at ASC
+            """,
+            (phone,),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "aprovacao_id": r[0],
+            "agendamento_id": r[1],
+            "gestor_telefone": r[2],
+            "status": r[3],
+            "token": str(r[4]),
+            "created_at": r[5],
+            "empresa_id": r[6],
+            "summary": r[7],
+            "data_inicio": r[8],
+            "data_fim": r[9],
+            "calendar_id": r[10],
+            "cliente_id": r[11],
+            "descricao": r[12],
+        }
+        for r in rows
+    ]
+
+
 async def find_pending_approval_by_phone(
     pool: AsyncConnectionPool, phone: str
 ) -> dict | None:
@@ -673,19 +717,24 @@ async def notify_gestor(
         gestor_telefone=cal_config.aprovador_telefone,
     )
 
-    # Monta texto da mensagem
+    # Monta texto da mensagem. Sem backticks (WhatsApp não renderiza
+    # Markdown) — texto plano e amigável. UX: gestor responde 1 pra
+    # aprovar ou 2 pra rejeitar; token fica visível pra fallback quando
+    # houver múltiplos pedidos pendentes.
     cliente_label = cliente_nome or "cliente"
     inicio_local = data_inicio.strftime("%d/%m %H:%M")
     fim_local = data_fim.strftime("%H:%M")
     texto = (
-        f"📅 *Pedido de agendamento*\n\n"
+        "📅 Pedido de agendamento\n\n"
         f"Cliente: {cliente_label}\n"
         f"Data: {inicio_local} → {fim_local}\n"
         f"Assunto: {summary}\n\n"
-        f"Para responder:\n"
-        f"`APROVAR {aprov['token']}`\n"
-        f"ou\n"
-        f"`REJEITAR {aprov['token']}`"
+        "Responda:\n"
+        "1 - Aprovar\n"
+        "2 - Não aprovar\n\n"
+        "(Mais de um pedido pendente? Use:\n"
+        f"APROVAR {aprov['token']}\n"
+        f"ou REJEITAR {aprov['token']})"
     )
 
     # Envia via OutboundClient resolvido pelo provider da Conexão
