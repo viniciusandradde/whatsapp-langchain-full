@@ -1233,6 +1233,86 @@ export async function getDocumentosConhecimento(opts?: {
   );
 }
 
+// E2.D M6.b: Campanhas
+export interface Campanha {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  descricao: string | null;
+  mensagem: string;
+  conexao_id: number | null;
+  status: "draft" | "running" | "done" | "partial" | "aborted";
+  intervalo_ms: number;
+  max_destinatarios: number;
+  total_destinatarios: number;
+  enviados: number;
+  falhas: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CampanhaDestinatario {
+  id: number;
+  telefone: string;
+  status: "pendente" | "enviado" | "falhou";
+  mensagem_id_externo: string | null;
+  erro: string | null;
+  sent_at: string | null;
+}
+
+export interface CampanhaCreateInput {
+  nome: string;
+  descricao?: string | null;
+  mensagem: string;
+  conexao_id?: number | null;
+  intervalo_ms?: number;
+  max_destinatarios?: number;
+  telefones: string[];
+}
+
+export async function getCampanhas(): Promise<{ items: Campanha[] }> {
+  return apiFetch<{ items: Campanha[] }>(`/api/campanhas`);
+}
+
+export async function getCampanha(id: number): Promise<Campanha> {
+  return apiFetch<Campanha>(`/api/campanhas/${id}`);
+}
+
+export async function getCampanhaDestinatarios(
+  id: number,
+  limit = 200
+): Promise<{ items: CampanhaDestinatario[] }> {
+  return apiFetch<{ items: CampanhaDestinatario[] }>(
+    `/api/campanhas/${id}/destinatarios?limit=${limit}`
+  );
+}
+
+export async function createCampanha(
+  body: CampanhaCreateInput
+): Promise<Campanha> {
+  return apiFetch<Campanha>(`/api/campanhas`, { method: "POST", body });
+}
+
+export async function dispatchCampanha(id: number): Promise<{
+  ok: boolean;
+  campanha_id: number;
+  status: string;
+}> {
+  return apiFetch<{ ok: boolean; campanha_id: number; status: string }>(
+    `/api/campanhas/${id}/dispatch`,
+    { method: "POST" }
+  );
+}
+
+export async function abortCampanha(id: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/campanhas/${id}/abort`, {
+    method: "POST",
+  });
+}
+
 // E2.C M7: Pastas
 export async function getPastas(opts?: {
   comDocs?: boolean;

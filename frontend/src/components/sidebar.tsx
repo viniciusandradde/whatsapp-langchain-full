@@ -27,6 +27,7 @@ import {
   Clock,
   FolderTree,
   ListOrdered,
+  Megaphone,
   Plug,
   ShieldCheck,
   Smartphone,
@@ -71,6 +72,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },
       { href: "/chats", label: "Conversas", icon: MessageSquare },
       { href: "/agendamentos", label: "Agendamentos", icon: CalendarDays },
+      { href: "/campanhas", label: "Campanhas", icon: Megaphone },
     ],
   },
   {
