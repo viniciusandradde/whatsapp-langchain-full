@@ -57,12 +57,13 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
     const fd = new FormData(e.currentTarget);
     const patch: ClienteUpdateInput = {};
 
-    function add<K extends keyof ClienteUpdateInput>(
-      key: K,
-      value: ClienteUpdateInput[K] | undefined
-    ) {
+    // Cast amplo pra aceitar null/string em campos com default no Cliente
+    // (locale/timezone/pais) sem entrar em type-fight. PUT do backend
+    // simplesmente ignora chaves null/undefined via update_cliente_partial.
+    function add(key: keyof ClienteUpdateInput, value: unknown) {
       if (value !== undefined) {
-        patch[key] = value;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (patch as Record<string, unknown>)[key as string] = value as any;
       }
     }
 
