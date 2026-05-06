@@ -540,6 +540,12 @@ class Atendimento(BaseModel):
     # Campos derivados (preenchidos pelas queries que fazem JOIN):
     cliente_nome: str | None = None
     cliente_telefone: str | None = None
+    # Sprint 3 paridade ZigChat (mig 047)
+    protocolo: str | None = None
+    qtde_resposta_invalida: int = 0
+    iniciado_cliente: bool = True
+    finalizado_por_user_id: str | None = None
+    solicitou_encerramento: bool = False
 
 
 class DocumentoConhecimento(BaseModel):

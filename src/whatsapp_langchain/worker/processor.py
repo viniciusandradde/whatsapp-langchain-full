@@ -381,6 +381,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=None,
             posicao_atual_item_id=None,
+            resposta=text,
         )
         await mark_done(pool, message.id, msg, normalized_input=text)
         await upsert_conversation(
@@ -422,6 +423,7 @@ async def _try_handle_menu(
                 menu_id=menu.id,
                 item_id=None,
                 posicao_atual_item_id=None,
+                resposta=text,
             )
             await mark_done(pool, message.id, msg, normalized_input=text)
             await upsert_conversation(
@@ -494,6 +496,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=item.id,
+            resposta=text,
         )
         await mark_done(pool, message.id, msg, normalized_input=text)
         await upsert_conversation(
@@ -535,6 +538,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None,  # saiu do menu
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -574,6 +578,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None,  # saiu do menu
+            resposta=text,
         )
         if msg_pre:
             await outbound.send_message(message.phone_number, msg_pre)
@@ -618,6 +623,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None if voltar_menu else item.parent_id,
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -659,6 +665,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None,
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -701,6 +708,7 @@ async def _try_handle_menu(
             pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None if voltar else item.parent_id,
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -757,6 +765,7 @@ async def _try_handle_menu(
             pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None if voltar else item.parent_id,
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -786,6 +795,7 @@ async def _try_handle_menu(
             pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None if voltar else item.parent_id,
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -815,6 +825,7 @@ async def _try_handle_menu(
         await registrar_historico(
             pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
             item_id=item.id, posicao_atual_item_id=None,
+            resposta=text,
         )
         await mark_done(pool, message.id, out_msg, normalized_input=text)
         await upsert_conversation(
@@ -843,6 +854,7 @@ async def _try_handle_menu(
         await registrar_historico(
             pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
             item_id=item.id, posicao_atual_item_id=None,
+            resposta=text,
         )
         await mark_done(pool, message.id, msg, normalized_input=text)
         await upsert_conversation(
@@ -864,6 +876,7 @@ async def _try_handle_menu(
         await registrar_historico(
             pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
             item_id=item.id, posicao_atual_item_id=None,
+            resposta=text,
         )
         await mark_done(pool, message.id, pergunta, normalized_input=text)
         await upsert_conversation(
@@ -887,6 +900,7 @@ async def _try_handle_menu(
             menu_id=menu.id,
             item_id=item.id,
             posicao_atual_item_id=None,
+            resposta=text,
         )
         await mark_done(pool, message.id, msg_final, normalized_input=text)
         await upsert_conversation(

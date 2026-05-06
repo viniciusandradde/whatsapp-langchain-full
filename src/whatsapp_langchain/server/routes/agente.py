@@ -83,6 +83,13 @@ class UpdateAgenteInput(BaseModel):
     mcp_server_ids: list[int] | None = None
     limite_custo_acao: str | None = None
     ativo: bool | None = None
+    # Sprint 2 paridade ZigChat (mig 043)
+    modelo_provedor: str | None = Field(default=None, max_length=60)
+    modelo_nome: str | None = Field(default=None, max_length=120)
+    tipo_memoria: str | None = None
+    janela_memoria: int | None = Field(default=None, ge=1, le=200)
+    timeout_minutos: int | None = Field(default=None, ge=1, le=1440)
+    acao_limite_menu_id: int | None = None
 
     @field_validator("estilo_resposta")
     @classmethod
@@ -96,6 +103,14 @@ class UpdateAgenteInput(BaseModel):
     def _validate_limite(cls, v: str | None) -> str | None:
         if v is not None and v not in LIMITE_ACOES:
             raise ValueError(f"limite_custo_acao deve ser um de {sorted(LIMITE_ACOES)}")
+        return v
+
+    @field_validator("tipo_memoria")
+    @classmethod
+    def _validate_memoria(cls, v: str | None) -> str | None:
+        valid = {"buffer", "window", "summary", "none"}
+        if v is not None and v not in valid:
+            raise ValueError(f"tipo_memoria deve ser um de {sorted(valid)}")
         return v
 
 

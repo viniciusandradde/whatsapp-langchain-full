@@ -552,15 +552,21 @@ async def registrar_historico(
     menu_id: int,
     item_id: int | None,
     posicao_atual_item_id: int | None,
+    resposta: str | None = None,
 ) -> None:
+    """Grava trilha de navegação do menu.
+
+    `resposta` (mig 045): texto cru que o cliente respondeu — útil pra
+    debug + análise UX (ex: ver qual texto o cliente digitou quando errou).
+    """
     async with pool.connection() as conn:
         await conn.execute(
             """
             INSERT INTO atendimento_menu_historico
-                (atendimento_id, menu_id, item_id, posicao_atual_item_id)
-            VALUES (%s, %s, %s, %s)
+                (atendimento_id, menu_id, item_id, posicao_atual_item_id, resposta)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (atendimento_id, menu_id, item_id, posicao_atual_item_id),
+            (atendimento_id, menu_id, item_id, posicao_atual_item_id, resposta),
         )
         await conn.commit()
 

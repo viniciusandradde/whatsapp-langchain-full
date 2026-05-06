@@ -61,7 +61,10 @@ _COLS = (
     "aceita_imagem, aceita_audio, aceita_documento, "
     "base_conhecimento_ids, variavel_ids, mcp_server_ids, "
     "limite_custo_acao, ativo, is_default, "
-    "created_by_user_id, created_at, updated_at"
+    "created_by_user_id, created_at, updated_at, "
+    # Sprint 2 paridade ZigChat (mig 043)
+    "modelo_provedor, modelo_nome, tipo_memoria, janela_memoria, "
+    "timeout_minutos, acao_limite_menu_id"
 )
 
 
@@ -93,6 +96,13 @@ class AgenteIA:
     created_by_user_id: str | None
     created_at: Any
     updated_at: Any
+    # Sprint 2 paridade ZigChat (mig 043)
+    modelo_provedor: str | None = None
+    modelo_nome: str | None = None
+    tipo_memoria: str = "window"
+    janela_memoria: int | None = None
+    timeout_minutos: int | None = None
+    acao_limite_menu_id: int | None = None
 
     def to_dict(self) -> dict:
         out = {
@@ -128,6 +138,13 @@ class AgenteIA:
             "created_by_user_id": self.created_by_user_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            # Sprint 2 paridade ZigChat
+            "modelo_provedor": self.modelo_provedor,
+            "modelo_nome": self.modelo_nome,
+            "tipo_memoria": self.tipo_memoria,
+            "janela_memoria": self.janela_memoria,
+            "timeout_minutos": self.timeout_minutos,
+            "acao_limite_menu_id": self.acao_limite_menu_id,
         }
         # Campos derivados (pra UI mostrar valores efetivos)
         temp, top_p = resolve_temperatura_top_p(
@@ -331,6 +348,11 @@ class AgenteRuntime:
     max_tokens: int | None
     tools_enabled: list[str]
     base_conhecimento_ids: list[int]
+    # Sprint 2 paridade ZigChat (mig 043)
+    tipo_memoria: str = "window"
+    janela_memoria: int | None = None
+    timeout_minutos: int | None = None
+    acao_limite_menu_id: int | None = None
 
     @classmethod
     def from_agente(cls, agente: AgenteIA) -> AgenteRuntime:
@@ -343,16 +365,28 @@ class AgenteRuntime:
             if agente.top_p_override is not None
             else None,
         )
+        # Resolve modelo efetivo: provedor + nome separados (mig 043) OU
+        # modelo único legado. Provedor + nome ganha precedência se ambos
+        # preenchidos (cobre o caso pós-backfill).
+        modelo_efetivo: str | None
+        if agente.modelo_provedor and agente.modelo_nome:
+            modelo_efetivo = f"{agente.modelo_provedor}/{agente.modelo_nome}"
+        else:
+            modelo_efetivo = agente.modelo
         return cls(
             slug=agente.slug,
             template_catalog=agente.template_catalog,
             prompt_override=agente.prompt_override,
-            modelo=agente.modelo,
+            modelo=modelo_efetivo,
             temperatura=temp,
             top_p=top_p,
             max_tokens=agente.max_tokens,
             tools_enabled=list(agente.tools_enabled or []),
             base_conhecimento_ids=list(agente.base_conhecimento_ids or []),
+            tipo_memoria=agente.tipo_memoria,
+            janela_memoria=agente.janela_memoria,
+            timeout_minutos=agente.timeout_minutos,
+            acao_limite_menu_id=agente.acao_limite_menu_id,
         )
 
 
