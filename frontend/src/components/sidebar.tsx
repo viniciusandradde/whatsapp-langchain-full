@@ -28,6 +28,7 @@ import {
   Flag,
   FolderTree,
   ListOrdered,
+  ListTree,
   Megaphone,
   Plug,
   ScrollText,
@@ -81,6 +82,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Conteúdo & IA",
     items: [
       { href: "/agents", label: "Agentes", icon: Bot },
+      { href: "/menus", label: "Menu chatbot", icon: ListTree },
       { href: "/models", label: "Modelos LLM", icon: Brain },
       // Rótulo "Quick Replies" pra evitar ambiguidade com /models.
       // Rota /modelos preservada.

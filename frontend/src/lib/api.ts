@@ -1894,3 +1894,214 @@ export async function setDefaultAgenteIA(
     { method: "POST" }
   );
 }
+
+// =====================================================================
+// Menu chatbot (Sub-fase B + B+ paridade ZigChat)
+// =====================================================================
+
+export interface MenuChatbot {
+  id: number;
+  empresa_id: number;
+  conexao_id: number | null;
+  nome: string;
+  ativo: boolean;
+  mensagem_boas_vindas: string;
+  trigger_keywords: string[];
+  mensagem_opcao_invalida: string;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by_user_id: string | null;
+  // B+ paridade ZigChat (mig 041)
+  atalho: string | null;
+  solicitar_nome: boolean;
+  menu_moderno: boolean;
+  auto_navegar_para_item_id: number | null;
+  qtde_acesso: number;
+  arquivo_url: string | null;
+  mensagem_coleta: string | null;
+  mensagem_confirmar_coleta: string | null;
+  mensagem_final_coleta: string | null;
+  resposta_confidencial: boolean;
+}
+
+export type MenuItemAcaoTipo =
+  | "submenu"
+  | "transferir_dep"
+  | "chamar_agente"
+  | "enviar_msg"
+  | "fechar"
+  | "transferir_atendente"
+  | "enviar_template"
+  | "chamar_webhook"
+  | "enviar_link"
+  | "pesquisa_csat"
+  | "mudar_manual"
+  | "setar_nome";
+
+export interface MenuItem {
+  id: number;
+  menu_id: number;
+  parent_id: number | null;
+  ordem: number;
+  label: string;
+  acao_tipo: MenuItemAcaoTipo;
+  acao_payload: Record<string, unknown>;
+  ativo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  // B+ (mig 042)
+  comando: string | null;
+  acao_atendente_id: string | null;
+  acao_modelo_mensagem_id: number | null;
+  webhook_url: string | null;
+  hook_id: number | null;
+  link_url: string | null;
+  nota_min: number | null;
+  nota_max: number | null;
+  nota_pergunta: string | null;
+  grupo: string | null;
+}
+
+export interface MenuChatbotCreateInput {
+  nome: string;
+  mensagem_boas_vindas: string;
+  conexao_id?: number | null;
+  trigger_keywords?: string[];
+  mensagem_opcao_invalida?: string;
+}
+
+export type MenuChatbotUpdateInput = Partial<
+  Pick<
+    MenuChatbot,
+    | "nome"
+    | "mensagem_boas_vindas"
+    | "conexao_id"
+    | "trigger_keywords"
+    | "mensagem_opcao_invalida"
+    | "ativo"
+    | "atalho"
+    | "solicitar_nome"
+    | "menu_moderno"
+    | "auto_navegar_para_item_id"
+    | "arquivo_url"
+    | "mensagem_coleta"
+    | "mensagem_confirmar_coleta"
+    | "mensagem_final_coleta"
+    | "resposta_confidencial"
+  >
+>;
+
+export interface MenuItemCreateInput {
+  label: string;
+  acao_tipo: MenuItemAcaoTipo;
+  acao_payload?: Record<string, unknown>;
+  parent_id?: number | null;
+  ordem?: number;
+}
+
+export type MenuItemUpdateInput = Partial<
+  Pick<
+    MenuItem,
+    | "label"
+    | "acao_tipo"
+    | "acao_payload"
+    | "ordem"
+    | "ativo"
+    | "comando"
+    | "acao_atendente_id"
+    | "acao_modelo_mensagem_id"
+    | "webhook_url"
+    | "hook_id"
+    | "link_url"
+    | "nota_min"
+    | "nota_max"
+    | "nota_pergunta"
+    | "grupo"
+  >
+>;
+
+export async function getMenus(opts?: {
+  onlyActive?: boolean;
+}): Promise<{ items: MenuChatbot[] }> {
+  const q = opts?.onlyActive ? "?only_active=true" : "";
+  return apiFetch<{ items: MenuChatbot[] }>(`/api/v1/menus${q}`);
+}
+
+export async function getMenu(id: number): Promise<MenuChatbot> {
+  return apiFetch<MenuChatbot>(`/api/v1/menus/${id}`);
+}
+
+export async function createMenu(
+  body: MenuChatbotCreateInput
+): Promise<MenuChatbot> {
+  return apiFetch<MenuChatbot>(`/api/v1/menus`, { method: "POST", body });
+}
+
+export async function updateMenu(
+  id: number,
+  body: MenuChatbotUpdateInput
+): Promise<MenuChatbot> {
+  return apiFetch<MenuChatbot>(`/api/v1/menus/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteMenu(id: number): Promise<void> {
+  await apiFetch<void>(`/api/v1/menus/${id}`, { method: "DELETE" });
+}
+
+export async function getMenuItems(
+  menuId: number,
+  opts?: { parentId?: number | null; onlyActive?: boolean }
+): Promise<{ items: MenuItem[] }> {
+  const params = new URLSearchParams();
+  if (opts?.parentId !== undefined && opts.parentId !== null) {
+    params.set("parent_id", String(opts.parentId));
+  }
+  if (opts?.onlyActive === false) {
+    params.set("only_active", "false");
+  }
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<{ items: MenuItem[] }>(`/api/v1/menus/${menuId}/itens${qs}`);
+}
+
+export async function createMenuItem(
+  menuId: number,
+  body: MenuItemCreateInput
+): Promise<MenuItem> {
+  return apiFetch<MenuItem>(`/api/v1/menus/${menuId}/itens`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function updateMenuItem(
+  menuId: number,
+  itemId: number,
+  body: MenuItemUpdateInput
+): Promise<MenuItem> {
+  return apiFetch<MenuItem>(`/api/v1/menus/${menuId}/itens/${itemId}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteMenuItem(
+  menuId: number,
+  itemId: number
+): Promise<void> {
+  await apiFetch<void>(`/api/v1/menus/${menuId}/itens/${itemId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function reorderMenuItems(
+  menuId: number,
+  body: { parent_id: number | null; ordered_ids: number[] }
+): Promise<{ ok: boolean; ordered_ids: number[] }> {
+  return apiFetch<{ ok: boolean; ordered_ids: number[] }>(
+    `/api/v1/menus/${menuId}/itens/reorder`,
+    { method: "POST", body }
+  );
+}
