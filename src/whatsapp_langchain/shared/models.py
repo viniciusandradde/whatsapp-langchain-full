@@ -194,6 +194,19 @@ class Empresa(BaseModel):
     created_at: datetime
     updated_at: datetime
     my_role: str | None = None
+    # Sprint 8 paridade ZigChat (mig 060)
+    menu_coleta_id: int | None = None
+    hook_id: int | None = None
+    plano_id: int | None = None
+    razao_social: str | None = None
+    inscricao_estadual: str | None = None
+    endereco_fiscal_cep: str | None = None
+    endereco_fiscal_logradouro: str | None = None
+    endereco_fiscal_numero: str | None = None
+    endereco_fiscal_complemento: str | None = None
+    endereco_fiscal_bairro: str | None = None
+    endereco_fiscal_cidade: str | None = None
+    endereco_fiscal_uf: str | None = None
 
 
 class EmpresaMembro(BaseModel):
