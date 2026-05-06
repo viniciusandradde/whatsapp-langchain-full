@@ -60,6 +60,10 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
     ("agente.config", "Editar prompt/temperatura/modelo do agente", "agente"),
     ("agente.template.use", "Aplicar template de agente novo (Etapa 3)", "agente"),
 
+    # Menu chatbot árvore (Sub-fase B)
+    ("menu_chatbot.read", "Ver menus chatbot configurados", "menu_chatbot"),
+    ("menu_chatbot.write", "Criar/editar menus + items + reordenar", "menu_chatbot"),
+
     # Quick replies
     ("modelo_mensagem.read", "Ver templates de resposta rápida", "modelo_mensagem"),
     ("modelo_mensagem.write", "Criar/editar templates", "modelo_mensagem"),

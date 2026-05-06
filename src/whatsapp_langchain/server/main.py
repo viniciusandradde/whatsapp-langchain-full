@@ -58,6 +58,9 @@ from whatsapp_langchain.server.routes.horario import (
 from whatsapp_langchain.server.routes.horario import (
     router_horario as horario_router,
 )
+from whatsapp_langchain.server.routes.menu_chatbot import (
+    router as menu_chatbot_router,
+)
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
@@ -240,6 +243,7 @@ app.include_router(agendamento_regras_router)
 app.include_router(audit_router)
 app.include_router(feature_flag_router)
 app.include_router(agente_router)
+app.include_router(menu_chatbot_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.

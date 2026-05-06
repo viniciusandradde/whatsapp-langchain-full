@@ -43,9 +43,21 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
 from whatsapp_langchain.shared.agente import resolve_agente_runtime
-from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
+from whatsapp_langchain.shared.atendimento import (
+    close_atendimento,
+    get_atendimento_by_id,
+)
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
+from whatsapp_langchain.shared.menu_chatbot import (
+    format_menu_message,
+    get_menu_ativo_para_conexao,
+    get_posicao_atual,
+    is_trigger_keyword,
+    list_children,
+    parse_numero_opcao,
+    registrar_historico,
+)
 from whatsapp_langchain.shared.models import MessageQueue
 from whatsapp_langchain.shared.queue import (
     mark_done,
@@ -313,6 +325,352 @@ def _resolve_outbound_client(
     return client
 
 
+async def _try_handle_menu(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+) -> bool:
+    """Sub-fase B — menu chatbot árvore.
+
+    Retorna True quando processou a mensagem (cliente recebeu boas-vindas,
+    escolheu opção, ou tentou opção inválida). Retorna False quando o
+    fluxo deve seguir pro agente (sem menu cadastrado, operador humano
+    em controle, ou cliente já saiu do menu).
+
+    Decisões de prioridade:
+    - Operador humano (atendimento.assigned_to_user_id + em_andamento) →
+      ignora menu. Operador responde via composer.
+    - `trigger_keyword` (ex: "menu") → reset pra raiz, mesmo se cliente
+      já estava com agente_atual atribuído.
+    - Sem histórico de menu E sem agente_atual ainda → primeira interação,
+      envia boas-vindas + raiz.
+    - Histórico existe E posição_atual definida → tenta interpretar texto
+      como número de opção; texto livre vira "opção inválida".
+    - Cliente saiu do menu (posicao_atual=None E agente_atual atribuído E
+      texto não é trigger) → deixa pro agente.
+    """
+    if message.atendimento_id is None:
+        return False
+
+    atendimento = await get_atendimento_by_id(pool, message.atendimento_id)
+    if atendimento is None:
+        return False
+
+    # Operador humano em controle — não interfere
+    if atendimento.status == "em_andamento" and atendimento.assigned_to_user_id:
+        return False
+
+    menu = await get_menu_ativo_para_conexao(
+        pool, message.empresa_id, atendimento.conexao_id
+    )
+    if menu is None:
+        return False
+
+    text = (message.incoming_message or "").strip()
+
+    hist_menu_id, posicao_atual = await get_posicao_atual(pool, message.atendimento_id)
+
+    # Trigger keyword sempre vence — reset pra raiz
+    if is_trigger_keyword(text, menu.trigger_keywords):
+        children = await list_children(pool, menu.id, None)
+        msg = format_menu_message(menu.mensagem_boas_vindas, children)
+        await outbound.send_message(message.phone_number, msg)
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=None,
+            posicao_atual_item_id=None,
+        )
+        await mark_done(pool, message.id, msg, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=msg,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_reset_via_keyword",
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+        )
+        return True
+
+    # Primeira interação: sem histórico de menu, agente ainda no default
+    # da conexão — envia boas-vindas. Se atendimento já tem agente
+    # customizado (não é o default), assume que cliente já passou pelo
+    # menu antes — pula direto pro agente.
+    if hist_menu_id is None:
+        # Heurística: se atendimento foi criado AGORA mesmo (status='aguardando',
+        # last_message_at == created_at), é primeira mensagem.
+        if atendimento.status == "aguardando":
+            children = await list_children(pool, menu.id, None)
+            if not children:
+                # Menu sem opções — config inválida, deixa pro agente
+                logger.warning(
+                    "menu_sem_opcoes_raiz",
+                    menu_id=menu.id,
+                    empresa_id=message.empresa_id,
+                )
+                return False
+            msg = format_menu_message(menu.mensagem_boas_vindas, children)
+            await outbound.send_message(message.phone_number, msg)
+            await registrar_historico(
+                pool,
+                atendimento_id=message.atendimento_id,
+                menu_id=menu.id,
+                item_id=None,
+                posicao_atual_item_id=None,
+            )
+            await mark_done(pool, message.id, msg, normalized_input=text)
+            await upsert_conversation(
+                pool,
+                phone_number=message.phone_number,
+                agent_id=message.agent_id,
+                last_message=msg,
+                empresa_id=message.empresa_id,
+            )
+            logger.info(
+                "menu_welcome_sent",
+                atendimento_id=message.atendimento_id,
+                menu_id=menu.id,
+                num_options=len(children),
+            )
+            return True
+        # Em andamento sem histórico de menu → cliente nunca passou pelo menu
+        # (atendimento legacy, ou menu cadastrado depois). Deixa pro agente.
+        return False
+
+    # Tem histórico — cliente está navegando o menu.
+    children = await list_children(pool, menu.id, posicao_atual)
+    numero = parse_numero_opcao(text)
+
+    if numero is None or numero < 1 or numero > len(children):
+        # Opção inválida — reenvia menu atual
+        invalida_msg = menu.mensagem_opcao_invalida
+        menu_msg = format_menu_message(None, children)
+        full_msg = f"{invalida_msg}\n\n{menu_msg}"
+        await outbound.send_message(message.phone_number, full_msg)
+        await mark_done(pool, message.id, full_msg, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=full_msg,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_opcao_invalida",
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            input=text[:50],
+        )
+        return True
+
+    item = children[numero - 1]
+    payload = item.acao_payload or {}
+
+    if item.acao_tipo == "submenu":
+        sub_children = await list_children(pool, menu.id, item.id)
+        if not sub_children:
+            # Submenu vazio — config inválida. Trata como inválido.
+            logger.warning(
+                "menu_submenu_vazio",
+                menu_id=menu.id,
+                item_id=item.id,
+            )
+            invalida_msg = menu.mensagem_opcao_invalida
+            menu_msg = format_menu_message(None, children)
+            full_msg = f"{invalida_msg}\n\n{menu_msg}"
+            await outbound.send_message(message.phone_number, full_msg)
+            await mark_done(pool, message.id, full_msg, normalized_input=text)
+            return True
+        msg = format_menu_message(None, sub_children)
+        await outbound.send_message(message.phone_number, msg)
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=item.id,
+        )
+        await mark_done(pool, message.id, msg, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=msg,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_submenu_open",
+            atendimento_id=message.atendimento_id,
+            item_id=item.id,
+        )
+        return True
+
+    if item.acao_tipo == "transferir_dep":
+        dep_id = payload.get("departamento_id")
+        msg_pre = (payload.get("mensagem_pre") or "").strip()
+        if not isinstance(dep_id, int):
+            logger.error(
+                "menu_transferir_dep_payload_invalido",
+                item_id=item.id,
+                payload=payload,
+            )
+            return False
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE atendimento SET departamento_id = %s, updated_at = NOW() "
+                "WHERE id = %s",
+                (dep_id, message.atendimento_id),
+            )
+            await conn.commit()
+        out_msg = msg_pre or "Você foi transferido. Aguarde, em breve um atendente irá te responder."
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None,  # saiu do menu
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=out_msg,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_transferir_dep",
+            atendimento_id=message.atendimento_id,
+            departamento_id=dep_id,
+        )
+        return True
+
+    if item.acao_tipo == "chamar_agente":
+        agente_slug = payload.get("agente_slug")
+        msg_pre = (payload.get("mensagem_pre") or "").strip()
+        if not isinstance(agente_slug, str) or not agente_slug:
+            logger.error(
+                "menu_chamar_agente_payload_invalido",
+                item_id=item.id,
+                payload=payload,
+            )
+            return False
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE atendimento SET agente_atual = %s, updated_at = NOW() "
+                "WHERE id = %s",
+                (agente_slug, message.atendimento_id),
+            )
+            await conn.commit()
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None,  # saiu do menu
+        )
+        if msg_pre:
+            await outbound.send_message(message.phone_number, msg_pre)
+            await mark_done(pool, message.id, msg_pre, normalized_input=text)
+            await upsert_conversation(
+                pool,
+                phone_number=message.phone_number,
+                agent_id=message.agent_id,
+                last_message=msg_pre,
+                empresa_id=message.empresa_id,
+            )
+        else:
+            # Sem mensagem_pre, marca done sem outbound (próxima msg do
+            # cliente vai pro agente normalmente)
+            await mark_done(pool, message.id, "", normalized_input=text)
+        logger.info(
+            "menu_chamar_agente",
+            atendimento_id=message.atendimento_id,
+            agente_slug=agente_slug,
+        )
+        return True
+
+    if item.acao_tipo == "enviar_msg":
+        texto = (payload.get("texto") or "").strip()
+        voltar_menu = bool(payload.get("voltar_menu", True))
+        if not texto:
+            logger.error(
+                "menu_enviar_msg_payload_invalido",
+                item_id=item.id,
+                payload=payload,
+            )
+            return False
+        out_msg = texto
+        if voltar_menu:
+            root_children = await list_children(pool, menu.id, None)
+            if root_children:
+                out_msg = f"{texto}\n\n{format_menu_message(None, root_children)}"
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None if voltar_menu else item.parent_id,
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=out_msg,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_enviar_msg",
+            atendimento_id=message.atendimento_id,
+            voltar_menu=voltar_menu,
+        )
+        return True
+
+    if item.acao_tipo == "fechar":
+        msg_final = (payload.get("mensagem_final") or "").strip() or (
+            "Atendimento finalizado. Volte sempre!"
+        )
+        await outbound.send_message(message.phone_number, msg_final)
+        await close_atendimento(pool, message.atendimento_id, "resolvido")
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None,
+        )
+        await mark_done(pool, message.id, msg_final, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=msg_final,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_fechar",
+            atendimento_id=message.atendimento_id,
+            motivo=payload.get("motivo"),
+        )
+        return True
+
+    # acao_tipo desconhecido (CHECK do DB já barra, mas defesa em profundidade)
+    logger.error(
+        "menu_acao_tipo_desconhecido",
+        item_id=item.id,
+        acao_tipo=item.acao_tipo,
+    )
+    return False
+
+
 async def process_message(
     message: MessageQueue,
     pool: AsyncConnectionPool,
@@ -350,6 +708,12 @@ async def process_message(
         # tudo. Se for, processa a decisão (cria/cancela evento Google),
         # responde, marca done e retorna early (não chama agente).
         if await _try_handle_approval(message, pool, outbound):
+            return
+
+        # B.3 — Menu chatbot árvore (Sub-fase B). Detecta cliente em
+        # navegação de menu OU primeira mensagem precisando de boas-vindas.
+        # Retorna True quando processou; False deixa fluxo seguir pro agente.
+        if await _try_handle_menu(message, pool, outbound):
             return
 
         # 0. Resolver modelos do agente escopados pela empresa da mensagem
