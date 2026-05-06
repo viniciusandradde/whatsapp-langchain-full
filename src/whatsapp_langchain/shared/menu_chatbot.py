@@ -28,7 +28,22 @@ logger = structlog.get_logger()
 
 # ---- Constantes ----
 
-ACAO_TIPOS = ("submenu", "transferir_dep", "chamar_agente", "enviar_msg", "fechar")
+ACAO_TIPOS = (
+    # MVP (mig 040)
+    "submenu",
+    "transferir_dep",
+    "chamar_agente",
+    "enviar_msg",
+    "fechar",
+    # Sub-fase B+ paridade ZigChat (mig 042)
+    "transferir_atendente",
+    "enviar_template",
+    "chamar_webhook",
+    "enviar_link",
+    "pesquisa_csat",
+    "mudar_manual",
+    "setar_nome",
+)
 
 # Regex de número de opção: aceita "1", " 1 ", "01", até 2 dígitos. Maiores
 # (ex: "100") são tratados como texto inválido — evita confusão com IDs.
@@ -51,6 +66,17 @@ class MenuChatbot:
     created_at: Any
     updated_at: Any
     created_by_user_id: str | None
+    # Sub-fase B+ paridade ZigChat (mig 041)
+    atalho: str | None = None
+    solicitar_nome: bool = False
+    menu_moderno: bool = False
+    auto_navegar_para_item_id: int | None = None
+    qtde_acesso: int = 0
+    arquivo_url: str | None = None
+    mensagem_coleta: str | None = None
+    mensagem_confirmar_coleta: str | None = None
+    mensagem_final_coleta: str | None = None
+    resposta_confidencial: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +91,16 @@ class MenuChatbot:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "created_by_user_id": self.created_by_user_id,
+            "atalho": self.atalho,
+            "solicitar_nome": self.solicitar_nome,
+            "menu_moderno": self.menu_moderno,
+            "auto_navegar_para_item_id": self.auto_navegar_para_item_id,
+            "qtde_acesso": self.qtde_acesso,
+            "arquivo_url": self.arquivo_url,
+            "mensagem_coleta": self.mensagem_coleta,
+            "mensagem_confirmar_coleta": self.mensagem_confirmar_coleta,
+            "mensagem_final_coleta": self.mensagem_final_coleta,
+            "resposta_confidencial": self.resposta_confidencial,
         }
 
 
@@ -80,6 +116,17 @@ class MenuItem:
     ativo: bool
     created_at: Any
     updated_at: Any
+    # Sub-fase B+ paridade ZigChat (mig 042)
+    comando: str | None = None
+    acao_atendente_id: str | None = None
+    acao_modelo_mensagem_id: int | None = None
+    webhook_url: str | None = None
+    hook_id: int | None = None
+    link_url: str | None = None
+    nota_min: int | None = None
+    nota_max: int | None = None
+    nota_pergunta: str | None = None
+    grupo: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -93,17 +140,34 @@ class MenuItem:
             "ativo": self.ativo,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "comando": self.comando,
+            "acao_atendente_id": self.acao_atendente_id,
+            "acao_modelo_mensagem_id": self.acao_modelo_mensagem_id,
+            "webhook_url": self.webhook_url,
+            "hook_id": self.hook_id,
+            "link_url": self.link_url,
+            "nota_min": self.nota_min,
+            "nota_max": self.nota_max,
+            "nota_pergunta": self.nota_pergunta,
+            "grupo": self.grupo,
         }
 
 
 _MENU_COLS = (
     "id, empresa_id, conexao_id, nome, ativo, mensagem_boas_vindas, "
     "trigger_keywords, mensagem_opcao_invalida, created_at, updated_at, "
-    "created_by_user_id"
+    "created_by_user_id, "
+    # B+ (mig 041)
+    "atalho, solicitar_nome, menu_moderno, auto_navegar_para_item_id, "
+    "qtde_acesso, arquivo_url, mensagem_coleta, mensagem_confirmar_coleta, "
+    "mensagem_final_coleta, resposta_confidencial"
 )
 _ITEM_COLS = (
     "id, menu_id, parent_id, ordem, label, acao_tipo, acao_payload, "
-    "ativo, created_at, updated_at"
+    "ativo, created_at, updated_at, "
+    # B+ (mig 042)
+    "comando, acao_atendente_id, acao_modelo_mensagem_id, webhook_url, "
+    "hook_id, link_url, nota_min, nota_max, nota_pergunta, grupo"
 )
 
 

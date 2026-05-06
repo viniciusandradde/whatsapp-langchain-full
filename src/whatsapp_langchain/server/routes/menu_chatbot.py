@@ -71,6 +71,16 @@ class UpdateMenuInput(BaseModel):
     trigger_keywords: list[str] | None = Field(default=None, max_length=20)
     mensagem_opcao_invalida: str | None = Field(default=None, max_length=2000)
     ativo: bool | None = None
+    # Sub-fase B+ paridade ZigChat (mig 041)
+    atalho: str | None = Field(default=None, max_length=60)
+    solicitar_nome: bool | None = None
+    menu_moderno: bool | None = None
+    auto_navegar_para_item_id: int | None = None
+    arquivo_url: str | None = Field(default=None, max_length=2000)
+    mensagem_coleta: str | None = Field(default=None, max_length=2000)
+    mensagem_confirmar_coleta: str | None = Field(default=None, max_length=2000)
+    mensagem_final_coleta: str | None = Field(default=None, max_length=2000)
+    resposta_confidencial: bool | None = None
 
 
 class CreateItemInput(BaseModel):
@@ -94,6 +104,17 @@ class UpdateItemInput(BaseModel):
     acao_payload: dict[str, Any] | None = None
     ordem: int | None = Field(default=None, ge=1, le=99)
     ativo: bool | None = None
+    # Sub-fase B+ paridade ZigChat (mig 042)
+    comando: str | None = Field(default=None, max_length=120)
+    acao_atendente_id: str | None = Field(default=None, max_length=120)
+    acao_modelo_mensagem_id: int | None = None
+    webhook_url: str | None = Field(default=None, max_length=2000)
+    hook_id: int | None = None
+    link_url: str | None = Field(default=None, max_length=2000)
+    nota_min: int | None = Field(default=None, ge=0, le=10)
+    nota_max: int | None = Field(default=None, ge=1, le=10)
+    nota_pergunta: str | None = Field(default=None, max_length=500)
+    grupo: str | None = Field(default=None, max_length=60)
 
     @field_validator("acao_tipo")
     @classmethod

@@ -38,14 +38,32 @@ class _ItemStub:
 
 
 class TestAcaoTipos:
-    def test_5_tipos_no_mvp(self):
+    def test_12_tipos_apos_paridade_zigchat(self):
+        """Sub-fase B+ (mig 042) expandiu de 5 → 12 ações."""
         assert set(ACAO_TIPOS) == {
+            # MVP (mig 040)
             "submenu",
             "transferir_dep",
             "chamar_agente",
             "enviar_msg",
             "fechar",
+            # Sub-fase B+ paridade ZigChat (mig 042)
+            "transferir_atendente",
+            "enviar_template",
+            "chamar_webhook",
+            "enviar_link",
+            "pesquisa_csat",
+            "mudar_manual",
+            "setar_nome",
         }
+
+    def test_total_de_acoes(self):
+        assert len(ACAO_TIPOS) == 12
+
+    def test_acoes_mvp_continuam_presentes(self):
+        """Garantia de não-regressão: ações MVP não foram removidas."""
+        mvp = {"submenu", "transferir_dep", "chamar_agente", "enviar_msg", "fechar"}
+        assert mvp.issubset(set(ACAO_TIPOS))
 
 
 class TestParseNumeroOpcao:

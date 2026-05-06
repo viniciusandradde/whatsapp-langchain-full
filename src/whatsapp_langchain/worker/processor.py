@@ -634,6 +634,247 @@ async def _try_handle_menu(
         )
         return True
 
+    # ---- Sub-fase B+ (mig 042) — 7 ações novas ----
+
+    if item.acao_tipo == "transferir_atendente":
+        # Atribui atendimento a usuário específico (operador humano).
+        # Em vez de FK explícita usuario, aceitamos string (Better Auth user IDs).
+        user_id = (item.acao_atendente_id or payload.get("acao_atendente_id") or "").strip()
+        msg_pre = (payload.get("mensagem_pre") or "").strip()
+        if not user_id:
+            logger.error("menu_transferir_atendente_payload_invalido", item_id=item.id)
+            return False
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE atendimento SET assigned_to_user_id = %s, "
+                "status = 'em_andamento', updated_at = NOW() WHERE id = %s",
+                (user_id, message.atendimento_id),
+            )
+            await conn.commit()
+        out_msg = msg_pre or "Você foi transferido. Em breve um atendente irá te responder."
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool,
+            atendimento_id=message.atendimento_id,
+            menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None,
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=out_msg, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_transferir_atendente",
+            atendimento_id=message.atendimento_id, atendente_user_id=user_id,
+        )
+        return True
+
+    if item.acao_tipo == "enviar_template":
+        # Dispara template de modelo_mensagem como resposta.
+        modelo_id = item.acao_modelo_mensagem_id or payload.get("acao_modelo_mensagem_id")
+        voltar = bool(payload.get("voltar_menu", True))
+        if not isinstance(modelo_id, int):
+            logger.error("menu_enviar_template_payload_invalido", item_id=item.id)
+            return False
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT conteudo FROM modelo_mensagem "
+                "WHERE id = %s AND empresa_id = %s",
+                (modelo_id, message.empresa_id),
+            )
+            row = await cur.fetchone()
+        if not row:
+            logger.error(
+                "menu_enviar_template_modelo_nao_encontrado",
+                modelo_id=modelo_id, empresa_id=message.empresa_id,
+            )
+            return False
+        out_msg = row[0]
+        if voltar:
+            root_children = await list_children(pool, menu.id, None)
+            if root_children:
+                out_msg = f"{out_msg}\n\n{format_menu_message(None, root_children)}"
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None if voltar else item.parent_id,
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=out_msg, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_enviar_template",
+            atendimento_id=message.atendimento_id, modelo_id=modelo_id,
+        )
+        return True
+
+    if item.acao_tipo == "chamar_webhook":
+        # Fire-and-forget POST pra URL externa. Não bloqueia o cliente.
+        # O hook_dispatcher trata retry+DLQ se houver hook_id (caso futuro).
+        url = (item.webhook_url or payload.get("webhook_url") or "").strip()
+        msg_pre = (payload.get("mensagem_pre") or "Ok, processando...").strip()
+        voltar = bool(payload.get("voltar_menu", True))
+        if not url:
+            logger.error("menu_chamar_webhook_url_vazio", item_id=item.id)
+            return False
+        # Dispara em background — não esperamos resposta
+        import asyncio as _asyncio  # local import pra não poluir top-level
+
+        import httpx
+
+        async def _fire_webhook(target_url: str, body: dict) -> None:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.post(target_url, json=body)
+            except Exception as exc:
+                logger.warning(
+                    "menu_chamar_webhook_falhou", url=target_url, error=str(exc),
+                )
+
+        webhook_body = {
+            "atendimento_id": message.atendimento_id,
+            "empresa_id": message.empresa_id,
+            "phone_number": message.phone_number,
+            "menu_id": menu.id,
+            "item_id": item.id,
+            "item_label": item.label,
+            "input_cliente": text,
+        }
+        _asyncio.create_task(_fire_webhook(url, webhook_body))
+
+        out_msg = msg_pre
+        if voltar:
+            root_children = await list_children(pool, menu.id, None)
+            if root_children:
+                out_msg = f"{msg_pre}\n\n{format_menu_message(None, root_children)}"
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None if voltar else item.parent_id,
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=out_msg, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_chamar_webhook",
+            atendimento_id=message.atendimento_id, url=url,
+        )
+        return True
+
+    if item.acao_tipo == "enviar_link":
+        url = (item.link_url or payload.get("link_url") or "").strip()
+        prefix = (payload.get("texto_pre") or "Aqui está o link:").strip()
+        voltar = bool(payload.get("voltar_menu", True))
+        if not url:
+            logger.error("menu_enviar_link_url_vazio", item_id=item.id)
+            return False
+        out_msg = f"{prefix}\n{url}"
+        if voltar:
+            root_children = await list_children(pool, menu.id, None)
+            if root_children:
+                out_msg = f"{out_msg}\n\n{format_menu_message(None, root_children)}"
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
+            item_id=item.id,
+            posicao_atual_item_id=None if voltar else item.parent_id,
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=out_msg, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_enviar_link", atendimento_id=message.atendimento_id, url=url,
+        )
+        return True
+
+    if item.acao_tipo == "pesquisa_csat":
+        # Envia pergunta + escala. A resposta numérica do cliente vai vir na
+        # próxima mensagem — captura via posicao_atual = item (resta como
+        # filho do CSAT que não tem filhos → próxima opção numérica fica
+        # "fora do range" e cai como inválida → reenvia menu).
+        # MVP: envia e sai do menu (deixa pro agente IA capturar nota se
+        # estiver atribuído, ou opera só como fire-and-forget).
+        # TODO mig 045: capturar próxima resposta como input estruturado.
+        pergunta = (item.nota_pergunta or payload.get("nota_pergunta") or
+                   "Por favor, avalie nosso atendimento:").strip()
+        nmin = item.nota_min or payload.get("nota_min") or 1
+        nmax = item.nota_max or payload.get("nota_max") or 5
+        escala = ", ".join(str(n) for n in range(int(nmin), int(nmax) + 1))
+        out_msg = f"{pergunta}\n\nResponda com um número de {nmin} a {nmax}:\n{escala}"
+        await outbound.send_message(message.phone_number, out_msg)
+        await registrar_historico(
+            pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
+            item_id=item.id, posicao_atual_item_id=None,
+        )
+        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=out_msg, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_pesquisa_csat",
+            atendimento_id=message.atendimento_id, escala=f"{nmin}-{nmax}",
+        )
+        return True
+
+    if item.acao_tipo == "mudar_manual":
+        # Sai do menu e marca atendimento como "aguardando" sem agente_atual
+        # atribuído — operadores humanos pegam via UI.
+        msg = (payload.get("mensagem_pre") or
+              "Estou te transferindo para um atendente humano. Aguarde um momento.").strip()
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE atendimento SET status = 'aguardando', "
+                "agente_atual = NULL, updated_at = NOW() WHERE id = %s",
+                (message.atendimento_id,),
+            )
+            await conn.commit()
+        await outbound.send_message(message.phone_number, msg)
+        await registrar_historico(
+            pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
+            item_id=item.id, posicao_atual_item_id=None,
+        )
+        await mark_done(pool, message.id, msg, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=msg, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_mudar_manual", atendimento_id=message.atendimento_id,
+        )
+        return True
+
+    if item.acao_tipo == "setar_nome":
+        # Pergunta o nome do cliente. MVP: envia pergunta e sai do menu — a
+        # próxima mensagem cliente cai no agente IA (que pode capturar nome
+        # via tool save_memory ou update_cliente). Captura estruturada (sem
+        # IA) requer mig 045 com posicao_atual = item.id + estado "captura".
+        pergunta = (payload.get("pergunta") or "Qual é o seu nome?").strip()
+        await outbound.send_message(message.phone_number, pergunta)
+        await registrar_historico(
+            pool, atendimento_id=message.atendimento_id, menu_id=menu.id,
+            item_id=item.id, posicao_atual_item_id=None,
+        )
+        await mark_done(pool, message.id, pergunta, normalized_input=text)
+        await upsert_conversation(
+            pool, phone_number=message.phone_number, agent_id=message.agent_id,
+            last_message=pergunta, empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "menu_setar_nome", atendimento_id=message.atendimento_id,
+        )
+        return True
+
     if item.acao_tipo == "fechar":
         msg_final = (payload.get("mensagem_final") or "").strip() or (
             "Atendimento finalizado. Volte sempre!"
