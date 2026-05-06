@@ -18,6 +18,7 @@ from whatsapp_langchain.server.dependencies import (
     check_rate_limit,
     validate_twilio_signature,
 )
+from whatsapp_langchain.shared.agente import resolve_agente_runtime
 from whatsapp_langchain.shared.atendimento import open_or_attach_atendimento
 from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import get_conexao_by_from_number
@@ -161,11 +162,18 @@ async def webhook_twilio(
     empresa_id = conexao.empresa_id
     conexao_id = conexao.id
     # Override por query (Studio dev) ganha do default da conexão.
-    resolved_agent = agent or conexao.default_agent_id
+    requested_agent = agent or conexao.default_agent_id
 
-    # Verifica se o agente existe no catálogo
-    if resolved_agent not in list_agents():
-        raise AgentNotFoundError(resolved_agent)
+    # A.6 — resolve via agente_ia table primeiro; cai pro catálogo se ausente.
+    runtime = await resolve_agente_runtime(pool, empresa_id, requested_agent)
+    if runtime is not None:
+        if runtime.template_catalog not in list_agents():
+            raise AgentNotFoundError(runtime.template_catalog)
+        resolved_agent = runtime.slug
+    else:
+        if requested_agent not in list_agents():
+            raise AgentNotFoundError(requested_agent)
+        resolved_agent = requested_agent
 
     # Rate limit (por phone — independente da conexão)
     await check_rate_limit(phone_number)

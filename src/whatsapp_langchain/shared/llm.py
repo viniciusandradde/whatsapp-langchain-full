@@ -75,6 +75,8 @@ def _get_rate_limiter(
 def create_chat_model(
     model: str | None = None,
     temperature: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
 ) -> ChatOpenAI:
     """Cria ChatOpenAI configurado com rate limiter.
 
@@ -85,6 +87,8 @@ def create_chat_model(
     Args:
         model: Nome do modelo. Default: settings.openrouter_model.
         temperature: Temperatura. Default: None (usa default do provider).
+        top_p: Nucleus sampling. Default: None (usa default do provider).
+        max_tokens: Limite de tokens da resposta. Default: None.
 
     Returns:
         ChatOpenAI com rate limiter aplicado.
@@ -105,6 +109,10 @@ def create_chat_model(
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
 
     return ChatOpenAI(**kwargs)
 

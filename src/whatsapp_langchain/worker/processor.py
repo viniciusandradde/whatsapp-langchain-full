@@ -42,6 +42,7 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
+from whatsapp_langchain.shared.agente import resolve_agente_runtime
 from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
@@ -459,12 +460,17 @@ async def process_message(
             }
         }
 
+        # A.6 — resolve agente_ia DB; runtime=None mantém path legacy (catálogo).
+        agente_runtime = await resolve_agente_runtime(
+            pool, message.empresa_id, message.agent_id
+        )
         graph = await load_graph(
             message.agent_id,
             checkpointer=checkpointer,
             store=store,
             pool=pool,
             empresa_id=message.empresa_id,
+            agente_runtime=agente_runtime,
         )
         result = await graph.ainvoke(
             {"messages": [human_message]},

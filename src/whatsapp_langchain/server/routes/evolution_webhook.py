@@ -20,6 +20,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError, list_agents
 from whatsapp_langchain.server.dependencies import check_rate_limit
+from whatsapp_langchain.shared.agente import resolve_agente_runtime
 from whatsapp_langchain.shared.atendimento import open_or_attach_atendimento
 from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import get_conexao_by_evolution_instance
@@ -214,10 +215,18 @@ async def webhook_evolution(
 
     empresa_id = conexao.empresa_id
     conexao_id = conexao.id
-    resolved_agent = conexao.default_agent_id
+    requested_agent = conexao.default_agent_id
 
-    if resolved_agent not in list_agents():
-        raise AgentNotFoundError(resolved_agent)
+    # A.6 — resolve via agente_ia table primeiro; cai pro catálogo se ausente.
+    runtime = await resolve_agente_runtime(pool, empresa_id, requested_agent)
+    if runtime is not None:
+        if runtime.template_catalog not in list_agents():
+            raise AgentNotFoundError(runtime.template_catalog)
+        resolved_agent = runtime.slug
+    else:
+        if requested_agent not in list_agents():
+            raise AgentNotFoundError(requested_agent)
+        resolved_agent = requested_agent
 
     await check_rate_limit(phone_number)
 

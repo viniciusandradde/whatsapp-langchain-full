@@ -308,3 +308,72 @@ async def set_default_agente(
                 (empresa_id, slug),
             )
             return (cur.rowcount or 0) > 0
+
+
+# ---- Runtime resolution (A.6) ----
+
+
+@dataclass
+class AgenteRuntime:
+    """Config efetiva pro loader montar o graph.
+
+    Combina `agente_ia` row + ESTILO_PRESETS resolvidos. `template_catalog`
+    indica qual diretório Python carregar; demais campos viram overrides
+    aplicados em `build_graph` do template.
+    """
+
+    slug: str
+    template_catalog: str
+    prompt_override: str | None
+    modelo: str | None
+    temperatura: float
+    top_p: float
+    max_tokens: int | None
+    tools_enabled: list[str]
+    base_conhecimento_ids: list[int]
+
+    @classmethod
+    def from_agente(cls, agente: AgenteIA) -> AgenteRuntime:
+        temp, top_p = resolve_temperatura_top_p(
+            agente.estilo_resposta,
+            float(agente.temperatura_override)
+            if agente.temperatura_override is not None
+            else None,
+            float(agente.top_p_override)
+            if agente.top_p_override is not None
+            else None,
+        )
+        return cls(
+            slug=agente.slug,
+            template_catalog=agente.template_catalog,
+            prompt_override=agente.prompt_override,
+            modelo=agente.modelo,
+            temperatura=temp,
+            top_p=top_p,
+            max_tokens=agente.max_tokens,
+            tools_enabled=list(agente.tools_enabled or []),
+            base_conhecimento_ids=list(agente.base_conhecimento_ids or []),
+        )
+
+
+async def resolve_agente_runtime(
+    pool: AsyncConnectionPool, empresa_id: int, slug: str
+) -> AgenteRuntime | None:
+    """Resolve runtime config pra um slug — multi-agente DB com fallbacks.
+
+    Ordem de resolução:
+    1. agente_ia.row(slug) ativo → usa diretamente
+    2. agente_ia.row(slug) inativo → cai pro default da empresa
+    3. nenhuma row pro slug → retorna None (caller usa caminho legacy)
+
+    Retorna None significa "não tem agente cadastrado em DB pra esse slug —
+    use comportamento legacy (catálogo + agente_ia_config)".
+    """
+    agente = await get_agente_by_slug(pool, empresa_id, slug)
+    if agente is not None and agente.ativo:
+        return AgenteRuntime.from_agente(agente)
+    # Fallback default — útil quando admin desativa o agente atual
+    default = await get_default_agente(pool, empresa_id)
+    if default is not None:
+        return AgenteRuntime.from_agente(default)
+    return None

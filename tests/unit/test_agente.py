@@ -111,3 +111,92 @@ class TestResolveTemperaturaTopP:
         temp, top_p = resolve_temperatura_top_p(estilo, None, None)
         assert temp == esperado_temp
         assert top_p == esperado_top_p
+
+
+# ---- A.6: AgenteRuntime.from_agente ----
+
+
+def _make_agente(**overrides):
+    """Builder de AgenteIA pra testes — usa defaults sensatos pros campos
+    obrigatórios e permite sobrescrever só o que importa pro teste."""
+    from whatsapp_langchain.shared.agente import AgenteIA
+
+    base = {
+        "id": 1,
+        "empresa_id": 1,
+        "slug": "vendas-sp",
+        "nome": "Vendas SP",
+        "descricao": None,
+        "template_catalog": "vsa_tech",
+        "prompt_override": None,
+        "modelo": None,
+        "estilo_resposta": "equilibrado",
+        "temperatura_override": None,
+        "max_tokens": None,
+        "top_p_override": None,
+        "tools_enabled": [],
+        "tools_config": {},
+        "aceita_imagem": True,
+        "aceita_audio": True,
+        "aceita_documento": True,
+        "base_conhecimento_ids": [],
+        "variavel_ids": [],
+        "mcp_server_ids": [],
+        "limite_custo_acao": "permitir",
+        "ativo": True,
+        "is_default": False,
+        "created_by_user_id": None,
+        "created_at": None,
+        "updated_at": None,
+    }
+    base.update(overrides)
+    return AgenteIA(**base)
+
+
+class TestAgenteRuntimeFromAgente:
+    def test_extrai_template_e_slug(self):
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        agente = _make_agente(slug="vendas-sp", template_catalog="vsa_tech")
+        rt = AgenteRuntime.from_agente(agente)
+        assert rt.slug == "vendas-sp"
+        assert rt.template_catalog == "vsa_tech"
+
+    def test_aplica_preset_estilo_quando_sem_override(self):
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        agente = _make_agente(estilo_resposta="preciso")
+        rt = AgenteRuntime.from_agente(agente)
+        assert rt.temperatura == 0.1
+        assert rt.top_p == 0.6
+
+    def test_override_fino_vence_preset(self):
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        agente = _make_agente(
+            estilo_resposta="preciso",
+            temperatura_override=1.5,
+            top_p_override=0.99,
+        )
+        rt = AgenteRuntime.from_agente(agente)
+        assert rt.temperatura == 1.5
+        assert rt.top_p == 0.99
+
+    def test_propaga_modelo_e_max_tokens(self):
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        agente = _make_agente(modelo="google/gemini-2.5-flash", max_tokens=2048)
+        rt = AgenteRuntime.from_agente(agente)
+        assert rt.modelo == "google/gemini-2.5-flash"
+        assert rt.max_tokens == 2048
+
+    def test_listas_sao_copiadas_nao_compartilhadas(self):
+        """Mutar runtime.tools_enabled não deve afetar agente.tools_enabled."""
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        agente = _make_agente(tools_enabled=["a", "b"], base_conhecimento_ids=[1, 2])
+        rt = AgenteRuntime.from_agente(agente)
+        rt.tools_enabled.append("c")
+        rt.base_conhecimento_ids.append(99)
+        assert agente.tools_enabled == ["a", "b"]
+        assert agente.base_conhecimento_ids == [1, 2]

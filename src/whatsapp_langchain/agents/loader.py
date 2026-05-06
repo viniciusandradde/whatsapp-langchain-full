@@ -21,6 +21,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.shared.agente import AgenteRuntime
 from whatsapp_langchain.shared.agente_ia import resolve_runtime_config
 from whatsapp_langchain.shared.base_conhecimento import has_active_documents
 from whatsapp_langchain.shared.calendar_integration import get_calendar_config
@@ -54,56 +55,73 @@ async def load_graph(
     store: BaseStore | None = None,
     pool: AsyncConnectionPool | None = None,
     empresa_id: int = 1,
+    agente_runtime: AgenteRuntime | None = None,
 ):
     """Carrega e compila o grafo de um agente pelo ID.
 
-    Importa dinamicamente o módulo agent.py do catálogo e chama build_graph().
-    Quando `pool` é fornecido, resolve o modelo principal via
-    `agent_llm_config` (hot reload) escopado por (empresa_id, agent_id) e
-    propaga como `chat_model`.
+    Modo legacy (`agente_runtime=None`):
+        `agent_id` é nome do diretório em `catalog/`. Resolve overrides via
+        tabelas legadas `agent_llm_config` + `agente_ia_config`.
+
+    Modo híbrido (`agente_runtime` preenchido — A.6):
+        `agent_id` vira `agente_runtime.template_catalog` (qual diretório
+        Python carregar). Demais campos do runtime sobrescrevem qualquer
+        config legada — multi-agente DB tem precedência total.
 
     Args:
-        agent_id: Identificador do agente (nome do diretório em catalog/).
-        checkpointer: Checkpointer para persistência de estado.
-                      None em dev, PostgresSaver em prod.
-        store: Store para memória semântica cross-thread.
-               None desabilita memória, AsyncPostgresStore em prod.
-        pool: Pool psycopg pra resolver chat_model por agente. None = usa env.
-        empresa_id: Tenant scope. Default 1 ("VSA Tech").
-
-    Returns:
-        CompiledStateGraph pronto para invoke().
+        agent_id: Identificador. Em modo legacy é o dir do catálogo;
+                  em modo híbrido é ignorado em favor do template do runtime.
+        checkpointer: Persistência de estado (None em dev).
+        store: Memória semântica cross-thread (None desabilita).
+        pool: Pool psycopg. None = só usa env.
+        empresa_id: Tenant scope. Default 1.
+        agente_runtime: Config rica de agente DB (A.6). None = legacy.
 
     Raises:
-        AgentNotFoundError: Se o agent_id não existe no catálogo.
+        AgentNotFoundError: dir do catálogo não existe.
     """
-    agent_dir = CATALOG_DIR / agent_id
+    template_id = agente_runtime.template_catalog if agente_runtime else agent_id
+    agent_dir = CATALOG_DIR / template_id
     if not agent_dir.is_dir():
-        raise AgentNotFoundError(agent_id)
+        raise AgentNotFoundError(template_id)
 
-    module_path = f"whatsapp_langchain.agents.catalog.{agent_id}.agent"
+    module_path = f"whatsapp_langchain.agents.catalog.{template_id}.agent"
 
     try:
         module = importlib.import_module(module_path)
     except ModuleNotFoundError as e:
-        raise AgentNotFoundError(agent_id) from e
+        raise AgentNotFoundError(template_id) from e
 
     if not hasattr(module, "build_graph"):
-        raise AgentNotFoundError(agent_id)
+        raise AgentNotFoundError(template_id)
 
     chat_model: str | None = None
     calendar_enabled = False
     knowledge_enabled = False
     system_prompt_override: str | None = None
     temperatura: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+
     if pool is not None:
-        chat_model, _ = await get_agent_llm_config(pool, agent_id, empresa_id)
         cal_config = await get_calendar_config(pool, empresa_id)
         calendar_enabled = cal_config is not None and cal_config.ativo
         knowledge_enabled = await has_active_documents(pool, empresa_id)
-        system_prompt_override, temperatura = await resolve_runtime_config(
-            pool, empresa_id, agent_id
-        )
+
+        if agente_runtime is not None:
+            # Multi-agente DB tem precedência (A.6).
+            chat_model = agente_runtime.modelo
+            system_prompt_override = agente_runtime.prompt_override
+            temperatura = agente_runtime.temperatura
+            top_p = agente_runtime.top_p
+            max_tokens = agente_runtime.max_tokens
+        else:
+            # Legacy: resolve via tabelas antigas
+            chat_model, _ = await get_agent_llm_config(pool, agent_id, empresa_id)
+            system_prompt_override, temperatura = await resolve_runtime_config(
+                pool, empresa_id, agent_id
+            )
+
         # Render `{{empresa.*}}`, `{{data.*}}`, `{{var.*}}` no prompt antes
         # de virar instrução do agente. `cliente.*` não é resolvido aqui
         # porque o prompt é compilado uma vez por load_graph (sem
@@ -115,12 +133,16 @@ async def load_graph(
     logger.info(
         "agent_loaded",
         agent_id=agent_id,
+        template=template_id,
         empresa_id=empresa_id,
         chat_model=chat_model,
         calendar_enabled=calendar_enabled,
         knowledge_enabled=knowledge_enabled,
         prompt_override=bool(system_prompt_override),
         temperatura=temperatura,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        runtime_source="agente_ia" if agente_runtime else "legacy",
     )
     return module.build_graph(
         checkpointer=checkpointer,
@@ -132,6 +154,8 @@ async def load_graph(
         knowledge_enabled=knowledge_enabled,
         system_prompt_override=system_prompt_override,
         temperatura=temperatura,
+        top_p=top_p,
+        max_tokens=max_tokens,
     )
 
 

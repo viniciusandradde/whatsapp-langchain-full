@@ -62,6 +62,8 @@ def build_graph(
     knowledge_enabled: bool = False,
     system_prompt_override: str | None = None,
     temperatura: float | None = None,
+    top_p: float | None = None,
+    max_tokens: int | None = None,
 ):
     """Constrói o agente vsa_tech.
 
@@ -88,8 +90,13 @@ def build_graph(
     """
     # Modelo principal com rate limiter centralizado (shared/llm.py).
     # chat_model=None faz fallback pra settings.openrouter_model.
-    # temperatura=None deixa o provider aplicar o default dele.
-    model = create_chat_model(model=chat_model, temperature=temperatura)
+    # temperatura/top_p/max_tokens=None deixam o provider aplicar o default.
+    model = create_chat_model(
+        model=chat_model,
+        temperature=temperatura,
+        top_p=top_p,
+        max_tokens=max_tokens,
+    )
 
     # Middleware de contexto baseado em CONTEXT_STRATEGY
     middleware = get_context_middleware()
