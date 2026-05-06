@@ -239,6 +239,13 @@ class Conexao(BaseModel):
     payload_json: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    # Sprint 4 paridade ZigChat (mig 048)
+    tipo_atendimento: str = "ia"  # manual|ia|hibrido
+    whatsapp_state: str | None = None
+    waba_account_id: str | None = None
+    waba_phone_id: str | None = None
+    waba_app_id: str | None = None
+    waba_account_description: str | None = None
 
 
 class ConexaoInput(BaseModel):
@@ -629,6 +636,14 @@ class Departamento(BaseModel):
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Sprint 4 paridade ZigChat (mig 049)
+    turno_id: int | None = None
+    posicao_fila_transferencia: int | None = None
+    encerra_atendimento: bool = False
+    tolerancia_atend_inativo_min: int | None = None
+    enviar_fila_atendimento: bool = False
+    menu_coleta_id: int | None = None
+    retencao_msg_dias: int | None = None
 
 
 class DepartamentoInput(BaseModel):
