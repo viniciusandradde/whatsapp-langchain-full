@@ -37,14 +37,19 @@
 - [`analytics.md`](./analytics.md) — **analytics** — 3 types, 2 queries, 0 mutations
 - [`extras.md`](./extras.md) — **extras (não classificados)** — 22 types, 16 queries, 7 mutations
 
-## Notas de paridade vs whatsapp-langchain
+## Análises geradas
 
-Ver `~/.claude/projects/-home-dev-projetos-whatsapp-langchain/memory/reference_zigchat_api.md` (memória local) — diffs entre o data model do ZigChat e nossas migrations 039 + 040, com plano de paridade futura (mig 041+).
+- **[`analysis/`](./analysis/README.md)** — 7 artefatos derivados do schema (overview, relacionamentos, enums, frequência, paridade, migrations roadmap, conventions).
+- **[`depara/`](./depara/README.md)** — depara DETALHADO ZigChat → Nexus com SQL pronto pra cada gap. Master table + paridade alta + gap grande + pendentes + só-Nexus + roadmap consolidado mig 041-060.
 
-Pontos altos:
+## Notas de paridade vs whatsapp-langchain (resumo)
+
+Detalhe completo em [`depara/`](./depara/README.md). Pontos altos:
+
 - ZigChat tem **~10 ações de menu** (vs nossos 5 MVP): `transferir_atendente`, `enviar_template`, `chamar_webhook`, `enviar_link`, `pesquisa_csat`, `mudar_manual`, `setar_nome`
 - ZigChat separa modelo LLM em `modelo_provedor` + `modelo_nome` (nosso é só `modelo` string)
 - ZigChat tem `acao_limite_menu_id` no agente — quando estoura limite custo, redireciona pro menu (governança)
 - ZigChat tem catálogo `ModeloIA` com `custo_input_mtok` + `custo_output_mtok`
 - ZigChat tem wizard de coleta pré-menu (`solicitar_nome`, `coleta_informacao`, `confirmar_coleta`)
 - ZigChat tem `menu_moderno` (botões nativos WhatsApp) e `menu_ia` (IA decide próxima opção)
+- **Diferenciais Nexus:** Calendar Agent v2, RBAC granular, Better Auth, audit centralizado, hook DLQ + retry, RAG com pgvector, LangGraph checkpointer, multi-tenancy estrito.
