@@ -113,9 +113,7 @@ async def create_variavel(
             )
             row = await cur.fetchone()
     except pg_errors.UniqueViolation as e:
-        raise DuplicateNomeError(
-            f"variável '{data.nome}' já existe na empresa"
-        ) from e
+        raise DuplicateNomeError(f"variável '{data.nome}' já existe na empresa") from e
     assert row is not None
     return _row_to_variavel(row)
 
@@ -150,9 +148,7 @@ async def update_variavel(
             )
             row = await cur.fetchone()
     except pg_errors.UniqueViolation as e:
-        raise DuplicateNomeError(
-            f"variável '{data.nome}' já existe na empresa"
-        ) from e
+        raise DuplicateNomeError(f"variável '{data.nome}' já existe na empresa") from e
     return _row_to_variavel(row) if row else None
 
 
@@ -161,8 +157,7 @@ async def delete_variavel(
 ) -> bool:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "DELETE FROM variavel_ambiente "
-            "WHERE id = %s AND empresa_id = %s",
+            "DELETE FROM variavel_ambiente WHERE id = %s AND empresa_id = %s",
             (var_id, empresa_id),
         )
     return (cur.rowcount or 0) > 0
@@ -171,7 +166,9 @@ async def delete_variavel(
 # --- Render ---
 
 
-_TEMPLATE_RE = re.compile(r"\{\{\s*([a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*)\s*\}\}")
+_TEMPLATE_RE = re.compile(
+    r"\{\{\s*([a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*)\s*\}\}"
+)
 
 
 def render_template(text: str, ctx: dict[str, str]) -> str:
@@ -226,10 +223,33 @@ async def build_render_context(
             ctx["empresa.doc"] = row[2] or ""
             ctx["empresa.plano"] = row[3] or ""
 
+        # menu.* — primeiro menu ativo da empresa (ou conexão genérica).
+        # Usado pelo SYSTEM_PROMPT do agente pra avisar cliente como
+        # voltar pro menu (ex: "Digite *{{menu.trigger}}* pra trocar setor").
+        cur = await conn.execute(
+            "SELECT trigger_keywords, atalho FROM menu_chatbot "
+            "WHERE empresa_id = %s AND ativo "
+            "ORDER BY conexao_id NULLS LAST, id LIMIT 1",
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+        if row is not None:
+            triggers = list(row[0] or [])
+            atalho = row[1] or ""
+            ctx["menu.trigger"] = triggers[0] if triggers else atalho or "menu"
+            ctx["menu.triggers"] = (
+                ", ".join(triggers) if triggers else (atalho or "menu")
+            )
+            ctx["menu.atalho"] = atalho or (triggers[0] if triggers else "menu")
+        else:
+            # Sem menu cadastrado — placeholders genéricos pra prompt não quebrar
+            ctx["menu.trigger"] = "menu"
+            ctx["menu.triggers"] = "menu"
+            ctx["menu.atalho"] = "menu"
+
         # var.* (apenas ativos)
         cur = await conn.execute(
-            "SELECT nome, valor FROM variavel_ambiente "
-            "WHERE empresa_id = %s AND ativo",
+            "SELECT nome, valor FROM variavel_ambiente WHERE empresa_id = %s AND ativo",
             (empresa_id,),
         )
         for nome, valor in await cur.fetchall():

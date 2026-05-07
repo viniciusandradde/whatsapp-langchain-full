@@ -550,6 +550,20 @@ async def _try_handle_menu(
                 menu_id=menu.id,
                 num_options=len(children),
             )
+            # Sprint 3: telemetria webhook — permite n8n rastrear funil
+            from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
+            await dispatch_event(
+                pool,
+                message.empresa_id,
+                "menu.boas_vindas_enviado",
+                {
+                    "atendimento_id": message.atendimento_id,
+                    "menu_id": menu.id,
+                    "num_options": len(children),
+                    "phone": message.phone_number,
+                },
+            )
             return True
         # Em andamento sem histórico de menu → cliente nunca passou pelo menu
         # (atendimento legacy, ou menu cadastrado depois). Deixa pro agente.
@@ -662,6 +676,25 @@ async def _try_handle_menu(
 
     item = children[numero - 1]
     payload = item.acao_payload or {}
+
+    # Sprint 3: dispatch event antes de executar a ação. Permite n8n
+    # rastrear qual opção foi escolhida mesmo se a ação subsequente falhar.
+    from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
+    await dispatch_event(
+        pool,
+        message.empresa_id,
+        "menu.opcao_escolhida",
+        {
+            "atendimento_id": message.atendimento_id,
+            "menu_id": menu.id,
+            "item_id": item.id,
+            "label": item.label,
+            "acao_tipo": item.acao_tipo,
+            "ordem": item.ordem,
+            "phone": message.phone_number,
+        },
+    )
 
     if item.acao_tipo == "submenu":
         sub_children = await list_children(pool, menu.id, item.id)
@@ -829,6 +862,21 @@ async def _try_handle_menu(
             "menu_chamar_agente",
             atendimento_id=message.atendimento_id,
             agente_slug=agente_slug,
+        )
+        from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+
+        await dispatch_event(
+            pool,
+            message.empresa_id,
+            "menu.acao_executada",
+            {
+                "atendimento_id": message.atendimento_id,
+                "menu_id": menu.id,
+                "item_id": item.id,
+                "acao_tipo": "chamar_agente",
+                "agente_slug": agente_slug,
+                "phone": message.phone_number,
+            },
         )
         return True
 

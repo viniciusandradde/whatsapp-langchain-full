@@ -33,6 +33,12 @@ EVENTOS_VALIDOS: Final[frozenset[str]] = frozenset(
         # via WhatsApp (regex APROVAR/REJEITAR <token> em processor.py).
         "agendamento.aprovado",
         "agendamento.rejeitado",
+        # Sprint 3 menu chatbot: telemetria de navegação no menu — permite
+        # n8n/BI rastrear funil (boas-vindas → escolha → ação executada).
+        # Payload: {atendimento_id, menu_id, item_id?, acao_tipo?, agente_slug?}.
+        "menu.boas_vindas_enviado",
+        "menu.opcao_escolhida",
+        "menu.acao_executada",
     }
 )
 
