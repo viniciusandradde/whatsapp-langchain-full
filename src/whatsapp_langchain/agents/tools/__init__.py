@@ -26,9 +26,16 @@ from whatsapp_langchain.agents.tools.cliente_memoria import (
 )
 from whatsapp_langchain.agents.tools.knowledge import search_knowledge_base
 from whatsapp_langchain.agents.tools.memory import read_memory, save_memory
+from whatsapp_langchain.agents.tools.midia import (
+    analyze_image,
+    extract_document,
+    summarize_document,
+    transcribe_audio,
+)
 
 __all__ = [
     "add_cliente_tag",
+    "analyze_image",
     "calendar_cancel_event",
     "calendar_create_event",
     "calendar_find_free_slots",
@@ -39,6 +46,7 @@ __all__ = [
     "calendar_set_active_calendar",
     "close_atendimento",
     "create_cliente_anotacao",
+    "extract_document",
     "get_cliente_anotacoes",
     "get_cliente_history",
     "get_cliente_profile",
@@ -47,6 +55,8 @@ __all__ = [
     "save_cliente_fato",
     "save_memory",
     "search_knowledge_base",
+    "summarize_document",
+    "transcribe_audio",
     "transfer_to_human",
     "update_cliente",
 ]

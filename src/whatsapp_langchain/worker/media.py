@@ -8,7 +8,7 @@ Regra arquitetural:
 
 from __future__ import annotations
 
-import base64
+import base64  # noqa: F401  — preservado caso outros call-sites legacy importem
 from dataclasses import dataclass
 
 import httpx
@@ -16,6 +16,22 @@ import structlog
 from langchain_core.messages import HumanMessage
 
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.midia_processing import (
+    _audio_format_from_media_type,  # re-export pra compat
+    _extract_text,  # re-export
+    _media_kind,  # re-export
+    chat_completion_media as _chat_completion_media,
+    describe_image_bytes as _describe_image,
+    transcribe_audio_bytes as _transcribe_audio,
+)
+
+# Aliases pra preservar compat interna (alguns lugares ainda usam estas refs)
+__all__ = [
+    "AUTO_RESPONSE_MEDIA_FAILURE",
+    "preprocess_incoming_message",
+    "build_human_message",
+    "download_media",
+]
 
 logger = structlog.get_logger()
 
@@ -67,161 +83,9 @@ async def download_media(
         return response.content
 
 
-def _media_kind(media_type: str | None) -> str:
-    if not media_type:
-        return "none"
-    if media_type.startswith("image/"):
-        return "image"
-    if media_type.startswith("audio/"):
-        return "audio"
-    return "unsupported"
-
-
-def _audio_format_from_media_type(media_type: str) -> str:
-    """Mapeia MIME type para formato aceito em input_audio."""
-    m = media_type.lower()
-    if "wav" in m or "wave" in m:
-        return "wav"
-    if "mpeg" in m or "mp3" in m:
-        return "mp3"
-    if "ogg" in m:
-        return "ogg"
-    if "webm" in m:
-        return "webm"
-    return "ogg"
-
-
-def _extract_text(content: str | list | None) -> str:
-    """Extrai texto de respostas OpenRouter com content string ou lista."""
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts: list[str] = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                texts.append(str(item.get("text", "")))
-        return "\n".join(t for t in texts if t)
-    return str(content)
-
-
-async def _chat_completion_media(
-    messages: list[dict],
-    model: str | None = None,
-) -> str:
-    """Executa chamada multimodal no OpenRouter usando modelo de mídia.
-
-    Args:
-        messages: Mensagens no formato OpenAI (system + user com input_image/audio).
-        model: Override do modelo. None = usa settings.openrouter_midia_model.
-    """
-    api_key = settings.openrouter_api_key
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY não configurada")
-
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{settings.openrouter_base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key.get_secret_value()}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model or settings.openrouter_midia_model,
-                "messages": messages,
-            },
-            timeout=45.0,
-        )
-        response.raise_for_status()
-        result = response.json()
-        content = result["choices"][0]["message"].get("content")
-        return _extract_text(content).strip()
-
-
-async def _describe_image(
-    media_bytes: bytes, media_type: str, model: str | None = None
-) -> str:
-    image_b64 = base64.b64encode(media_bytes).decode("utf-8")
-
-    return await _chat_completion_media(
-        [
-            {
-                "role": "system",
-                "content": (
-                    "Você é um extrator técnico de conteúdo visual. "
-                    "Retorne somente a descrição solicitada, sem saudações, "
-                    "sem confirmação, sem emojis, sem markdown e sem prefixos."
-                ),
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "Descreva esta imagem em português brasileiro, "
-                            "de forma seca e objetiva (1 a 3 frases). "
-                            "Não inclua frases como 'descrição recebida', "
-                            "'aqui está' ou qualquer preâmbulo."
-                        ),
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{media_type};base64,{image_b64}",
-                        },
-                    },
-                ],
-            },
-        ],
-        model=model,
-    )
-
-
-async def _transcribe_audio(
-    media_bytes: bytes, media_type: str, model: str | None = None
-) -> str:
-    audio_b64 = base64.b64encode(media_bytes).decode("utf-8")
-    audio_format = _audio_format_from_media_type(media_type)
-
-    return await _chat_completion_media(
-        [
-            {
-                "role": "system",
-                "content": (
-                    "Você é um transcritor técnico. "
-                    "Retorne somente a transcrição literal do áudio, "
-                    "sem saudações, sem confirmação, sem comentários, "
-                    "sem emojis e sem prefixos."
-                ),
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "Transcreva este áudio fielmente em português brasileiro. "
-                            "A saída deve conter apenas a transcrição crua "
-                            "do conteúdo. "
-                            "Não inclua frases como "
-                            "'Transcrição recebida e confirmada', "
-                            "'Segue a transcrição' ou equivalentes."
-                        ),
-                    },
-                    {
-                        "type": "input_audio",
-                        "input_audio": {
-                            "data": audio_b64,
-                            "format": audio_format,
-                        },
-                    },
-                ],
-            },
-        ],
-        model=model,
-    )
+# _media_kind, _audio_format_from_media_type, _extract_text,
+# _chat_completion_media, _describe_image, _transcribe_audio
+# ↑ todos reexportados de shared/midia_processing.py (refator 2026-05-07)
 
 
 async def preprocess_incoming_message(

@@ -1,7 +1,8 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "vsa_tech": "./src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py:graph"
+    "vsa_tech": "./src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py:graph",
+    "atendimento_completo": "./src/whatsapp_langchain/agents/catalog/atendimento_completo/graph.py:graph"
   },
   "env": ".env"
 }
