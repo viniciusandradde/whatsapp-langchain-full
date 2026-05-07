@@ -53,6 +53,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
   ],
   governanca: [
     { label: "Empresas", href: "/companies" },
+    { label: "Atendentes", href: "/atendentes" },
     { label: "IA Budget", href: "/governanca/ia-budget" },
     { label: "Perfis (RBAC)", href: "/settings/perfis" },
     { label: "Departamentos", href: "/settings/departamentos" },
@@ -102,6 +103,7 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
     grupo: "governanca",
     prefixos: [
       "/companies",
+      "/atendentes",
       "/governanca",
       "/settings/perfis",
       "/settings/departamentos",

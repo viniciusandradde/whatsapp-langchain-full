@@ -23,7 +23,9 @@ from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import InjectedToolArg, tool
 
 from whatsapp_langchain.shared.agente import get_agente_by_slug
+from whatsapp_langchain.shared.atendente import pick_best_atendente
 from whatsapp_langchain.shared.atendimento import (
+    claim_atendimento,
     close_atendimento as _close_atendimento,
     complete_triagem,
     get_atendimento_by_id,
@@ -489,16 +491,54 @@ async def transfer_to_human(
         f"[HANDOFF → {dep.nome}] {motivo_clean}\n\nResumo IA:\n{resumo_clean}",
     )
 
+    # Sprint I — Routing capacity-based: tenta auto-claim no atendente
+    # menos ocupado e online do depto. Se ninguém disponível, fica na fila.
+    atendente_user_id: str | None = None
+    atendente_nome: str | None = None
+    try:
+        atendente_user_id = await pick_best_atendente(
+            pool, empresa_id=empresa_id, departamento_id=dep.id
+        )
+        if atendente_user_id:
+            await claim_atendimento(pool, atendimento_id, atendente_user_id)
+            # Resolve nome do atendente pra mensagem oficial
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    'SELECT name FROM auth."user" WHERE id = %s',
+                    (atendente_user_id,),
+                )
+                row = await cur.fetchone()
+            atendente_nome = (row[0] if row else None) or "atendente"
+    except Exception as exc:
+        logger.warning(
+            "transfer_auto_claim_failed",
+            atendimento_id=atendimento_id,
+            error=str(exc),
+        )
+
     # 4. Mensagem oficial ao cliente (Sprint B.1 — system outbound)
     try:
         from whatsapp_langchain.shared.outbound import send_system_outbound
 
         protocolo = atd_updated.protocolo or f"#{atendimento_id}"
-        msg_oficial = (
-            f"Seu atendimento foi transferido para o departamento de "
-            f"*{dep.nome}*. Em breve um atendente dará continuidade. "
-            f"Protocolo: {protocolo}."
-        )
+        if atendente_user_id and atendente_nome:
+            # Sprint I — atendente já atribuído; mensagem reflete isso.
+            msg_oficial = (
+                f"Você foi transferido para o departamento *{dep.nome}*. "
+                f"Atendente *{atendente_nome}* irá dar continuidade. "
+                f"Protocolo: {protocolo}.\n\n"
+                "Caso deseje finalizar o atendimento digite: "
+                "*encerrar atendimento* e confirme."
+            )
+        else:
+            # Fila vazia — cliente aguarda claim manual
+            msg_oficial = (
+                f"Seu atendimento foi transferido para o departamento de "
+                f"*{dep.nome}*. Em breve um atendente dará continuidade. "
+                f"Protocolo: {protocolo}.\n\n"
+                "Caso deseje finalizar o atendimento digite: "
+                "*encerrar atendimento* e confirme."
+            )
         await send_system_outbound(
             pool,
             atendimento_id=atendimento_id,
@@ -513,7 +553,7 @@ async def transfer_to_human(
             error=str(exc),
         )
 
-    # 5. Hook event payload rico (Sprint B.2)
+    # 5. Hook event payload rico (Sprint B.2 + I)
     try:
         await dispatch_event(
             pool,
@@ -522,9 +562,11 @@ async def transfer_to_human(
             {
                 "atendimento_id": atendimento_id,
                 "from_user_id": None,
-                "to_user_id": None,
+                "to_user_id": atendente_user_id,
                 "departamento_id": dep.id,
                 "departamento_nome": dep.nome,
+                "atendente_nome": atendente_nome,
+                "auto_claimed": atendente_user_id is not None,
                 "prioridade": atd_updated.prioridade,
                 "classificacao": atd_updated.classificacao,
                 "sentimento": atd_updated.sentimento,
@@ -552,6 +594,11 @@ async def transfer_to_human(
         motivo=motivo_clean,
         resumo_chars=len(resumo_clean),
     )
+    if atendente_user_id and atendente_nome:
+        return (
+            f"Atendimento transferido para {dep.nome}. Atribuído "
+            f"automaticamente a {atendente_nome}. Cliente notificado."
+        )
     return (
         f"Atendimento transferido para {dep.nome}. Cliente notificado "
         f"automaticamente. Aguarde o atendente humano assumir."

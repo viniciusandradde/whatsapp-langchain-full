@@ -2187,6 +2187,56 @@ export async function deleteMenuItem(
   });
 }
 
+// =====================================================================
+// Atendentes (Sprint G/H) — status real-time + capacidade
+// =====================================================================
+
+export type AtendenteStatusValor =
+  | "online"
+  | "ausente"
+  | "pausa"
+  | "offline";
+
+export interface AtendenteStatus {
+  user_id: string;
+  nome: string | null;
+  email: string | null;
+  image: string | null;
+  is_active: boolean;
+  atendente_status: AtendenteStatusValor | null;
+  atendente_status_at: string | null;
+  atendente_max_paralelos: number;
+  count_atendimentos_abertos: number;
+  ratio_capacidade: number;
+}
+
+export async function getEmpresaAtendentes(): Promise<{
+  atendentes: AtendenteStatus[];
+}> {
+  return apiFetch<{ atendentes: AtendenteStatus[] }>(
+    `/api/atendentes/empresa-status`
+  );
+}
+
+export async function setMyAtendenteStatus(
+  status: AtendenteStatusValor
+): Promise<void> {
+  await apiFetch<unknown>(`/api/atendentes/me/status`, {
+    method: "POST",
+    body: { status },
+  });
+}
+
+export async function setAtendenteMaxParalelos(
+  userId: string,
+  maxParalelos: number
+): Promise<void> {
+  await apiFetch<unknown>(`/api/atendentes/${userId}/max-paralelos`, {
+    method: "PUT",
+    body: { max_paralelos: maxParalelos },
+  });
+}
+
 export async function reorderMenuItems(
   menuId: number,
   body: { parent_id: number | null; ordered_ids: number[] }
