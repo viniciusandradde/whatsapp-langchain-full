@@ -60,6 +60,7 @@ from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.menu_chatbot import (
     cliente_ja_saiu_do_menu,
+    find_csat_item_ativo,
     format_menu_message,
     get_menu_ativo_para_conexao,
     get_posicao_atual,
@@ -393,6 +394,10 @@ async def _try_handle_encerrar_keyword(
             atendimento_id=message.atendimento_id,
             error=str(exc),
         )
+
+    # Sprint F.3 — Pesquisa CSAT pós-fechamento (best-effort, não bloqueia)
+    await _send_csat_se_configurado(message.empresa_id, message.phone_number, pool)
+
     await mark_done(pool, message.id, msg, normalized_input=text)
     await upsert_conversation(
         pool,
@@ -407,6 +412,67 @@ async def _try_handle_encerrar_keyword(
         empresa_id=message.empresa_id,
     )
     return True
+
+
+async def _send_csat_se_configurado(
+    empresa_id: int,
+    phone_number: str,
+    pool: AsyncConnectionPool,
+) -> None:
+    """Envia pesquisa CSAT se houver item `pesquisa_csat` ativo na empresa.
+
+    Captura da resposta (gravar a nota numérica) ainda não está implementada
+    — pra MVP só dispara o envio. Cliente responde nota mas vai abrir
+    atendimento novo. Roadmap: detectar resposta numérica em janela curta
+    pós-close e gravar como anotação no cliente.
+    """
+    try:
+        item = await find_csat_item_ativo(pool, empresa_id)
+        if item is None:
+            return
+        nota_min = item.nota_min if item.nota_min is not None else 1
+        nota_max = item.nota_max if item.nota_max is not None else 5
+        pergunta = (
+            (item.nota_pergunta or "Como você avalia nosso atendimento?").strip()
+            + f"\n\nResponda com um número de *{nota_min}* a *{nota_max}*."
+        )
+        from whatsapp_langchain.shared.outbound import send_system_outbound
+        from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
+
+        # send_system_outbound exige atendimento aberto — busca o último
+        # do cliente. Pra simplicidade, pula CSAT se nenhum aberto.
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT id FROM atendimento
+                 WHERE empresa_id = %s
+                   AND cliente_id = (
+                       SELECT id FROM cliente
+                        WHERE empresa_id = %s AND telefone = %s
+                        LIMIT 1
+                   )
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (empresa_id, empresa_id, phone_number),
+            )
+            row = await cur.fetchone()
+        if not row:
+            return
+        await send_system_outbound(
+            pool,
+            atendimento_id=int(row[0]),
+            empresa_id=empresa_id,
+            conteudo=pergunta,
+            tag_user_id="system:csat",
+        )
+        logger.info(
+            "csat_enviado",
+            empresa_id=empresa_id,
+            phone=phone_number,
+            menu_item_id=item.id,
+        )
+    except Exception as exc:
+        logger.warning("csat_send_failed", phone=phone_number, error=str(exc))
 
 
 async def _try_handle_menu(

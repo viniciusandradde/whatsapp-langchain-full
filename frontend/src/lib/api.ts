@@ -1058,18 +1058,27 @@ export async function removeClienteTag(
 
 // --- Atendimentos ---
 
-export async function getAtendimentos(params: {
-  tipo?: TipoVisualizacao;
-  limit?: number;
-  offset?: number;
-} = {}): Promise<AtendimentosResponse> {
-  const q = new URLSearchParams();
-  if (params.tipo) q.set("tipo", params.tipo);
-  if (params.limit) q.set("limit", String(params.limit));
-  if (params.offset) q.set("offset", String(params.offset));
-  const qs = q.toString();
+export async function getAtendimentos(
+  params: {
+    tipo?: TipoVisualizacao;
+    limit?: number;
+    offset?: number;
+    // Filtros Sprint F.2
+    depId?: number;
+    prioridade?: "baixa" | "media" | "alta" | "urgente";
+    q?: string;
+  } = {}
+): Promise<AtendimentosResponse> {
+  const qs = new URLSearchParams();
+  if (params.tipo) qs.set("tipo", params.tipo);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  if (params.depId) qs.set("dep_id", String(params.depId));
+  if (params.prioridade) qs.set("prioridade", params.prioridade);
+  if (params.q) qs.set("q", params.q);
+  const s = qs.toString();
   return apiFetch<AtendimentosResponse>(
-    `/api/atendimentos${qs ? `?${qs}` : ""}`
+    `/api/atendimentos${s ? `?${s}` : ""}`
   );
 }
 

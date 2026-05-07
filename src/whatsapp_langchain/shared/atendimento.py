@@ -151,6 +151,9 @@ async def list_atendimentos(
     limit: int = 50,
     offset: int = 0,
     scope_departamento_ids: set[int] | None = None,
+    dep_id: int | None = None,
+    prioridade: str | None = None,
+    q: str | None = None,
 ) -> list[Atendimento]:
     """Lista atendimentos filtrados por tipo de visualização.
 
@@ -196,6 +199,18 @@ async def list_atendimentos(
     if scope_departamento_ids is not None:
         where += " AND a.departamento_id = ANY(%s)"
         params.append(list(scope_departamento_ids))
+
+    # Filtros opcionais Sprint F.2 — admin/atendente refina a lista
+    if dep_id is not None:
+        where += " AND a.departamento_id = %s"
+        params.append(dep_id)
+    if prioridade is not None:
+        where += " AND a.prioridade = %s"
+        params.append(prioridade)
+    if q:
+        where += " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s)"
+        like = f"%{q.strip()}%"
+        params.extend([like, like])
 
     params.extend([limit, offset])
     async with pool.connection() as conn:

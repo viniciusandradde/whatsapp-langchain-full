@@ -67,6 +67,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [sending, setSending] = useState(false);
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
   const [modelosOpen, setModelosOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"conversa" | "arquivos">("conversa");
   const [isPending, startTransition] = useTransition();
 
   async function reload() {
@@ -316,9 +317,36 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b px-5 py-2">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              Conversa
-            </span>
+            <div className="flex items-center gap-3 text-xs uppercase tracking-wide">
+              <button
+                type="button"
+                onClick={() => setActiveTab("conversa")}
+                className={cn(
+                  "border-b-2 px-1 py-1 transition-colors",
+                  activeTab === "conversa"
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Conversa
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("arquivos")}
+                className={cn(
+                  "border-b-2 px-1 py-1 transition-colors",
+                  activeTab === "arquivos"
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Arquivos
+                {(() => {
+                  const count = mensagens?.filter((m) => m.media_url).length ?? 0;
+                  return count > 0 ? ` · ${count}` : "";
+                })()}
+              </button>
+            </div>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -353,15 +381,20 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
               <p className="text-sm text-muted-foreground">Carregando mensagens…</p>
             )}
 
-            {!loading && mensagens && mensagens.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                Nenhuma mensagem registrada para este atendimento ainda.
-              </p>
+            {activeTab === "conversa" && (
+              <>
+                {!loading && mensagens && mensagens.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma mensagem registrada para este atendimento ainda.
+                  </p>
+                )}
+                {mensagens?.map((m) => (
+                  <MessageBubbles key={m.id} m={m} />
+                ))}
+              </>
             )}
 
-            {mensagens?.map((m) => (
-              <MessageBubbles key={m.id} m={m} />
-            ))}
+            {activeTab === "arquivos" && <ArquivosTab mensagens={mensagens} />}
           </div>
         </div>
 
@@ -542,6 +575,45 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
           </pre>
         </div>
       )}
+    </div>
+  );
+}
+
+// Aba "Arquivos" — agrega todas as mídias do atendimento (imagens,
+// áudios, vídeos, PDFs/documentos) num grid. Filter client-side do array
+// `mensagens` que já está carregado — não faz fetch adicional.
+function ArquivosTab({
+  mensagens,
+}: {
+  mensagens: AtendimentoMensagem[] | null;
+}) {
+  const arquivos = (mensagens ?? []).filter((m) => m.media_url);
+  if (arquivos.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Nenhum arquivo enviado neste atendimento.
+      </p>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {arquivos.map((m) => (
+        <div
+          key={m.id}
+          className="rounded-md border bg-muted/20 p-2"
+          title={m.created_at ? new Date(m.created_at).toLocaleString() : ""}
+        >
+          <MediaPreview
+            url={m.media_url!}
+            type={m.media_type}
+            caption={m.incoming_message}
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {m.created_at && formatTime(m.created_at)} ·{" "}
+            <span className="font-mono">{m.media_type ?? "—"}</span>
+          </p>
+        </div>
+      ))}
     </div>
   );
 }

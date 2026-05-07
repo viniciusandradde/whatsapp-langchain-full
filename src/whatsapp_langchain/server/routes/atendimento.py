@@ -63,12 +63,25 @@ class ResponderInput(BaseModel):
 @router.get("")
 async def list_my_atendimentos(
     tipo: TipoVisualizacao = Query(default="aguardando"),
+    dep_id: int | None = Query(default=None, ge=1),
+    prioridade: str | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, list[Atendimento]]:
-    """Lista atendimentos da empresa filtrados pelo tipo (4 abas)."""
+    """Lista atendimentos da empresa filtrados pelo tipo (4 abas) +
+    filtros opcionais Sprint F.2: departamento, prioridade, busca em
+    cliente.nome/atendimento.protocolo.
+    """
+    if prioridade is not None and prioridade not in (
+        "baixa",
+        "media",
+        "alta",
+        "urgente",
+    ):
+        raise HTTPException(status_code=400, detail="prioridade inválida")
     pool = await get_pool()
     rows = await list_atendimentos(
         pool,
@@ -77,6 +90,9 @@ async def list_my_atendimentos(
         current_user_id=user_id,
         limit=limit,
         offset=offset,
+        dep_id=dep_id,
+        prioridade=prioridade,
+        q=q,
     )
     return {"atendimentos": rows}
 

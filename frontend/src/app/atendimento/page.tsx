@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { Headphones } from "lucide-react";
 
-import { getAtendimentos, type TipoVisualizacao } from "@/lib/api";
+import {
+  getAtendimentos,
+  getDepartamentos,
+  type Departamento,
+  type TipoVisualizacao,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 import { AtendimentoList } from "./atendimento-list";
+import { ListFilters } from "./list-filters";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +22,15 @@ const TABS: { tipo: TipoVisualizacao; label: string }[] = [
   { tipo: "outros", label: "Outros" },
 ];
 
+type Prioridade = "baixa" | "media" | "alta" | "urgente";
+
 interface PageProps {
-  searchParams: Promise<{ tipo?: string }>;
+  searchParams: Promise<{
+    tipo?: string;
+    dep_id?: string;
+    prioridade?: string;
+    q?: string;
+  }>;
 }
 
 function isValidTipo(value: string | undefined): value is TipoVisualizacao {
@@ -27,6 +40,10 @@ function isValidTipo(value: string | undefined): value is TipoVisualizacao {
     value === "grupos" ||
     value === "outros"
   );
+}
+
+function isValidPrioridade(v: string | undefined): v is Prioridade {
+  return v === "baixa" || v === "media" || v === "alta" || v === "urgente";
 }
 
 /**
@@ -40,15 +57,23 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
   await requireSession();
   const sp = await searchParams;
   const tipo: TipoVisualizacao = isValidTipo(sp.tipo) ? sp.tipo : "aguardando";
+  const depId = sp.dep_id ? Number(sp.dep_id) : undefined;
+  const prioridade = isValidPrioridade(sp.prioridade) ? sp.prioridade : undefined;
+  const q = sp.q?.trim() || undefined;
 
   let atendimentos: Awaited<
     ReturnType<typeof getAtendimentos>
   >["atendimentos"] = [];
+  let departamentos: Departamento[] = [];
   let error: string | null = null;
 
   try {
-    const data = await getAtendimentos({ tipo });
+    const [data, deps] = await Promise.all([
+      getAtendimentos({ tipo, depId, prioridade, q }),
+      getDepartamentos().catch(() => ({ departamentos: [] })),
+    ]);
     atendimentos = data.atendimentos;
+    departamentos = deps.departamentos;
   } catch (e) {
     error =
       e instanceof Error
@@ -79,6 +104,14 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           </Link>
         ))}
       </nav>
+
+      <ListFilters
+        tipo={tipo}
+        departamentos={departamentos}
+        depId={depId}
+        prioridade={prioridade}
+        q={q}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

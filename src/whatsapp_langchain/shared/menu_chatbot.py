@@ -605,6 +605,33 @@ _ACOES_SAIDA_MENU = frozenset(
 )
 
 
+async def find_csat_item_ativo(
+    pool: AsyncConnectionPool, empresa_id: int
+) -> "MenuItem | None":
+    """Retorna o primeiro item `acao_tipo='pesquisa_csat'` ativo da empresa.
+
+    Usado pra disparar pesquisa de satisfação automaticamente após
+    `close_atendimento` (Sprint F.3). Se nenhum item CSAT cadastrado,
+    retorna None — o close não envia nada.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {_ITEM_COLS}
+              FROM menu_item mi
+              JOIN menu_chatbot mc ON mc.id = mi.menu_id
+             WHERE mc.empresa_id = %s
+               AND mc.ativo
+               AND mi.ativo
+               AND mi.acao_tipo = 'pesquisa_csat'
+             ORDER BY mi.id LIMIT 1
+            """,
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    return _row_to_item(row) if row else None
+
+
 async def cliente_ja_saiu_do_menu(
     pool: AsyncConnectionPool, atendimento_id: int
 ) -> bool:
