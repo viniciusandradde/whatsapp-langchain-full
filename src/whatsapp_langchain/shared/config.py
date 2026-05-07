@@ -87,8 +87,11 @@ class Settings(BaseSettings):
 
     # Rate limit pra endpoints admin (/api/*) por user_id.
     # Generoso pra UX normal, bloqueia scraping/abuso por sessão comprometida.
+    # Default subido pra 180 (3 req/s sliding) porque pages do painel
+    # disparam múltiplas chamadas em paralelo por load (Promise.all com
+    # 4-5 fetches) e reload do admin estourava facilmente o antigo 60.
     # Migration 022_rate_limit_generic.sql precisa estar aplicada.
-    admin_rate_limit_per_minute: int = 60
+    admin_rate_limit_per_minute: int = 180
 
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
