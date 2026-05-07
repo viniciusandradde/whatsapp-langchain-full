@@ -3,19 +3,29 @@
 4 tools que permitem ao agente reanalisar mídia ON-DEMAND, depois do
 pré-processamento automático do worker:
 
-- analyze_image(image_url, focus?) — re-análise focada em pergunta
-- transcribe_audio(audio_url) — transcrição literal
-- extract_document(document_url) — texto cru de PDF/DOCX
-- summarize_document(document_url, focus?) — resumo executivo
+- analyze_image(focus?) — re-análise focada em pergunta
+- transcribe_audio() — transcrição literal
+- extract_document() — texto cru de PDF/DOCX
+- summarize_document(focus?) — resumo executivo
 
-Use quando descrição/transcrição inicial perdeu detalhe específico ou
-documento é muito longo.
+A `media_url` real do anexo do turno é injetada via `RunnableConfig`
+(LangGraph runtime) — agente NÃO recebe URL como parâmetro (evita
+alucinação de URL inventada). Worker passa em
+`invoke_config["configurable"]["media_url"]` quando há mídia.
+
+Use as tools quando descrição/transcrição/extração inicial perdeu detalhe
+específico ou documento é muito longo. Se o input já contém
+`[Conteúdo do documento]:` / `[Descrição de imagem]:` /
+`[Transcrição de áudio]:`, leia primeiro e responda direto SEM chamar tool.
 """
 
 from __future__ import annotations
 
+from typing import Annotated, Any
+
 import structlog
-from langchain_core.tools import tool
+from langchain_core.runnables.config import var_child_runnable_config
+from langchain_core.tools import InjectedToolArg, tool
 
 from whatsapp_langchain.shared.file_extractor import extract_text
 from whatsapp_langchain.shared.llm import create_chat_model
@@ -28,49 +38,86 @@ from whatsapp_langchain.shared.midia_processing import (
 
 logger = structlog.get_logger()
 
-_MAX_DOC_CHARS = 30_000  # ~10-15 páginas; truncamento defensivo
+_MAX_DOC_CHARS = 30_000
 _MAX_FOCUS_CHARS = 500
 
 
-@tool
-async def analyze_image(image_url: str, focus: str | None = None) -> str:
-    """Reanalisa uma imagem fazendo pergunta específica.
+def _extract_runtime_config(runtime: Any) -> dict[str, Any]:
+    """Lê configurable do RunnableConfig — mesmo padrão de cliente_atendimento."""
+    if runtime is not None:
+        config = getattr(runtime, "config", None)
+        if isinstance(config, dict):
+            cfg = config.get("configurable", {})
+            if isinstance(cfg, dict):
+                return cfg
+    cfg = var_child_runnable_config.get(None)
+    if isinstance(cfg, dict):
+        configurable = cfg.get("configurable", {})
+        if isinstance(configurable, dict):
+            return configurable
+    return {}
 
-    Use quando descrição inicial não respondeu o que você precisa, OU
-    quando o cliente mandou screenshot/foto pedindo ajuda com detalhe
-    técnico (botão errado, mensagem de erro, código de barras, número de
-    pedido, etiqueta de produto, parcela do contrato).
+
+def _get_media_url(runtime: Any) -> str | None:
+    """Retorna media_url do turno atual via RunnableConfig.
+
+    Worker injeta em invoke_config["configurable"]["media_url"] quando
+    message.media_url está presente. None = não há mídia anexada.
+    """
+    cfg = _extract_runtime_config(runtime)
+    media_url = cfg.get("media_url")
+    return media_url if isinstance(media_url, str) and media_url else None
+
+
+@tool
+async def analyze_image(
+    focus: str | None = None,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Reanalisa a imagem que o cliente acabou de enviar com pergunta direcionada.
+
+    Use APENAS quando a `[Descrição de imagem]:` que veio no input não
+    respondeu o que você precisa — ex: cliente mandou screenshot de erro
+    pedindo ajuda com detalhe que a descrição genérica não capturou.
 
     Args:
-        image_url: URL da imagem (vem em `media_url` da mensagem original).
-        focus: Pergunta direcionada (ex: "qual o número do pedido visível?",
+        focus: pergunta direcionada (ex: "qual o número do pedido visível?",
                "leia o texto da etiqueta"). Sem focus, faz descrição geral.
 
-    Retorna texto puro com a resposta — sem markdown, sem preâmbulo.
+    Retorna texto puro com a resposta. Se não há imagem anexada nesse turno,
+    retorna mensagem de erro — nesse caso responda ao cliente que precisa
+    da imagem reenviada.
     """
+    media_url = _get_media_url(runtime)
+    if not media_url:
+        return "[ERRO: Nenhuma imagem anexada nesse turno do cliente.]"
     try:
-        return await describe_image_url(image_url, focus=focus)
+        return await describe_image_url(media_url, focus=focus)
     except Exception as exc:
-        logger.warning("analyze_image_failed", url=image_url, error=str(exc))
-        return f"[ERRO: não consegui analisar a imagem — {exc!s:.200}]"
+        logger.warning("analyze_image_failed", error=str(exc))
+        return f"[ERRO: não consegui re-analisar a imagem — {exc!s:.200}]"
 
 
 @tool
-async def transcribe_audio(audio_url: str) -> str:
-    """Re-transcreve áudio do cliente literalmente em pt-BR.
+async def transcribe_audio(
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Re-transcreve o áudio do cliente literalmente em pt-BR.
 
-    Use quando primeira transcrição (que já vem no input) teve trecho
-    ininteligível, termo técnico errado, ou quando precisa do conteúdo
-    cru pra citar literalmente (ex: "exatamente o que ele disse?").
-
-    Args:
-        audio_url: URL do áudio (vem em `media_url` da mensagem original).
+    Use APENAS quando a `[Transcrição de áudio]:` que veio no input teve
+    trecho ininteligível ou termo técnico errado, ou quando precisa do
+    conteúdo cru pra citar literalmente.
     """
+    media_url = _get_media_url(runtime)
+    if not media_url:
+        return "[ERRO: Nenhum áudio anexado nesse turno.]"
     try:
-        return await transcribe_audio_url(audio_url)
+        return await transcribe_audio_url(media_url)
     except Exception as exc:
-        logger.warning("transcribe_audio_failed", url=audio_url, error=str(exc))
-        return f"[ERRO: não consegui transcrever o áudio — {exc!s:.200}]"
+        logger.warning("transcribe_audio_failed", error=str(exc))
+        return f"[ERRO: não consegui re-transcrever o áudio — {exc!s:.200}]"
 
 
 def _filename_from_ctype(content_type: str | None, fallback: str = "doc.pdf") -> str:
@@ -87,28 +134,30 @@ def _filename_from_ctype(content_type: str | None, fallback: str = "doc.pdf") ->
     if ct.startswith("text/"):
         return "doc.txt"
     if "image/" in ct:
-        # imagem-de-doc → OCR via fluxo de imagem
         ext = ct.split("/")[1].split(";")[0] or "jpg"
         return f"doc.{ext}"
     return fallback
 
 
 @tool
-async def extract_document(document_url: str) -> str:
-    """Extrai texto completo de PDF/DOCX/imagem-de-documento enviado.
+async def extract_document(
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Extrai texto completo do documento (PDF/DOCX) que o cliente enviou.
+
+    Use APENAS quando o `[Conteúdo do documento (...)]:` que veio no input
+    foi truncado E você precisa de trecho específico não capturado nos
+    primeiros 10k chars. Pra documentos pequenos, leia direto do input.
 
     Tenta extração nativa (`pypdf`/`python-docx`); cai pra OCR via Vision
-    OpenRouter se documento for escaneado/imagem. Limite: ~30 mil caracteres
-    (truncado com aviso).
-
-    Use pra docs do cliente: comprovante, contrato, manual, RG/CPF,
-    boleto, orçamento, planilha simples.
-
-    Args:
-        document_url: URL do documento (vem em `media_url` da mensagem).
+    OpenRouter se documento for escaneado. Limite ~30k chars (truncado).
     """
+    media_url = _get_media_url(runtime)
+    if not media_url:
+        return "[ERRO: Nenhum documento anexado nesse turno.]"
     try:
-        body, ctype = await download_media(document_url)
+        body, ctype = await download_media(media_url)
         filename = _filename_from_ctype(ctype)
         text = await extract_text(filename, body)
         if not text:
@@ -117,25 +166,33 @@ async def extract_document(document_url: str) -> str:
             return text[:_MAX_DOC_CHARS] + f"\n\n[...truncado em {_MAX_DOC_CHARS} chars]"
         return text
     except Exception as exc:
-        logger.warning("extract_document_failed", url=document_url, error=str(exc))
+        logger.warning("extract_document_failed", error=str(exc))
         return f"[ERRO: não consegui extrair o documento — {exc!s:.200}]"
 
 
 @tool
-async def summarize_document(document_url: str, focus: str | None = None) -> str:
-    """Extrai e resume documento em até 5 bullets.
+async def summarize_document(
+    focus: str | None = None,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Resume o documento enviado pelo cliente em até 5 bullets.
 
-    Use pra docs longos (contratos, comprovantes detalhados, manuais,
-    relatórios). Se `focus` fornecido (ex: "cláusula de cancelamento",
-    "valor total", "data de vencimento"), prioriza esse tópico no resumo.
+    Use APENAS quando o documento é longo (>5 páginas) ou cliente pediu
+    resumo direto. Pra docs curtos, leia o `[Conteúdo do documento]:`
+    direto do input e responda baseado nele.
 
     Args:
-        document_url: URL do documento.
         focus: tópico que deve receber atenção especial (opcional).
+               Ex: "cláusula de cancelamento", "valor total", "data de vencimento".
     """
-    raw = await extract_document.ainvoke({"document_url": document_url})
+    media_url = _get_media_url(runtime)
+    if not media_url:
+        return "[ERRO: Nenhum documento anexado nesse turno.]"
+
+    raw = await extract_document.ainvoke({}, config={"configurable": {"media_url": media_url}})
     if raw.startswith("[ERRO") or raw.startswith("[Documento"):
-        return raw  # propaga erro
+        return raw
     focus_clean = (focus or "").strip()[:_MAX_FOCUS_CHARS]
     instr = (
         "Resuma o documento abaixo em PORTUGUÊS BRASILEIRO em até 5 bullets curtos. "
@@ -152,11 +209,10 @@ async def summarize_document(document_url: str, focus: str | None = None) -> str
         resp = await llm.ainvoke(instr)
         return str(resp.content).strip()
     except Exception as exc:
-        logger.warning("summarize_document_failed", url=document_url, error=str(exc))
+        logger.warning("summarize_document_failed", error=str(exc))
         return f"[ERRO: não consegui resumir o documento — {exc!s:.200}]"
 
 
-# chat_completion_media re-exportado pra eventual uso externo
 __all__ = [
     "analyze_image",
     "transcribe_audio",

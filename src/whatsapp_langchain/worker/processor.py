@@ -1128,6 +1128,12 @@ async def process_message(
                 "user_id": message.phone_number,
                 "empresa_id": message.empresa_id,
                 "atendimento_id": message.atendimento_id,
+                # Fase 1 fix bug PDF — tools multimodais (analyze_image,
+                # transcribe_audio, extract_document, summarize_document)
+                # leem media_url daqui em vez do parâmetro do agente.
+                # Evita alucinação de URL (agente não tem acesso à URL real).
+                "media_url": message.media_url,
+                "media_type": message.media_type,
             },
             "callbacks": [ia_callback],
         }
