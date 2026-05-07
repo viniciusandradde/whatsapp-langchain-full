@@ -181,3 +181,41 @@ def list_agents() -> list[str]:
             agents.append(path.name)
 
     return agents
+
+
+# Metadata curada dos templates (label amigável + descrição).
+# Quando um template novo é adicionado ao catálogo, registrar aqui pra UI
+# mostrar nome legível em vez do slug. Templates não listados ganham
+# label = slug capitalizado e descrição genérica.
+_TEMPLATE_METADATA: dict[str, tuple[str, str]] = {
+    "vsa_tech": (
+        "VSA Tech (genérico)",
+        "Assistente IA com 19 tools (Calendar 8 / CRM 8 / Memória 2 / RAG 1). "
+        "Modelo padrão `openai/gpt-4o-mini`. Bom pra agentes simples ou nichados "
+        "via prompt_override.",
+    ),
+    "atendimento_completo": (
+        "Atendimento Completo (multimodal)",
+        "Especializado em atendimento ao cliente brasileiro com 23 tools "
+        "(19 base + 4 multimodais: analyze_image / transcribe_audio / "
+        "extract_document / summarize_document). SYSTEM_PROMPT pt-BR com "
+        "política não-invente, escalonamento humano e fora-expediente.",
+    ),
+}
+
+
+def list_agente_templates() -> list[dict]:
+    """Lista templates do catálogo com metadata pra UI dropdown.
+
+    Returns:
+        [{slug, label, descricao}] ordenado por label.
+    """
+    items: list[dict] = []
+    for slug in list_agents():
+        label, descricao = _TEMPLATE_METADATA.get(
+            slug,
+            (slug.replace("_", " ").title(), "Template sem metadata cadastrada."),
+        )
+        items.append({"slug": slug, "label": label, "descricao": descricao})
+    items.sort(key=lambda x: x["label"])
+    return items

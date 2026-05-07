@@ -4,8 +4,10 @@ import { ArrowLeft } from "lucide-react";
 
 import {
   getAgenteIA,
+  getAgenteTemplates,
   getMenus,
   getModelosLLM,
+  type AgenteTemplate,
   type MenuChatbot,
   type ModeloLLM,
 } from "@/lib/api";
@@ -50,6 +52,15 @@ export default async function AgenteDbEditPage({ params }: Props) {
     // Sem menus? Dropdown fica desabilitado.
   }
 
+  // Templates do catálogo Python (pra dropdown na tab Identidade)
+  let templates: AgenteTemplate[] = [];
+  try {
+    const r = await getAgenteTemplates();
+    templates = r.items;
+  } catch {
+    // Fallback: editor renderiza só o template atual sem opção de troca
+  }
+
   if (!agente && !error) notFound();
 
   return (
@@ -71,6 +82,7 @@ export default async function AgenteDbEditPage({ params }: Props) {
           initialAgente={agente!}
           modelosChat={modelosChat}
           menusAtivos={menusAtivos}
+          templates={templates}
         />
       )}
     </div>

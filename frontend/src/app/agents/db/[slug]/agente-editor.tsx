@@ -34,12 +34,13 @@ import {
   updateAgenteAction,
 } from "./actions";
 
-import type { MenuChatbot, ModeloLLM } from "@/lib/api";
+import type { AgenteTemplate, MenuChatbot, ModeloLLM } from "@/lib/api";
 
 interface Props {
   initialAgente: AgenteIA;
   modelosChat?: ModeloLLM[];
   menusAtivos?: MenuChatbot[];
+  templates?: AgenteTemplate[];
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp";
@@ -100,6 +101,7 @@ export function AgenteEditor({
   initialAgente,
   modelosChat = [],
   menusAtivos = [],
+  templates = [],
 }: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
@@ -315,7 +317,9 @@ export function AgenteEditor({
         {success && <p className="mb-3 text-sm text-emerald-300">{success}</p>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {tab === "identidade" && <TabIdentidade a={a} />}
+          {tab === "identidade" && (
+            <TabIdentidade a={a} templates={templates} />
+          )}
           {tab === "modelo" && (
             <TabModelo
               a={a}
@@ -341,16 +345,47 @@ export function AgenteEditor({
 
 // ============= TABS =============
 
-function TabIdentidade({ a }: { a: AgenteIA }) {
+function TabIdentidade({
+  a,
+  templates,
+}: {
+  a: AgenteIA;
+  templates: AgenteTemplate[];
+}) {
+  // Garante que o template atual aparece mesmo se não estiver no catálogo
+  // (ex: template legacy renomeado). Nesse caso adiciona como opção
+  // "{slug} (não-encontrado)" pra não perder a config.
+  const allTemplates: AgenteTemplate[] =
+    templates.length === 0
+      ? [{ slug: a.template_catalog, label: a.template_catalog, descricao: "" }]
+      : templates.some((t) => t.slug === a.template_catalog)
+      ? templates
+      : [
+          ...templates,
+          {
+            slug: a.template_catalog,
+            label: `${a.template_catalog} (não-encontrado)`,
+            descricao: "Template legacy ou removido do catálogo",
+          },
+        ];
+
+  const templateAtual = allTemplates.find((t) => t.slug === a.template_catalog);
+
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Field label="Nome" name="nome" defaultValue={a.nome} />
-      <Field
+      <FieldSelect
         label="Template (catálogo)"
         name="template_catalog"
         defaultValue={a.template_catalog}
-        placeholder="vsa_tech"
+        options={allTemplates.map((t) => ({ v: t.slug, l: t.label }))}
       />
+      {templateAtual?.descricao && (
+        <p className="-mt-2 text-[11px] text-muted-foreground md:col-span-2">
+          <code className="font-mono">{templateAtual.slug}</code>:{" "}
+          {templateAtual.descricao}
+        </p>
+      )}
       <div className="md:col-span-2">
         <FieldTextarea
           label="Descrição"

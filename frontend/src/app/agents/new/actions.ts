@@ -27,7 +27,7 @@ export async function createAgenteAction(formData: FormData): Promise<void> {
     redirect("/agents/new?error=" + encodeURIComponent("Slug e nome são obrigatórios."));
   }
 
-  let createdSlug: string;
+  let createdSlug: string | undefined;
   try {
     const body: AgenteIACreateInput = { slug, nome, descricao, template_catalog };
     const created = await createAgenteIA(body);
@@ -36,5 +36,5 @@ export async function createAgenteAction(formData: FormData): Promise<void> {
     redirect("/agents/new?error=" + encodeURIComponent(toError(e)));
   }
   revalidatePath("/agents");
-  redirect(`/agents/db/${createdSlug}`);
+  redirect(`/agents/db/${createdSlug!}`);
 }

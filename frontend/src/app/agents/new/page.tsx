@@ -3,6 +3,7 @@ import { ArrowLeft, Bot } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getAgenteTemplates, type AgenteTemplate } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { createAgenteAction } from "./actions";
@@ -17,6 +18,18 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
   await requireSession();
   const params = await searchParams;
   const errorMsg = params.error ?? null;
+
+  // Lista templates disponíveis no catálogo Python (vsa_tech, atendimento_completo, ...)
+  let templates: AgenteTemplate[] = [];
+  try {
+    const r = await getAgenteTemplates();
+    templates = r.items;
+  } catch {
+    // Fallback: hard-coded mínimo se API falhar
+    templates = [
+      { slug: "vsa_tech", label: "VSA Tech (default)", descricao: "" },
+    ];
+  }
 
   return (
     <div className="space-y-6">
@@ -116,14 +129,26 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
               <select
                 id="template_catalog"
                 name="template_catalog"
-                defaultValue="vsa_tech"
+                defaultValue={
+                  templates.find((t) => t.slug === "atendimento_completo")
+                    ? "atendimento_completo"
+                    : (templates[0]?.slug ?? "vsa_tech")
+                }
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="vsa_tech">vsa_tech (default)</option>
+                {templates.map((t) => (
+                  <option key={t.slug} value={t.slug}>
+                    {t.label}
+                  </option>
+                ))}
               </select>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Define o graph LangGraph subjacente. Mais templates virão.
-              </p>
+              <div className="mt-1 space-y-1">
+                {templates.map((t) => (
+                  <p key={t.slug} className="text-[11px] text-muted-foreground">
+                    <code className="font-mono">{t.slug}</code>: {t.descricao}
+                  </p>
+                ))}
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

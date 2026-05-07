@@ -117,6 +117,22 @@ class UpdateAgenteInput(BaseModel):
 # ---- Endpoints ----
 
 
+@router.get("/templates")
+async def list_templates_endpoint(
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Lista templates de agente disponíveis no catálogo Python (com metadata).
+
+    Resposta: `{"items": [{slug, label, descricao}, ...]}`
+
+    Usado pelos forms de criar/editar agente DB pra dropdown de
+    `template_catalog`. Metadata curada em `agents/loader.py::_TEMPLATE_METADATA`.
+    """
+    from whatsapp_langchain.agents.loader import list_agente_templates
+
+    return {"items": list_agente_templates()}
+
+
 @router.get("")
 async def list_endpoint(
     only_active: bool = False,

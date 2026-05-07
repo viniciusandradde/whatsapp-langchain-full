@@ -1933,6 +1933,18 @@ export async function setDefaultAgenteIA(
   );
 }
 
+// Templates do catálogo Python (vsa_tech, atendimento_completo, ...) — usado
+// nos dropdowns de criar/editar agente DB.
+export interface AgenteTemplate {
+  slug: string;
+  label: string;
+  descricao: string;
+}
+
+export async function getAgenteTemplates(): Promise<{ items: AgenteTemplate[] }> {
+  return apiFetch<{ items: AgenteTemplate[] }>(`/api/v1/agentes/templates`);
+}
+
 // =====================================================================
 // Menu chatbot (Sub-fase B + B+ paridade ZigChat)
 // =====================================================================
