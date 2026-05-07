@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +45,13 @@ export function HorariosManager({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [diaForm, setDiaForm] = useState<number | null>(null);
+  // editingId não-null = form em modo edit. Ao salvar, deleta antigo + cria novo
+  // (backend não tem PUT — workaround atomic via 2 actions).
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValues, setEditValues] = useState<{
+    inicio: string;
+    fim: string;
+  } | null>(null);
   const [feriadoOpen, setFeriadoOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -63,16 +70,36 @@ export function HorariosManager({
     e.preventDefault();
     clearMessages();
     const form = new FormData(e.currentTarget);
+    const editIdSnapshot = editingId;
     startTransition(async () => {
+      // Modo edit: deleta o antigo primeiro (best-effort), depois cria o novo.
+      // Se delete falhar, ainda tenta criar — UI mostra ambos, user remove duplicata.
+      if (editIdSnapshot !== null) {
+        await deleteHorarioAction(editIdSnapshot);
+      }
       const r = await saveHorarioAction(form);
       if (!r.ok) {
         setError(r.error);
         return;
       }
-      setHorarios((prev) => [...prev, r.horario]);
+      setHorarios((prev) => [
+        ...(editIdSnapshot !== null
+          ? prev.filter((h) => h.id !== editIdSnapshot)
+          : prev),
+        r.horario,
+      ]);
       setDiaForm(null);
-      setSuccess("Janela adicionada.");
+      setEditingId(null);
+      setEditValues(null);
+      setSuccess(editIdSnapshot !== null ? "Janela atualizada." : "Janela adicionada.");
     });
+  }
+
+  function handleEditHorario(h: HorarioFuncionamento) {
+    clearMessages();
+    setEditingId(h.id);
+    setEditValues({ inicio: h.hora_inicio, fim: h.hora_fim });
+    setDiaForm(h.dia_semana);
   }
 
   function handleDeleteHorario(id: number) {
@@ -157,12 +184,24 @@ export function HorariosManager({
                     variant="ghost"
                     onClick={() => {
                       clearMessages();
-                      setDiaForm(formOpen ? null : idx);
+                      if (formOpen) {
+                        setDiaForm(null);
+                        setEditingId(null);
+                        setEditValues(null);
+                      } else {
+                        setDiaForm(idx);
+                      }
                     }}
                     disabled={isPending}
                   >
-                    <Plus className="size-3.5" />
-                    Adicionar janela
+                    {editingId !== null && diaForm === idx ? (
+                      <>Fechar</>
+                    ) : (
+                      <>
+                        <Plus className="size-3.5" />
+                        {formOpen ? "Cancelar" : "Adicionar janela"}
+                      </>
+                    )}
                   </Button>
                 </div>
                 {items.length === 0 && !formOpen && (
@@ -175,15 +214,28 @@ export function HorariosManager({
                     {items.map((h) => (
                       <li
                         key={h.id}
-                        className="inline-flex items-center gap-2 rounded-md border bg-background px-2 py-1 font-mono text-xs"
+                        className={`inline-flex items-center gap-2 rounded-md border bg-background px-2 py-1 font-mono text-xs ${
+                          editingId === h.id ? "border-primary" : ""
+                        }`}
                       >
                         {h.hora_inicio} – {h.hora_fim}
+                        <button
+                          type="button"
+                          onClick={() => handleEditHorario(h)}
+                          disabled={isPending}
+                          className="opacity-60 hover:opacity-100"
+                          aria-label="editar"
+                          title="Editar"
+                        >
+                          <Pencil className="size-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteHorario(h.id)}
                           disabled={isPending}
                           className="opacity-60 hover:opacity-100"
                           aria-label="remover"
+                          title="Remover"
                         >
                           <Trash2 className="size-3" />
                         </button>
@@ -193,10 +245,16 @@ export function HorariosManager({
                 )}
                 {formOpen && (
                   <form
+                    key={editingId ?? "new"}  /* força remount ao trocar edit/add */
                     onSubmit={handleSubmitHorario}
                     className="mt-2 flex flex-wrap items-end gap-2"
                   >
                     <input type="hidden" name="dia_semana" value={idx} />
+                    {editingId !== null && (
+                      <p className="w-full text-[11px] text-primary">
+                        Editando janela #{editingId} — salvar substitui a antiga.
+                      </p>
+                    )}
                     <div>
                       <label className="block text-xs uppercase tracking-wide text-muted-foreground">
                         Início
@@ -205,7 +263,7 @@ export function HorariosManager({
                         type="time"
                         name="hora_inicio"
                         required
-                        defaultValue="09:00"
+                        defaultValue={editValues?.inicio ?? "09:00"}
                         className="flex h-10 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       />
                     </div>
@@ -217,18 +275,26 @@ export function HorariosManager({
                         type="time"
                         name="hora_fim"
                         required
-                        defaultValue="18:00"
+                        defaultValue={editValues?.fim ?? "18:00"}
                         className="flex h-10 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       />
                     </div>
                     <Button type="submit" size="sm" disabled={isPending}>
-                      {isPending ? "Salvando…" : "Salvar"}
+                      {isPending
+                        ? "Salvando…"
+                        : editingId !== null
+                        ? "Atualizar"
+                        : "Salvar"}
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => setDiaForm(null)}
+                      onClick={() => {
+                        setDiaForm(null);
+                        setEditingId(null);
+                        setEditValues(null);
+                      }}
                     >
                       Cancelar
                     </Button>
