@@ -63,24 +63,14 @@ class MediaPreprocessResult:
     auto_response: str | None = None
 
 
-async def download_media(
-    url: str,
-) -> bytes:
-    """Faz download de mídia do Twilio.
-
-    Autentica com API Key (api_key_sid:api_key_secret) — mesmas credenciais
-    usadas pelo TwilioClient para envio outbound.
-    """
-    auth = (
-        (settings.twilio_api_key_sid, settings.twilio_api_key_secret)
-        if settings.twilio_api_key_sid
-        else None
+async def download_media(url: str) -> bytes:
+    """Wrapper compat — delega pro shared.midia_processing.download_media
+    que suporta data: URLs (mig 2026-05-07 fix Evolution mídia)."""
+    from whatsapp_langchain.shared.midia_processing import (
+        download_media as _shared_download,
     )
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, auth=auth, follow_redirects=True)
-        response.raise_for_status()
-        return response.content
+    body, _ctype = await _shared_download(url)
+    return body
 
 
 # _media_kind, _audio_format_from_media_type, _extract_text,
