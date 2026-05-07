@@ -2,7 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { getAgenteIA, getModelosLLM, type ModeloLLM } from "@/lib/api";
+import {
+  getAgenteIA,
+  getMenus,
+  getModelosLLM,
+  type MenuChatbot,
+  type ModeloLLM,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { AgenteEditor } from "./agente-editor";
@@ -35,6 +41,15 @@ export default async function AgenteDbEditPage({ params }: Props) {
     // Sem modelos? Editor cai pra input text livre.
   }
 
+  // Menus chatbot ativos — pra dropdown de acao_limite_menu_id (governança custo)
+  let menusAtivos: MenuChatbot[] = [];
+  try {
+    const r = await getMenus({ onlyActive: true });
+    menusAtivos = r.items;
+  } catch {
+    // Sem menus? Dropdown fica desabilitado.
+  }
+
   if (!agente && !error) notFound();
 
   return (
@@ -52,7 +67,11 @@ export default async function AgenteDbEditPage({ params }: Props) {
           {error}
         </p>
       ) : (
-        <AgenteEditor initialAgente={agente!} modelosChat={modelosChat} />
+        <AgenteEditor
+          initialAgente={agente!}
+          modelosChat={modelosChat}
+          menusAtivos={menusAtivos}
+        />
       )}
     </div>
   );

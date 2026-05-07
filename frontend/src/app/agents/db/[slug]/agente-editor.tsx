@@ -34,11 +34,12 @@ import {
   updateAgenteAction,
 } from "./actions";
 
-import type { ModeloLLM } from "@/lib/api";
+import type { MenuChatbot, ModeloLLM } from "@/lib/api";
 
 interface Props {
   initialAgente: AgenteIA;
   modelosChat?: ModeloLLM[];
+  menusAtivos?: MenuChatbot[];
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp";
@@ -95,7 +96,11 @@ const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = 
   { slug: "cliente_anotacao.create", label: "Criar anotação no cliente" },
 ];
 
-export function AgenteEditor({ initialAgente, modelosChat = [] }: Props) {
+export function AgenteEditor({
+  initialAgente,
+  modelosChat = [],
+  menusAtivos = [],
+}: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +157,11 @@ export function AgenteEditor({ initialAgente, modelosChat = [] }: Props) {
       patch.temperatura_override = getNum("temperatura_override");
       patch.top_p_override = getNum("top_p_override");
       patch.max_tokens = getNum("max_tokens");
+      // Sprint 2 paridade ZigChat (mig 043) — campos de memória + governança
+      patch.tipo_memoria = getStr("tipo_memoria") ?? undefined;
+      patch.janela_memoria = getNum("janela_memoria");
+      patch.timeout_minutos = getNum("timeout_minutos");
+      patch.acao_limite_menu_id = getNum("acao_limite_menu_id");
     }
     if (tab === "prompt") {
       patch.prompt_override = getStr("prompt_override");
@@ -306,7 +316,13 @@ export function AgenteEditor({ initialAgente, modelosChat = [] }: Props) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {tab === "identidade" && <TabIdentidade a={a} />}
-          {tab === "modelo" && <TabModelo a={a} modelosChat={modelosChat} />}
+          {tab === "modelo" && (
+            <TabModelo
+              a={a}
+              modelosChat={modelosChat}
+              menusAtivos={menusAtivos}
+            />
+          )}
           {tab === "prompt" && <TabPrompt a={a} />}
           {tab === "tools" && <TabTools a={a} />}
           {tab === "kb_mcp" && <TabKbMcp a={a} />}
@@ -358,9 +374,11 @@ function TabIdentidade({ a }: { a: AgenteIA }) {
 function TabModelo({
   a,
   modelosChat,
+  menusAtivos,
 }: {
   a: AgenteIA;
   modelosChat: ModeloLLM[];
+  menusAtivos: MenuChatbot[];
 }) {
   // Provedor inicial: prefere modelo_provedor da mig 043; cai pro split do
   // modelo único legacy.
@@ -463,6 +481,46 @@ function TabModelo({
         defaultValue={a.max_tokens?.toString() ?? null}
         type="number"
       />
+
+      {/* Sub-fase B+ paridade ZigChat (mig 043) — memória + governança */}
+      <FieldSelect
+        label="Tipo de memória"
+        name="tipo_memoria"
+        defaultValue={a.tipo_memoria ?? "window"}
+        options={[
+          { v: "window", l: "Window — últimas N msgs (default)" },
+          { v: "buffer", l: "Buffer — todo histórico do thread" },
+          { v: "summary", l: "Summary — resumo + janela curta" },
+          { v: "none", l: "Sem memória — cada msg é isolada" },
+        ]}
+      />
+      <Field
+        label="Janela de memória (msgs)"
+        name="janela_memoria"
+        defaultValue={a.janela_memoria?.toString() ?? null}
+        type="number"
+        placeholder="ex: 20 (só se tipo=window)"
+      />
+      <Field
+        label="Timeout conversa (min)"
+        name="timeout_minutos"
+        defaultValue={a.timeout_minutos?.toString() ?? null}
+        type="number"
+        placeholder="ex: 30 — vazio = sem timeout"
+      />
+      <FieldSelect
+        label="Limite custo → menu"
+        name="acao_limite_menu_id"
+        defaultValue={a.acao_limite_menu_id?.toString() ?? ""}
+        options={[
+          { v: "", l: "— nenhum (usa limite_custo_acao) —" },
+          ...menusAtivos.map((m) => ({
+            v: String(m.id),
+            l: `Menu #${m.id} — ${m.nome}`,
+          })),
+        ]}
+      />
+
       <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
         <p className="font-medium">Valores efetivos:</p>
         <p>
