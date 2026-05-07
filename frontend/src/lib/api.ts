@@ -2142,3 +2142,128 @@ export async function getModelosLLM(opts?: {
   const qs = params.toString() ? `?${params.toString()}` : "";
   return apiFetch<{ items: ModeloLLM[] }>(`/api/v1/modelos-llm${qs}`);
 }
+
+export async function getModeloLLM(id: number): Promise<ModeloLLM> {
+  return apiFetch<ModeloLLM>(`/api/v1/modelos-llm/${id}`);
+}
+
+export interface ModeloLLMCreateInput {
+  provedor: string;
+  nome: string;
+  tipo: ModeloLLM["tipo"];
+  descricao?: string | null;
+  custo_input_mtok?: number | null;
+  custo_output_mtok?: number | null;
+  janela_contexto?: number | null;
+}
+
+export type ModeloLLMUpdateInput = Partial<
+  Pick<
+    ModeloLLM,
+    "nome" | "descricao" | "custo_input_mtok" | "custo_output_mtok"
+    | "janela_contexto" | "ativo"
+  >
+>;
+
+export async function createModeloLLM(
+  body: ModeloLLMCreateInput
+): Promise<ModeloLLM> {
+  return apiFetch<ModeloLLM>(`/api/v1/modelos-llm`, { method: "POST", body });
+}
+
+export async function updateModeloLLM(
+  id: number,
+  body: ModeloLLMUpdateInput
+): Promise<ModeloLLM> {
+  return apiFetch<ModeloLLM>(`/api/v1/modelos-llm/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteModeloLLM(id: number): Promise<void> {
+  await apiFetch<void>(`/api/v1/modelos-llm/${id}`, { method: "DELETE" });
+}
+
+// MCP Server (Sprint 1+ paridade ZigChat)
+
+export interface McpServer {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  descricao: string | null;
+  tipo_conexao: "stdio" | "sse" | "http" | "websocket";
+  url: string | null;
+  comando: string | null;
+  args: string | null;
+  headers: Record<string, unknown>;
+  status: "active" | "inactive" | "error" | "testing";
+  ultimo_teste_at: string | null;
+  ultimo_erro: string | null;
+  ativo: boolean;
+  created_by_user_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface McpServerCreateInput {
+  nome: string;
+  tipo_conexao: McpServer["tipo_conexao"];
+  descricao?: string | null;
+  url?: string | null;
+  comando?: string | null;
+  args?: string | null;
+  headers?: Record<string, unknown> | null;
+}
+
+export type McpServerUpdateInput = Partial<
+  Pick<
+    McpServer,
+    "nome" | "descricao" | "tipo_conexao" | "url" | "comando" | "args"
+    | "headers" | "ativo"
+  >
+>;
+
+export async function getMcpServers(opts?: {
+  onlyActive?: boolean;
+}): Promise<{ items: McpServer[] }> {
+  const q = opts?.onlyActive ? "?only_active=true" : "";
+  return apiFetch<{ items: McpServer[] }>(`/api/v1/mcp-servers${q}`);
+}
+
+export async function getMcpServer(id: number): Promise<McpServer> {
+  return apiFetch<McpServer>(`/api/v1/mcp-servers/${id}`);
+}
+
+export async function createMcpServer(
+  body: McpServerCreateInput
+): Promise<McpServer> {
+  return apiFetch<McpServer>(`/api/v1/mcp-servers`, { method: "POST", body });
+}
+
+export async function updateMcpServer(
+  id: number,
+  body: McpServerUpdateInput
+): Promise<McpServer> {
+  return apiFetch<McpServer>(`/api/v1/mcp-servers/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function deleteMcpServer(id: number): Promise<void> {
+  await apiFetch<void>(`/api/v1/mcp-servers/${id}`, { method: "DELETE" });
+}
+
+export interface McpTestResult {
+  ok: boolean;
+  status: string;
+  erro: string | null;
+  tested_at: string;
+}
+
+export async function testMcpServer(id: number): Promise<McpTestResult> {
+  return apiFetch<McpTestResult>(`/api/v1/mcp-servers/${id}/test`, {
+    method: "POST",
+  });
+}

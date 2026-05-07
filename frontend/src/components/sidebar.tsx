@@ -83,7 +83,11 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/agents", label: "Agentes", icon: Bot },
       { href: "/menus", label: "Menu chatbot", icon: ListTree },
-      { href: "/models", label: "Modelos LLM", icon: Brain },
+      { href: "/catalog/models", label: "Catálogo Modelos", icon: Brain },
+      { href: "/catalog/mcp", label: "MCP Servers", icon: Plug },
+      // /models legacy: define modelo por agente (override env). Mantém pra
+      // compat de bookmarks; rótulo desambigua do catálogo novo (mig 042).
+      { href: "/models", label: "Modelo por agente", icon: Brain },
       // Rótulo "Quick Replies" pra evitar ambiguidade com /models.
       // Rota /modelos preservada.
       { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },

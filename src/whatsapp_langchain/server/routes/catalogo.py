@@ -319,3 +319,74 @@ async def delete_mcp_endpoint(
         entity_id=str(mcp_id),
         payload_diff={"before": before.to_dict()}, request=request,
     )
+
+
+@router_mcp.post("/{mcp_id}/test")
+async def test_mcp_endpoint(
+    mcp_id: int,
+    request: Request,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Health check do MCP server (paridade `testarMcpServer` do ZigChat).
+
+    Pra http/sse/websocket: GET no URL com timeout 5s, espera 2xx.
+    Pra stdio: NÃO testa (spawn arbitrário no container é risco — admin
+    valida manualmente no shell). Marca como inactive + mensagem.
+    Atualiza status + ultimo_teste_at + ultimo_erro no DB.
+    """
+    from datetime import datetime, timezone
+
+    import httpx
+
+    pool = await get_pool()
+    mcp = await get_mcp_server(pool, empresa_id, mcp_id)
+    if mcp is None:
+        raise HTTPException(status_code=404, detail="MCP server não encontrado.")
+
+    novo_status = "active"
+    erro_msg: str | None = None
+
+    if mcp.tipo_conexao in ("http", "sse", "websocket"):
+        if not mcp.url:
+            novo_status = "error"
+            erro_msg = "URL não configurada."
+        else:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(mcp.url)
+                    if resp.status_code >= 400:
+                        novo_status = "error"
+                        erro_msg = f"HTTP {resp.status_code}"
+            except Exception as exc:
+                novo_status = "error"
+                erro_msg = str(exc)[:500]
+    else:
+        # stdio: não testa por segurança
+        novo_status = "inactive"
+        erro_msg = "Test stdio não suportado — valide manualmente no shell."
+
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE mcp_server SET status = %s, ultimo_teste_at = NOW(), "
+            "ultimo_erro = %s, updated_at = NOW() "
+            "WHERE empresa_id = %s AND id = %s",
+            (novo_status, erro_msg, empresa_id, mcp_id),
+        )
+        await conn.commit()
+
+    await record_audit(
+        pool, empresa_id=empresa_id, user_id=user_id,
+        action="mcp_server.test", entity_type="mcp_server",
+        entity_id=str(mcp_id),
+        payload_diff={"resultado": novo_status, "erro": erro_msg},
+        request=request,
+    )
+
+    return {
+        "ok": novo_status == "active",
+        "status": novo_status,
+        "erro": erro_msg,
+        "tested_at": datetime.now(timezone.utc).isoformat(),
+    }
