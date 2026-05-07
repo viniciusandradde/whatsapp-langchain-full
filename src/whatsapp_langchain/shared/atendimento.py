@@ -422,6 +422,37 @@ async def set_classificacao(
     return _row_to_atendimento(row) if row else None
 
 
+async def count_fila_departamento(
+    pool: AsyncConnectionPool,
+    *,
+    empresa_id: int,
+    departamento_id: int,
+    atendimento_id: int,
+) -> int:
+    """Posição (1-based) do atendimento na fila do departamento.
+
+    Conta atendimentos abertos (aguardando|em_andamento) no mesmo dep
+    que foram atualizados ANTES (last_message_at <=) do atendimento_id
+    em questão. Posição 1 = próximo a ser atendido. Útil pra mensagem
+    "Você está na posição N da fila".
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT COUNT(*) FROM atendimento a
+              JOIN atendimento self ON self.id = %s
+             WHERE a.empresa_id = %s
+               AND a.departamento_id = %s
+               AND a.status IN ('aguardando', 'em_andamento')
+               AND a.assigned_to_user_id IS NULL
+               AND a.last_message_at <= self.last_message_at
+            """,
+            (atendimento_id, empresa_id, departamento_id),
+        )
+        row = await cur.fetchone()
+    return int(row[0]) if row else 1
+
+
 async def complete_triagem(
     pool: AsyncConnectionPool,
     atendimento_id: int,

@@ -48,8 +48,10 @@ from whatsapp_langchain.shared.agente import (
 )
 from whatsapp_langchain.shared.atendimento import (
     close_atendimento,
+    count_fila_departamento,
     get_atendimento_by_id,
 )
+from whatsapp_langchain.shared.departamento import get_departamento_by_id
 from whatsapp_langchain.shared.cliente import (
     get_cliente_by_telefone,
     update_cliente_partial,
@@ -345,6 +347,66 @@ def _attach_arquivo(msg: str, menu) -> str:
     if arq and isinstance(arq, str) and arq.strip():
         return f"{arq.strip()}\n\n{msg}"
     return msg
+
+
+_ENCERRAR_KEYWORDS = frozenset(
+    {"encerrar atendimento", "encerrar", "finalizar atendimento", "finalizar"}
+)
+
+
+async def _try_handle_encerrar_keyword(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+) -> bool:
+    """Detecta "encerrar atendimento" e fecha como resolvido.
+
+    Trigger explícito que o sistema ensina ao cliente na mensagem auto
+    de transferência (Sprint E.1). Permite cliente sair da fila de
+    atendimento humano sem precisar contato com agente.
+
+    Retorna True quando processou (fechou + respondeu); False quando
+    não é keyword OU atendimento já está fechado.
+    """
+    if message.atendimento_id is None:
+        return False
+    text = (message.incoming_message or "").strip().lower()
+    if text not in _ENCERRAR_KEYWORDS:
+        return False
+    atd = await get_atendimento_by_id(pool, message.atendimento_id)
+    if atd is None or atd.status not in ("aguardando", "em_andamento"):
+        return False
+    closed = await close_atendimento(
+        pool, message.atendimento_id, "resolvido"
+    )
+    if closed is None:
+        return False
+    msg = (
+        "Seu atendimento foi finalizado. Obrigado pelo contato! "
+        "Caso precise novamente, é só mandar uma mensagem."
+    )
+    try:
+        await outbound.send_message(message.phone_number, msg)
+    except Exception as exc:
+        logger.warning(
+            "encerrar_outbound_failed",
+            atendimento_id=message.atendimento_id,
+            error=str(exc),
+        )
+    await mark_done(pool, message.id, msg, normalized_input=text)
+    await upsert_conversation(
+        pool,
+        phone_number=message.phone_number,
+        agent_id=message.agent_id,
+        last_message=msg,
+        empresa_id=message.empresa_id,
+    )
+    logger.info(
+        "atendimento_encerrado_via_keyword",
+        atendimento_id=message.atendimento_id,
+        empresa_id=message.empresa_id,
+    )
+    return True
 
 
 async def _try_handle_menu(
@@ -844,12 +906,21 @@ async def _try_handle_menu(
                 empresa_id=message.empresa_id,
             )
             return True
+        # UPDATE atendimento.agente_atual + departamento_id (do agente)
+        dep_id_resolvido = agente_db.departamento_default_id
         async with pool.connection() as conn:
-            await conn.execute(
-                "UPDATE atendimento SET agente_atual = %s, updated_at = NOW() "
-                "WHERE id = %s",
-                (agente_slug, message.atendimento_id),
-            )
+            if dep_id_resolvido is not None:
+                await conn.execute(
+                    "UPDATE atendimento SET agente_atual = %s, "
+                    "departamento_id = %s, updated_at = NOW() WHERE id = %s",
+                    (agente_slug, dep_id_resolvido, message.atendimento_id),
+                )
+            else:
+                await conn.execute(
+                    "UPDATE atendimento SET agente_atual = %s, updated_at = NOW() "
+                    "WHERE id = %s",
+                    (agente_slug, message.atendimento_id),
+                )
             await conn.commit()
         await registrar_historico(
             pool,
@@ -859,20 +930,118 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,  # saiu do menu
             resposta=text,
         )
+
+        # Mensagem rica estilo ZigChat: pre + transferência + encerrar +
+        # posição na fila. Cada bloco em mensagens separadas pra parecer
+        # natural no WhatsApp (pequenas bolhas em sequência).
+        partes: list[str] = []
         if msg_pre:
-            await outbound.send_message(message.phone_number, msg_pre)
-            await mark_done(pool, message.id, msg_pre, normalized_input=text)
-            await upsert_conversation(
-                pool,
-                phone_number=message.phone_number,
-                agent_id=message.agent_id,
-                last_message=msg_pre,
-                empresa_id=message.empresa_id,
+            partes.append(msg_pre)
+        # Resolve nome do departamento (pra "Você foi transferido para o
+        # departamento de X")
+        dep_nome: str | None = None
+        if dep_id_resolvido is not None:
+            dep = await get_departamento_by_id(
+                pool, message.empresa_id, dep_id_resolvido
             )
-        else:
-            # Sem mensagem_pre, marca done sem outbound (próxima msg do
-            # cliente vai pro agente normalmente)
-            await mark_done(pool, message.id, "", normalized_input=text)
+            dep_nome = dep.nome if dep else None
+        msg_transfer = (
+            f"Você foi transferido para o departamento *{dep_nome}*. "
+            "Aqui o agente irá fazer a triagem das informações."
+            if dep_nome
+            else "Você foi transferido. Aguarde, em breve um atendente "
+            "irá te responder."
+        )
+        msg_transfer += (
+            "\n\nCaso deseje finalizar o atendimento digite: "
+            "*encerrar atendimento* e confirme."
+        )
+        partes.append(msg_transfer)
+
+        # Posição na fila (1-based) — só quando há departamento resolvido
+        if dep_id_resolvido is not None:
+            try:
+                pos = await count_fila_departamento(
+                    pool,
+                    empresa_id=message.empresa_id,
+                    departamento_id=dep_id_resolvido,
+                    atendimento_id=message.atendimento_id,
+                )
+                partes.append(
+                    f"Você está na posição *{pos}* da fila de atendimento."
+                )
+            except Exception as exc:
+                logger.warning(
+                    "menu_chamar_agente_fila_failed",
+                    atendimento_id=message.atendimento_id,
+                    error=str(exc),
+                )
+
+        # Envia cada parte como msg separada (UX natural). A última fica
+        # como `response` do row no message_queue (timeline drawer).
+        for parte in partes[:-1]:
+            await outbound.send_message(message.phone_number, parte)
+        await outbound.send_message(message.phone_number, partes[-1])
+        await mark_done(pool, message.id, partes[-1], normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=partes[-1],
+            empresa_id=message.empresa_id,
+        )
+
+        # Sprint E.4 — Triagem proativa: enfileira mensagem sintética
+        # `[NOVO_ATENDIMENTO_TRIAGEM]` que vai pro novo agente IA. SYSTEM_PROMPT
+        # reconhece e cumprimenta + faz triagem inicial. Sem isso o agente só
+        # responde após cliente mandar 2ª mensagem.
+        try:
+            import uuid
+
+            sentinel_msg = "[NOVO_ATENDIMENTO_TRIAGEM]"
+            thread_id = f"{message.phone_number}:{agente_slug}"
+            # conexao_id vem do atendimento (não exposto no model MessageQueue).
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    "SELECT conexao_id FROM atendimento WHERE id = %s",
+                    (message.atendimento_id,),
+                )
+                row = await cur.fetchone()
+                conexao_id = row[0] if row else None
+                await conn.execute(
+                    """
+                    INSERT INTO message_queue (
+                        empresa_id, conexao_id, atendimento_id, message_id,
+                        phone_number, agent_id, thread_id,
+                        incoming_message, normalized_input,
+                        status, process_after
+                    ) VALUES (
+                        %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s,
+                        'queued', NOW() + INTERVAL '2 seconds'
+                    )
+                    """,
+                    (
+                        message.empresa_id,
+                        conexao_id,
+                        message.atendimento_id,
+                        f"synthetic:triagem:{uuid.uuid4().hex[:16]}",
+                        message.phone_number,
+                        agente_slug,
+                        thread_id,
+                        sentinel_msg,
+                        sentinel_msg,
+                    ),
+                )
+                await conn.commit()
+        except Exception as exc:
+            logger.warning(
+                "menu_chamar_agente_triagem_enqueue_failed",
+                atendimento_id=message.atendimento_id,
+                error=str(exc),
+            )
+
         logger.info(
             "menu_chamar_agente",
             atendimento_id=message.atendimento_id,
@@ -1315,6 +1484,12 @@ async def process_message(
         # tudo. Se for, processa a decisão (cria/cancela evento Google),
         # responde, marca done e retorna early (não chama agente).
         if await _try_handle_approval(message, pool, outbound):
+            return
+
+        # E.1 — keyword "encerrar atendimento" → fecha como resolvido.
+        # Avisada pelo sistema na transferência ZigChat-like (mensagem
+        # rica menciona "digite *encerrar atendimento* pra finalizar").
+        if await _try_handle_encerrar_keyword(message, pool, outbound):
             return
 
         # B.3 — Menu chatbot árvore (Sub-fase B). Detecta cliente em

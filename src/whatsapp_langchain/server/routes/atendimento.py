@@ -227,6 +227,34 @@ async def claim(
         atendimento_id=atendimento_id,
         user_id=user_id,
     )
+    # Sprint E.3 — Mensagem auto ao cliente avisando que atendente assumiu
+    # ("Você foi transferido para o atendente *X*"). Best-effort: erro
+    # não bloqueia claim. Resolve nome via auth.user; fallback "atendente".
+    try:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                'SELECT name FROM auth."user" WHERE id = %s',
+                (user_id,),
+            )
+            row = await cur.fetchone()
+        nome_atendente = (row[0] if row else None) or "atendente"
+        from whatsapp_langchain.shared.outbound import send_system_outbound
+
+        await send_system_outbound(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            conteudo=(
+                f"Você foi transferido para o atendente *{nome_atendente}*."
+            ),
+            tag_user_id=f"system:claim:{user_id}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "claim_outbound_failed",
+            atendimento_id=atendimento_id,
+            error=str(exc),
+        )
     await dispatch_event(
         pool,
         empresa_id,
