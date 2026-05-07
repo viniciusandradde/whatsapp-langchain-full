@@ -12,7 +12,6 @@ import {
   updateMenu,
   updateMenuItem,
   type MenuChatbotUpdateInput,
-  type MenuItemAcaoTipo,
   type MenuItemCreateInput,
   type MenuItemUpdateInput,
 } from "@/lib/api";
@@ -131,6 +130,3 @@ export async function deleteMenuAction(menuId: number): Promise<void> {
   revalidatePath("/menus");
   redirect("/menus");
 }
-
-// Re-exports pra clientes não precisarem importar o type direto
-export type { MenuItemAcaoTipo };
