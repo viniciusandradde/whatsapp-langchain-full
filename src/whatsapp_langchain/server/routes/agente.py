@@ -90,6 +90,8 @@ class UpdateAgenteInput(BaseModel):
     janela_memoria: int | None = Field(default=None, ge=1, le=200)
     timeout_minutos: int | None = Field(default=None, ge=1, le=1440)
     acao_limite_menu_id: int | None = None
+    # Triagem omnichannel (mig 061): depto destino ao chamar transfer_to_human
+    departamento_default_id: int | None = None
 
     @field_validator("estilo_resposta")
     @classmethod

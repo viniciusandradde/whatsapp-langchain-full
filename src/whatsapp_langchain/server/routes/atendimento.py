@@ -332,6 +332,7 @@ async def transfer(
         from_user=user_id,
         to_user=body.user_id,
     )
+    # Payload unificado entre tool (IA) e endpoint manual — mesmo schema.
     await dispatch_event(
         pool,
         empresa_id,
@@ -340,7 +341,19 @@ async def transfer(
             "atendimento_id": atendimento_id,
             "from_user_id": user_id,
             "to_user_id": body.user_id,
+            "departamento_id": out.departamento_id,
+            "departamento_nome": None,  # endpoint manual não resolve nome — caller pode resolver
+            "prioridade": out.prioridade,
+            "classificacao": out.classificacao,
+            "sentimento": out.sentimento,
+            "resumo_ia": out.resumo_ia,
             "cliente_id": out.cliente_id,
+            "cliente_nome": out.cliente_nome,
+            "phone": out.cliente_telefone,
+            "protocolo": out.protocolo,
+            "motivo": None,
+            "iniciado_por": "humano",
+            "agente_slug": None,
         },
     )
     return out

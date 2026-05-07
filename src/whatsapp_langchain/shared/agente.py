@@ -64,7 +64,10 @@ _COLS = (
     "created_by_user_id, created_at, updated_at, "
     # Sprint 2 paridade ZigChat (mig 043)
     "modelo_provedor, modelo_nome, tipo_memoria, janela_memoria, "
-    "timeout_minutos, acao_limite_menu_id"
+    "timeout_minutos, acao_limite_menu_id, "
+    # Triagem omnichannel (mig 061): depto destino fixo quando agente
+    # chama transfer_to_human (IA não escolhe — admin configura).
+    "departamento_default_id"
 )
 
 
@@ -103,6 +106,8 @@ class AgenteIA:
     janela_memoria: int | None = None
     timeout_minutos: int | None = None
     acao_limite_menu_id: int | None = None
+    # Triagem omnichannel (mig 061)
+    departamento_default_id: int | None = None
 
     def to_dict(self) -> dict:
         out = {
@@ -145,6 +150,8 @@ class AgenteIA:
             "janela_memoria": self.janela_memoria,
             "timeout_minutos": self.timeout_minutos,
             "acao_limite_menu_id": self.acao_limite_menu_id,
+            # Triagem omnichannel (mig 061)
+            "departamento_default_id": self.departamento_default_id,
         }
         # Campos derivados (pra UI mostrar valores efetivos)
         temp, top_p = resolve_temperatura_top_p(

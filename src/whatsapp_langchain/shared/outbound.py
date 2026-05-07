@@ -215,3 +215,80 @@ async def send_outbound_manual(
         outbound_mode=outbound_mode,
     )
     return row
+
+
+async def send_system_outbound(
+    pool: AsyncConnectionPool,
+    *,
+    atendimento_id: int,
+    empresa_id: int,
+    conteudo: str,
+    tag_user_id: str = "system:transfer",
+) -> dict:
+    """Envia mensagem do SISTEMA (não-humano) ao cliente — usado pra notificar
+    transferência automática, abertura de protocolo, etc.
+
+    Diferenças vs `send_outbound_manual`:
+    - `tag_user_id` aceita qualquer string (não exige user real do auth.user).
+      Default `"system:transfer"`. Aparece em `normalized_input=manual:<tag>`.
+    - **Não levanta exception em falha de envio** — loga warning e retorna {}.
+      Importante porque é chamado dentro de tools de agente (transfer_to_human)
+      e falha no Twilio não pode quebrar a transferência.
+    - Pula validação rígida — atendimento aberto/fechado é decisão do caller.
+    """
+    text = conteudo.strip()
+    if not text:
+        return {}
+
+    atendimento = await get_atendimento_by_id(pool, atendimento_id)
+    if atendimento is None or atendimento.empresa_id != empresa_id:
+        logger.warning(
+            "system_outbound_atendimento_invalido",
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+        )
+        return {}
+
+    cliente = await get_cliente_by_id(pool, atendimento.cliente_id)
+    if cliente is None:
+        logger.warning("system_outbound_cliente_ausente", atendimento_id=atendimento_id)
+        return {}
+
+    conexao = await get_conexao_by_id(pool, atendimento.conexao_id)
+    if conexao is None:
+        logger.warning("system_outbound_conexao_ausente", atendimento_id=atendimento_id)
+        return {}
+
+    try:
+        client, outbound_mode = _build_client(conexao.provider, conexao.from_number)
+        provider_message_id = await client.send_message(cliente.telefone, text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "system_outbound_send_failed",
+            atendimento_id=atendimento_id,
+            provider=conexao.provider,
+            error=str(e),
+        )
+        return {}
+
+    row = await _persist_outbound_row(
+        pool,
+        empresa_id=empresa_id,
+        conexao_id=atendimento.conexao_id,
+        atendimento_id=atendimento_id,
+        phone_number=cliente.telefone,
+        agent_id=atendimento.agente_atual,
+        response=text,
+        user_id=tag_user_id,
+        provider_message_id=provider_message_id,
+    )
+    logger.info(
+        "system_outbound_sent",
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        tag=tag_user_id,
+        provider=conexao.provider,
+        outbound_mode=outbound_mode,
+        chars=len(text),
+    )
+    return row

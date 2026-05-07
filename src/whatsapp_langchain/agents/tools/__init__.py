@@ -12,6 +12,7 @@ from whatsapp_langchain.agents.tools.calendar import (
 )
 from whatsapp_langchain.agents.tools.cliente_atendimento import (
     add_cliente_tag,
+    classificar_atendimento,
     close_atendimento,
     create_cliente_anotacao,
     get_cliente_anotacoes,
@@ -36,6 +37,7 @@ from whatsapp_langchain.agents.tools.midia import (
 __all__ = [
     "add_cliente_tag",
     "analyze_image",
+    "classificar_atendimento",
     "calendar_cancel_event",
     "calendar_create_event",
     "calendar_find_free_slots",

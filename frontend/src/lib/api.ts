@@ -1890,6 +1890,8 @@ export interface AgenteIA {
   janela_memoria: number | null;
   timeout_minutos: number | null;
   acao_limite_menu_id: number | null;
+  // Triagem omnichannel (mig 061): depto destino fixo de transfer_to_human
+  departamento_default_id: number | null;
 }
 
 export interface AgenteIACreateInput {

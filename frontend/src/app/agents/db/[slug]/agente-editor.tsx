@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
   Bot,
@@ -34,13 +35,19 @@ import {
   updateAgenteAction,
 } from "./actions";
 
-import type { AgenteTemplate, MenuChatbot, ModeloLLM } from "@/lib/api";
+import type {
+  AgenteTemplate,
+  Departamento,
+  MenuChatbot,
+  ModeloLLM,
+} from "@/lib/api";
 
 interface Props {
   initialAgente: AgenteIA;
   modelosChat?: ModeloLLM[];
   menusAtivos?: MenuChatbot[];
   templates?: AgenteTemplate[];
+  departamentos?: Departamento[];
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp";
@@ -102,6 +109,7 @@ export function AgenteEditor({
   modelosChat = [],
   menusAtivos = [],
   templates = [],
+  departamentos = [],
 }: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
@@ -141,6 +149,7 @@ export function AgenteEditor({
       patch.descricao = getStr("descricao");
       patch.template_catalog = getStr("template_catalog") ?? undefined;
       patch.ativo = getBool("ativo");
+      patch.departamento_default_id = getNum("departamento_default_id");
     }
     if (tab === "modelo") {
       // Sprint 2 paridade ZigChat (mig 043): preferencialmente salva
@@ -318,7 +327,11 @@ export function AgenteEditor({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {tab === "identidade" && (
-            <TabIdentidade a={a} templates={templates} />
+            <TabIdentidade
+              a={a}
+              templates={templates}
+              departamentos={departamentos}
+            />
           )}
           {tab === "modelo" && (
             <TabModelo
@@ -348,9 +361,11 @@ export function AgenteEditor({
 function TabIdentidade({
   a,
   templates,
+  departamentos,
 }: {
   a: AgenteIA;
   templates: AgenteTemplate[];
+  departamentos: Departamento[];
 }) {
   // Garante que o template atual aparece mesmo se não estiver no catálogo
   // (ex: template legacy renomeado). Nesse caso adiciona como opção
@@ -393,6 +408,55 @@ function TabIdentidade({
           defaultValue={a.descricao}
         />
       </div>
+
+      {/* Triagem omnichannel — departamento destino do transfer_to_human */}
+      <div className="md:col-span-2 rounded-md border border-amber-200/60 bg-amber-50/40 p-3 dark:border-amber-700/40 dark:bg-amber-950/20">
+        <label className="text-sm font-medium" htmlFor="departamento_default_id">
+          Departamento padrão para transferência
+        </label>
+        {departamentos.length === 0 ? (
+          <p className="mt-1 text-xs text-amber-900 dark:text-amber-200">
+            Nenhum departamento cadastrado.{" "}
+            <Link
+              href="/settings/departamentos"
+              className="font-medium underline"
+            >
+              Cadastrar departamento
+            </Link>{" "}
+            antes de configurar este campo.
+          </p>
+        ) : (
+          <>
+            <select
+              id="departamento_default_id"
+              name="departamento_default_id"
+              defaultValue={a.departamento_default_id ?? ""}
+              className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="">— sem departamento —</option>
+              {departamentos
+                .filter((d) => d.ativo)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nome}
+                    {d.users_count != null ? ` (${d.users_count} membros)` : ""}
+                  </option>
+                ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Quando este agente chamar{" "}
+              <code className="font-mono">transfer_to_human</code>, o atendimento
+              vai pro departamento selecionado.{" "}
+              {a.departamento_default_id == null && (
+                <span className="text-amber-700 dark:text-amber-400">
+                  Sem depto: a tool retorna erro instrutivo ao agente.
+                </span>
+              )}
+            </p>
+          </>
+        )}
+      </div>
+
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"

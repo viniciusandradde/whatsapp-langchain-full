@@ -580,6 +580,16 @@ class Atendimento(BaseModel):
     iniciado_cliente: bool = True
     finalizado_por_user_id: str | None = None
     solicitou_encerramento: bool = False
+    # Triagem omnichannel (mig 061): preenchido pelo agente IA via tools
+    # `classificar_atendimento` e `transfer_to_human`. Atendente humano
+    # vê esses campos no Card "Triagem IA" do drawer.
+    departamento_id: int | None = None
+    classificacao: str | None = None
+    prioridade: str | None = None  # baixa|media|alta|urgente
+    sentimento: str | None = None  # positivo|neutro|negativo|frustrado
+    resumo_ia: str | None = None
+    triagem_completa: bool = False
+    triagem_at: datetime | None = None
 
 
 class DocumentoConhecimento(BaseModel):

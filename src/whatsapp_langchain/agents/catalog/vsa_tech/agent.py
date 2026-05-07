@@ -34,6 +34,7 @@ from whatsapp_langchain.agents.tools import (
     calendar_list_events,
     calendar_reschedule_event,
     calendar_set_active_calendar,
+    classificar_atendimento,
     close_atendimento,
     create_cliente_anotacao,
     get_cliente_anotacoes,
@@ -135,6 +136,7 @@ def build_graph(
             add_cliente_tag,
             update_cliente,
             close_atendimento,
+            classificar_atendimento,
             transfer_to_human,
         ]
     )

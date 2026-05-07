@@ -5,9 +5,11 @@ import { ArrowLeft } from "lucide-react";
 import {
   getAgenteIA,
   getAgenteTemplates,
+  getDepartamentos,
   getMenus,
   getModelosLLM,
   type AgenteTemplate,
+  type Departamento,
   type MenuChatbot,
   type ModeloLLM,
 } from "@/lib/api";
@@ -61,6 +63,16 @@ export default async function AgenteDbEditPage({ params }: Props) {
     // Fallback: editor renderiza só o template atual sem opção de troca
   }
 
+  // Departamentos da empresa — usado pra dropdown "Departamento padrão"
+  // que define destino da tool transfer_to_human (mig 061 triagem).
+  let departamentos: Departamento[] = [];
+  try {
+    const r = await getDepartamentos();
+    departamentos = r.departamentos;
+  } catch {
+    // Sem departamentos? Editor mostra warning amber pra cadastrar primeiro.
+  }
+
   if (!agente && !error) notFound();
 
   return (
@@ -83,6 +95,7 @@ export default async function AgenteDbEditPage({ params }: Props) {
           modelosChat={modelosChat}
           menusAtivos={menusAtivos}
           templates={templates}
+          departamentos={departamentos}
         />
       )}
     </div>

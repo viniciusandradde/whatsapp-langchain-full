@@ -22,10 +22,13 @@ import structlog
 from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import InjectedToolArg, tool
 
+from whatsapp_langchain.shared.agente import get_agente_by_slug
 from whatsapp_langchain.shared.atendimento import (
     close_atendimento as _close_atendimento,
+    complete_triagem,
     get_atendimento_by_id,
     list_atendimentos_by_cliente,
+    set_classificacao,
 )
 from whatsapp_langchain.shared.cliente import (
     add_anotacao,
@@ -35,6 +38,8 @@ from whatsapp_langchain.shared.cliente import (
     update_cliente_partial,
 )
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.departamento import get_departamento_by_id
+from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 
 logger = structlog.get_logger()
 
@@ -330,47 +335,224 @@ async def close_atendimento(
 
 
 @tool
-async def transfer_to_human(
-    motivo: str,
+async def classificar_atendimento(
+    prioridade: str,
+    sentimento: str,
+    classificacao: str,
     *,
     runtime: Annotated[Any, InjectedToolArg()] = None,
 ) -> str:
-    """Sinaliza que o atendimento precisa de operador humano.
+    """Registra classificação da triagem (silencioso — não menciona ao cliente).
 
-    NÃO transfere automaticamente — adiciona tag `handoff` no cliente +
-    cria anotação `[HANDOFF SOLICITADO] {motivo}`. Operadores veem o
-    atendimento na fila /atendimento (aguardando) e clicam pra atender.
+    Chame ANTES de `transfer_to_human` pra que o atendente humano veja
+    no drawer: badge prioridade, badge sentimento, chip classificação.
+    Pode ser chamada múltiplas vezes — só a última prevalece.
 
-    Use quando: (1) cliente pedir explicitamente atendimento humano;
-    (2) tema fora de seu escopo (jurídico, ouvidoria); (3) reclamação
-    delicada que exige empatia humana. Depois de chamar essa tool,
-    avise o cliente que vai passar pra um atendente — não tente
-    resolver sozinho.
+    Args:
+        prioridade: 'baixa' | 'media' | 'alta' | 'urgente'.
+        sentimento: 'positivo' | 'neutro' | 'negativo' | 'frustrado'.
+        classificacao: categoria curta em snake_case
+            (ex: "suporte_login", "venda_consulta", "cobranca_negociacao").
     """
     empresa_id, atendimento_id = _extract_ids(runtime)
     if empresa_id is None or atendimento_id is None:
         return "contexto incompleto."
-    motivo = motivo.strip()[:500] or "sem motivo informado"
     pool = await get_pool()
     atd = await get_atendimento_by_id(pool, atendimento_id)
     if atd is None or atd.empresa_id != empresa_id:
         return "atendimento não encontrado."
+    try:
+        result = await set_classificacao(
+            pool,
+            atendimento_id,
+            prioridade=prioridade.strip().lower(),
+            sentimento=sentimento.strip().lower(),
+            classificacao=classificacao.strip().lower(),
+        )
+    except ValueError as exc:
+        return f"Valor inválido: {exc}"
+    if result is None:
+        return "Não consegui classificar — atendimento não existe mais."
+    logger.info(
+        "agent_tool_classificar_atendimento",
+        empresa_id=empresa_id,
+        atendimento_id=atendimento_id,
+        prioridade=result.prioridade,
+        sentimento=result.sentimento,
+        classificacao=result.classificacao,
+    )
+    return (
+        f"Atendimento classificado: prioridade={result.prioridade}, "
+        f"sentimento={result.sentimento}, categoria={result.classificacao}."
+    )
+
+
+@tool
+async def transfer_to_human(
+    motivo: str,
+    resumo: str,
+    prioridade: str | None = None,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Transfere o atendimento ao departamento humano configurado no agente.
+
+    Departamento destino é DETERMINÍSTICO — fixado em
+    `agente_ia.departamento_default_id` pelo admin no painel. Você NÃO
+    escolhe departamento. Se o agente não tem depto configurado, retorna
+    erro instrutivo (admin precisa setar primeiro).
+
+    Antes de chamar essa tool, prefira `classificar_atendimento` pra
+    registrar prioridade/sentimento/categoria (atendente vê tudo no drawer).
+
+    Args:
+        motivo: razão curta da transferência (ex: "Cliente pediu humano").
+        resumo: resumo final pro atendente humano em 3-5 bullets curtos.
+            Inclua: identificação do cliente, principal demanda, dados
+            já coletados (CPF/protocolo se houver), próximos passos.
+        prioridade: opcional — sobrescreve a prioridade já classificada.
+
+    Sistema envia mensagem oficial ao cliente automaticamente após
+    transferência. Você pode avisar em UMA frase ("vou passar pra equipe
+    especializada"), mas não detalhe — sistema cuida do anúncio formal.
+    """
+    empresa_id, atendimento_id = _extract_ids(runtime)
+    if empresa_id is None or atendimento_id is None:
+        return "contexto incompleto."
+    motivo_clean = motivo.strip()[:500] or "sem motivo informado"
+    resumo_clean = (resumo or "").strip()
+    if not resumo_clean:
+        return (
+            "ERRO: o resumo é obrigatório. Forneça 3-5 bullets curtos "
+            "descrevendo cliente, demanda, dados coletados, próximos passos."
+        )
+    resumo_clean = resumo_clean[:4000]
+
+    pool = await get_pool()
+    atd = await get_atendimento_by_id(pool, atendimento_id)
+    if atd is None or atd.empresa_id != empresa_id:
+        return "atendimento não encontrado."
+
+    # Resolve agente atual via runtime config; fallback agente_atual do atendimento
+    cfg = _extract_runtime_config(runtime)
+    agente_slug = cfg.get("agent_id") or atd.agente_atual
+    if not agente_slug:
+        return "ERRO: não foi possível identificar o agente atual."
+
+    agente = await get_agente_by_slug(pool, empresa_id, str(agente_slug))
+    if agente is None or agente.departamento_default_id is None:
+        return (
+            f"ERRO: agente '{agente_slug}' sem departamento configurado. "
+            f"Peça ao admin pra setar 'Departamento padrão' em "
+            f"/agents/db/{agente_slug}/edit antes de tentar transferir."
+        )
+
+    dep = await get_departamento_by_id(pool, empresa_id, agente.departamento_default_id)
+    if dep is None or not dep.ativo:
+        return (
+            f"ERRO: departamento configurado (#{agente.departamento_default_id}) "
+            f"não existe ou está inativo. Avise o admin."
+        )
+
+    # 1. UPDATE atendimento (departamento + resumo + triagem_completa)
+    atd_updated = await complete_triagem(
+        pool,
+        atendimento_id,
+        departamento_id=dep.id,
+        resumo_ia=resumo_clean,
+        prioridade=prioridade.strip().lower() if prioridade else None,
+    )
+    if atd_updated is None:
+        return "Não consegui transferir — atendimento não existe mais."
+
+    # 2. Auditoria em atendimento_transferencia
     user_id = _extract_user_id(runtime)
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO atendimento_transferencia (
+                atendimento_id, empresa_id,
+                de_agente_slug, para_departamento_id,
+                motivo, iniciado_por_user_id
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (atendimento_id, empresa_id, agente_slug, dep.id, motivo_clean, user_id),
+        )
+        await conn.commit()
+
+    # 3. Tag + anotação (compat com filtros existentes que usam tag handoff)
     await add_tag(pool, atd.cliente_id, "handoff")
     await add_anotacao(
         pool,
         atd.cliente_id,
         user_id,
-        f"[HANDOFF SOLICITADO] {motivo}",
+        f"[HANDOFF → {dep.nome}] {motivo_clean}\n\nResumo IA:\n{resumo_clean}",
     )
+
+    # 4. Mensagem oficial ao cliente (Sprint B.1 — system outbound)
+    try:
+        from whatsapp_langchain.shared.outbound import send_system_outbound
+
+        protocolo = atd_updated.protocolo or f"#{atendimento_id}"
+        msg_oficial = (
+            f"Seu atendimento foi transferido para o departamento de "
+            f"*{dep.nome}*. Em breve um atendente dará continuidade. "
+            f"Protocolo: {protocolo}."
+        )
+        await send_system_outbound(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            conteudo=msg_oficial,
+        )
+    except Exception as exc:
+        # Não quebra a transferência se outbound falhar — só loga.
+        logger.warning(
+            "transfer_outbound_failed",
+            atendimento_id=atendimento_id,
+            error=str(exc),
+        )
+
+    # 5. Hook event payload rico (Sprint B.2)
+    try:
+        await dispatch_event(
+            pool,
+            empresa_id,
+            "atendimento.transferido",
+            {
+                "atendimento_id": atendimento_id,
+                "from_user_id": None,
+                "to_user_id": None,
+                "departamento_id": dep.id,
+                "departamento_nome": dep.nome,
+                "prioridade": atd_updated.prioridade,
+                "classificacao": atd_updated.classificacao,
+                "sentimento": atd_updated.sentimento,
+                "resumo_ia": resumo_clean,
+                "cliente_id": atd_updated.cliente_id,
+                "cliente_nome": atd_updated.cliente_nome,
+                "phone": atd_updated.cliente_telefone,
+                "protocolo": atd_updated.protocolo,
+                "motivo": motivo_clean,
+                "iniciado_por": "agente",
+                "agente_slug": agente_slug,
+            },
+        )
+    except Exception as exc:
+        logger.warning("transfer_hook_failed", error=str(exc))
+
     logger.info(
-        "agent_tool_handoff_requested",
+        "agent_tool_transfer_to_human",
         empresa_id=empresa_id,
         atendimento_id=atendimento_id,
         cliente_id=atd.cliente_id,
-        motivo=motivo,
+        departamento_id=dep.id,
+        departamento_nome=dep.nome,
+        agente_slug=agente_slug,
+        motivo=motivo_clean,
+        resumo_chars=len(resumo_clean),
     )
     return (
-        "Sinalizado pra atendimento humano. Avise o cliente que um "
-        "atendente vai entrar em contato."
+        f"Atendimento transferido para {dep.nome}. Cliente notificado "
+        f"automaticamente. Aguarde o atendente humano assumir."
     )

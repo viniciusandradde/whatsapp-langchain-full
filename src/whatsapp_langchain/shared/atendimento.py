@@ -27,10 +27,17 @@ logger = structlog.get_logger()
 
 
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
+# Ordem: 11 colunas base + 5 mig 047 (paridade ZigChat) + 7 mig 061 (triagem) = 23.
 _BARE_COLS = (
     "id, empresa_id, cliente_id, conexao_id, agente_atual, "
     "status, assigned_to_user_id, last_message_at, closed_at, "
-    "created_at, updated_at"
+    "created_at, updated_at, "
+    # Mig 047 paridade ZigChat
+    "protocolo, qtde_resposta_invalida, iniciado_cliente, "
+    "finalizado_por_user_id, solicitou_encerramento, "
+    # Mig 061 triagem omnichannel
+    "departamento_id, classificacao, prioridade, sentimento, "
+    "resumo_ia, triagem_completa, triagem_at"
 )
 # Com alias `a.` — usado em SELECTs com JOIN.
 _BASE_COLS = ", ".join(f"a.{c.strip()}" for c in _BARE_COLS.split(","))
@@ -38,6 +45,8 @@ _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 
 def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
+    # Índices fixos (lista BARE_COLS): 0..10 base, 11..15 mig 047, 16..22 mig 061
+    base_len = 23
     return Atendimento(
         id=row[0],
         empresa_id=row[1],
@@ -50,8 +59,25 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         closed_at=row[8],
         created_at=row[9],
         updated_at=row[10],
-        cliente_nome=row[11] if with_cliente else None,
-        cliente_telefone=row[12] if with_cliente else None,
+        # Mig 047
+        protocolo=row[11],
+        qtde_resposta_invalida=row[12] or 0,
+        iniciado_cliente=row[13] if row[13] is not None else True,
+        finalizado_por_user_id=row[14],
+        solicitou_encerramento=row[15] if row[15] is not None else False,
+        # Mig 061
+        departamento_id=row[16],
+        classificacao=row[17],
+        prioridade=row[18],
+        sentimento=row[19],
+        resumo_ia=row[20],
+        triagem_completa=row[21] if row[21] is not None else False,
+        triagem_at=row[22],
+        # JOIN extras (apenas quando _JOIN_COLS é usado)
+        cliente_nome=row[base_len] if with_cliente and len(row) > base_len else None,
+        cliente_telefone=row[base_len + 1]
+        if with_cliente and len(row) > base_len + 1
+        else None,
     )
 
 
@@ -343,6 +369,92 @@ async def transfer_atendimento(
             RETURNING {_BARE_COLS}
             """,
             (new_user_id, atendimento_id),
+        )
+        row = await cur.fetchone()
+    return _row_to_atendimento(row) if row else None
+
+
+# --- Triagem omnichannel (mig 061) ---
+
+
+_PRIORIDADES_VALIDAS = {"baixa", "media", "alta", "urgente"}
+_SENTIMENTOS_VALIDOS = {"positivo", "neutro", "negativo", "frustrado"}
+
+
+async def set_classificacao(
+    pool: AsyncConnectionPool,
+    atendimento_id: int,
+    *,
+    prioridade: str,
+    sentimento: str,
+    classificacao: str,
+) -> Atendimento | None:
+    """Registra classificação da triagem feita pelo agente IA.
+
+    Idempotente — pode ser chamada múltiplas vezes pra re-classificar.
+    Atualiza `triagem_at = NOW()`. Levanta `ValueError` em valores inválidos
+    (mesmos do CHECK da migration 061).
+    """
+    if prioridade not in _PRIORIDADES_VALIDAS:
+        raise ValueError(
+            f"prioridade inválida: {prioridade!r} (use {_PRIORIDADES_VALIDAS})"
+        )
+    if sentimento not in _SENTIMENTOS_VALIDOS:
+        raise ValueError(
+            f"sentimento inválido: {sentimento!r} (use {_SENTIMENTOS_VALIDOS})"
+        )
+    classificacao_clean = (classificacao or "").strip()[:120] or None
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            UPDATE atendimento
+               SET prioridade = %s,
+                   sentimento = %s,
+                   classificacao = %s,
+                   triagem_at = NOW(),
+                   updated_at = NOW()
+             WHERE id = %s
+            RETURNING {_BARE_COLS}
+            """,
+            (prioridade, sentimento, classificacao_clean, atendimento_id),
+        )
+        row = await cur.fetchone()
+    return _row_to_atendimento(row) if row else None
+
+
+async def complete_triagem(
+    pool: AsyncConnectionPool,
+    atendimento_id: int,
+    *,
+    departamento_id: int,
+    resumo_ia: str,
+    prioridade: str | None = None,
+) -> Atendimento | None:
+    """Marca triagem completa: vincula depto, salva resumo, opcional prioridade.
+
+    Setado por `transfer_to_human` ao final da triagem. Não toca em
+    classificacao/sentimento (set_classificacao já cuida disso). Define
+    `triagem_completa=TRUE` e `triagem_at` se ainda não setado.
+    """
+    if prioridade is not None and prioridade not in _PRIORIDADES_VALIDAS:
+        raise ValueError(f"prioridade inválida: {prioridade!r}")
+    sets = [
+        "departamento_id = %s",
+        "resumo_ia = %s",
+        "triagem_completa = TRUE",
+        "triagem_at = COALESCE(triagem_at, NOW())",
+        "updated_at = NOW()",
+    ]
+    params: list = [departamento_id, resumo_ia]
+    if prioridade is not None:
+        sets.insert(2, "prioridade = %s")
+        params.insert(2, prioridade)
+    params.append(atendimento_id)
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"UPDATE atendimento SET {', '.join(sets)} WHERE id = %s "  # type: ignore[arg-type]
+            f"RETURNING {_BARE_COLS}",
+            tuple(params),
         )
         row = await cur.fetchone()
     return _row_to_atendimento(row) if row else None
