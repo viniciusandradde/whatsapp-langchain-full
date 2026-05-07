@@ -201,6 +201,14 @@ _TEMPLATE_METADATA: dict[str, tuple[str, str]] = {
         "extract_document / summarize_document). SYSTEM_PROMPT pt-BR com "
         "política não-invente, escalonamento humano e fora-expediente.",
     ),
+    "atendimento_router": (
+        "Atendimento Router (multi-agent paralelo)",
+        "Topologia Router + Parallel Agents: classifier decide quais "
+        "especialistas ativar (mídia / CRM / calendário / conhecimento) e "
+        "executa até 3 em paralelo via Send. Synthesizer agrega outputs em "
+        "resposta única pt-BR. Reduz alucinação isolando contexto por domínio. "
+        "Bom pra atendimento com mídia + CRM + KB no mesmo turno.",
+    ),
 }
 
 
