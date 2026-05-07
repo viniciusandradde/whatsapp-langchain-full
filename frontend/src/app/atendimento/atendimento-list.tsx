@@ -34,6 +34,14 @@ function statusVariant(
   return "outline";
 }
 
+const PRIORIDADE_COLOR: Record<string, string> = {
+  urgente:
+    "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40",
+  alta: "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/40",
+  media: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/40",
+  baixa: "bg-muted text-muted-foreground border-muted",
+};
+
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const min = Math.round(diffMs / 60_000);
@@ -82,9 +90,18 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                       {a.cliente_telefone ?? "—"}
                     </p>
                   </div>
-                  <Badge variant={statusVariant(a.status)}>
-                    {STATUS_LABEL[a.status]}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge variant={statusVariant(a.status)}>
+                      {STATUS_LABEL[a.status]}
+                    </Badge>
+                    {a.prioridade && (
+                      <span
+                        className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${PRIORIDADE_COLOR[a.prioridade] || ""}`}
+                      >
+                        {a.prioridade}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-1.5 text-sm">
@@ -100,6 +117,20 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     value={a.assigned_to_user_id}
                     mono
                   />
+                )}
+                {(a.classificacao || a.sentimento) && (
+                  <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
+                    {a.classificacao && (
+                      <Badge variant="outline" className="font-mono">
+                        {a.classificacao}
+                      </Badge>
+                    )}
+                    {a.sentimento && (
+                      <Badge variant="outline">
+                        {a.sentimento}
+                      </Badge>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>

@@ -344,6 +344,14 @@ export interface Atendimento {
   iniciado_cliente: boolean;
   finalizado_por_user_id: string | null;
   solicitou_encerramento: boolean;
+  // Triagem omnichannel (mig 061): preenchido pelo agente IA
+  departamento_id: number | null;
+  classificacao: string | null;
+  prioridade: "baixa" | "media" | "alta" | "urgente" | null;
+  sentimento: "positivo" | "neutro" | "negativo" | "frustrado" | null;
+  resumo_ia: string | null;
+  triagem_completa: boolean;
+  triagem_at: string | null;
 }
 
 export interface AtendimentosResponse {

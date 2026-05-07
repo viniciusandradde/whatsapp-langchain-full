@@ -312,6 +312,8 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
           </Button>
         </header>
 
+        <TriagemCard atendimento={atendimento} />
+
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b px-5 py-2">
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -471,6 +473,75 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
           </footer>
         )}
       </aside>
+    </div>
+  );
+}
+
+// Card "Triagem IA" — renderiza só quando o agente classificou ou
+// gerou resumo. Aparece logo abaixo do header do drawer pra o atendente
+// pegar contexto rápido sem ler conversa toda.
+function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
+  const has =
+    atendimento.resumo_ia ||
+    atendimento.classificacao ||
+    atendimento.prioridade ||
+    atendimento.sentimento;
+  if (!has) return null;
+
+  const prioColor: Record<string, string> = {
+    urgente: "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40",
+    alta: "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/40",
+    media: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/40",
+    baixa: "bg-muted text-muted-foreground border-muted",
+  };
+  const sentColor: Record<string, string> = {
+    frustrado: "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40",
+    negativo: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40",
+    neutro: "bg-muted text-muted-foreground border-muted",
+    positivo: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40",
+  };
+
+  return (
+    <div className="border-b bg-muted/30 px-5 py-3">
+      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+        <span>🧠 Triagem IA</span>
+        {atendimento.triagem_completa && (
+          <Badge variant="outline" className="text-[10px]">
+            completa
+          </Badge>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {atendimento.prioridade && (
+          <span
+            className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${prioColor[atendimento.prioridade] || ""}`}
+          >
+            prioridade: {atendimento.prioridade}
+          </span>
+        )}
+        {atendimento.sentimento && (
+          <span
+            className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${sentColor[atendimento.sentimento] || ""}`}
+          >
+            sentimento: {atendimento.sentimento}
+          </span>
+        )}
+        {atendimento.classificacao && (
+          <Badge variant="outline" className="text-[10px] font-mono">
+            {atendimento.classificacao}
+          </Badge>
+        )}
+      </div>
+      {atendimento.resumo_ia && (
+        <div className="mt-2 rounded-md bg-background/60 p-2 text-xs">
+          <div className="mb-1 font-semibold uppercase text-muted-foreground tracking-wide text-[10px]">
+            Resumo do agente
+          </div>
+          <pre className="whitespace-pre-wrap font-sans leading-relaxed">
+            {atendimento.resumo_ia}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
