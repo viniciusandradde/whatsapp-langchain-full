@@ -1340,22 +1340,91 @@ function PreviewWhatsApp({
   menu: MenuChatbot;
   items: MenuItem[];
 }) {
-  const roots = items.filter((i) => i.parent_id === null && i.ativo).sort((a, b) => a.ordem - b.ordem);
-  const formatList = (list: MenuItem[]) => list.map((i) => `${i.ordem}. ${i.label}`).join("\n");
-  const welcomeMsg = `${menu.mensagem_boas_vindas.trim()}${
-    roots.length ? "\n\n" + formatList(roots) + "\n\nDigite o número da opção desejada." : ""
+  const roots = items
+    .filter((i) => i.parent_id === null && i.ativo)
+    .sort((a, b) => a.ordem - b.ordem);
+  const formatList = (list: MenuItem[]) =>
+    list.map((i) => `${i.ordem}. ${i.label}`).join("\n");
+  const welcomeText = `${menu.mensagem_boas_vindas.trim()}${
+    roots.length
+      ? "\n\n" + formatList(roots) + "\n\nDigite o número da opção desejada."
+      : ""
   }`;
+
+  const autoTarget = menu.auto_navegar_para_item_id
+    ? items.find((i) => i.id === menu.auto_navegar_para_item_id)
+    : null;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Boas-vindas (primeira mensagem)</CardTitle>
+          <CardTitle className="text-base">
+            {menu.solicitar_nome
+              ? "Fluxo da primeira mensagem"
+              : "Boas-vindas (primeira mensagem)"}
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-950 dark:bg-emerald-900/20 dark:text-emerald-100">
-            <pre className="whitespace-pre-wrap font-sans">{welcomeMsg}</pre>
-          </div>
+        <CardContent className="space-y-3">
+          {autoTarget ? (
+            <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
+              <strong>Auto-navegar ativo:</strong> menu não é exibido. Cliente
+              cai direto na ação{" "}
+              <code className="font-mono">{autoTarget.acao_tipo}</code> do item{" "}
+              <strong>“{autoTarget.label}”</strong>.
+            </div>
+          ) : (
+            <>
+              {menu.solicitar_nome && (
+                <>
+                  <div>
+                    <p className="mb-1 text-xs font-semibold">
+                      1. Cliente envia primeira mensagem
+                    </p>
+                    <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-950 dark:bg-emerald-900/20 dark:text-emerald-100">
+                      <pre className="whitespace-pre-wrap font-sans">
+                        {(
+                          menu.mensagem_coleta ||
+                          "Olá! Antes de começarmos, qual seu nome?"
+                        ).trim()}
+                      </pre>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-xs font-semibold">
+                      2. Cliente responde com nome (ex: “João”)
+                    </p>
+                    <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-950 dark:bg-emerald-900/20 dark:text-emerald-100">
+                      <pre className="whitespace-pre-wrap font-sans">
+                        {(
+                          menu.mensagem_confirmar_coleta || "Obrigado, {nome}! 🙂"
+                        )
+                          .replace(/\{nome\}/g, "João")
+                          .trim()}
+                        {menu.mensagem_final_coleta?.trim()
+                          ? "\n\n" + menu.mensagem_final_coleta.trim()
+                          : ""}
+                        {"\n\n"}
+                        {welcomeText}
+                      </pre>
+                    </div>
+                  </div>
+                </>
+              )}
+              {!menu.solicitar_nome && (
+                <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-950 dark:bg-emerald-900/20 dark:text-emerald-100">
+                  {menu.arquivo_url && (
+                    <p className="mb-2 text-xs font-mono text-emerald-700 dark:text-emerald-300">
+                      📎 {menu.arquivo_url}
+                    </p>
+                  )}
+                  <pre className="whitespace-pre-wrap font-sans">
+                    {welcomeText}
+                  </pre>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -1365,7 +1434,9 @@ function PreviewWhatsApp({
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div>
-            <p className="mb-1 font-semibold">Cliente digita opção válida (ex: &quot;1&quot;)</p>
+            <p className="mb-1 font-semibold">
+              Cliente digita opção válida (ex: &quot;1&quot;)
+            </p>
             <p className={helpCls}>
               Worker executa a ação do item. Comportamento varia: submenu mostra
               filhos; transferir_dep atribui departamento; chamar_agente atribui
@@ -1373,7 +1444,9 @@ function PreviewWhatsApp({
             </p>
           </div>
           <div>
-            <p className="mb-1 font-semibold">Cliente digita opção inválida (ex: &quot;x&quot;)</p>
+            <p className="mb-1 font-semibold">
+              Cliente digita opção inválida (ex: &quot;x&quot;)
+            </p>
             <div className="rounded-lg bg-emerald-50 p-3 text-emerald-950 dark:bg-emerald-900/20 dark:text-emerald-100">
               <pre className="whitespace-pre-wrap font-sans">
                 {menu.mensagem_opcao_invalida}
@@ -1387,8 +1460,18 @@ function PreviewWhatsApp({
               Cliente digita keyword (ex:{" "}
               {menu.trigger_keywords.map((k) => `"${k}"`).join(", ")})
             </p>
-            <p className={helpCls}>Reset pra raiz, reenvia mensagem de boas-vindas.</p>
+            <p className={helpCls}>
+              Reset pra raiz, reenvia mensagem de boas-vindas.
+            </p>
           </div>
+          {menu.menu_moderno && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+              <strong>Menu moderno ON:</strong> em conexões com suporte
+              (Twilio/Evolution), as opções viram botões interativos do WhatsApp
+              em vez de lista numerada. Fallback: lista quando &gt;10 opções ou
+              provider não suporta.
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
