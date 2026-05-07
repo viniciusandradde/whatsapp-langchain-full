@@ -476,29 +476,35 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 }
 
 function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
-  // Cada row pode gerar 2 bolhas: a inbound (cliente) e a response (agente).
-  // Quando inbound veio só com mídia, mostramos chip da media_type.
-  const bubbles: { side: "in" | "out"; text: string; meta?: string }[] = [];
+  // Cada row pode gerar bolhas distintas: media (inbound), texto inbound,
+  // resposta agente. Mídia é renderizada inline como <img>/<audio>/link.
+  type Bubble =
+    | { side: "in" | "out"; kind: "text"; text: string; meta?: string }
+    | { side: "in"; kind: "media"; mediaUrl: string; mediaType: string | null; caption?: string };
 
-  if (m.incoming_message) {
-    bubbles.push({ side: "in", text: m.incoming_message });
-  }
+  const bubbles: Bubble[] = [];
+
   if (m.media_url) {
     bubbles.push({
       side: "in",
-      text: `[mídia ${m.media_type ?? ""}]`.trim(),
-      meta: m.media_url,
+      kind: "media",
+      mediaUrl: m.media_url,
+      mediaType: m.media_type ?? null,
+      caption: m.incoming_message ?? undefined,
     });
+  } else if (m.incoming_message) {
+    bubbles.push({ side: "in", kind: "text", text: m.incoming_message });
   }
+
   // Marker do handoff humano — o worker grava no `response` quando pula o
   // agente IA. Não renderiza como bolha (a inbound já fica visível); só
   // exibe um divider sutil pra deixar claro que o agente foi pulado.
   const isHandoff = m.response?.startsWith("[handoff humano");
   if (m.response && !isHandoff) {
-    bubbles.push({ side: "out", text: m.response });
+    bubbles.push({ side: "out", kind: "text", text: m.response });
   }
   if (m.error) {
-    bubbles.push({ side: "out", text: `Erro: ${m.error}`, meta: "erro" });
+    bubbles.push({ side: "out", kind: "text", text: `Erro: ${m.error}`, meta: "erro" });
   }
 
   return (
@@ -516,10 +522,18 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
                 : "bg-secondary text-foreground"
             )}
           >
-            <p className="whitespace-pre-wrap">{b.text}</p>
+            {b.kind === "media" ? (
+              <MediaPreview
+                url={b.mediaUrl}
+                type={b.mediaType}
+                caption={b.caption}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap">{b.text}</p>
+            )}
             <p className="mt-1 font-mono text-[10px] text-muted-foreground">
               {formatTime(m.created_at)} · {b.side === "out" ? "agente" : "cliente"}
-              {b.meta && b.meta !== "erro" && (
+              {b.kind === "text" && b.meta && b.meta !== "erro" && (
                 <>
                   {" · "}
                   <a
@@ -539,6 +553,100 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
       {isHandoff && (
         <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
           ⏸ agente pausado — operador respondendo
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MediaPreview({
+  url,
+  type,
+  caption,
+}: {
+  url: string;
+  type: string | null;
+  caption?: string;
+}) {
+  const mime = (type || "").toLowerCase();
+
+  // Suporta data: URLs (worker pré-fetch via Evolution) e URLs HTTP regulares.
+  // Browser renderiza data URL inline em <img>/<audio> sem backend extra.
+  if (mime.startsWith("image/")) {
+    return (
+      <div className="space-y-1">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={url}
+            alt={caption || "imagem do cliente"}
+            className="max-h-64 max-w-full rounded-lg border border-border/40 object-contain"
+          />
+        </a>
+        {caption && (
+          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+            {caption}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (mime.startsWith("audio/")) {
+    return (
+      <div className="space-y-1">
+        <audio
+          controls
+          src={url}
+          className="w-full max-w-xs"
+          preload="metadata"
+        >
+          Seu navegador não suporta player de áudio.
+        </audio>
+        {caption && (
+          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+            {caption}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (mime.startsWith("video/")) {
+    return (
+      <div className="space-y-1">
+        <video
+          controls
+          src={url}
+          className="max-h-64 max-w-full rounded-lg border border-border/40"
+          preload="metadata"
+        >
+          Seu navegador não suporta vídeo.
+        </video>
+        {caption && (
+          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+            {caption}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Documento (PDF/DOCX) ou tipo desconhecido — link de download
+  return (
+    <div className="space-y-1">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        download
+        className="inline-flex items-center gap-1.5 rounded-md border border-border/40 bg-background px-2 py-1 text-xs underline hover:bg-muted"
+      >
+        📎 {type || "documento"} — abrir
+      </a>
+      {caption && (
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+          {caption}
         </p>
       )}
     </div>
