@@ -2267,3 +2267,78 @@ export async function testMcpServer(id: number): Promise<McpTestResult> {
     method: "POST",
   });
 }
+
+// =====================================================================
+// Dashboard IA (Sprint 7 paridade ZigChat)
+// =====================================================================
+
+export interface DashboardIa {
+  periodo_dias: number;
+  resumo: {
+    total_calls: number;
+    total_tokens_input: number;
+    total_tokens_output: number;
+    custo_periodo_usd: number;
+    custo_mes_atual_usd: number;
+  };
+  serie_diaria: { dia: string; calls: number; custo: number }[];
+  top_modelos: {
+    provedor: string;
+    nome: string;
+    calls: number;
+    custo: number;
+    tokens_input: number;
+    tokens_output: number;
+  }[];
+  top_agentes: {
+    id: number;
+    slug: string;
+    nome: string;
+    calls: number;
+    custo: number;
+  }[];
+  budget_atual: {
+    limite_usd: number;
+    consumo_usd: number;
+    acao_estouro: string;
+    alerta_pct: number;
+    pct_consumo: number;
+    estourado: boolean;
+  } | null;
+}
+
+export async function getDashboardIa(days = 30): Promise<DashboardIa> {
+  return apiFetch<DashboardIa>(`/api/v1/dashboard/ia?days=${days}`);
+}
+
+export interface IaBudget {
+  exists: boolean;
+  id?: number;
+  empresa_id?: number;
+  ano_mes: string;
+  limite_usd?: number;
+  consumo_usd?: number;
+  acao_estouro?: string;
+  alerta_pct?: number;
+  estourado_em?: string | null;
+  alertado_em?: string | null;
+  pct_consumo?: number;
+}
+
+export interface IaBudgetUpsertInput {
+  limite_usd: number;
+  acao_estouro?: "alertar" | "bloquear" | "redirecionar_menu";
+  alerta_pct?: number;
+  ano_mes?: string;
+}
+
+export async function getIaBudget(anoMes?: string): Promise<IaBudget> {
+  const q = anoMes ? `?ano_mes=${anoMes}` : "";
+  return apiFetch<IaBudget>(`/api/v1/ia-budget${q}`);
+}
+
+export async function upsertIaBudget(
+  body: IaBudgetUpsertInput
+): Promise<IaBudget> {
+  return apiFetch<IaBudget>(`/api/v1/ia-budget`, { method: "PUT", body });
+}

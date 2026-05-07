@@ -25,6 +25,7 @@ import {
   Building,
   CalendarDays,
   Clock,
+  DollarSign,
   Flag,
   FolderTree,
   ListOrdered,
@@ -109,6 +110,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Governança",
     items: [
       { href: "/companies", label: "Empresas", icon: Building2 },
+      { href: "/governanca/ia-budget", label: "IA Budget", icon: DollarSign },
       { href: "/settings/perfis", label: "Perfis (RBAC)", icon: ShieldCheck },
       { href: "/settings/departamentos", label: "Departamentos", icon: Building },
       { href: "/settings/horarios", label: "Horário de Atendimento", icon: Clock },
@@ -121,6 +123,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Observabilidade",
     items: [
       { href: "/traces", label: "Traces", icon: Activity },
+      { href: "/dashboard/ia", label: "Dashboard IA", icon: Activity },
       { href: "/queue", label: "Fila", icon: ListOrdered },
       {
         href: "/settings/security/login-history",

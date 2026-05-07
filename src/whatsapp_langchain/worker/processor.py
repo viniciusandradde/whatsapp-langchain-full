@@ -1070,19 +1070,67 @@ async def process_message(
 
         human_message = HumanMessage(content=normalized_text)
 
+        # A.6 — resolve agente_ia DB; runtime=None mantém path legacy (catálogo).
+        agente_runtime = await resolve_agente_runtime(
+            pool, message.empresa_id, message.agent_id
+        )
+
+        # Lookup agente_ia.id pra telemetria ia_execucao (best-effort)
+        agente_ia_id: int | None = None
+        if agente_runtime is not None:
+            async with pool.connection() as _conn:
+                _cur = await _conn.execute(
+                    "SELECT id FROM agente_ia WHERE empresa_id = %s AND slug = %s",
+                    (message.empresa_id, agente_runtime.slug),
+                )
+                _row = await _cur.fetchone()
+                if _row:
+                    agente_ia_id = int(_row[0])
+
+        # ia_budget check pré-call (mig 058) — bloqueia ou alerta antes
+        # de gastar token se empresa estourou orçamento mensal.
+        from whatsapp_langchain.shared.governanca_ia import get_budget_atual
+        budget = await get_budget_atual(pool, message.empresa_id)
+        if budget and budget.get("estourado") and budget.get("acao_estouro") == "bloquear":
+            msg_block = (
+                "Sistema temporariamente indisponível. Aguarde e tente "
+                "novamente em algumas horas."
+            )
+            await outbound.send_message(message.phone_number, msg_block)
+            await mark_done(
+                pool,
+                message.id,
+                msg_block,
+                normalized_input=pre.normalized_text,
+            )
+            logger.warning(
+                "ia_budget_block",
+                empresa_id=message.empresa_id,
+                consumo=budget["consumo_usd"],
+                limite=budget["limite_usd"],
+            )
+            return
+
+        # Callback que registra ia_execucao + atualiza ia_budget após cada
+        # chamada LLM (mig 057 + 058 paridade ZigChat).
+        from whatsapp_langchain.shared.llm_callback import IaExecucaoCallback
+
+        ia_callback = IaExecucaoCallback(
+            pool,
+            empresa_id=message.empresa_id,
+            atendimento_id=message.atendimento_id,
+            agente_ia_id=agente_ia_id,
+        )
+
         invoke_config = {
             "configurable": {
                 "thread_id": message.thread_id,
                 "user_id": message.phone_number,
                 "empresa_id": message.empresa_id,
                 "atendimento_id": message.atendimento_id,
-            }
+            },
+            "callbacks": [ia_callback],
         }
-
-        # A.6 — resolve agente_ia DB; runtime=None mantém path legacy (catálogo).
-        agente_runtime = await resolve_agente_runtime(
-            pool, message.empresa_id, message.agent_id
-        )
         graph = await load_graph(
             message.agent_id,
             checkpointer=checkpointer,

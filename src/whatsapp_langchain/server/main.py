@@ -28,6 +28,10 @@ from whatsapp_langchain.server.routes.catalogo import (
     router_mcp as mcp_router,
     router_modelo_llm as modelo_llm_router,
 )
+from whatsapp_langchain.server.routes.dashboard_ia import (
+    router as dashboard_ia_router,
+    router_budget as ia_budget_router,
+)
 from whatsapp_langchain.server.routes.agendamento import (
     router as agendamento_router,
 )
@@ -250,6 +254,8 @@ app.include_router(agente_router)
 app.include_router(menu_chatbot_router)
 app.include_router(modelo_llm_router)
 app.include_router(mcp_router)
+app.include_router(dashboard_ia_router)
+app.include_router(ia_budget_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.
