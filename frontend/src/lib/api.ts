@@ -1832,6 +1832,13 @@ export interface AgenteIA {
   // Derivados (computados no backend baseado em estilo + override)
   temperatura_efetiva: number;
   top_p_efetivo: number;
+  // Sprint 2 paridade ZigChat (mig 043)
+  modelo_provedor: string | null;
+  modelo_nome: string | null;
+  tipo_memoria: string;
+  janela_memoria: number | null;
+  timeout_minutos: number | null;
+  acao_limite_menu_id: number | null;
 }
 
 export interface AgenteIACreateInput {
@@ -2104,4 +2111,34 @@ export async function reorderMenuItems(
     `/api/v1/menus/${menuId}/itens/reorder`,
     { method: "POST", body }
   );
+}
+
+// =====================================================================
+// Catálogo modelo_llm (Sprint 1+ paridade ZigChat)
+// =====================================================================
+
+export interface ModeloLLM {
+  id: number;
+  empresa_id: number | null;  // NULL = global
+  provedor: string;
+  nome: string;
+  descricao: string | null;
+  tipo: "chat" | "embedding" | "midia" | "audio" | "imagem";
+  custo_input_mtok: number | null;
+  custo_output_mtok: number | null;
+  janela_contexto: number | null;
+  ativo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function getModelosLLM(opts?: {
+  tipo?: string;
+  onlyActive?: boolean;
+}): Promise<{ items: ModeloLLM[] }> {
+  const params = new URLSearchParams();
+  if (opts?.tipo) params.set("tipo", opts.tipo);
+  if (opts?.onlyActive === false) params.set("only_active", "false");
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<{ items: ModeloLLM[] }>(`/api/v1/modelos-llm${qs}`);
 }

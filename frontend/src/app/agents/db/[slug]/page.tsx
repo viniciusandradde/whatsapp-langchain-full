@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { getAgenteIA } from "@/lib/api";
+import { getAgenteIA, getModelosLLM, type ModeloLLM } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { AgenteEditor } from "./agente-editor";
@@ -26,6 +26,15 @@ export default async function AgenteDbEditPage({ params }: Props) {
     error = e instanceof Error ? e.message : "Erro ao carregar agente.";
   }
 
+  // Modelos LLM (chat) — opcional, fallback pra lista vazia se falhar
+  let modelosChat: ModeloLLM[] = [];
+  try {
+    const r = await getModelosLLM({ tipo: "chat", onlyActive: true });
+    modelosChat = r.items;
+  } catch {
+    // Sem modelos? Editor cai pra input text livre.
+  }
+
   if (!agente && !error) notFound();
 
   return (
@@ -43,7 +52,7 @@ export default async function AgenteDbEditPage({ params }: Props) {
           {error}
         </p>
       ) : (
-        <AgenteEditor initialAgente={agente!} />
+        <AgenteEditor initialAgente={agente!} modelosChat={modelosChat} />
       )}
     </div>
   );

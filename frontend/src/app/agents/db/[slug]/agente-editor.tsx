@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useState, useTransition } from "react";
 import {
   Bot,
@@ -33,8 +34,11 @@ import {
   updateAgenteAction,
 } from "./actions";
 
+import type { ModeloLLM } from "@/lib/api";
+
 interface Props {
   initialAgente: AgenteIA;
+  modelosChat?: ModeloLLM[];
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp";
@@ -91,7 +95,7 @@ const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = 
   { slug: "cliente_anotacao.create", label: "Criar anotação no cliente" },
 ];
 
-export function AgenteEditor({ initialAgente }: Props) {
+export function AgenteEditor({ initialAgente, modelosChat = [] }: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +136,18 @@ export function AgenteEditor({ initialAgente }: Props) {
       patch.ativo = getBool("ativo");
     }
     if (tab === "modelo") {
-      patch.modelo = getStr("modelo");
+      // Sprint 2 paridade ZigChat (mig 043): preferencialmente salva
+      // modelo_provedor + modelo_nome (separados); modelo único legacy
+      // permanece editável via fallback quando catálogo modelo_llm vazio.
+      const provedor = getStr("modelo_provedor");
+      const nome = getStr("modelo_nome");
+      if (provedor !== null) patch.modelo_provedor = provedor;
+      if (nome !== null) patch.modelo_nome = nome;
+      // Mantém compat: input "modelo" único ainda atualizável quando dropdown ausente
+      const modeloLegacy = getStr("modelo");
+      if (modeloLegacy !== null && !provedor && !nome) {
+        patch.modelo = modeloLegacy;
+      }
       patch.estilo_resposta = (getStr("estilo_resposta") ?? "equilibrado") as EstiloResposta;
       patch.temperatura_override = getNum("temperatura_override");
       patch.top_p_override = getNum("top_p_override");
@@ -291,7 +306,7 @@ export function AgenteEditor({ initialAgente }: Props) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {tab === "identidade" && <TabIdentidade a={a} />}
-          {tab === "modelo" && <TabModelo a={a} />}
+          {tab === "modelo" && <TabModelo a={a} modelosChat={modelosChat} />}
           {tab === "prompt" && <TabPrompt a={a} />}
           {tab === "tools" && <TabTools a={a} />}
           {tab === "kb_mcp" && <TabKbMcp a={a} />}
@@ -340,15 +355,85 @@ function TabIdentidade({ a }: { a: AgenteIA }) {
   );
 }
 
-function TabModelo({ a }: { a: AgenteIA }) {
+function TabModelo({
+  a,
+  modelosChat,
+}: {
+  a: AgenteIA;
+  modelosChat: ModeloLLM[];
+}) {
+  // Provedor inicial: prefere modelo_provedor da mig 043; cai pro split do
+  // modelo único legacy.
+  const provedorInicial =
+    a.modelo_provedor ||
+    (a.modelo && a.modelo.includes("/") ? a.modelo.split("/")[0] : "") ||
+    "";
+  const nomeInicial =
+    a.modelo_nome ||
+    (a.modelo && a.modelo.includes("/") ? a.modelo.split("/").slice(1).join("/") : a.modelo || "") ||
+    "";
+
+  const [provedor, setProvedor] = useState(provedorInicial);
+  const [nome, setNome] = useState(nomeInicial);
+
+  // Provedores únicos disponíveis no catálogo
+  const provedoresDisponiveis = Array.from(
+    new Set(modelosChat.map((m) => m.provedor))
+  ).sort();
+
+  // Modelos do provedor selecionado
+  const modelosDoProvedor = modelosChat
+    .filter((m) => m.provedor === provedor)
+    .sort((x, y) => x.nome.localeCompare(y.nome));
+
+  // Modelo selecionado (pra mostrar custos)
+  const modeloSelecionado = modelosChat.find(
+    (m) => m.provedor === provedor && m.nome === nome
+  );
+
+  const semCatalogo = modelosChat.length === 0;
+
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <Field
-        label="Modelo (slug OpenRouter)"
-        name="modelo"
-        defaultValue={a.modelo}
-        placeholder="google/gemini-2.5-flash"
-      />
+      {semCatalogo ? (
+        // Fallback: catálogo modelo_llm vazio → input livre legacy
+        <Field
+          label="Modelo (slug livre — catálogo vazio)"
+          name="modelo"
+          defaultValue={a.modelo}
+          placeholder="google/gemini-2.5-flash"
+        />
+      ) : (
+        <>
+          <FieldSelect
+            label="Provedor"
+            name="modelo_provedor"
+            defaultValue={provedor}
+            onChange={(v: string) => {
+              setProvedor(v);
+              setNome("");  // limpa modelo quando muda provedor
+            }}
+            options={[
+              { v: "", l: "— selecione —" },
+              ...provedoresDisponiveis.map((p) => ({ v: p, l: p })),
+            ]}
+          />
+          <FieldSelect
+            label="Modelo"
+            name="modelo_nome"
+            defaultValue={nome}
+            onChange={(v: string) => setNome(v)}
+            options={[
+              { v: "", l: provedor ? "— selecione —" : "(escolha o provedor)" },
+              ...modelosDoProvedor.map((m) => ({
+                v: m.nome,
+                l: m.descricao ? `${m.nome} — ${m.descricao}` : m.nome,
+              })),
+            ]}
+            disabled={!provedor}
+          />
+        </>
+      )}
       <FieldSelect
         label="Estilo de respostas"
         name="estilo_resposta"
@@ -380,9 +465,32 @@ function TabModelo({ a }: { a: AgenteIA }) {
       />
       <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
         <p className="font-medium">Valores efetivos:</p>
-        <p>Temperatura: <code>{a.temperatura_efetiva.toFixed(2)}</code></p>
-        <p>Top-p: <code>{a.top_p_efetivo.toFixed(2)}</code></p>
-        <p className="mt-1 text-muted-foreground">
+        <p>
+          Temperatura: <code>{a.temperatura_efetiva.toFixed(2)}</code>
+        </p>
+        <p>
+          Top-p: <code>{a.top_p_efetivo.toFixed(2)}</code>
+        </p>
+        {modeloSelecionado && (
+          <>
+            <p className="mt-2 font-medium">Custo {modeloSelecionado.nome}:</p>
+            <p>
+              Input: <code>${modeloSelecionado.custo_input_mtok ?? "?"}/M tok</code>
+            </p>
+            <p>
+              Output: <code>${modeloSelecionado.custo_output_mtok ?? "?"}/M tok</code>
+            </p>
+            {modeloSelecionado.janela_contexto && (
+              <p>
+                Contexto:{" "}
+                <code>
+                  {modeloSelecionado.janela_contexto.toLocaleString("pt-BR")} tok
+                </code>
+              </p>
+            )}
+          </>
+        )}
+        <p className="mt-2 text-muted-foreground">
           Override fino sobrescreve o preset do estilo.
         </p>
       </div>
@@ -598,12 +706,19 @@ function FieldSelect({
   name,
   defaultValue,
   options,
+  onChange,
+  disabled,
 }: {
   label: string;
   name: string;
   defaultValue: string;
   options: { v: string; l: string }[];
+  onChange?: (v: string) => void;
+  disabled?: boolean;
 }) {
+  // Quando onChange é passado, vira controlled (necessário pra dropdowns
+  // dependentes como provedor → modelo).
+  const isControlled = onChange !== undefined;
   return (
     <div>
       <label
@@ -615,8 +730,15 @@ function FieldSelect({
       <select
         id={name}
         name={name}
-        defaultValue={defaultValue}
-        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        {...(isControlled
+          ? {
+              value: defaultValue,
+              onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+                onChange?.(e.target.value),
+            }
+          : { defaultValue })}
+        disabled={disabled}
+        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
       >
         {options.map((o) => (
           <option key={o.v} value={o.v}>
