@@ -42,7 +42,10 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
-from whatsapp_langchain.shared.agente import resolve_agente_runtime
+from whatsapp_langchain.shared.agente import (
+    get_agente_by_slug,
+    resolve_agente_runtime,
+)
 from whatsapp_langchain.shared.atendimento import (
     close_atendimento,
     get_atendimento_by_id,
@@ -565,6 +568,44 @@ async def _try_handle_menu(
                 payload=payload,
             )
             return False
+        # Valida que o agente_ia existe e está ativo na empresa.
+        # Sem isso, atendimento.agente_atual = slug fantasma e o worker
+        # cai no fallback legacy do catálogo (template hardcoded), gerando
+        # respostas confusas.
+        agente_db = await get_agente_by_slug(pool, message.empresa_id, agente_slug)
+        if agente_db is None or not agente_db.ativo:
+            logger.warning(
+                "menu_chamar_agente_slug_invalido",
+                item_id=item.id,
+                agente_slug=agente_slug,
+                empresa_id=message.empresa_id,
+                ativo=getattr(agente_db, "ativo", None),
+            )
+            # Reset pra raiz + reenvia menu pra cliente escolher outra opção
+            root_children = await list_children(pool, menu.id, None)
+            erro_msg = (
+                f"{menu.mensagem_opcao_invalida}\n\n"
+                f"{format_menu_message(None, root_children)}"
+                if root_children
+                else menu.mensagem_opcao_invalida
+            )
+            async with pool.connection() as conn:
+                await conn.execute(
+                    "UPDATE atendimento SET posicao_atual_item_id = NULL, "
+                    "updated_at = NOW() WHERE id = %s",
+                    (message.atendimento_id,),
+                )
+                await conn.commit()
+            await outbound.send_message(message.phone_number, erro_msg)
+            await mark_done(pool, message.id, erro_msg, normalized_input=text)
+            await upsert_conversation(
+                pool,
+                phone_number=message.phone_number,
+                agent_id=message.agent_id,
+                last_message=erro_msg,
+                empresa_id=message.empresa_id,
+            )
+            return True
         async with pool.connection() as conn:
             await conn.execute(
                 "UPDATE atendimento SET agente_atual = %s, updated_at = NOW() "

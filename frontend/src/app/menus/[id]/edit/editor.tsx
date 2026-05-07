@@ -21,13 +21,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { MenuChatbot, MenuItem, MenuItemAcaoTipo } from "@/lib/api";
+import type {
+  AgenteIA,
+  MenuChatbot,
+  MenuItem,
+  MenuItemAcaoTipo,
+} from "@/lib/api";
 
 import {
   createItemAction,
   deleteItemAction,
   deleteMenuAction,
   reorderAction,
+  seedFromAgentesAction,
   updateItemAction,
   updateMenuAction,
 } from "./actions";
@@ -118,9 +124,11 @@ function buildTree(items: MenuItem[]): ItemNode[] {
 export function MenuEditor({
   menu: initialMenu,
   items: initialItems,
+  agentes,
 }: {
   menu: MenuChatbot;
   items: MenuItem[];
+  agentes: AgenteIA[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"identidade" | "arvore" | "preview" | "config">(
@@ -483,9 +491,11 @@ export function MenuEditor({
             </CardHeader>
             <CardContent>
               {tree.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  Sem opções ainda. Adicione a primeira pra cliente escolher.
-                </p>
+                <SeedFromAgentesEmptyState
+                  menuId={menu.id}
+                  agentes={agentes}
+                  onSeeded={refreshFromServer}
+                />
               ) : (
                 <ul className="space-y-1">
                   {tree.map((node, idx) => (
@@ -520,6 +530,7 @@ export function MenuEditor({
                   key={selectedItem.id}
                   item={selectedItem}
                   menuId={menu.id}
+                  agentes={agentes}
                   saving={savingItem}
                   setSaving={setSavingItem}
                   onChange={refreshFromServer}
@@ -709,6 +720,7 @@ function TreeNode({
 function ItemForm({
   item,
   menuId,
+  agentes,
   saving,
   setSaving,
   onChange,
@@ -716,6 +728,7 @@ function ItemForm({
 }: {
   item: MenuItem;
   menuId: number;
+  agentes: AgenteIA[];
   saving: boolean;
   setSaving: (b: boolean) => void;
   onChange: () => void;
@@ -850,12 +863,10 @@ function ItemForm({
 
         {acao === "chamar_agente" && (
           <>
-            <PayloadField
+            <AgenteSelect
               payload={payload}
               setPayload={setPayload}
-              field="agente_slug"
-              label="Slug do agente IA"
-              help='Ex: "atendimento", "vendas-sp"'
+              agentes={agentes}
             />
             <PayloadField
               payload={payload}
@@ -1194,6 +1205,127 @@ function PayloadCheckbox({
       />
       {label}
     </label>
+  );
+}
+
+// Empty state que mostra botão "Gerar a partir dos agentes" quando árvore vazia.
+// Cria 1 menu_item por agente_ia ativo (chamar_agente). One-shot — admin
+// edita depois. Botão fica desabilitado se não há agentes ativos.
+function SeedFromAgentesEmptyState({
+  menuId,
+  agentes,
+  onSeeded,
+}: {
+  menuId: number;
+  agentes: AgenteIA[];
+  onSeeded: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const handleSeed = async () => {
+    setLoading(true);
+    setError(null);
+    const res = await seedFromAgentesAction(menuId);
+    setLoading(false);
+    if (res.ok) {
+      onSeeded();
+    } else {
+      setError(res.error || "Erro ao gerar menu.");
+    }
+  };
+  if (agentes.length === 0) {
+    return (
+      <div className="space-y-3 py-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          Sem opções ainda. Cadastre agentes IA primeiro pra gerar o menu
+          automaticamente.
+        </p>
+        <Link
+          href="/agents/new"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary underline"
+        >
+          <Plus className="size-3.5" /> Cadastrar agente
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 py-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        Sem opções ainda. Adicione manualmente ou gere uma opção por agente IA
+        ativo da empresa.
+      </p>
+      <Button size="sm" onClick={handleSeed} disabled={loading}>
+        {loading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Plus className="size-4" />
+        )}
+        Gerar {agentes.length} opção(ões) a partir dos agentes
+      </Button>
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Você pode editar/reordenar/excluir depois.
+      </p>
+    </div>
+  );
+}
+
+// Dropdown que lista agente_ia ativos da empresa pra ação chamar_agente.
+// Substitui input livre — admin não digita slug inválido. Mostra aviso
+// se não há agente cadastrado, com link pra criar.
+function AgenteSelect({
+  payload,
+  setPayload,
+  agentes,
+}: {
+  payload: Record<string, unknown>;
+  setPayload: (p: Record<string, unknown>) => void;
+  agentes: AgenteIA[];
+}) {
+  const current = String(payload["agente_slug"] || "");
+  if (agentes.length === 0) {
+    return (
+      <div className="space-y-1">
+        <label className={labelCls}>Agente IA *</label>
+        <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          Nenhum agente IA ativo cadastrado.{" "}
+          <Link href="/agents/new" className="font-medium underline">
+            Cadastrar agente
+          </Link>
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <label className={labelCls}>Agente IA *</label>
+      <select
+        value={current}
+        required
+        onChange={(e) =>
+          setPayload({ ...payload, agente_slug: e.target.value })
+        }
+        className={inputCls}
+      >
+        <option value="">— selecione —</option>
+        {agentes.map((a) => (
+          <option key={a.id} value={a.slug}>
+            {a.nome}
+            {a.is_default ? " (padrão)" : ""} — {a.slug}
+          </option>
+        ))}
+      </select>
+      <p className={helpCls}>
+        Cliente cai nesse agente após escolher essa opção. Edite agentes em{" "}
+        <Link href="/agents" className="underline">
+          /agents
+        </Link>
+        .
+      </p>
+    </div>
   );
 }
 

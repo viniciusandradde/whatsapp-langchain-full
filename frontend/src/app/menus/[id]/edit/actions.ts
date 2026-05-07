@@ -8,6 +8,7 @@ import {
   deleteMenu,
   deleteMenuItem,
   reorderMenuItems,
+  seedMenuFromAgentes,
   updateMenu,
   updateMenuItem,
   type MenuChatbotUpdateInput,
@@ -100,6 +101,22 @@ export async function reorderAction(
   }
   revalidatePath(`/menus/${menuId}/edit`);
   return { ok: true };
+}
+
+export async function seedFromAgentesAction(
+  menuId: number
+): Promise<{ ok: boolean; error?: string; qtde_criados?: number }> {
+  try {
+    const r = await seedMenuFromAgentes(menuId);
+    revalidatePath(`/menus/${menuId}/edit`);
+    revalidatePath("/menus");
+    return { ok: true, qtde_criados: r.qtde_criados };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao gerar menu.",
+    };
+  }
 }
 
 export async function deleteMenuAction(menuId: number): Promise<void> {

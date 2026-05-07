@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import psycopg
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -26,6 +27,7 @@ from whatsapp_langchain.server.dependencies import (
     verify_service_token,
 )
 from whatsapp_langchain.server.dependencies_rbac import require_permission
+from whatsapp_langchain.shared.agente import list_agentes
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.menu_chatbot import (
@@ -66,7 +68,9 @@ class CreateMenuInput(BaseModel):
 
 class UpdateMenuInput(BaseModel):
     nome: str | None = Field(default=None, min_length=1, max_length=120)
-    mensagem_boas_vindas: str | None = Field(default=None, min_length=1, max_length=4000)
+    mensagem_boas_vindas: str | None = Field(
+        default=None, min_length=1, max_length=4000
+    )
     conexao_id: int | None = None
     trigger_keywords: list[str] | None = Field(default=None, max_length=20)
     mensagem_opcao_invalida: str | None = Field(default=None, max_length=2000)
@@ -140,7 +144,24 @@ async def list_menus_endpoint(
 ) -> dict:
     pool = await get_pool()
     items = await list_menus(pool, empresa_id, only_active=only_active)
-    return {"items": [m.to_dict() for m in items]}
+    # Contagem de items por menu (1 query) — UI usa pra avisar "menu vazio"
+    counts: dict[int, int] = {}
+    if items:
+        ids = [m.id for m in items]
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT menu_id, COUNT(*) FROM menu_item "
+                "WHERE menu_id = ANY(%s) GROUP BY menu_id",
+                (ids,),
+            )
+            rows = await cur.fetchall()
+        counts = {int(r[0]): int(r[1]) for r in rows}
+    out = []
+    for m in items:
+        d = m.to_dict()
+        d["qtde_items"] = counts.get(m.id, 0)
+        out.append(d)
+    return {"items": out}
 
 
 @router.get("/{menu_id}")
@@ -165,16 +186,33 @@ async def create_menu_endpoint(
     _: None = Depends(require_permission("menu_chatbot.write")),
 ) -> dict:
     pool = await get_pool()
-    out = await create_menu(
-        pool,
-        empresa_id,
-        nome=body.nome,
-        mensagem_boas_vindas=body.mensagem_boas_vindas,
-        conexao_id=body.conexao_id,
-        trigger_keywords=body.trigger_keywords,
-        mensagem_opcao_invalida=body.mensagem_opcao_invalida,
-        user_id=user_id,
-    )
+    try:
+        out = await create_menu(
+            pool,
+            empresa_id,
+            nome=body.nome,
+            mensagem_boas_vindas=body.mensagem_boas_vindas,
+            conexao_id=body.conexao_id,
+            trigger_keywords=body.trigger_keywords,
+            mensagem_opcao_invalida=body.mensagem_opcao_invalida,
+            user_id=user_id,
+        )
+    except psycopg.errors.UniqueViolation as exc:
+        # uq_menu_chatbot_ativo_por_conexao — só 1 menu ativo por (empresa, conexao)
+        if "uq_menu_chatbot_ativo_por_conexao" in str(exc):
+            alvo = (
+                f"conexão #{body.conexao_id}"
+                if body.conexao_id
+                else "todas as conexões"
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Já existe menu ativo pra {alvo}. Edite o existente ou "
+                    "desative-o antes de criar outro."
+                ),
+            ) from exc
+        raise
     await record_audit(
         pool,
         empresa_id=empresa_id,
@@ -254,9 +292,7 @@ def _ensure_menu_owns_item(menu_id: int, item) -> None:
     """Garante que item pertence ao menu (defesa em profundidade contra
     URL forjada onde menu_id é da empresa A e item_id pertence a empresa B)."""
     if item.menu_id != menu_id:
-        raise HTTPException(
-            status_code=404, detail="Item não encontrado nesse menu."
-        )
+        raise HTTPException(status_code=404, detail="Item não encontrado nesse menu.")
 
 
 @router.get("/{menu_id}/itens")
@@ -323,6 +359,72 @@ async def create_item_endpoint(
         request=request,
     )
     return out.to_dict()
+
+
+@router.post("/{menu_id}/itens/seed-from-agentes", status_code=201)
+async def seed_items_from_agentes_endpoint(
+    menu_id: int,
+    request: Request,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("menu_chatbot.write")),
+) -> dict:
+    """Cria 1 menu_item por agente_ia ativo da empresa.
+
+    One-shot generator pra acelerar setup. Cria items raiz (parent_id=NULL)
+    com `acao_tipo=chamar_agente`, `acao_payload={agente_slug}`, ordem
+    sequencial. Falha com 409 se o menu já tem items raiz.
+    """
+    pool = await get_pool()
+    menu = await get_menu_by_id(pool, empresa_id, menu_id)
+    if menu is None:
+        raise HTTPException(status_code=404, detail="Menu não encontrado.")
+
+    existing = await list_items_do_menu(pool, menu_id, only_active=False)
+    has_root = any(i.parent_id is None for i in existing)
+    if has_root:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Menu já tem items raiz. Use o gerador apenas em menus vazios "
+                "ou apague os items existentes antes."
+            ),
+        )
+
+    agentes = await list_agentes(pool, empresa_id, only_active=True)
+    if not agentes:
+        raise HTTPException(
+            status_code=400,
+            detail="Nenhum agente IA ativo cadastrado pra empresa.",
+        )
+
+    created: list[dict] = []
+    for idx, ag in enumerate(agentes, start=1):
+        item = await create_item(
+            pool,
+            menu_id,
+            label=ag.nome,
+            acao_tipo="chamar_agente",
+            acao_payload={
+                "agente_slug": ag.slug,
+                "mensagem_pre": f"Vou te conectar com {ag.nome}…",
+            },
+            parent_id=None,
+            ordem=idx,
+        )
+        created.append(item.to_dict())
+
+    await record_audit(
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="menu_chatbot.item.seed_from_agentes",
+        entity_type="menu_chatbot",
+        entity_id=str(menu_id),
+        payload_diff={"after": {"qtde_criados": len(created), "items": created}},
+        request=request,
+    )
+    return {"items": created, "qtde_criados": len(created)}
 
 
 @router.get("/{menu_id}/itens/{item_id}")

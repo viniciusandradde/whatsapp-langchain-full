@@ -1972,6 +1972,8 @@ export interface MenuChatbot {
   mensagem_confirmar_coleta: string | null;
   mensagem_final_coleta: string | null;
   resposta_confidencial: boolean;
+  // Apenas no list_menus_endpoint (não no get_menu_by_id) — count agregado.
+  qtde_items?: number;
 }
 
 export type MenuItemAcaoTipo =
@@ -2153,6 +2155,15 @@ export async function reorderMenuItems(
   return apiFetch<{ ok: boolean; ordered_ids: number[] }>(
     `/api/v1/menus/${menuId}/itens/reorder`,
     { method: "POST", body }
+  );
+}
+
+export async function seedMenuFromAgentes(
+  menuId: number
+): Promise<{ items: MenuItem[]; qtde_criados: number }> {
+  return apiFetch<{ items: MenuItem[]; qtde_criados: number }>(
+    `/api/v1/menus/${menuId}/itens/seed-from-agentes`,
+    { method: "POST" }
   );
 }
 

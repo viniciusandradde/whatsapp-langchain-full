@@ -80,6 +80,11 @@ export default async function MenusPage() {
                 <div className="flex items-start justify-between gap-2">
                   <CardTitle className="text-base">{m.nome}</CardTitle>
                   <div className="flex flex-wrap gap-1">
+                    {m.qtde_items === 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        vazio
+                      </Badge>
+                    )}
                     {m.ativo ? (
                       <Badge variant="outline" className="text-xs">
                         ativo
@@ -122,11 +127,10 @@ export default async function MenusPage() {
                       : "(nenhum)"}
                   </span>
                 </div>
-                {m.qtde_acesso > 0 && (
-                  <p className="text-xs text-muted-foreground/70">
-                    {m.qtde_acesso} acessos
-                  </p>
-                )}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground/70">
+                  <span>{m.qtde_items ?? 0} opções</span>
+                  {m.qtde_acesso > 0 && <span>{m.qtde_acesso} acessos</span>}
+                </div>
               </CardContent>
               <CardFooter>
                 <Link

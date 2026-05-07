@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { getMenu, getMenuItems } from "@/lib/api";
+import { getAgentesIA, getMenu, getMenuItems } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { MenuEditor } from "./editor";
@@ -24,7 +24,16 @@ export default async function EditMenuPage({ params }: PageProps) {
     notFound();
   }
 
-  const itemsResp = await getMenuItems(menuId, { onlyActive: false });
+  const [itemsResp, agentesResp] = await Promise.all([
+    getMenuItems(menuId, { onlyActive: false }),
+    getAgentesIA({ onlyActive: true }).catch(() => ({ items: [] })),
+  ]);
 
-  return <MenuEditor menu={menu} items={itemsResp.items} />;
+  return (
+    <MenuEditor
+      menu={menu}
+      items={itemsResp.items}
+      agentes={agentesResp.items}
+    />
+  );
 }
