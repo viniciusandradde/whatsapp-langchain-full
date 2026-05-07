@@ -137,8 +137,9 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
       add("numero_verificado", fd.get("numero_verificado") === "on");
       add("ignora_inatividade", fd.get("ignora_inatividade") === "on");
       add("desconsidera_turno", fd.get("desconsidera_turno") === "on");
-      for (const n of [1, 2, 3, 4, 5]) {
-        add(`field_${n}`, getStr(`field_${n}`));
+      const fieldKeys = ["field_1", "field_2", "field_3", "field_4", "field_5"] as const;
+      for (const k of fieldKeys) {
+        add(k, getStr(k));
       }
     }
 
