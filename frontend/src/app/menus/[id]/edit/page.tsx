@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation";
 
-import { getAgentesIA, getMenu, getMenuItems } from "@/lib/api";
+import {
+  getAgentesIA,
+  getDepartamentos,
+  getHooks,
+  getMenu,
+  getMenuItems,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { MenuEditor } from "./editor";
@@ -24,9 +30,11 @@ export default async function EditMenuPage({ params }: PageProps) {
     notFound();
   }
 
-  const [itemsResp, agentesResp] = await Promise.all([
+  const [itemsResp, agentesResp, depsResp, hooksResp] = await Promise.all([
     getMenuItems(menuId, { onlyActive: false }),
     getAgentesIA({ onlyActive: true }).catch(() => ({ items: [] })),
+    getDepartamentos().catch(() => ({ departamentos: [] })),
+    getHooks().catch(() => ({ hooks: [] })),
   ]);
 
   return (
@@ -34,6 +42,8 @@ export default async function EditMenuPage({ params }: PageProps) {
       menu={menu}
       items={itemsResp.items}
       agentes={agentesResp.items}
+      departamentos={depsResp.departamentos}
+      hooks={hooksResp.hooks}
     />
   );
 }

@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
   AgenteIA,
+  Departamento,
+  Hook,
   MenuChatbot,
   MenuItem,
   MenuItemAcaoTipo,
@@ -125,10 +127,14 @@ export function MenuEditor({
   menu: initialMenu,
   items: initialItems,
   agentes,
+  departamentos,
+  hooks,
 }: {
   menu: MenuChatbot;
   items: MenuItem[];
   agentes: AgenteIA[];
+  departamentos: Departamento[];
+  hooks: Hook[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"identidade" | "arvore" | "preview" | "config">(
@@ -531,6 +537,8 @@ export function MenuEditor({
                   item={selectedItem}
                   menuId={menu.id}
                   agentes={agentes}
+                  departamentos={departamentos}
+                  hooks={hooks}
                   saving={savingItem}
                   setSaving={setSavingItem}
                   onChange={refreshFromServer}
@@ -721,6 +729,8 @@ function ItemForm({
   item,
   menuId,
   agentes,
+  departamentos,
+  hooks,
   saving,
   setSaving,
   onChange,
@@ -729,6 +739,8 @@ function ItemForm({
   item: MenuItem;
   menuId: number;
   agentes: AgenteIA[];
+  departamentos: Departamento[];
+  hooks: Hook[];
   saving: boolean;
   setSaving: (b: boolean) => void;
   onChange: () => void;
@@ -851,13 +863,10 @@ function ItemForm({
         )}
 
         {acao === "transferir_dep" && (
-          <PayloadField
+          <DepartamentoSelect
             payload={payload}
             setPayload={setPayload}
-            field="departamento_id"
-            label="ID do departamento"
-            type="number"
-            help="ID do departamento (ver lista em /departamentos)"
+            departamentos={departamentos}
           />
         )}
 
@@ -969,8 +978,11 @@ function ItemForm({
 
         {acao === "chamar_webhook" && (
           <>
+            <HookSelect item={item} hooks={hooks} />
             <div className="space-y-1">
-              <label className={labelCls}>URL do webhook *</label>
+              <label className={labelCls}>
+                Ou URL livre (sem retry/DLQ)
+              </label>
               <input
                 name="webhook_url"
                 type="url"
@@ -979,19 +991,8 @@ function ItemForm({
                 className={inputCls}
               />
               <p className={helpCls}>
-                POST async com body: atendimento_id, item_id, input_cliente, etc.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <label className={labelCls}>Hook ID (opcional)</label>
-              <input
-                name="hook_id"
-                type="number"
-                defaultValue={item.hook_id || ""}
-                className={inputCls}
-              />
-              <p className={helpCls}>
-                ID em /integracoes/hooks pra usar retry+DLQ
+                Use só quando precisar de URL ad-hoc. Pra produção prefira hook
+                cadastrado acima (ganha retry exponencial + DLQ).
               </p>
             </div>
             <PayloadField
@@ -1205,6 +1206,99 @@ function PayloadCheckbox({
       />
       {label}
     </label>
+  );
+}
+
+// Dropdown que lista departamentos cadastrados — substitui input livre pra
+// ação transferir_dep. Sem dropdown user precisaria saber decorar o ID.
+function DepartamentoSelect({
+  payload,
+  setPayload,
+  departamentos,
+}: {
+  payload: Record<string, unknown>;
+  setPayload: (p: Record<string, unknown>) => void;
+  departamentos: Departamento[];
+}) {
+  const current = payload["departamento_id"];
+  const currentStr =
+    current === undefined || current === null ? "" : String(current);
+  if (departamentos.length === 0) {
+    return (
+      <div className="space-y-1">
+        <label className={labelCls}>Departamento *</label>
+        <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          Nenhum departamento cadastrado.{" "}
+          <Link href="/departamentos" className="font-medium underline">
+            Cadastrar departamento
+          </Link>
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <label className={labelCls}>Departamento *</label>
+      <select
+        value={currentStr}
+        required
+        onChange={(e) =>
+          setPayload({
+            ...payload,
+            departamento_id: e.target.value ? Number(e.target.value) : null,
+          })
+        }
+        className={inputCls}
+      >
+        <option value="">— selecione —</option>
+        {departamentos
+          .filter((d) => d.ativo)
+          .map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.nome}
+              {d.users_count != null ? ` (${d.users_count} membros)` : ""}
+            </option>
+          ))}
+      </select>
+      <p className={helpCls}>
+        Cliente é atribuído ao departamento selecionado e sai do menu.
+      </p>
+    </div>
+  );
+}
+
+// Dropdown opcional de hook cadastrado — quando selecionado preenche
+// hook_id (frontend) e o backend usa retry+DLQ. Selecionar "—" deixa o
+// admin usar URL livre no campo abaixo.
+function HookSelect({ item, hooks }: { item: MenuItem; hooks: Hook[] }) {
+  const [hookId, setHookId] = useState<string>(
+    item.hook_id ? String(item.hook_id) : ""
+  );
+  return (
+    <div className="space-y-1">
+      <label className={labelCls}>Hook cadastrado (recomendado)</label>
+      <select
+        name="hook_id"
+        value={hookId}
+        onChange={(e) => setHookId(e.target.value)}
+        className={inputCls}
+      >
+        <option value="">— sem hook (usar URL livre abaixo) —</option>
+        {hooks
+          .filter((h) => h.ativo)
+          .map((h) => (
+            <option key={h.id} value={h.id}>
+              {h.nome} — {h.evento}
+            </option>
+          ))}
+      </select>
+      <p className={helpCls}>
+        Hooks têm retry exponencial (1s/5s/25s) + DLQ.{" "}
+        <Link href="/integracoes/hooks" className="underline">
+          Gerenciar hooks
+        </Link>
+      </p>
+    </div>
   );
 }
 

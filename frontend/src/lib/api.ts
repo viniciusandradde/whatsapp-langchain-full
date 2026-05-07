@@ -702,12 +702,32 @@ async function apiFetch<T>(
   });
 
   if (!response.ok) {
+    // Tenta extrair `detail` do JSON pra mensagem mais útil (FastAPI
+    // sempre retorna {detail: "..."} em HTTPException).
+    let detail = "";
+    try {
+      const errBody = await response.clone().json();
+      if (errBody && typeof errBody === "object" && "detail" in errBody) {
+        detail = ` — ${(errBody as { detail: string }).detail}`;
+      }
+    } catch {
+      // Resposta não-JSON: ignora
+    }
     throw new Error(
-      `API error: ${response.status} ${response.statusText} (${path})`
+      `API error: ${response.status} ${response.statusText} (${path})${detail}`
     );
   }
 
-  return response.json() as Promise<T>;
+  // 204 No Content (DELETE bem-sucedido) ou body vazio: retorna undefined.
+  // `response.json()` em body vazio lança "Unexpected end of JSON input".
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 function toNumber(value: unknown): number {
