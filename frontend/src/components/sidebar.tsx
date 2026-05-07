@@ -42,102 +42,30 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { resolveGroup } from "@/components/top-nav-tabs";
 import { signOut } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
-type NavItem = {
+// Sidebar enxuta — 6 grupos top-level (refator 2026-05-07).
+// Cada grupo abre uma rota default e mostra as sub-páginas relacionadas como
+// tabs horizontais via componente <TopNavTabs />. Preserva URLs existentes.
+//
+// `grupo` bate com chave em NAV_TABS_BY_GROUP (top-nav-tabs.tsx) e com
+// GRUPO_PREFIXOS (active state shared).
+type NavGroup = {
+  grupo: string;
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: typeof LayoutDashboard;
 };
 
-type NavSection = {
-  /** Texto exibido como header da seção. `null` = top-level sem header. */
-  label: string | null;
-  items: NavItem[];
-};
-
-// Layout do sidebar agrupado por TIPO DE FUNÇÃO do módulo. Ordem
-// validada pelo plano em /home/opc/.claude/plans/como-est-a-base-jazzy-sketch.md
-// (reorganização 2026-05-05). URLs preservadas — só labels/agrupamento mudaram.
-const NAV_SECTIONS: NavSection[] = [
-  {
-    label: null,
-    items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    // Operação diária — o que operador acessa todo dia
-    label: "Operação",
-    items: [
-      { href: "/atendimento", label: "Atendimentos", icon: Headphones },
-      { href: "/chats", label: "Conversas", icon: MessageSquare },
-      { href: "/clientes", label: "Clientes", icon: UsersRound },
-      { href: "/agendamentos", label: "Agendamentos", icon: CalendarDays },
-      { href: "/campanhas", label: "Campanhas", icon: Megaphone },
-    ],
-  },
-  {
-    // Insumos que alimentam as respostas do agente
-    label: "Conteúdo & IA",
-    items: [
-      { href: "/agents", label: "Agentes", icon: Bot },
-      { href: "/menus", label: "Menu chatbot", icon: ListTree },
-      { href: "/catalog/models", label: "Catálogo Modelos", icon: Brain },
-      { href: "/catalog/mcp", label: "MCP Servers", icon: Plug },
-      // /models legacy: define modelo por agente (override env). Mantém pra
-      // compat de bookmarks; rótulo desambigua do catálogo novo (mig 042).
-      { href: "/models", label: "Modelo por agente", icon: Brain },
-      // Rótulo "Quick Replies" pra evitar ambiguidade com /models.
-      // Rota /modelos preservada.
-      { href: "/modelos", label: "Quick Replies", icon: MessagesSquare },
-      { href: "/settings/pastas", label: "Base de Conhecimento", icon: FolderTree },
-      { href: "/settings/variaveis", label: "Variáveis", icon: Braces },
-    ],
-  },
-  {
-    // Entrada/saída do sistema com terceiros
-    label: "Conectividade",
-    items: [
-      { href: "/connections", label: "Conexões", icon: Smartphone },
-      { href: "/settings/integracoes", label: "Integrações Externas", icon: Plug },
-      { href: "/hooks", label: "Webhooks", icon: Webhook },
-    ],
-  },
-  {
-    // Regras de negócio + permissões + tenants
-    label: "Governança",
-    items: [
-      { href: "/companies", label: "Empresas", icon: Building2 },
-      { href: "/governanca/ia-budget", label: "IA Budget", icon: DollarSign },
-      { href: "/settings/perfis", label: "Perfis (RBAC)", icon: ShieldCheck },
-      { href: "/settings/departamentos", label: "Departamentos", icon: Building },
-      { href: "/settings/horarios", label: "Horário de Atendimento", icon: Clock },
-      { href: "/settings/calendar-rules", label: "Regras de Agendamento", icon: Clock },
-      { href: "/settings", label: "Segurança", icon: ShieldCheck },
-    ],
-  },
-  {
-    // Debug + audit — investigação operacional
-    label: "Observabilidade",
-    items: [
-      { href: "/traces", label: "Traces", icon: Activity },
-      { href: "/dashboard/ia", label: "Dashboard IA", icon: Activity },
-      { href: "/queue", label: "Fila", icon: ListOrdered },
-      {
-        href: "/settings/security/login-history",
-        label: "Histórico de Acesso",
-        icon: Activity,
-      },
-      {
-        href: "/settings/security/audit",
-        label: "Audit log",
-        icon: ScrollText,
-      },
-      { href: "/settings/feature-flags", label: "Feature flags", icon: Flag },
-    ],
-  },
+const NAV_GROUPS: NavGroup[] = [
+  { grupo: "visao", href: "/dashboard/ia", label: "Visão Geral", icon: LayoutDashboard },
+  { grupo: "operacao", href: "/atendimento", label: "Operação", icon: Headphones },
+  { grupo: "ia", href: "/agents", label: "IA & Conteúdo", icon: Bot },
+  { grupo: "conectividade", href: "/connections", label: "Conectividade", icon: Smartphone },
+  { grupo: "governanca", href: "/companies", label: "Governança", icon: ShieldCheck },
+  { grupo: "observabilidade", href: "/traces", label: "Observabilidade", icon: Activity },
 ];
 
 export function Sidebar({
@@ -150,10 +78,11 @@ export function Sidebar({
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  // Verifica se a rota está ativa (match exato para "/" e prefixo para sub-rotas)
-  function isActive(href: string): boolean {
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+  // Active state por GRUPO: destaca o grupo cuja resolveGroup() bate com a
+  // URL atual. Isso garante consistência com TopNavTabs (mesma lógica).
+  const grupoAtivo = resolveGroup(pathname);
+  function isGroupActive(grupo: string): boolean {
+    return grupoAtivo === grupo;
   }
 
   async function handleSignOut() {
@@ -217,38 +146,27 @@ export function Sidebar({
           <div className="px-3 pt-3">{empresaSwitcher}</div>
         ) : null}
 
-        {/* Navegação agrupada por área funcional */}
+        {/* Navegação enxuta — 6 grupos top-level. Sub-páginas viram tabs
+            horizontais via <TopNavTabs /> no AppShell. */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          {NAV_SECTIONS.map((section, idx) => (
-            <div key={section.label ?? `top-${idx}`}>
-              {section.label && (
-                <>
-                  <div className="mx-1 my-3 h-px bg-sidebar-border" />
-                  <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.15em] text-sidebar-foreground/40">
-                    {section.label}
-                  </p>
-                </>
-              )}
-              <div className="space-y-0.5">
-                {section.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
-                      isActive(item.href)
-                        ? "bg-sidebar-accent text-brand-primary font-medium shadow-glow-orange"
-                        : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ))}
+          <div className="space-y-1">
+            {NAV_GROUPS.map((g) => (
+              <Link
+                key={g.grupo}
+                href={g.href}
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
+                  isGroupActive(g.grupo)
+                    ? "bg-sidebar-accent text-brand-primary font-medium shadow-glow-orange"
+                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                )}
+              >
+                <g.icon className="h-4 w-4" />
+                {g.label}
+              </Link>
+            ))}
+          </div>
         </nav>
 
         {/* Footer */}

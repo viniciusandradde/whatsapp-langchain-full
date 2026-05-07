@@ -12,6 +12,7 @@
 
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
+import { TopNavTabs } from "@/components/top-nav-tabs";
 
 export function AppShell({
   children,
@@ -31,6 +32,7 @@ export function AppShell({
     <>
       <Sidebar empresaSwitcher={empresaSwitcher} />
       <main className="min-h-screen md:ml-64 p-6 pt-16 md:pt-6">
+        <TopNavTabs />
         {children}
       </main>
     </>
