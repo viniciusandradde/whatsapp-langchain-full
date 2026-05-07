@@ -2237,6 +2237,39 @@ export async function setAtendenteMaxParalelos(
   });
 }
 
+export interface AtendenteDashboard {
+  resolvidos_hoje: number;
+  abertos: number;
+  resolvidos_30d: number;
+  avg_segundos_resolucao_30d: number | null;
+}
+
+export async function getMyDashboard(): Promise<AtendenteDashboard> {
+  return apiFetch<AtendenteDashboard>(`/api/atendentes/me/dashboard`);
+}
+
+export async function getUserDashboard(
+  userId: string
+): Promise<AtendenteDashboard> {
+  return apiFetch<AtendenteDashboard>(`/api/atendentes/${userId}/dashboard`);
+}
+
+export interface AtendenteRankingItem {
+  user_id: string;
+  nome: string | null;
+  image: string | null;
+  resolvidos: number;
+  avg_segundos_resolucao: number | null;
+}
+
+export async function getAtendentesRanking(
+  dias: number = 30
+): Promise<{ items: AtendenteRankingItem[]; dias: number }> {
+  return apiFetch<{ items: AtendenteRankingItem[]; dias: number }>(
+    `/api/atendentes/ranking?dias=${dias}`
+  );
+}
+
 export async function reorderMenuItems(
   menuId: number,
   body: { parent_id: number | null; ordered_ids: number[] }

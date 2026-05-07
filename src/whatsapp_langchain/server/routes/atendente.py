@@ -22,6 +22,8 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.atendente import (
+    get_ranking_empresa,
+    get_user_dashboard,
     heartbeat,
     list_atendentes_empresa,
     set_max_paralelos,
@@ -111,6 +113,41 @@ async def get_empresa_atendentes(
     pool = await get_pool()
     items = await list_atendentes_empresa(pool, empresa_id)
     return {"atendentes": [a.to_dict() for a in items]}
+
+
+@router.get("/me/dashboard")
+async def my_dashboard(
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Dashboard do próprio atendente — KPIs + counts."""
+    pool = await get_pool()
+    return await get_user_dashboard(pool, empresa_id=empresa_id, user_id=user_id)
+
+
+@router.get("/{user_id}/dashboard")
+async def user_dashboard(
+    user_id: str,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("atendimento.read")),
+) -> dict:
+    """Dashboard de outro atendente — admin/supervisor."""
+    pool = await get_pool()
+    return await get_user_dashboard(pool, empresa_id=empresa_id, user_id=user_id)
+
+
+@router.get("/ranking")
+async def ranking(
+    dias: int = 30,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("atendimento.read")),
+) -> dict:
+    """Ranking de atendentes nos últimos N dias (default 30)."""
+    if not 1 <= dias <= 365:
+        raise HTTPException(status_code=400, detail="dias deve estar entre 1 e 365")
+    pool = await get_pool()
+    items = await get_ranking_empresa(pool, empresa_id, dias=dias)
+    return {"items": items, "dias": dias}
 
 
 @router.put("/{user_id}/max-paralelos", status_code=204)

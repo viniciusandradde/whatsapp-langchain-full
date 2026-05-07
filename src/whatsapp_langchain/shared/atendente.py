@@ -225,6 +225,108 @@ async def list_atendentes_empresa(
 # --- Routing capacity-based (Sprint I) ---
 
 
+async def get_user_dashboard(
+    pool: AsyncConnectionPool, *, empresa_id: int, user_id: str
+) -> dict:
+    """Retorna KPIs do atendente: hoje, abertos, avg tempo resolução, ranking.
+
+    Sprint J — usado em `/atendentes/me/dashboard` (atendente vê próprio)
+    e `/atendentes/{user_id}/dashboard` (admin).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT
+              COUNT(*) FILTER (
+                WHERE assigned_to_user_id = %s
+                  AND DATE(updated_at) = CURRENT_DATE
+                  AND status IN ('resolvido','abandonado')
+              ) AS resolvidos_hoje,
+              COUNT(*) FILTER (
+                WHERE assigned_to_user_id = %s
+                  AND status IN ('aguardando','em_andamento')
+              ) AS abertos,
+              COUNT(*) FILTER (
+                WHERE assigned_to_user_id = %s
+                  AND status = 'resolvido'
+                  AND updated_at >= NOW() - INTERVAL '30 days'
+              ) AS resolvidos_30d,
+              AVG(
+                EXTRACT(EPOCH FROM (closed_at - created_at))
+              ) FILTER (
+                WHERE assigned_to_user_id = %s
+                  AND status = 'resolvido'
+                  AND closed_at IS NOT NULL
+                  AND closed_at >= NOW() - INTERVAL '30 days'
+              ) AS avg_segundos_resolucao_30d
+              FROM atendimento
+             WHERE empresa_id = %s
+            """,
+            (user_id, user_id, user_id, user_id, empresa_id),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return {
+            "resolvidos_hoje": 0,
+            "abertos": 0,
+            "resolvidos_30d": 0,
+            "avg_segundos_resolucao_30d": None,
+        }
+    avg_secs = row[3]
+    return {
+        "resolvidos_hoje": int(row[0] or 0),
+        "abertos": int(row[1] or 0),
+        "resolvidos_30d": int(row[2] or 0),
+        "avg_segundos_resolucao_30d": (
+            float(avg_secs) if avg_secs is not None else None
+        ),
+    }
+
+
+async def get_ranking_empresa(
+    pool: AsyncConnectionPool, empresa_id: int, *, dias: int = 30
+) -> list[dict]:
+    """Ranking de atendentes da empresa por count_resolvidos no período.
+
+    Retorna lista ordenada por resolvidos DESC. Inclui avg tempo (s).
+    Útil pra `/atendentes` tab "Ranking" (admin).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT
+              a.assigned_to_user_id AS user_id,
+              u.name,
+              u.image,
+              COUNT(*) FILTER (WHERE a.status = 'resolvido') AS resolvidos,
+              AVG(EXTRACT(EPOCH FROM (a.closed_at - a.created_at)))
+                FILTER (WHERE a.status = 'resolvido'
+                          AND a.closed_at IS NOT NULL) AS avg_segundos
+              FROM atendimento a
+              LEFT JOIN auth."user" u ON u.id = a.assigned_to_user_id
+             WHERE a.empresa_id = %s
+               AND a.assigned_to_user_id IS NOT NULL
+               AND a.updated_at >= NOW() - INTERVAL '1 day' * %s
+             GROUP BY a.assigned_to_user_id, u.name, u.image
+             ORDER BY resolvidos DESC, avg_segundos ASC NULLS LAST
+            """,
+            (empresa_id, dias),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "user_id": r[0],
+            "nome": r[1],
+            "image": r[2],
+            "resolvidos": int(r[3] or 0),
+            "avg_segundos_resolucao": (
+                float(r[4]) if r[4] is not None else None
+            ),
+        }
+        for r in rows
+    ]
+
+
 async def pick_best_atendente(
     pool: AsyncConnectionPool, *, empresa_id: int, departamento_id: int
 ) -> str | None:
