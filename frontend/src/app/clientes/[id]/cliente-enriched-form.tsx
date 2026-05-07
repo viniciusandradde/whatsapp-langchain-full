@@ -521,13 +521,20 @@ function FieldTextarea({
   name,
   label,
   defaultValue,
+  placeholder,
+  colSpan,
+  rows = 4,
 }: {
   name: string;
   label: string;
   defaultValue: string | null;
+  placeholder?: string;
+  colSpan?: number;
+  rows?: number;
 }) {
+  const colClass = colSpan === 2 ? "sm:col-span-2 md:col-span-2" : "";
   return (
-    <div>
+    <div className={colClass}>
       <label
         htmlFor={name}
         className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
@@ -538,7 +545,8 @@ function FieldTextarea({
         id={name}
         name={name}
         defaultValue={defaultValue ?? ""}
-        rows={4}
+        placeholder={placeholder}
+        rows={rows}
         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
     </div>
