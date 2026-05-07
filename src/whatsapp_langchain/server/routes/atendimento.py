@@ -186,10 +186,7 @@ async def sse_events(
                 atendimento_id=atendimento_id,
                 error=str(exc),
             )
-            yield (
-                f"event: error\n"
-                f"data: {json.dumps({'error': str(exc)[:200]})}\n\n"
-            )
+            yield (f"event: error\ndata: {json.dumps({'error': str(exc)[:200]})}\n\n")
 
     return StreamingResponse(
         event_generator(),
@@ -228,9 +225,30 @@ async def claim(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> Atendimento:
-    """Operador "puxa" o atendimento — vira em_andamento + assigned=user."""
+    """Operador "puxa" o atendimento — vira em_andamento + assigned=user.
+
+    Sprint G.3 — valida capacidade: 409 se user já tem >= max_paralelos
+    atendimentos abertos. Default max=5 (mig 062).
+    """
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
     pool = await get_pool()
+    # Capacidade — só checa se user NÃO está claim-ando o atendimento atual
+    # (caso edge de re-claim de algo que ele já tem).
+    from whatsapp_langchain.shared.atendente import (
+        count_atendimentos_user_abertos,
+        get_max_paralelos,
+    )
+
+    count = await count_atendimentos_user_abertos(pool, user_id, empresa_id)
+    max_paralelos = await get_max_paralelos(pool, user_id)
+    if count >= max_paralelos:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Você já está atendendo {count} de {max_paralelos} atendimentos. "
+                "Encerre algum antes de assumir mais."
+            ),
+        )
     out = await claim_atendimento(pool, atendimento_id, user_id)
     if out is None:
         # Já foi fechado entre o load e o claim (race) — sinaliza conflito.
@@ -260,9 +278,7 @@ async def claim(
             pool,
             atendimento_id=atendimento_id,
             empresa_id=empresa_id,
-            conteudo=(
-                f"Você foi transferido para o atendente *{nome_atendente}*."
-            ),
+            conteudo=(f"Você foi transferido para o atendente *{nome_atendente}*."),
             tag_user_id=f"system:claim:{user_id}",
         )
     except Exception as exc:  # noqa: BLE001
@@ -336,9 +352,7 @@ async def responder(
     `Olá {{cliente.nome}}!` direto e o cliente recebe o texto final.
     """
     pool = await get_pool()
-    ctx = await build_render_context(
-        pool, empresa_id, atendimento_id=atendimento_id
-    )
+    ctx = await build_render_context(pool, empresa_id, atendimento_id=atendimento_id)
     rendered = render_template(body.conteudo, ctx)
     try:
         row = await send_outbound_manual(

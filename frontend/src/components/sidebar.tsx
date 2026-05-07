@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MyStatusToggle } from "@/components/my-status-toggle";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { resolveGroup } from "@/components/top-nav-tabs";
 import { signOut } from "@/lib/auth-client";
@@ -172,6 +173,7 @@ export function Sidebar({
         {/* Footer */}
         <div className="px-3 pb-4">
           <div className="mx-1 mb-3 h-px bg-sidebar-border" />
+          <MyStatusToggle />
           <ThemeSwitcher />
           <button
             type="button"

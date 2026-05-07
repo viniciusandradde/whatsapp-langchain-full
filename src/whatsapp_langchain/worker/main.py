@@ -67,10 +67,7 @@ async def main() -> None:
                 missing=missing,
                 outbound_mode=outbound_mode,
             )
-            msg = (
-                "Twilio outbound em modo real requer variáveis: "
-                f"{', '.join(missing)}"
-            )
+            msg = f"Twilio outbound em modo real requer variáveis: {', '.join(missing)}"
             raise SystemExit(msg)
 
     twilio = TwilioClient(
@@ -136,6 +133,10 @@ async def main() -> None:
     # principal de message_queue.
     sync_task = asyncio.create_task(_calendar_sync_loop(pool))
 
+    # Sprint G.4: marca atendente offline quando heartbeat > 5min sem ping.
+    # Evita user esquecer painel aberto e ficar "online" indefinidamente.
+    idle_task = asyncio.create_task(_atendente_idle_loop(pool))
+
     try:
         while True:
             message = await claim_next_message(pool, settings.lease_seconds)
@@ -156,10 +157,12 @@ async def main() -> None:
         logger.info("worker_interrupted")
     finally:
         sync_task.cancel()
-        try:
-            await sync_task
-        except asyncio.CancelledError:
-            pass
+        idle_task.cancel()
+        for t in (sync_task, idle_task):
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
         if store_stack is not None:
             await store_stack.aclose()
         await checkpointer_stack.aclose()
@@ -201,6 +204,30 @@ async def _calendar_sync_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("calendar_sync_loop_error", error=str(e))
         await asyncio.sleep(CALENDAR_SYNC_INTERVAL_SECONDS)
+
+
+# Sprint G.4: cron interno marca atendente offline quando idle > 5min.
+ATENDENTE_IDLE_INTERVAL_SECONDS = 60
+ATENDENTE_IDLE_THRESHOLD_SECONDS = 300
+
+
+async def _atendente_idle_loop(pool) -> None:
+    """Marca atendente como offline quando heartbeat > 5min sem ping.
+
+    Cliente envia POST /api/atendentes/me/heartbeat a cada 60s. Se passa
+    5min sem heartbeat E status='online', o worker considera que o user
+    fechou o painel ou perdeu conexão e força status='offline'. Evita
+    user "fantasma" que recebe atendimentos atribuídos sem estar de fato
+    presente.
+    """
+    from whatsapp_langchain.shared.atendente import mark_idle_offline
+
+    while True:
+        try:
+            await mark_idle_offline(pool, idle_seconds=ATENDENTE_IDLE_THRESHOLD_SECONDS)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("atendente_idle_loop_error", error=str(e))
+        await asyncio.sleep(ATENDENTE_IDLE_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
