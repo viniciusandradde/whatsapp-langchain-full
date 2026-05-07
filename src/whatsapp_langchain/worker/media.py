@@ -127,6 +127,14 @@ async def preprocess_incoming_message(
             auto_response=AUTO_RESPONSE_AUDIO_DISABLED,
         )
 
+    if kind == "document" and not settings.media_document_enabled:
+        return MediaPreprocessResult(
+            should_invoke_agent=False,
+            normalized_text=None,
+            media_processing_status="disabled",
+            auto_response=AUTO_RESPONSE_UNSUPPORTED_MEDIA,
+        )
+
     if kind == "unsupported":
         return MediaPreprocessResult(
             should_invoke_agent=False,
@@ -154,6 +162,39 @@ async def preprocess_incoming_message(
             parts = [
                 p
                 for p in [body.strip(), f"[Transcrição de áudio]: {transcription}"]
+                if p
+            ]
+            normalized = "\n".join(parts)
+
+        elif kind == "document":
+            # Extract text from PDF/DOCX/TXT/MD via shared/file_extractor
+            # (com OCR fallback via Vision pra escaneados).
+            from whatsapp_langchain.shared.file_extractor import extract_text
+
+            # Infer filename do mime pra parser correto
+            mt = media_type.lower()
+            if "pdf" in mt:
+                filename = "doc.pdf"
+            elif "wordprocessingml" in mt or "docx" in mt:
+                filename = "doc.docx"
+            elif "msword" in mt:
+                filename = "doc.doc"
+            elif mt.startswith("text/"):
+                filename = "doc.txt"
+            else:
+                filename = "doc.bin"
+
+            doc_text = await extract_text(filename, media_bytes)
+            if not doc_text:
+                doc_text = "(documento sem texto extraível)"
+            # Trunca em ~10k chars no input pro agente — ele pode chamar
+            # extract_document tool pra texto completo se precisar.
+            if len(doc_text) > 10_000:
+                doc_text = doc_text[:10_000] + "\n[... documento truncado, use tool extract_document pro texto completo]"
+
+            parts = [
+                p
+                for p in [body.strip(), f"[Conteúdo do documento ({media_type})]:\n{doc_text}"]
                 if p
             ]
             normalized = "\n".join(parts)

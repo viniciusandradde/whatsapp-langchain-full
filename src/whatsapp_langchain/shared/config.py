@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     # --- Media ---
     media_image_enabled: bool = True
     media_audio_enabled: bool = True
+    media_document_enabled: bool = True
 
     # --- Context Management (migrado do .env manual) ---
     context_strategy: str = "trim"
