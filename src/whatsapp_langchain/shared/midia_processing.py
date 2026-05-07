@@ -65,9 +65,22 @@ def _media_kind(media_type: str | None) -> str:
 async def download_media(url: str) -> tuple[bytes, str | None]:
     """Faz download de mídia. Retorna (bytes, content_type detectado).
 
-    Autentica via Twilio API key se configurada (URLs Twilio são protegidas).
-    Outras URLs (Evolution / WABA / publicas) seguem sem auth.
+    Suporta:
+    - `data:` URLs (RFC 2397) — decoda base64 inline. Usado pra mídia já
+      pre-fetched do Evolution (evita re-baixar URL encrypted WhatsApp).
+    - URLs HTTP/HTTPS — GET com auth Twilio se configurada.
     """
+    if url.startswith("data:"):
+        # data:<mime>[;base64],<payload>
+        header, _, payload = url[5:].partition(",")
+        is_base64 = ";base64" in header
+        mime = header.split(";")[0] or "application/octet-stream"
+        if is_base64:
+            return base64.b64decode(payload), mime
+        # data URL plain (raro) — return as bytes
+        from urllib.parse import unquote
+        return unquote(payload).encode("utf-8"), mime
+
     auth = (
         (settings.twilio_api_key_sid, settings.twilio_api_key_secret)
         if settings.twilio_api_key_sid
@@ -78,6 +91,54 @@ async def download_media(url: str) -> tuple[bytes, str | None]:
         response.raise_for_status()
         ctype = response.headers.get("content-type", "").split(";")[0].strip() or None
         return response.content, ctype
+
+
+async def download_evolution_media_b64(
+    instance: str,
+    message_key_id: str,
+    remote_jid: str,
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    convert_to_mp4: bool = False,
+) -> tuple[str, str] | None:
+    """Baixa mídia via Evolution API endpoint `getBase64FromMediaMessage`.
+
+    URLs em `imageMessage.url` são encryptadas WhatsApp (mmg.whatsapp.net) —
+    não dá pra baixar direto. Evolution oferece esse endpoint que faz
+    decrypt server-side e retorna base64.
+
+    Retorna (base64_str, mimetype) ou None se falhar.
+    """
+    base = (base_url or settings.evolution_api_url or "").rstrip("/")
+    key = api_key or (
+        settings.evolution_api_key.get_secret_value()
+        if settings.evolution_api_key is not None
+        else None
+    )
+    if not base or not key:
+        return None
+    url = f"{base}/chat/getBase64FromMediaMessage/{instance}"
+    payload: dict = {
+        "message": {"key": {"id": message_key_id, "remoteJid": remote_jid, "fromMe": False}},
+        "convertToMp4": convert_to_mp4,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={"apikey": key, "Content-Type": "application/json"},
+            )
+            resp.raise_for_status()
+            j = resp.json()
+            b64 = j.get("base64")
+            mime = j.get("mimetype") or "application/octet-stream"
+            if isinstance(b64, str) and b64:
+                return (b64, mime)
+            return None
+    except Exception:
+        return None
 
 
 async def chat_completion_media(

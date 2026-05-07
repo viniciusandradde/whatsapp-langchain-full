@@ -27,6 +27,7 @@ from whatsapp_langchain.shared.conexao import get_conexao_by_evolution_instance
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+from whatsapp_langchain.shared.midia_processing import download_evolution_media_b64
 from whatsapp_langchain.shared.queue import enqueue_or_buffer
 
 logger = structlog.get_logger()
@@ -80,13 +81,7 @@ def _resolve_sender_phone(key: dict) -> str:
 
 
 def _extract_text(message: dict) -> str:
-    """Extrai texto de payloads suportados (MVP: só texto).
-
-    Tipos cobertos: `conversation` (texto curto) e
-    `extendedTextMessage.text` (texto com link/preview).
-    Outros tipos (imageMessage, audioMessage, etc) ainda não
-    são suportados — retorna string vazia e o processamento ignora.
-    """
+    """Extrai texto puro (conversation / extendedTextMessage). Sem mídia."""
     if not isinstance(message, dict):
         return ""
     text = message.get("conversation")
@@ -98,6 +93,47 @@ def _extract_text(message: dict) -> str:
         if isinstance(et, str):
             return et
     return ""
+
+
+def _extract_message_payload(
+    message: dict,
+) -> tuple[str, str | None, str | None]:
+    """Extrai (text, media_url, media_type) de payload Evolution.
+
+    Suporta:
+    - conversation / extendedTextMessage.text → texto puro
+    - imageMessage → media_url + caption (texto opcional)
+    - audioMessage → media_url + mime audio/ogg
+    - documentMessage → media_url + caption + mime
+    - videoMessage → media_url + caption (worker descarta video — fallback)
+
+    Retorna ("", None, None) quando não é tipo suportado (sticker, location, etc).
+    """
+    if not isinstance(message, dict):
+        return ("", None, None)
+
+    # Texto puro (sem mídia)
+    text = _extract_text(message)
+    if text and not any(k.endswith("Message") and k != "extendedTextMessage" for k in message):
+        return (text, None, None)
+
+    # Mapeia tipos de mídia → (key_no_payload, mime_default)
+    midia_keys = [
+        ("imageMessage", "image/jpeg"),
+        ("audioMessage", "audio/ogg"),
+        ("documentMessage", None),  # mime vem do payload sempre
+        ("videoMessage", "video/mp4"),
+    ]
+    for key, default_mime in midia_keys:
+        msg_obj = message.get(key)
+        if isinstance(msg_obj, dict):
+            url = msg_obj.get("url") or msg_obj.get("directPath") or None
+            mime = msg_obj.get("mimetype") or default_mime
+            caption = msg_obj.get("caption") or ""
+            # Caption pode acompanhar mídia; texto puro vem no extendedTextMessage
+            return (str(caption), str(url) if url else None, mime)
+
+    return ("", None, None)
 
 
 @router.post("/webhook/evolution")
@@ -201,10 +237,10 @@ async def webhook_evolution(
         )
         raise HTTPException(status_code=400, detail="Missing sender JID")
 
-    text = _extract_text(data.get("message") or {})
-    if not text:
-        # Mídia/sticker/áudio — fora do MVP. Loga e responde 200 pra Evolution
-        # não retransmitir (a alternativa de 4xx geraria retries indesejados).
+    text, media_url, media_type = _extract_message_payload(data.get("message") or {})
+    if not text and not media_url:
+        # Sticker / location / contato / poll / etc — não suportado.
+        # Responde 200 silently pra Evolution não retransmitir.
         logger.info(
             "evolution_webhook_unsupported_message_type",
             instance=instance,
@@ -212,6 +248,43 @@ async def webhook_evolution(
             keys=list((data.get("message") or {}).keys()),
         )
         return Response(status_code=200)
+
+    # Pre-fetch da mídia via Evolution API:
+    # URLs de imageMessage/audioMessage/documentMessage do WhatsApp são
+    # encryptadas (mmg.whatsapp.net) — não dão pra baixar direto. Evolution
+    # oferece endpoint que faz decrypt server-side e devolve base64.
+    # Convertendo pra data URL aqui pra worker download_media decodar inline.
+    if media_url:
+        msg_key_id = str(key.get("id") or "").strip()
+        remote_jid_raw = str(key.get("remoteJid") or "").strip()
+        if msg_key_id and remote_jid_raw:
+            res = await download_evolution_media_b64(
+                instance, msg_key_id, remote_jid_raw
+            )
+            if res is not None:
+                b64, mime_real = res
+                media_url = f"data:{mime_real};base64,{b64}"
+                media_type = mime_real
+                logger.info(
+                    "evolution_media_prefetch_ok",
+                    instance=instance,
+                    message_id=msg_key_id,
+                    bytes_b64=len(b64),
+                    mime=mime_real,
+                )
+            else:
+                # Falhou — segue só com texto/caption se houver
+                logger.warning(
+                    "evolution_media_prefetch_failed",
+                    instance=instance,
+                    message_id=msg_key_id,
+                    media_type_original=media_type,
+                )
+                media_url = None
+                media_type = None
+                if not text:
+                    # Sem texto + sem mídia baixada = não enfileira
+                    return Response(status_code=200)
 
     empresa_id = conexao.empresa_id
     conexao_id = conexao.id
@@ -250,8 +323,8 @@ async def webhook_evolution(
         phone_number=phone_number,
         agent_id=resolved_agent,
         body=text,
-        media_url=None,
-        media_type=None,
+        media_url=media_url,
+        media_type=media_type,
         to_number=conexao.from_number,
         message_id=msg_id,
         buffer_seconds=settings.message_buffer_seconds,
@@ -271,6 +344,8 @@ async def webhook_evolution(
         atendimento_aberto=atendimento_aberto,
         message_id=msg_id,
         instance=instance,
+        media_url=bool(media_url),
+        media_type=media_type,
     )
 
     if atendimento_aberto:
@@ -297,7 +372,8 @@ async def webhook_evolution(
             "cliente_telefone": cliente.telefone,
             "message_sid": msg_id,
             "body": text,
-            "num_media": 0,
+            "num_media": 1 if media_url else 0,
+            "media_type": media_type,
         },
     )
 
