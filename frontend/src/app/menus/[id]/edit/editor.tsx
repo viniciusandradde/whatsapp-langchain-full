@@ -4,12 +4,30 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   ChevronDown,
   ChevronRight,
   Eye,
+  GripVertical,
   ListTree,
   Loader2,
   Plus,
@@ -180,6 +198,24 @@ export function MenuEditor({
       return prev.filter((i) => !toRemove.has(i.id));
     });
     if (selectedItemId === itemId) setSelectedItemId(null);
+  };
+
+  // Reordena siblings do mesmo parent_id imediatamente (UX) — usado pelo
+  // drag-and-drop. Atualiza `ordem` local conforme nova posição na lista.
+  // Server revalida via reorderAction em paralelo (chamado pelo SortableLevel).
+  const reorderSiblingsOptimistic = (
+    parentId: number | null,
+    orderedIds: number[]
+  ) => {
+    setItems((prev) => {
+      const idToIndex = new Map<number, number>();
+      orderedIds.forEach((id, i) => idToIndex.set(id, i + 1));
+      return prev.map((item) =>
+        item.parent_id === parentId && idToIndex.has(item.id)
+          ? { ...item, ordem: idToIndex.get(item.id)! }
+          : item
+      );
+    });
   };
 
   return (
@@ -530,24 +566,19 @@ export function MenuEditor({
                   onSeeded={refreshFromServer}
                 />
               ) : (
-                <ul className="space-y-1">
-                  {tree.map((node, idx) => (
-                    <TreeNode
-                      key={node.item.id}
-                      node={node}
-                      level={0}
-                      siblings={tree}
-                      siblingIdx={idx}
-                      menuId={menu.id}
-                      selectedId={selectedItemId}
-                      onSelect={setSelectedItemId}
-                      expanded={expanded}
-                      setExpanded={setExpanded}
-                      onChange={refreshFromServer}
-                      onLocalDelete={removeItemOptimistic}
-                    />
-                  ))}
-                </ul>
+                <SortableLevel
+                  parentId={null}
+                  nodes={tree}
+                  level={0}
+                  menuId={menu.id}
+                  selectedId={selectedItemId}
+                  onSelect={setSelectedItemId}
+                  expanded={expanded}
+                  setExpanded={setExpanded}
+                  onChange={refreshFromServer}
+                  onLocalDelete={removeItemOptimistic}
+                  onLocalReorder={reorderSiblingsOptimistic}
+                />
               )}
             </CardContent>
           </Card>
@@ -589,7 +620,87 @@ export function MenuEditor({
 }
 
 // =====================================================================
-// Tree node recursivo
+// Sortable level — wrapper que envolve siblings num DndContext
+// =====================================================================
+
+interface SortableLevelProps {
+  parentId: number | null;
+  nodes: ItemNode[];
+  level: number;
+  menuId: number;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+  expanded: Set<number>;
+  setExpanded: (s: Set<number>) => void;
+  onChange: () => void;
+  onLocalDelete: (id: number) => void;
+  onLocalReorder: (parentId: number | null, orderedIds: number[]) => void;
+}
+
+function SortableLevel(props: SortableLevelProps) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      // Threshold pequeno pra não capturar cliques normais; só dispara
+      // drag depois de mover 5px. Sem isso clicar em "Editar" iniciava drag.
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+  const ids = props.nodes.map((n) => n.item.id);
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = ids.indexOf(Number(active.id));
+    const newIdx = ids.indexOf(Number(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    const newOrder = arrayMove(ids, oldIdx, newIdx);
+    props.onLocalReorder(props.parentId, newOrder);
+    const res = await reorderAction(props.menuId, props.parentId, newOrder);
+    if (res.ok) {
+      props.onChange();
+    } else {
+      // Server rejeitou — desfaz reordenação local
+      alert(res.error || "Erro ao reordenar.");
+      props.onLocalReorder(props.parentId, ids);
+    }
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        <ul className="space-y-1">
+          {props.nodes.map((node, idx) => (
+            <TreeNode
+              key={node.item.id}
+              node={node}
+              level={props.level}
+              siblings={props.nodes}
+              siblingIdx={idx}
+              menuId={props.menuId}
+              selectedId={props.selectedId}
+              onSelect={props.onSelect}
+              expanded={props.expanded}
+              setExpanded={props.setExpanded}
+              onChange={props.onChange}
+              onLocalDelete={props.onLocalDelete}
+              onLocalReorder={props.onLocalReorder}
+            />
+          ))}
+        </ul>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+// =====================================================================
+// Tree node recursivo (sortable item)
 // =====================================================================
 
 function TreeNode({
@@ -604,6 +715,7 @@ function TreeNode({
   setExpanded,
   onChange,
   onLocalDelete,
+  onLocalReorder,
 }: {
   node: ItemNode;
   level: number;
@@ -616,20 +728,46 @@ function TreeNode({
   setExpanded: (s: Set<number>) => void;
   onChange: () => void;
   onLocalDelete: (id: number) => void;
+  onLocalReorder: (parentId: number | null, orderedIds: number[]) => void;
 }) {
   const isSelected = selectedId === node.item.id;
   const isExpanded = expanded.has(node.item.id);
   const hasChildren = node.children.length > 0;
   const acaoMeta = ACAO_LABELS[node.item.acao_tipo];
 
+  // Sortable hook — fornece refs/listeners pro drag
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: node.item.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   return (
-    <li>
+    <li ref={setNodeRef} style={style}>
       <div
         className={`flex items-center gap-1 rounded px-2 py-1.5 text-sm transition-colors ${
           isSelected ? "bg-primary/10" : "hover:bg-muted/50"
         }`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
       >
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="flex size-5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted active:cursor-grabbing"
+          title="Arraste pra reordenar"
+          aria-label="Mover item"
+        >
+          <GripVertical className="size-3.5" />
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -733,24 +871,19 @@ function TreeNode({
         </div>
       </div>
       {hasChildren && isExpanded && (
-        <ul className="space-y-1">
-          {node.children.map((child, idx) => (
-            <TreeNode
-              key={child.item.id}
-              node={child}
-              level={level + 1}
-              siblings={node.children}
-              siblingIdx={idx}
-              menuId={menuId}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              expanded={expanded}
-              setExpanded={setExpanded}
-              onChange={onChange}
-              onLocalDelete={onLocalDelete}
-            />
-          ))}
-        </ul>
+        <SortableLevel
+          parentId={node.item.id}
+          nodes={node.children}
+          level={level + 1}
+          menuId={menuId}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          expanded={expanded}
+          setExpanded={setExpanded}
+          onChange={onChange}
+          onLocalDelete={onLocalDelete}
+          onLocalReorder={onLocalReorder}
+        />
       )}
     </li>
   );
