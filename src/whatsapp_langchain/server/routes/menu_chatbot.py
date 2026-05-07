@@ -270,7 +270,21 @@ async def delete_menu_endpoint(
     before = await get_menu_by_id(pool, empresa_id, menu_id)
     if before is None:
         raise HTTPException(status_code=404, detail="Menu não encontrado.")
-    ok = await delete_menu(pool, empresa_id, menu_id)
+    try:
+        ok = await delete_menu(pool, empresa_id, menu_id)
+    except psycopg.errors.ForeignKeyViolation as exc:
+        # Histórico de navegação (atendimento_menu_historico) referencia menu —
+        # impedimos delete pra preservar auditoria. Admin deve desativar.
+        if "atendimento_menu_historico" in str(exc):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Não é possível deletar este menu porque ele já foi usado "
+                    "em atendimentos (histórico preservado pra auditoria). "
+                    "Desative o menu em vez de deletar."
+                ),
+            ) from exc
+        raise
     if not ok:
         raise HTTPException(status_code=404, detail="Menu não encontrado.")
     await record_audit(

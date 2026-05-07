@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -148,11 +148,38 @@ export function MenuEditor({
   const [savingMenu, setSavingMenu] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
 
+  // Sincroniza state local quando server-side revalida e props mudam
+  // (initialMenu/initialItems vêm como nova referência após router.refresh()).
+  useEffect(() => {
+    setMenu(initialMenu);
+  }, [initialMenu]);
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
   const tree = useMemo(() => buildTree(items), [items]);
   const selectedItem = items.find((i) => i.id === selectedItemId) || null;
 
   const refreshFromServer = () => {
-    startTransition(() => router.refresh());
+    router.refresh();
+  };
+
+  // Remove item local imediatamente (UX) — server revalida em paralelo.
+  // Sem isso o item só sumia depois do refresh completar a viagem ao servidor.
+  const removeItemOptimistic = (itemId: number) => {
+    const collectDescendants = (id: number, all: MenuItem[]): number[] => {
+      const direct = all.filter((i) => i.parent_id === id);
+      const result = [id];
+      for (const c of direct) {
+        result.push(...collectDescendants(c.id, all));
+      }
+      return result;
+    };
+    setItems((prev) => {
+      const toRemove = new Set(collectDescendants(itemId, prev));
+      return prev.filter((i) => !toRemove.has(i.id));
+    });
+    if (selectedItemId === itemId) setSelectedItemId(null);
   };
 
   return (
@@ -517,6 +544,7 @@ export function MenuEditor({
                       expanded={expanded}
                       setExpanded={setExpanded}
                       onChange={refreshFromServer}
+                      onLocalDelete={removeItemOptimistic}
                     />
                   ))}
                 </ul>
@@ -575,6 +603,7 @@ function TreeNode({
   expanded,
   setExpanded,
   onChange,
+  onLocalDelete,
 }: {
   node: ItemNode;
   level: number;
@@ -586,6 +615,7 @@ function TreeNode({
   expanded: Set<number>;
   setExpanded: (s: Set<number>) => void;
   onChange: () => void;
+  onLocalDelete: (id: number) => void;
 }) {
   const isSelected = selectedId === node.item.id;
   const isExpanded = expanded.has(node.item.id);
@@ -688,8 +718,12 @@ function TreeNode({
             onClick={async () => {
               if (!confirm(`Deletar "${node.item.label}" e todos os filhos?`)) return;
               const res = await deleteItemAction(menuId, node.item.id);
-              if (res.ok) onChange();
-              else alert(res.error);
+              if (res.ok) {
+                onLocalDelete(node.item.id);
+                onChange();
+              } else {
+                alert(res.error);
+              }
             }}
             className="rounded p-0.5 text-destructive hover:bg-destructive/10"
             title="Deletar"
@@ -713,6 +747,7 @@ function TreeNode({
               expanded={expanded}
               setExpanded={setExpanded}
               onChange={onChange}
+              onLocalDelete={onLocalDelete}
             />
           ))}
         </ul>
