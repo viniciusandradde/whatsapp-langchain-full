@@ -591,6 +591,49 @@ async def get_posicao_atual(
     return (row[0], row[1])
 
 
+# Ações de menu que tiram o cliente do menu — após qualquer uma delas,
+# próximas mensagens do cliente devem ir pro agente IA / atendente humano,
+# NÃO ser interpretadas como navegação no menu.
+_ACOES_SAIDA_MENU = frozenset(
+    {
+        "chamar_agente",
+        "transferir_dep",
+        "transferir_atendente",
+        "fechar",
+        "mudar_manual",
+    }
+)
+
+
+async def cliente_ja_saiu_do_menu(
+    pool: AsyncConnectionPool, atendimento_id: int
+) -> bool:
+    """True se a última escolha do cliente foi uma ação que saiu do menu.
+
+    Sem isso, depois de "3" → "Vou te conectar com Agendamentos…", a próxima
+    mensagem do cliente cai em `posicao_atual=None` + `hist_menu_id != None`,
+    e o handler antigo trata como "navegação na raiz" → 'Opção inválida' em
+    vez de deixar pro agente. Esse helper desambígua.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT mi.acao_tipo
+              FROM atendimento_menu_historico h
+              LEFT JOIN menu_item mi ON mi.id = h.item_id
+             WHERE h.atendimento_id = %s
+              AND h.item_id IS NOT NULL
+             ORDER BY h.escolhido_at DESC
+             LIMIT 1
+            """,
+            (atendimento_id,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return False
+    return row[0] in _ACOES_SAIDA_MENU
+
+
 # "Sair do menu" não é estado dedicado — o handler do worker combina sinais
 # externos (atendimento.agente_atual atribuído / departamento_id atribuído /
 # status='resolvido') com get_posicao_atual pra decidir se a próxima msg

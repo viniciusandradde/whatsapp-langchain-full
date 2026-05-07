@@ -57,6 +57,7 @@ from whatsapp_langchain.shared.cliente import (
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.menu_chatbot import (
+    cliente_ja_saiu_do_menu,
     format_menu_message,
     get_menu_ativo_para_conexao,
     get_posicao_atual,
@@ -647,6 +648,20 @@ async def _try_handle_menu(
                 texto=text[:80],
             )
             return True
+
+    # Cliente JÁ saiu do menu? (escolheu chamar_agente/transferir_dep/fechar/
+    # mudar_manual antes). Próxima msg dele vai pro agente — NÃO trata como
+    # navegação. Sem esse check, "Olá" depois de "3 → Vou te conectar com
+    # Agendamentos…" caía em "Opção inválida" em vez de seguir pro agente.
+    if posicao_atual is None and await cliente_ja_saiu_do_menu(
+        pool, message.atendimento_id
+    ):
+        logger.info(
+            "menu_cliente_fora_segue_pro_agente",
+            atendimento_id=message.atendimento_id,
+            agente_atual=atendimento.agente_atual,
+        )
+        return False
 
     # Tem histórico — cliente está navegando o menu.
     children = await list_children(pool, menu.id, posicao_atual)
