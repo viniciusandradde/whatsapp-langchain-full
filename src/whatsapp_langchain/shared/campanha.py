@@ -71,6 +71,12 @@ class CampanhaSummary:
     created_by_user_id: str | None
     created_at: datetime
     updated_at: datetime
+    # Sub-fase B+ paridade ZigChat (mig 051)
+    modelo_mensagem_id: int | None = None
+    scheduled_at: datetime | None = None
+    tipo: str = "broadcast"
+    filtro_segmento: str | None = None
+    filtro_tags: list[str] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -91,13 +97,23 @@ class CampanhaSummary:
             "created_by_user_id": self.created_by_user_id,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            # B+ paridade ZigChat
+            "modelo_mensagem_id": self.modelo_mensagem_id,
+            "scheduled_at": (
+                self.scheduled_at.isoformat() if self.scheduled_at else None
+            ),
+            "tipo": self.tipo,
+            "filtro_segmento": self.filtro_segmento,
+            "filtro_tags": list(self.filtro_tags or []),
         }
 
 
 _COLS = (
     "id, empresa_id, nome, descricao, mensagem, conexao_id, status, "
     "intervalo_ms, max_destinatarios, total_destinatarios, enviados, falhas, "
-    "started_at, finished_at, created_by_user_id, created_at, updated_at"
+    "started_at, finished_at, created_by_user_id, created_at, updated_at, "
+    # B+ paridade ZigChat (mig 051)
+    "modelo_mensagem_id, scheduled_at, tipo, filtro_segmento, filtro_tags"
 )
 
 
@@ -142,6 +158,12 @@ async def create_campanha(
     max_destinatarios: int,
     telefones_brutos: list[str],
     user_id: str | None,
+    # Sub-fase B+ paridade ZigChat (mig 051)
+    modelo_mensagem_id: int | None = None,
+    scheduled_at: str | None = None,
+    tipo: str = "broadcast",
+    filtro_segmento: str | None = None,
+    filtro_tags: list[str] | None = None,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -169,8 +191,10 @@ async def create_campanha(
                 INSERT INTO campanha
                     (empresa_id, nome, descricao, mensagem, conexao_id,
                      intervalo_ms, max_destinatarios, total_destinatarios,
-                     created_by_user_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     created_by_user_id,
+                     modelo_mensagem_id, scheduled_at, tipo,
+                     filtro_segmento, filtro_tags)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::text[])
                 RETURNING {_COLS}
                 """,
                 (
@@ -183,6 +207,11 @@ async def create_campanha(
                     max_destinatarios,
                     len(normalized),
                     user_id,
+                    modelo_mensagem_id,
+                    scheduled_at,
+                    tipo,
+                    filtro_segmento,
+                    list(filtro_tags or []) if filtro_tags is not None else None,
                 ),
             )
             row = await cur.fetchone()

@@ -150,6 +150,20 @@ class ClienteUpdateInput(BaseModel):
     avatar_url: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=4000)
 
+    # Sub-fase B+ paridade ZigChat (mig 046)
+    whatsapp_state: str | None = Field(default=None, max_length=60)
+    numero_verificado: bool | None = None
+    whatsapp_lid: str | None = Field(default=None, max_length=200)
+    remote_id: str | None = Field(default=None, max_length=200)
+    msg_apos_encerramento: str | None = Field(default=None, max_length=2000)
+    field_1: str | None = Field(default=None, max_length=500)
+    field_2: str | None = Field(default=None, max_length=500)
+    field_3: str | None = Field(default=None, max_length=500)
+    field_4: str | None = Field(default=None, max_length=500)
+    field_5: str | None = Field(default=None, max_length=500)
+    ignora_inatividade: bool | None = None
+    desconsidera_turno: bool | None = None
+
 
 @router.put("/{cliente_id}")
 async def update_cliente_endpoint(

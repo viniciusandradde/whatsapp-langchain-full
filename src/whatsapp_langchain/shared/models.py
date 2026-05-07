@@ -342,6 +342,20 @@ class Cliente(BaseModel):
     last_interaction_at: datetime | None = None
     notes: str | None = None
 
+    # ---- Sub-fase B+ paridade ZigChat (mig 046) ----
+    whatsapp_state: str | None = None
+    numero_verificado: bool = False
+    whatsapp_lid: str | None = None
+    remote_id: str | None = None
+    msg_apos_encerramento: str | None = None
+    field_1: str | None = None
+    field_2: str | None = None
+    field_3: str | None = None
+    field_4: str | None = None
+    field_5: str | None = None
+    ignora_inatividade: bool = False
+    desconsidera_turno: bool = False
+
 
 class ClienteAnotacao(BaseModel):
     id: int

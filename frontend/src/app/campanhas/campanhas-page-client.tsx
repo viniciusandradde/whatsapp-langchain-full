@@ -66,6 +66,9 @@ export function CampanhasPageClient({
     }
 
     const conexaoRaw = String(fd.get("conexao_id") || "").trim();
+    const modeloRaw = String(fd.get("modelo_mensagem_id") || "").trim();
+    const tagsRaw = String(fd.get("filtro_tags") || "").trim();
+    const scheduledRaw = String(fd.get("scheduled_at") || "").trim();
     const body = {
       nome: String(fd.get("nome") || "").trim(),
       descricao: (String(fd.get("descricao") || "").trim() || null) as
@@ -76,6 +79,14 @@ export function CampanhasPageClient({
       intervalo_ms: Number(fd.get("intervalo_ms") || 500),
       max_destinatarios: Number(fd.get("max_destinatarios") || 1000),
       telefones,
+      // Sub-fase B+ paridade ZigChat (mig 051)
+      modelo_mensagem_id: modeloRaw ? Number(modeloRaw) : null,
+      scheduled_at: scheduledRaw ? new Date(scheduledRaw).toISOString() : null,
+      tipo: (String(fd.get("tipo") || "broadcast") as "broadcast" | "transactional" | "reativacao"),
+      filtro_segmento: String(fd.get("filtro_segmento") || "").trim() || null,
+      filtro_tags: tagsRaw
+        ? tagsRaw.split(",").map((s) => s.trim()).filter(Boolean)
+        : null,
     };
 
     startTransition(async () => {
@@ -232,6 +243,84 @@ export function CampanhasPageClient({
                   Duplicados são ignorados.
                 </p>
               </div>
+
+              {/* Sub-fase B+ paridade ZigChat (mig 051) */}
+              <div className="rounded-md border border-border/40 bg-muted/20 p-3 space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide">
+                  Avançado (paridade ZigChat)
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Tipo
+                    </label>
+                    <select
+                      name="tipo"
+                      defaultValue="broadcast"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="broadcast">Broadcast (livre)</option>
+                      <option value="transactional">Transacional</option>
+                      <option value="reativacao">Reativação</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Template (modelo_mensagem ID)
+                    </label>
+                    <input
+                      type="number"
+                      name="modelo_mensagem_id"
+                      placeholder="ID em /modelos"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Pra HSM aprovado (WABA) — substitui campo Mensagem
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Agendar pra (datetime local)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="scheduled_at"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Vazio = inicia manualmente
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Filtro: segmento
+                    </label>
+                    <input
+                      type="text"
+                      name="filtro_segmento"
+                      maxLength={120}
+                      placeholder='Ex: "lead-quente"'
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Filtro: tags (separadas por vírgula)
+                    </label>
+                    <input
+                      type="text"
+                      name="filtro_tags"
+                      placeholder="vip, eventos-2026"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Filtros são metadados — NÃO substituem a lista de telefones
+                  (filtrar de fato fica pra dispatcher futuro).
+                </p>
+              </div>
+
               <div className="flex justify-end gap-2">
                 <Button
                   type="button"

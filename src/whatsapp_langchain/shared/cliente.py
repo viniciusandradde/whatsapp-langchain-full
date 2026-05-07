@@ -28,7 +28,11 @@ _SELECT_COLS = (
     "cep, logradouro, numero, complemento, bairro, cidade, uf, pais, "
     "segmento, lifecycle_stage, score, source, responsavel_user_id, valor_estimado_brl, "
     "instagram, linkedin, facebook, website, email_alternativo, telefone_alternativo, "
-    "locale, timezone, avatar_url, last_interaction_at, notes"
+    "locale, timezone, avatar_url, last_interaction_at, notes, "
+    # Sub-fase B+ paridade ZigChat (mig 046)
+    "whatsapp_state, numero_verificado, whatsapp_lid, remote_id, "
+    "msg_apos_encerramento, field_1, field_2, field_3, field_4, field_5, "
+    "ignora_inatividade, desconsidera_turno"
 )
 
 
@@ -80,6 +84,19 @@ def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
         avatar_url=row[40],
         last_interaction_at=row[41],
         notes=row[42],
+        # Sub-fase B+ paridade ZigChat (mig 046)
+        whatsapp_state=row[43],
+        numero_verificado=row[44] or False,
+        whatsapp_lid=row[45],
+        remote_id=row[46],
+        msg_apos_encerramento=row[47],
+        field_1=row[48],
+        field_2=row[49],
+        field_3=row[50],
+        field_4=row[51],
+        field_5=row[52],
+        ignora_inatividade=row[53] or False,
+        desconsidera_turno=row[54] or False,
     )
 
 
@@ -179,6 +196,19 @@ async def update_cliente_partial(
     timezone: str | None = None,
     avatar_url: str | None = None,
     notes: str | None = None,
+    # Sub-fase B+ paridade ZigChat (mig 046)
+    whatsapp_state: str | None = None,
+    numero_verificado: bool | None = None,
+    whatsapp_lid: str | None = None,
+    remote_id: str | None = None,
+    msg_apos_encerramento: str | None = None,
+    field_1: str | None = None,
+    field_2: str | None = None,
+    field_3: str | None = None,
+    field_4: str | None = None,
+    field_5: str | None = None,
+    ignora_inatividade: bool | None = None,
+    desconsidera_turno: bool | None = None,
 ) -> Cliente | None:
     """Update parcial — só campos não-None são tocados (M5.b.1 + Fase 1.A).
 
@@ -229,6 +259,19 @@ async def update_cliente_partial(
     _add("timezone", timezone)
     _add("avatar_url", avatar_url)
     _add("notes", notes)
+    # Sub-fase B+ paridade ZigChat (mig 046)
+    _add("whatsapp_state", whatsapp_state)
+    _add("numero_verificado", numero_verificado)
+    _add("whatsapp_lid", whatsapp_lid)
+    _add("remote_id", remote_id)
+    _add("msg_apos_encerramento", msg_apos_encerramento)
+    _add("field_1", field_1)
+    _add("field_2", field_2)
+    _add("field_3", field_3)
+    _add("field_4", field_4)
+    _add("field_5", field_5)
+    _add("ignora_inatividade", ignora_inatividade)
+    _add("desconsidera_turno", desconsidera_turno)
 
     if not sets:
         return await get_cliente_by_id(pool, cliente_id)

@@ -268,6 +268,19 @@ export interface Cliente {
   avatar_url: string | null;
   last_interaction_at: string | null;
   notes: string | null;
+  // Sprint 3 paridade ZigChat (mig 046)
+  whatsapp_state: string | null;
+  numero_verificado: boolean;
+  whatsapp_lid: string | null;
+  remote_id: string | null;
+  msg_apos_encerramento: string | null;
+  field_1: string | null;
+  field_2: string | null;
+  field_3: string | null;
+  field_4: string | null;
+  field_5: string | null;
+  ignora_inatividade: boolean;
+  desconsidera_turno: boolean;
 }
 
 export type ClienteUpdateInput = Partial<
@@ -325,6 +338,12 @@ export interface Atendimento {
   updated_at: string;
   cliente_nome: string | null;
   cliente_telefone: string | null;
+  // Sprint 3 paridade ZigChat (mig 047)
+  protocolo: string | null;
+  qtde_resposta_invalida: number;
+  iniciado_cliente: boolean;
+  finalizado_por_user_id: string | null;
+  solicitou_encerramento: boolean;
 }
 
 export interface AtendimentosResponse {
@@ -1319,6 +1338,12 @@ export interface Campanha {
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+  // Sub-fase B+ paridade ZigChat (mig 051)
+  modelo_mensagem_id: number | null;
+  scheduled_at: string | null;
+  tipo: "broadcast" | "transactional" | "reativacao";
+  filtro_segmento: string | null;
+  filtro_tags: string[] | null;
 }
 
 export interface CampanhaDestinatario {
@@ -1338,6 +1363,12 @@ export interface CampanhaCreateInput {
   intervalo_ms?: number;
   max_destinatarios?: number;
   telefones: string[];
+  // Sub-fase B+ paridade ZigChat (mig 051)
+  modelo_mensagem_id?: number | null;
+  scheduled_at?: string | null;
+  tipo?: "broadcast" | "transactional" | "reativacao";
+  filtro_segmento?: string | null;
+  filtro_tags?: string[] | null;
 }
 
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {

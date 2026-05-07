@@ -258,13 +258,41 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
       >
         <header className="flex items-start justify-between gap-4 border-b p-5">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-lg font-semibold">
                 {atendimento.cliente_nome ?? atendimento.cliente_telefone ?? "Cliente"}
               </h2>
               <Badge variant={statusVariant(atendimento.status)}>
                 {STATUS_LABEL[atendimento.status]}
               </Badge>
+              {atendimento.protocolo && (
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  #{atendimento.protocolo}
+                </Badge>
+              )}
+              {atendimento.qtde_resposta_invalida > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px]"
+                  title={`Cliente errou ${atendimento.qtde_resposta_invalida}× no menu/CSAT`}
+                >
+                  ⚠ {atendimento.qtde_resposta_invalida} inválidas
+                </Badge>
+              )}
+              {!atendimento.iniciado_cliente && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px]"
+                  title="Atendimento aberto via outbound (operador/campanha)"
+                >
+                  outbound
+                </Badge>
+              )}
+              {atendimento.solicitou_encerramento && (
+                <Badge variant="outline" className="text-[10px]">
+                  pediu encerrar
+                </Badge>
+              )}
             </div>
             <p className="mt-0.5 font-mono text-xs text-muted-foreground">
               {atendimento.cliente_telefone ?? "—"} · atendimento #{atendimento.id} ·{" "}

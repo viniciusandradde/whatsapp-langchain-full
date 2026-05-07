@@ -19,13 +19,14 @@ interface Props {
   initialCliente: Cliente;
 }
 
-type TabId = "dados" | "endereco" | "comercial" | "social";
+type TabId = "dados" | "endereco" | "comercial" | "social" | "avancado";
 
 const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: "dados", label: "Dados", icon: User },
   { id: "endereco", label: "Endereço", icon: MapPin },
   { id: "comercial", label: "Comercial", icon: TrendingUp },
   { id: "social", label: "Social/Outros", icon: Globe },
+  { id: "avancado", label: "Avançado (B+)", icon: User },
 ];
 
 const LIFECYCLE_OPTIONS = [
@@ -126,6 +127,19 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
       add("locale", getStr("locale"));
       add("timezone", getStr("timezone"));
       add("avatar_url", getStr("avatar_url"));
+    }
+    if (tab === "avancado") {
+      // Sub-fase B+ paridade ZigChat (mig 046)
+      add("whatsapp_state", getStr("whatsapp_state"));
+      add("whatsapp_lid", getStr("whatsapp_lid"));
+      add("remote_id", getStr("remote_id"));
+      add("msg_apos_encerramento", getStr("msg_apos_encerramento"));
+      add("numero_verificado", fd.get("numero_verificado") === "on");
+      add("ignora_inatividade", fd.get("ignora_inatividade") === "on");
+      add("desconsidera_turno", fd.get("desconsidera_turno") === "on");
+      for (const n of [1, 2, 3, 4, 5]) {
+        add(`field_${n}`, getStr(`field_${n}`));
+      }
     }
 
     startTransition(async () => {
@@ -350,6 +364,104 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
                 defaultValue={c.avatar_url}
                 colSpan={2}
               />
+            </div>
+          )}
+
+          {/* ---- Sub-fase B+ paridade ZigChat (mig 046) ---- */}
+          {tab === "avancado" && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  WhatsApp + integrações externas
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <FieldText
+                    name="whatsapp_state"
+                    label="Estado WhatsApp"
+                    defaultValue={c.whatsapp_state}
+                    placeholder="CONNECTED / QR / DISCONNECTED"
+                  />
+                  <FieldText
+                    name="whatsapp_lid"
+                    label="WhatsApp LID (linked identity)"
+                    defaultValue={c.whatsapp_lid}
+                  />
+                  <FieldText
+                    name="remote_id"
+                    label="ID em CRM externo"
+                    defaultValue={c.remote_id}
+                    placeholder="Salesforce/RD/HubSpot..."
+                    colSpan={2}
+                  />
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      name="numero_verificado"
+                      defaultChecked={c.numero_verificado}
+                      className="mt-0.5 size-4"
+                    />
+                    <span>
+                      <span className="font-medium">Número verificado</span>
+                      <span className="block text-xs text-muted-foreground">
+                        WhatsApp validou o número
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      name="ignora_inatividade"
+                      defaultChecked={c.ignora_inatividade}
+                      className="mt-0.5 size-4"
+                    />
+                    <span>
+                      <span className="font-medium">Ignora inatividade</span>
+                      <span className="block text-xs text-muted-foreground">
+                        VIP — não fecha por timeout
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                    <input
+                      type="checkbox"
+                      name="desconsidera_turno"
+                      defaultChecked={c.desconsidera_turno}
+                      className="mt-0.5 size-4"
+                    />
+                    <span>
+                      <span className="font-medium">Desconsidera turno</span>
+                      <span className="block text-xs text-muted-foreground">
+                        VIP — atende fora do horário comercial
+                      </span>
+                    </span>
+                  </label>
+                  <FieldTextarea
+                    name="msg_apos_encerramento"
+                    label="Mensagem após encerramento"
+                    defaultValue={c.msg_apos_encerramento}
+                    placeholder="Ex: Obrigado pelo contato! Volte sempre."
+                    colSpan={2}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Campos custom (5 livres por empresa)
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <FieldText
+                      key={n}
+                      name={`field_${n}`}
+                      label={`Campo custom ${n}`}
+                      defaultValue={
+                        (c as unknown as Record<string, string | null>)[`field_${n}`]
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
