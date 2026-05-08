@@ -3,15 +3,17 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import {
-  getAgenteIA,
   getAgenteTemplates,
+  getAgenteIA,
   getDepartamentos,
   getMenus,
   getModelosLLM,
+  getPastas,
   type AgenteTemplate,
   type Departamento,
   type MenuChatbot,
   type ModeloLLM,
+  type Pasta,
 } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -73,6 +75,16 @@ export default async function AgenteDbEditPage({ params }: Props) {
     // Sem departamentos? Editor mostra warning amber pra cadastrar primeiro.
   }
 
+  // Pastas (Bases de Conhecimento) — Sprint M: dropdown multi-select em
+  // vez de campo texto com IDs.
+  let pastas: Pasta[] = [];
+  try {
+    const r = await getPastas({ comDocs: true });
+    pastas = r.items;
+  } catch {
+    // Sem pastas? Editor mostra dropdown vazio com link pra /settings/pastas
+  }
+
   if (!agente && !error) notFound();
 
   return (
@@ -96,6 +108,7 @@ export default async function AgenteDbEditPage({ params }: Props) {
           menusAtivos={menusAtivos}
           templates={templates}
           departamentos={departamentos}
+          pastas={pastas}
         />
       )}
     </div>

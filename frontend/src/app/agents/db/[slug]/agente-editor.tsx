@@ -40,6 +40,7 @@ import type {
   Departamento,
   MenuChatbot,
   ModeloLLM,
+  Pasta,
 } from "@/lib/api";
 
 interface Props {
@@ -48,6 +49,7 @@ interface Props {
   menusAtivos?: MenuChatbot[];
   templates?: AgenteTemplate[];
   departamentos?: Departamento[];
+  pastas?: Pasta[];
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp";
@@ -110,6 +112,7 @@ export function AgenteEditor({
   menusAtivos = [],
   templates = [],
   departamentos = [],
+  pastas = [],
 }: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
@@ -342,7 +345,7 @@ export function AgenteEditor({
           )}
           {tab === "prompt" && <TabPrompt a={a} />}
           {tab === "tools" && <TabTools a={a} />}
-          {tab === "kb_mcp" && <TabKbMcp a={a} />}
+          {tab === "kb_mcp" && <TabKbMcp a={a} pastas={pastas} />}
 
           <div className="flex justify-end pt-3">
             <Button type="submit" disabled={isPending}>
@@ -755,19 +758,72 @@ function TabTools({ a }: { a: AgenteIA }) {
   );
 }
 
-function TabKbMcp({ a }: { a: AgenteIA }) {
+function TabKbMcp({ a, pastas }: { a: AgenteIA; pastas: Pasta[] }) {
+  const [selectedKbs, setSelectedKbs] = useState<number[]>(
+    a.base_conhecimento_ids
+  );
+  const toggleKb = (id: number) =>
+    setSelectedKbs((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  const selectedSet = new Set(selectedKbs);
   return (
     <div className="space-y-4">
       <div>
-        <Field
-          label="Bases de Conhecimento (IDs separados por vírgula; vazio = todas)"
-          name="base_conhecimento_ids"
-          defaultValue={a.base_conhecimento_ids.join(",")}
-          placeholder="1,3,7"
-        />
+        <label className="text-sm font-medium">Bases de Conhecimento</label>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Limita quais documentos o agente vê. Sem isso, busca em todos os docs ativos da empresa.
+          Selecione uma ou mais pastas. Sem nenhuma seleção, o agente busca em
+          toda a base da empresa.
         </p>
+        {/* Hidden input que o handleSubmit (kbStr split) consome */}
+        <input
+          type="hidden"
+          name="base_conhecimento_ids"
+          value={selectedKbs.join(",")}
+        />
+        {pastas.length === 0 ? (
+          <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+            Nenhuma pasta cadastrada.{" "}
+            <Link
+              href="/settings/pastas"
+              className="font-medium underline hover:text-amber-700"
+            >
+              Criar pasta
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-2 max-h-64 overflow-y-auto rounded-md border bg-background">
+            {pastas.map((p) => {
+              const isSelected = selectedSet.has(p.id);
+              return (
+                <label
+                  key={p.id}
+                  className={`flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-sm last:border-0 hover:bg-accent ${
+                    isSelected ? "bg-accent/30" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleKb(p.id)}
+                    className="size-4 rounded border-input accent-primary"
+                  />
+                  <span className="flex-1 truncate">{p.nome}</span>
+                  {p.docs_count !== null && p.docs_count !== undefined && (
+                    <Badge variant="outline" className="text-[10px]">
+                      {p.docs_count} docs
+                    </Badge>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {selectedKbs.length > 0 && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            {selectedKbs.length} pasta(s) selecionada(s).
+          </p>
+        )}
       </div>
       <Field
         label="Variáveis ambiente (IDs separados por vírgula)"
