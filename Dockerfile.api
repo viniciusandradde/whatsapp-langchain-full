@@ -3,26 +3,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Build arg: instala test runner deps (Sprint L) — Java + allure CLI + pytest
-# extras. Aumenta imagem em ~300MB. Em prod, set via build-arg ou via
-# `docker compose build --build-arg ENABLE_TEST_RUNNER=true api`.
-ARG ENABLE_TEST_RUNNER=false
-
 # curl: healthcheck do Docker Compose
 # poppler-utils: pdf2image precisa pra rasterizar páginas PDF (M5.c.3 OCR)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
-
-# Sprint L — test runner: Java JRE + allure CLI + nodejs (pra npm install)
-# Só instala quando ENABLE_TEST_RUNNER=true. Imagem padrão fica leve.
-RUN if [ "$ENABLE_TEST_RUNNER" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends \
-            default-jre-headless nodejs npm \
-            && rm -rf /var/lib/apt/lists/* \
-            && npm install -g allure-commandline --silent; \
-    fi
 
 # Instala uv para gerenciar dependências
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -38,24 +24,6 @@ COPY db/ db/
 RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
     && uv pip install --system -r requirements.txt \
     && uv pip install --system --no-deps .
-
-# Sprint L — dev deps quando test runner habilitado (pytest, deepeval,
-# allure-pytest, fpdf2). Sem isso, /api/admin/tests/run falha.
-RUN if [ "$ENABLE_TEST_RUNNER" = "true" ]; then \
-        uv pip install --system pytest pytest-asyncio pytest-xdist \
-            deepeval allure-pytest fpdf2; \
-    fi
-
-# Sprint L: testes E2E precisam do código de tests/ pra rodar dentro do
-# container. Copia só quando habilitado.
-RUN if [ "$ENABLE_TEST_RUNNER" = "true" ]; then \
-        mkdir -p /app/tests; \
-    fi
-COPY tests/ /app/tests-build-context/
-RUN if [ "$ENABLE_TEST_RUNNER" = "true" ]; then \
-        cp -r /app/tests-build-context/* /app/tests/; \
-    fi
-RUN rm -rf /app/tests-build-context
 
 EXPOSE 8000
 

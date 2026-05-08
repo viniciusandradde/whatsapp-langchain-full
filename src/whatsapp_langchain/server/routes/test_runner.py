@@ -1,27 +1,29 @@
-"""Endpoints admin pra rodar/monitorar bateria E2E pelo painel (Sprint L).
+"""Pure proxy pros endpoints do test runner standalone (Sprint L).
 
-Acesso restrito a `auth.user.is_superadmin = TRUE`. Em prod, gated por
-`enable_test_runner=True` (env). Quando false, todos endpoints retornam 404.
+API valida superadmin + feature flag, depois forwarda pra
+`http://tests:8001/...` (container dedicado).
+
+Quando `enable_test_runner=False` ou `TESTS_RUNNER_URL` não está setado,
+todos endpoints retornam 404 — UI mostra "feature desabilitada".
 
 Endpoints:
-    POST /api/admin/tests/run                      — dispara run
-    GET  /api/admin/tests/runs                     — historico
-    GET  /api/admin/tests/runs/{id}                — detalhe
-    GET  /api/admin/tests/runs/{id}/events         — SSE log + progresso
-    POST /api/admin/tests/runs/{id}/kill           — SIGTERM
-    GET  /api/admin/tests/runs/{id}/report         — Allure HTML
-    GET  /api/admin/tests/runs/{id}/report/{path:path} — assets do Allure
+    POST /api/admin/tests/run                          → POST /run
+    GET  /api/admin/tests/runs                         → GET  /runs
+    GET  /api/admin/tests/runs/{id}                    → GET  /runs/{id}
+    POST /api/admin/tests/runs/{id}/kill               → POST /runs/{id}/kill
+    GET  /api/admin/tests/runs/{id}/events             → GET  /runs/{id}/events (SSE)
+    GET  /api/admin/tests/runs/{id}/report             → GET  /runs/{id}/report
+    GET  /api/admin/tests/runs/{id}/report/{path:path} → GET  /runs/{id}/report/...
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import mimetypes
+import os
 
+import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
@@ -31,16 +33,6 @@ from whatsapp_langchain.server.dependencies import (
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import is_superadmin
-from whatsapp_langchain.shared.test_runner import (
-    get_report_path,
-    get_run,
-    list_runs,
-    start_run,
-    tail_log,
-)
-from whatsapp_langchain.shared.test_runner import (
-    kill_run as _kill_run,
-)
 
 logger = structlog.get_logger()
 
@@ -51,17 +43,26 @@ router = APIRouter(
 )
 
 
-class RunRequest(BaseModel):
-    filtro: str | None = Field(default=None, max_length=200)
+def _runner_url() -> str:
+    return os.environ.get("TESTS_RUNNER_URL", "http://tests:8001").rstrip("/")
+
+
+def _runner_enabled() -> bool:
+    if not getattr(settings, "enable_test_runner", False):
+        return False
+    return bool(_runner_url())
 
 
 async def _require_admin_and_enabled(user_id: str) -> None:
-    """Gate: feature flag + admin check. 404 quando desabilitado."""
-    if not getattr(settings, "enable_test_runner", False):
+    if not _runner_enabled():
         raise HTTPException(status_code=404, detail="Test runner desabilitado.")
     pool = await get_pool()
     if not await is_superadmin(pool, user_id):
         raise HTTPException(status_code=403, detail="Apenas superadmins.")
+
+
+class RunRequest(BaseModel):
+    filtro: str | None = Field(default=None, max_length=200)
 
 
 @router.post("/run", status_code=201)
@@ -70,12 +71,23 @@ async def run_endpoint(
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict:
     await _require_admin_and_enabled(user_id)
-    pool = await get_pool()
-    try:
-        run = await start_run(pool, user_id=user_id, filtro=body.filtro)
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    return run.to_dict()
+    payload = {"user_id": user_id, "filtro": body.filtro}
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            r = await client.post(f"{_runner_url()}/run", json=payload)
+        except httpx.HTTPError as exc:
+            logger.warning("tests_runner_unreachable", error=str(exc))
+            raise HTTPException(
+                status_code=503,
+                detail="Container tests não está rodando. Suba com `docker compose --profile tests up -d tests`.",
+            ) from exc
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise HTTPException(status_code=r.status_code, detail=detail)
+    return r.json()
 
 
 @router.get("/runs")
@@ -83,9 +95,15 @@ async def list_runs_endpoint(
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict:
     await _require_admin_and_enabled(user_id)
-    pool = await get_pool()
-    runs = await list_runs(pool, limit=50)
-    return {"items": [r.to_dict() for r in runs]}
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            r = await client.get(f"{_runner_url()}/runs")
+        except httpx.HTTPError as exc:
+            logger.warning("tests_runner_unreachable", error=str(exc))
+            return {"items": []}
+    if r.status_code >= 400:
+        return {"items": []}
+    return r.json()
 
 
 @router.get("/runs/{run_id}")
@@ -94,11 +112,13 @@ async def get_run_endpoint(
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict:
     await _require_admin_and_enabled(user_id)
-    pool = await get_pool()
-    run = await get_run(pool, run_id)
-    if not run:
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{_runner_url()}/runs/{run_id}")
+    if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Run nao encontrado.")
-    return run.to_dict()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
 
 
 @router.post("/runs/{run_id}/kill", status_code=204)
@@ -107,70 +127,45 @@ async def kill_run_endpoint(
     user_id: str = Depends(get_user_id_from_request),
 ) -> None:
     await _require_admin_and_enabled(user_id)
-    pool = await get_pool()
-    ok = await _kill_run(pool, run_id)
-    if not ok:
-        raise HTTPException(
-            status_code=409,
-            detail="Run nao esta rodando ou ja terminou.",
-        )
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(f"{_runner_url()}/runs/{run_id}/kill")
+    if r.status_code == 409:
+        raise HTTPException(status_code=409, detail="Run nao esta rodando.")
+    if r.status_code >= 400 and r.status_code != 204:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
 
 
 @router.get("/runs/{run_id}/events")
 async def events_endpoint(
     run_id: int,
+    request: Request,
     user_id: str = Depends(get_user_id_from_request),
 ):
-    """SSE — emite log_chunk + progress + done. Heartbeat 25s."""
+    """SSE proxy — abre stream upstream e pipe pro client."""
     await _require_admin_and_enabled(user_id)
-    pool = await get_pool()
-    run = await get_run(pool, run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run nao encontrado.")
 
-    async def event_gen():
-        offset = 0
-        last_status = run.status
-        # Estado inicial
-        yield f"event: snapshot\ndata: {json.dumps(run.to_dict())}\n\n"
+    async def stream():
+        client = httpx.AsyncClient(timeout=None)
         try:
-            while True:
-                # Tail log
-                chunk, offset = tail_log(run_id, offset)
-                if chunk:
-                    payload = json.dumps({"chunk": chunk})
-                    yield f"event: log_chunk\ndata: {payload}\n\n"
-
-                # Progresso (status atual)
-                cur = await get_run(pool, run_id)
-                if cur is None:
-                    yield "event: error\ndata: {}\n\n"
-                    return
-                if cur.status != last_status:
+            async with client.stream(
+                "GET",
+                f"{_runner_url()}/runs/{run_id}/events",
+                headers={"Accept": "text/event-stream"},
+            ) as r:
+                if r.status_code >= 400:
                     yield (
-                        f"event: progress\n"
-                        f"data: {json.dumps(cur.to_dict())}\n\n"
-                    )
-                    last_status = cur.status
-
-                if cur.status not in ("queued", "running"):
-                    yield (
-                        f"event: done\n"
-                        f"data: {json.dumps(cur.to_dict())}\n\n"
+                        f"event: error\ndata: {{\"status\":{r.status_code}}}\n\n".encode()
                     )
                     return
-
-                # Heartbeat + sleep
-                yield ": heartbeat\n\n"
-                await asyncio.sleep(2)
-        except asyncio.CancelledError:
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("test_runner_sse_failed", run_id=run_id, error=str(exc))
-            yield f"event: error\ndata: {json.dumps({'error': str(exc)[:200]})}\n\n"
+                async for chunk in r.aiter_bytes():
+                    if await request.is_disconnected():
+                        return
+                    yield chunk
+        finally:
+            await client.aclose()
 
     return StreamingResponse(
-        event_gen(),
+        stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -186,7 +181,7 @@ async def report_index(
     user_id: str = Depends(get_user_id_from_request),
 ):
     await _require_admin_and_enabled(user_id)
-    return await _serve_report_file(run_id, "index.html")
+    return await _proxy_report_file(run_id, "")
 
 
 @router.get("/runs/{run_id}/report/{file_path:path}")
@@ -196,16 +191,18 @@ async def report_asset(
     user_id: str = Depends(get_user_id_from_request),
 ):
     await _require_admin_and_enabled(user_id)
-    return await _serve_report_file(run_id, file_path)
+    return await _proxy_report_file(run_id, file_path)
 
 
-async def _serve_report_file(run_id: int, sub: str) -> FileResponse:
-    path = get_report_path(run_id, sub)
-    if not path:
+async def _proxy_report_file(run_id: int, sub: str) -> Response:
+    suffix = f"/{sub}" if sub else ""
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(f"{_runner_url()}/runs/{run_id}/report{suffix}")
+    if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Arquivo nao encontrado.")
-    mime, _ = mimetypes.guess_type(str(path))
-    return FileResponse(
-        str(path),
-        media_type=mime or "application/octet-stream",
+    return Response(
+        content=r.content,
+        status_code=r.status_code,
+        media_type=r.headers.get("content-type", "application/octet-stream"),
         headers={"Cache-Control": "no-cache"},
     )

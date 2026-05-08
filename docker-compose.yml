@@ -80,6 +80,29 @@ services:
       api:
         condition: service_healthy
 
+  # Test Runner E2E (Sprint L) — container dedicado com pytest + Java + allure.
+  # NÃO sobe junto com o stack principal (mantém imagem do chat leve).
+  # Sobe com: docker compose --profile tests up -d tests
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/whatsapp_langchain
+      LOG_JSON: "true"
+      WEBHOOK_BASE_URL: http://api:8000
+      TEST_RUNNER_REPO_ROOT: /app
+    expose:
+      - "8001"
+    volumes:
+      - tests_reports:/app/tests/reports
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - tests
+
   # Locust para teste de carga.
   # Usa profile "testing" para não subir junto com os serviços principais.
   # Só inicia com: docker compose --profile testing up stress
@@ -101,3 +124,4 @@ services:
 
 volumes:
   postgres_data:
+  tests_reports:

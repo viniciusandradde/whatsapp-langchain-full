@@ -1,0 +1,40 @@
+# Container dedicado pra rodar bateria E2E (Sprint L).
+# Imagem pesada (~600MB) com pytest + deepeval + Java + allure CLI.
+# Não é usada em produção do chat; sobe só com profile `tests`.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Java JRE: requerido pelo allure CLI (gera HTML report)
+# nodejs/npm: instalar allure-commandline (CLI Java tools)
+# poppler-utils: pdf2image (mídia PDF dos testes)
+# curl: healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jre-headless \
+    nodejs npm \
+    poppler-utils \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g allure-commandline --silent
+
+# uv pra dependências Python
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+COPY pyproject.toml uv.lock ./
+COPY src/ src/
+COPY db/ db/
+COPY tests/ tests/
+
+# Deps base + extras de teste (pytest, deepeval, allure-pytest, fpdf2)
+RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
+    && uv pip install --system -r requirements.txt \
+    && uv pip install --system --no-deps . \
+    && uv pip install --system pytest pytest-asyncio pytest-xdist \
+        deepeval allure-pytest fpdf2
+
+# Persist allure-results entre runs (volume mount em compose)
+RUN mkdir -p /app/tests/reports/runs
+
+EXPOSE 8001
+
+CMD ["uvicorn", "whatsapp_langchain.tests_runner.server:app", "--host", "0.0.0.0", "--port", "8001"]
