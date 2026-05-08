@@ -3,6 +3,10 @@
 # - sem `ports:` (Traefik roteia)
 # - DATABASE_URL e BETTER_AUTH_URL vêm das envs do painel
 # - POSTGRES_PASSWORD obrigatório (sem default)
+# - `name: chat-nexus` pra containers virem com prefixo chat-nexus-* em vez
+#   do auto-gerado pelo Dokploy (projetos-chatvsanexus-er02mp-*).
+
+name: chat-nexus
 
 services:
   db:
