@@ -310,10 +310,21 @@ async def _cosine_search(
     query: str,
     *,
     fetch_k: int,
+    pasta_ids: list[int] | None = None,
 ) -> list[tuple[DocumentoConhecimento, int, str, float]]:
-    """Top-N chunks por cosine similarity. Tupla: (doc, chunk_idx, chunk_conteudo, score)."""
+    """Top-N chunks por cosine similarity. Tupla: (doc, chunk_idx, chunk_conteudo, score).
+
+    Quando `pasta_ids` é não-vazio, filtra docs apenas dessas pastas — usado
+    pra knowledge base setor-específica (cada agente_ia aponta pras suas
+    pastas via `agente_ia.base_conhecimento_ids`).
+    """
     embedding = await _embed(query)
     vec_lit = _vector_literal(embedding)
+    where_pasta = ""
+    params_pasta: list = []
+    if pasta_ids:
+        where_pasta = " AND d.pasta_id = ANY(%s)"
+        params_pasta = [list(pasta_ids)]
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
@@ -324,10 +335,11 @@ async def _cosine_search(
               FROM documento_conhecimento_chunk c
               JOIN documento_conhecimento d ON d.id = c.documento_id
              WHERE d.empresa_id = %s AND d.ativo AND c.embedding IS NOT NULL
+                   {where_pasta}
              ORDER BY c.embedding <=> %s::vector
              LIMIT %s
             """,
-            (vec_lit, empresa_id, vec_lit, fetch_k),
+            (vec_lit, empresa_id, *params_pasta, vec_lit, fetch_k),
         )
         rows = await cur.fetchall()
     out: list[tuple[DocumentoConhecimento, int, str, float]] = []
@@ -452,6 +464,7 @@ async def search_relevant(
     min_score: float = 0.3,
     fetch_k: int = SEARCH_FETCH_K,
     rerank: bool = True,
+    pasta_ids: list[int] | None = None,
 ) -> list[SearchResult]:
     """Pipeline RAG completo (M5.c.1): cosine top-N → LLM reranker → top-k.
 
@@ -459,8 +472,13 @@ async def search_relevant(
     Filtra candidatos abaixo de `min_score` antes do reranker. Quando
     `rerank=False`, pula o LLM (mais rápido, mais barato — útil pra UI
     de debug).
+
+    Sprint M: `pasta_ids` filtra docs apenas das pastas listadas (knowledge
+    base setor-específica). Quando None ou vazio, busca em toda a empresa.
     """
-    candidates = await _cosine_search(pool, empresa_id, query, fetch_k=fetch_k)
+    candidates = await _cosine_search(
+        pool, empresa_id, query, fetch_k=fetch_k, pasta_ids=pasta_ids
+    )
     candidates = [c for c in candidates if c[3] >= min_score]
     if not candidates:
         return []

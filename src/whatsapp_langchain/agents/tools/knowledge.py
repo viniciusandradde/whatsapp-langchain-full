@@ -19,20 +19,41 @@ from whatsapp_langchain.shared.db import get_pool
 logger = structlog.get_logger()
 
 
-def _extract_empresa_id(runtime: Any) -> int | None:
-    """Lê `empresa_id` do contexto LangGraph (igual ao calendar tool)."""
+def _extract_from_runtime(runtime: Any, key: str) -> Any:
+    """Lê uma chave do `configurable` do contexto LangGraph."""
     if runtime is not None:
         config = getattr(runtime, "config", None)
         if isinstance(config, dict):
             cfg = config.get("configurable", {})
-            if isinstance(cfg, dict) and "empresa_id" in cfg:
-                return int(cfg["empresa_id"])
+            if isinstance(cfg, dict) and key in cfg:
+                return cfg[key]
     cfg = var_child_runnable_config.get(None)
     if isinstance(cfg, dict):
         configurable = cfg.get("configurable", {})
-        if isinstance(configurable, dict) and "empresa_id" in configurable:
-            return int(configurable["empresa_id"])
+        if isinstance(configurable, dict) and key in configurable:
+            return configurable[key]
     return None
+
+
+def _extract_empresa_id(runtime: Any) -> int | None:
+    val = _extract_from_runtime(runtime, "empresa_id")
+    return int(val) if val is not None else None
+
+
+def _extract_pasta_ids(runtime: Any) -> list[int] | None:
+    """Lê `base_conhecimento_ids` do contexto (Sprint M).
+
+    Setor-específico: agente_ia.base_conhecimento_ids define quais pastas
+    a tool deve consultar. Vazio/None → busca em toda a empresa (fallback).
+    """
+    val = _extract_from_runtime(runtime, "base_conhecimento_ids")
+    if val is None:
+        return None
+    try:
+        ids = [int(x) for x in val if x is not None]
+        return ids if ids else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _snippet(texto: str, max_chars: int = 400) -> str:
@@ -62,10 +83,11 @@ async def search_knowledge_base(
     empresa_id = _extract_empresa_id(runtime)
     if empresa_id is None:
         return "empresa_id ausente no contexto — não consigo consultar a base."
+    pasta_ids = _extract_pasta_ids(runtime)
     pool = await get_pool()
     try:
         results = await base_conhecimento.search_relevant(
-            pool, empresa_id, query
+            pool, empresa_id, query, pasta_ids=pasta_ids
         )
     except Exception as e:
         logger.warning("knowledge_search_failed", error=str(e))
@@ -74,6 +96,7 @@ async def search_knowledge_base(
     logger.info(
         "knowledge_search",
         empresa_id=empresa_id,
+        pasta_ids=pasta_ids,
         query_chars=len(query),
         hits=len(results),
     )

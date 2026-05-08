@@ -1732,6 +1732,13 @@ async def process_message(
                 # Evita alucinação de URL (agente não tem acesso à URL real).
                 "media_url": message.media_url,
                 "media_type": message.media_type,
+                # Sprint M (RAG por setor) — search_knowledge_base usa pra
+                # filtrar docs apenas das pastas do agente. Vazio = busca
+                # global na empresa (fallback).
+                "base_conhecimento_ids": (
+                    agente_runtime.base_conhecimento_ids
+                    if agente_runtime is not None else []
+                ),
             },
             "callbacks": [ia_callback],
         }
