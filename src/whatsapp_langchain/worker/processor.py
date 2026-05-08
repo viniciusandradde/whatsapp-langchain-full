@@ -1661,6 +1661,76 @@ async def process_message(
         if not within_hours:
             normalized_text = f"[FORA DO EXPEDIENTE] {normalized_text}"
 
+        # Sprint O — Guardrails de input
+        try:
+            from whatsapp_langchain.shared.guardrails import (
+                check_input,
+                redact_pii,
+            )
+
+            # O.1 — Content filter (jailbreak/injection)
+            input_check = check_input(normalized_text)
+            if input_check.blocked:
+                logger.warning(
+                    "guardrail_input_blocked_in_worker",
+                    pattern=input_check.pattern,
+                    atendimento_id=message.atendimento_id,
+                )
+                async with pool.connection() as _conn:
+                    await _conn.execute(
+                        """
+                        INSERT INTO guardrail_log
+                          (empresa_id, atendimento_id, layer, guardrail,
+                           decision, pattern_matched, sample)
+                        VALUES (%s, %s, 'input', 'content_filter',
+                                'block', %s, %s)
+                        """,
+                        (
+                            message.empresa_id, message.atendimento_id,
+                            input_check.pattern, input_check.sample,
+                        ),
+                    )
+                    await _conn.commit()
+                # Bloqueia e responde com mensagem padrão
+                response_text = (
+                    "Desculpe, não consigo processar essa mensagem. "
+                    "Vou transferir você para um atendente."
+                )
+                await outbound.send_message(message.phone_number, response_text)
+                await mark_done(
+                    pool, message.id, response_text,
+                    normalized_input=pre.normalized_text,
+                )
+                return
+
+            # O.2 — PII redaction (input antes de LLM)
+            redact_in = redact_pii(normalized_text, mode="mask")
+            if redact_in.redacted_anything:
+                logger.info(
+                    "guardrail_pii_redacted_input",
+                    counts=redact_in.counts,
+                    atendimento_id=message.atendimento_id,
+                )
+                async with pool.connection() as _conn:
+                    await _conn.execute(
+                        """
+                        INSERT INTO guardrail_log
+                          (empresa_id, atendimento_id, layer, guardrail,
+                           decision, metadata)
+                        VALUES (%s, %s, 'input', 'pii_redact',
+                                'redact', %s::jsonb)
+                        """,
+                        (
+                            message.empresa_id, message.atendimento_id,
+                            __import__("json").dumps(redact_in.counts),
+                        ),
+                    )
+                    await _conn.commit()
+                normalized_text = redact_in.text
+        except Exception as guard_err:
+            # Guardrails não devem quebrar o atendimento
+            logger.warning("guardrail_input_failed", error=str(guard_err))
+
         human_message = HumanMessage(content=normalized_text)
 
         # A.6 — resolve agente_ia DB; runtime=None mantém path legacy (catálogo).
@@ -1757,6 +1827,101 @@ async def process_message(
 
         # 4. Extrair resposta
         response_text = result["messages"][-1].content
+
+        # Sprint O — Guardrails de output
+        try:
+            from whatsapp_langchain.shared.guardrails import redact_pii
+            from whatsapp_langchain.shared.guardrails.output_judge import (
+                judge_output,
+            )
+
+            # O.2 — PII redaction (output antes de enviar)
+            redact_out = redact_pii(response_text, mode="mask")
+            if redact_out.redacted_anything:
+                logger.info(
+                    "guardrail_pii_redacted_output",
+                    counts=redact_out.counts,
+                    atendimento_id=message.atendimento_id,
+                )
+                async with pool.connection() as _conn:
+                    await _conn.execute(
+                        """
+                        INSERT INTO guardrail_log
+                          (empresa_id, atendimento_id, layer, guardrail,
+                           decision, metadata)
+                        VALUES (%s, %s, 'output', 'pii_redact',
+                                'redact', %s::jsonb)
+                        """,
+                        (
+                            message.empresa_id, message.atendimento_id,
+                            __import__("json").dumps(redact_out.counts),
+                        ),
+                    )
+                    await _conn.commit()
+                response_text = redact_out.text
+
+            # O.4 — LLM judge condicional (busca último rag para contexto)
+            rag_top_score: float | None = None
+            rag_hits = 0
+            try:
+                async with pool.connection() as _conn:
+                    _cur = await _conn.execute(
+                        """
+                        SELECT top_score, hits
+                          FROM rag_query_log
+                         WHERE atendimento_id = %s
+                         ORDER BY id DESC LIMIT 1
+                        """,
+                        (message.atendimento_id,),
+                    )
+                    _row = await _cur.fetchone()
+                    if _row:
+                        rag_top_score = (
+                            float(_row[0]) if _row[0] is not None else None
+                        )
+                        rag_hits = int(_row[1] or 0)
+            except Exception:
+                pass
+
+            judge = await judge_output(
+                user_query=normalized_text,
+                response=response_text,
+                rag_top_score=rag_top_score,
+                rag_hits=rag_hits,
+            )
+            if not judge.skipped:
+                async with pool.connection() as _conn:
+                    await _conn.execute(
+                        """
+                        INSERT INTO guardrail_log
+                          (empresa_id, atendimento_id, layer, guardrail,
+                           decision, metadata, sample)
+                        VALUES (%s, %s, 'output', 'llm_judge',
+                                %s, %s::jsonb, %s)
+                        """,
+                        (
+                            message.empresa_id, message.atendimento_id,
+                            "allow" if judge.safe else "unsafe",
+                            __import__("json").dumps({
+                                "cached": judge.cached,
+                                "reason": judge.reason,
+                            }),
+                            response_text[:500],
+                        ),
+                    )
+                    await _conn.commit()
+                if not judge.safe:
+                    logger.warning(
+                        "guardrail_output_unsafe_replacing_response",
+                        atendimento_id=message.atendimento_id,
+                    )
+                    response_text = (
+                        "Não tenho certeza dessa informação no momento. "
+                        "Vou transferir você para um atendente que possa "
+                        "te ajudar com mais precisão."
+                    )
+        except Exception as guard_err:
+            logger.warning("guardrail_output_failed", error=str(guard_err))
 
         # 5. Enviar resposta outbound antes de mark_done
         await outbound.send_message(message.phone_number, response_text)
