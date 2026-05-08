@@ -20,13 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
-  getTestRun,
-  getTestRuns,
-  killTestRun,
-  startTestRun,
+  getTestRunClient as getTestRun,
+  getTestRunsClient as getTestRuns,
+  killTestRunClient as killTestRun,
+  startTestRunClient as startTestRun,
   type TestRun,
   type TestRunStatus,
-} from "@/lib/api";
+} from "@/lib/test-runner-client";
 
 const STATUS_VARIANT: Record<
   TestRunStatus,
