@@ -56,5 +56,11 @@ docker-compose.override.yml
 
 # Stress testing results
 stress/results_*.csv
+
+# Sprint K — relatórios de teste E2E (artifacts locais + CI)
+tests/reports/allure-results/
+tests/reports/allure/
+tests/reports/junit-*.xml
+tests/reports/jornadas-*.md
 docs/FASE_1_APOIO_VISUAL.excalidraw
 docs/FASE_1_APOIO_VISUAL.md

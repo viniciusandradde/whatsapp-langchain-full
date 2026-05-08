@@ -1,4 +1,4 @@
-.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows backfill-rag stress stress-evolution stress-twilio stress-both clean
+.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both clean
 
 # Cores para output
 CYAN := \033[36m
@@ -105,6 +105,20 @@ test-demo-up: ## Sobe stack Docker e roda testes demonstrativos
 
 test-flows: ## Roda testes de fluxo realista (requer stack Docker)
 	uv run pytest tests/integration/test_realistic_flows.py -v -s
+
+test-e2e: ## Sprint K — bateria E2E multi-setor (28 cenários) com Allure
+	uv run pytest tests/e2e/ -v -s \
+	  --alluredir=tests/reports/allure-results \
+	  --junitxml=tests/reports/junit-e2e.xml \
+	  -m docker_demo
+
+report-e2e: test-e2e ## Gera HTML do Allure em tests/reports/allure
+	@command -v allure >/dev/null 2>&1 || \
+	  { echo "ERRO: allure CLI não instalado. Use 'npm i -g allure-commandline' ou baixe do site oficial."; exit 1; }
+	allure generate tests/reports/allure-results \
+	  -o tests/reports/allure --clean
+	@echo "✅ Relatório gerado em tests/reports/allure/index.html"
+	@echo "   Para servir: 'allure open tests/reports/allure'"
 
 test-twilio-smoke: ## Smoke test e2e com Twilio real (custos $$$). Requer TWILIO_LIVE_TESTS=1 e stack Docker.
 	uv run pytest tests/integration/test_twilio_smoke.py -v -s -m twilio_real
