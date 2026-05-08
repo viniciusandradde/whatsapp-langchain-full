@@ -43,10 +43,15 @@ ON CONFLICT (empresa_id, slug) DO UPDATE SET
     ativo = TRUE;
 
 -- 5. Menu chatbot principal — 1 menu + 8 items raiz com chamar_agente
-INSERT INTO menu_chatbot (id, empresa_id, conexao_id, nome, ativo, mensagem_boas_vindas)
-VALUES (1, 1, NULL, 'Triagem inicial', TRUE,
+-- solicitar_nome=false: testes mandam "oi" e esperam menu direto, não captura de nome.
+INSERT INTO menu_chatbot (id, empresa_id, conexao_id, nome, ativo, solicitar_nome, mensagem_boas_vindas)
+VALUES (1, 1, NULL, 'Triagem inicial', TRUE, FALSE,
         'Olá! Sou a IA da VSA Tech. Como posso te ajudar hoje?')
-ON CONFLICT (id) DO UPDATE SET ativo = TRUE;
+ON CONFLICT (id) DO UPDATE SET ativo = TRUE, solicitar_nome = FALSE;
+
+-- Garante zero duplicatas — remove items órfãos fora do range esperado (1-8)
+-- antes de fazer UPSERT. Idempotente em re-runs.
+DELETE FROM menu_item WHERE menu_id = 1 AND id NOT IN (1,2,3,4,5,6,7,8);
 
 -- Items raiz: ordem 1-8 mapeando direto pros agentes
 -- IDs fixos pra simplicidade (4-11 — pulando 1-3 que nem existem antes)
