@@ -24,6 +24,7 @@ COPY pyproject.toml uv.lock ./
 COPY src/ src/
 COPY db/ db/
 COPY tests/ tests/
+COPY scripts/ scripts/
 
 # Deps base + extras de teste (pytest, deepeval, allure-pytest, fpdf2)
 RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
