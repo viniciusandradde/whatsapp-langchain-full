@@ -7,6 +7,8 @@ e retorna top-3 docs com snippet pra o agente usar como contexto.
 
 from __future__ import annotations
 
+import time
+from contextlib import suppress
 from typing import Annotated, Any
 
 import structlog
@@ -84,14 +86,52 @@ async def search_knowledge_base(
     if empresa_id is None:
         return "empresa_id ausente no contexto — não consigo consultar a base."
     pasta_ids = _extract_pasta_ids(runtime)
+    agente_slug = _extract_from_runtime(runtime, "agent_id") or _extract_from_runtime(runtime, "agente_slug")
+    atendimento_id = _extract_from_runtime(runtime, "atendimento_id")
+    thread_id = _extract_from_runtime(runtime, "thread_id")
     pool = await get_pool()
+    started = time.perf_counter()
+    error_msg: str | None = None
+    results: list = []
     try:
         results = await base_conhecimento.search_relevant(
             pool, empresa_id, query, pasta_ids=pasta_ids
         )
     except Exception as e:
-        logger.warning("knowledge_search_failed", error=str(e))
-        return f"Não consegui consultar a base de conhecimento agora: {e}"
+        error_msg = str(e)[:500]
+        logger.warning("knowledge_search_failed", error=error_msg)
+
+    duracao_ms = int((time.perf_counter() - started) * 1000)
+    top_score = float(results[0].score) if results else None
+
+    # Persiste log pra dashboard (best-effort — não bloqueia resposta)
+    with suppress(Exception):
+        async with pool.connection() as conn:
+            await conn.execute(
+                """
+                INSERT INTO rag_query_log (
+                    empresa_id, query_text, pasta_ids, agente_slug,
+                    atendimento_id, thread_id, hits, top_score,
+                    duracao_ms, error
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    empresa_id,
+                    query[:500],
+                    list(pasta_ids or []),
+                    agente_slug,
+                    int(atendimento_id) if atendimento_id else None,
+                    thread_id,
+                    len(results),
+                    top_score,
+                    duracao_ms,
+                    error_msg,
+                ),
+            )
+            await conn.commit()
+
+    if error_msg:
+        return f"Não consegui consultar a base de conhecimento agora: {error_msg}"
 
     logger.info(
         "knowledge_search",
@@ -99,6 +139,7 @@ async def search_knowledge_base(
         pasta_ids=pasta_ids,
         query_chars=len(query),
         hits=len(results),
+        duracao_ms=duracao_ms,
     )
     if not results:
         return "Nenhum documento relevante encontrado na base de conhecimento."

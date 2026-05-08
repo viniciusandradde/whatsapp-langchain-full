@@ -1,7 +1,18 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Folder, FolderTree, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Folder,
+  FolderTree,
+  MoveRight,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,19 +22,31 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Pasta } from "@/lib/api";
+import type { DocumentoConhecimento, Pasta } from "@/lib/api";
 
-import { deletePastaAction, savePastaAction } from "./actions";
+import {
+  deleteDocumentoAction,
+  deletePastaAction,
+  moveDocumentoAction,
+  saveDocumentoAction,
+  savePastaAction,
+} from "./actions";
 
 interface Props {
   initialPastas: Pasta[];
+  initialDocumentos: DocumentoConhecimento[];
   loadError?: string | null;
 }
 
-type EditState =
+type PastaEditState =
   | { mode: "closed" }
   | { mode: "create" }
   | { mode: "edit"; pasta: Pasta };
+
+type DocEditState =
+  | { mode: "closed" }
+  | { mode: "create"; pastaId: number | null }
+  | { mode: "edit"; doc: DocumentoConhecimento };
 
 interface TreeNode {
   pasta: Pasta;
@@ -52,25 +75,56 @@ function flattenTree(pastas: Pasta[]): TreeNode[] {
   return out;
 }
 
-export function PastasList({ initialPastas, loadError }: Props) {
+export function PastasList({
+  initialPastas,
+  initialDocumentos,
+  loadError,
+}: Props) {
   const [pastas, setPastas] = useState(initialPastas);
-  const [edit, setEdit] = useState<EditState>({ mode: "closed" });
+  const [documentos, setDocumentos] = useState(initialDocumentos);
+  const [pastaEdit, setPastaEdit] = useState<PastaEditState>({ mode: "closed" });
+  const [docEdit, setDocEdit] = useState<DocEditState>({ mode: "closed" });
+  const [expanded, setExpanded] = useState<Set<number | null>>(
+    () => new Set([null]) // raiz expandida por default
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const tree = useMemo(() => flattenTree(pastas), [pastas]);
 
+  const docsByPasta = useMemo(() => {
+    const m = new Map<number | null, DocumentoConhecimento[]>();
+    for (const d of documentos) {
+      const arr = m.get(d.pasta_id) ?? [];
+      arr.push(d);
+      m.set(d.pasta_id, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => a.titulo.localeCompare(b.titulo));
+    }
+    return m;
+  }, [documentos]);
+
   function clearMessages() {
     setError(null);
     setSuccess(null);
+  }
+
+  function toggleExpand(id: number | null) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function parentOptions(currentId?: number) {
     return pastas.filter((p) => p.id !== currentId);
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmitPasta(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     clearMessages();
     const form = new FormData(e.currentTarget);
@@ -85,12 +139,12 @@ export function PastasList({ initialPastas, loadError }: Props) {
       if (idx >= 0) next[idx] = r.pasta;
       else next.push(r.pasta);
       setPastas(next);
-      setEdit({ mode: "closed" });
+      setPastaEdit({ mode: "closed" });
       setSuccess("Pasta salva.");
     });
   }
 
-  function handleDelete(p: Pasta) {
+  function handleDeletePasta(p: Pasta) {
     const docsLine =
       p.docs_count && p.docs_count > 0
         ? `\n${p.docs_count} documento(s) volta(m) pra raiz.`
@@ -104,34 +158,189 @@ export function PastasList({ initialPastas, loadError }: Props) {
         return;
       }
       setPastas((prev) => prev.filter((x) => x.id !== p.id));
+      setDocumentos((prev) =>
+        prev.map((d) => (d.pasta_id === p.id ? { ...d, pasta_id: null } : d))
+      );
       setSuccess("Pasta removida.");
     });
   }
+
+  function handleSubmitDoc(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    clearMessages();
+    const form = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const r = await saveDocumentoAction(form);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      const next = [...documentos];
+      const idx = next.findIndex((d) => d.id === r.doc.id);
+      if (idx >= 0) next[idx] = r.doc;
+      else next.push(r.doc);
+      setDocumentos(next);
+      // Atualiza docs_count da pasta destino
+      setPastas((prev) =>
+        prev.map((p) => {
+          let count = next.filter((d) => d.pasta_id === p.id).length;
+          return { ...p, docs_count: count };
+        })
+      );
+      setDocEdit({ mode: "closed" });
+      setSuccess("Documento salvo.");
+    });
+  }
+
+  function handleDeleteDoc(d: DocumentoConhecimento) {
+    if (!confirm(`Excluir o documento "${d.titulo}"?`)) return;
+    clearMessages();
+    startTransition(async () => {
+      const r = await deleteDocumentoAction(d.id);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      setDocumentos((prev) => prev.filter((x) => x.id !== d.id));
+      setPastas((prev) =>
+        prev.map((p) =>
+          p.id === d.pasta_id
+            ? { ...p, docs_count: Math.max(0, (p.docs_count ?? 0) - 1) }
+            : p
+        )
+      );
+      setSuccess("Documento removido.");
+    });
+  }
+
+  function handleMoveDoc(d: DocumentoConhecimento, newPastaId: number | null) {
+    if (newPastaId === d.pasta_id) return;
+    clearMessages();
+    startTransition(async () => {
+      const r = await moveDocumentoAction(d.id, newPastaId);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      setDocumentos((prev) =>
+        prev.map((x) => (x.id === d.id ? { ...x, pasta_id: newPastaId } : x))
+      );
+      // Recalcula docs_count
+      setPastas((prev) =>
+        prev.map((p) => {
+          const count = documentos
+            .map((x) => (x.id === d.id ? { ...x, pasta_id: newPastaId } : x))
+            .filter((x) => x.pasta_id === p.id).length;
+          return { ...p, docs_count: count };
+        })
+      );
+      setSuccess("Documento movido.");
+    });
+  }
+
+  const renderDocItem = (d: DocumentoConhecimento, indent: number) => (
+    <div
+      key={d.id}
+      className="flex items-start justify-between gap-2 border-b py-2 pr-2 last:border-0"
+      style={{ paddingLeft: `${indent}rem` }}
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{d.titulo}</p>
+          <p className="line-clamp-1 text-[11px] text-muted-foreground">
+            {d.conteudo.slice(0, 120)}
+            {d.conteudo.length > 120 ? "…" : ""}
+          </p>
+        </div>
+        {!d.ativo && (
+          <Badge variant="secondary" className="text-[9px]">
+            Inativo
+          </Badge>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <select
+          aria-label="Mover documento"
+          value={String(d.pasta_id ?? "")}
+          onChange={(e) =>
+            handleMoveDoc(
+              d,
+              e.target.value === "" ? null : Number(e.target.value)
+            )
+          }
+          disabled={isPending}
+          className="h-7 rounded-md border border-input bg-background px-1 text-xs"
+        >
+          <option value="">— Raiz —</option>
+          {pastas.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nome}
+            </option>
+          ))}
+        </select>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            clearMessages();
+            setDocEdit({ mode: "edit", doc: d });
+          }}
+          disabled={isPending}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => handleDeleteDoc(d)}
+          disabled={isPending}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <CardTitle>Pastas da base de conhecimento</CardTitle>
+            <CardTitle>Pastas + Documentos</CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {pastas.length === 0
-                ? "Nenhuma pasta. Documentos ficam na raiz."
-                : `${pastas.length} pasta(s) cadastrada(s).`}
+              {pastas.length} pasta(s) — {documentos.length} doc(s) total
             </p>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              clearMessages();
-              setEdit({ mode: "create" });
-            }}
-            disabled={isPending || edit.mode !== "closed"}
-          >
-            <Plus className="size-3.5" />
-            Nova pasta
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                clearMessages();
+                setDocEdit({ mode: "create", pastaId: null });
+              }}
+              disabled={isPending || docEdit.mode !== "closed"}
+            >
+              <FileText className="size-3.5" />
+              Novo doc
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                clearMessages();
+                setPastaEdit({ mode: "create" });
+              }}
+              disabled={isPending || pastaEdit.mode !== "closed"}
+            >
+              <Plus className="size-3.5" />
+              Nova pasta
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -143,70 +352,63 @@ export function PastasList({ initialPastas, loadError }: Props) {
         {error && <p className="text-sm text-destructive">{error}</p>}
         {success && <p className="text-sm text-emerald-300">{success}</p>}
 
-        {edit.mode !== "closed" && (
+        {/* === FORM PASTA === */}
+        {pastaEdit.mode !== "closed" && (
           <form
-            onSubmit={handleSubmit}
+            onSubmit={handleSubmitPasta}
             className="space-y-3 rounded-md border bg-muted/20 p-4"
           >
-            {edit.mode === "edit" && (
-              <input type="hidden" name="id" value={edit.pasta.id} />
+            {pastaEdit.mode === "edit" && (
+              <input type="hidden" name="id" value={pastaEdit.pasta.id} />
             )}
             <div>
-              <label
-                htmlFor="nome"
-                className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-              >
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
                 Nome
               </label>
               <input
-                id="nome"
                 name="nome"
-                defaultValue={edit.mode === "edit" ? edit.pasta.nome : ""}
-                placeholder="FAQ"
+                defaultValue={
+                  pastaEdit.mode === "edit" ? pastaEdit.pasta.nome : ""
+                }
+                placeholder="FAQ Atendimento"
                 required
                 maxLength={120}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
             <div>
-              <label
-                htmlFor="parent_id"
-                className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-              >
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
                 Pasta pai (opcional)
               </label>
               <select
-                id="parent_id"
                 name="parent_id"
                 defaultValue={
-                  edit.mode === "edit"
-                    ? String(edit.pasta.parent_id ?? "")
+                  pastaEdit.mode === "edit"
+                    ? String(pastaEdit.pasta.parent_id ?? "")
                     : ""
                 }
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                <option value="">— Sem pai (raiz) —</option>
-                {parentOptions(edit.mode === "edit" ? edit.pasta.id : undefined).map(
-                  (p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome}
-                    </option>
-                  )
-                )}
+                <option value="">— Raiz —</option>
+                {parentOptions(
+                  pastaEdit.mode === "edit" ? pastaEdit.pasta.id : undefined
+                ).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <label
-                htmlFor="descricao"
-                className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-              >
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
                 Descrição (opcional)
               </label>
               <input
-                id="descricao"
                 name="descricao"
                 defaultValue={
-                  edit.mode === "edit" ? edit.pasta.descricao ?? "" : ""
+                  pastaEdit.mode === "edit"
+                    ? pastaEdit.pasta.descricao ?? ""
+                    : ""
                 }
                 maxLength={300}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -216,91 +418,299 @@ export function PastasList({ initialPastas, loadError }: Props) {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setEdit({ mode: "closed" })}
+                onClick={() => setPastaEdit({ mode: "closed" })}
                 disabled={isPending}
               >
                 <X className="size-3.5" />
                 Cancelar
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Salvando…" : "Salvar"}
+                {isPending ? "Salvando…" : "Salvar pasta"}
               </Button>
             </div>
           </form>
         )}
 
-        {pastas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Documentos atualmente ficam todos na raiz. Crie pastas pra
-            organizar (ex: &quot;FAQ&quot;, &quot;Vendas/Promoções&quot;,
-            &quot;Suporte&quot;).
-          </p>
-        ) : (
-          <ul className="divide-y rounded-md border">
-            {tree.map(({ pasta: p, depth }) => (
-              <li
-                key={p.id}
-                className="flex items-start justify-between gap-3 p-3"
-                style={{ paddingLeft: `${0.75 + depth * 1.5}rem` }}
+        {/* === FORM DOC === */}
+        {docEdit.mode !== "closed" && (
+          <form
+            onSubmit={handleSubmitDoc}
+            className="space-y-3 rounded-md border bg-emerald-950/10 p-4"
+          >
+            {docEdit.mode === "edit" && (
+              <input type="hidden" name="id" value={docEdit.doc.id} />
+            )}
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                Pasta
+              </label>
+              <select
+                name="pasta_id"
+                defaultValue={
+                  docEdit.mode === "edit"
+                    ? String(docEdit.doc.pasta_id ?? "")
+                    : docEdit.mode === "create"
+                      ? String(docEdit.pastaId ?? "")
+                      : ""
+                }
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    {depth > 0 && (
-                      <span className="text-muted-foreground/50">↳</span>
-                    )}
-                    {depth === 0 ? (
-                      <FolderTree className="size-4 text-brand-primary" />
+                <option value="">— Raiz (sem pasta) —</option>
+                {pastas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                Título
+              </label>
+              <input
+                name="titulo"
+                defaultValue={docEdit.mode === "edit" ? docEdit.doc.titulo : ""}
+                placeholder="Política de cancelamento"
+                required
+                maxLength={200}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                Conteúdo
+              </label>
+              <textarea
+                name="conteudo"
+                defaultValue={
+                  docEdit.mode === "edit" ? docEdit.doc.conteudo : ""
+                }
+                placeholder="Texto que será chunkado + indexado para o RAG…"
+                required
+                rows={8}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Após salvar, o backend gera embeddings via{" "}
+                <code className="font-mono">backfill_chunks</code>.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                Tags (separadas por vírgula)
+              </label>
+              <input
+                name="tags"
+                defaultValue={
+                  docEdit.mode === "edit"
+                    ? (docEdit.doc.tags || []).join(", ")
+                    : ""
+                }
+                placeholder="cancelamento, politica"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="ativo"
+                  value="true"
+                  defaultChecked={
+                    docEdit.mode === "edit" ? docEdit.doc.ativo : true
+                  }
+                  className="size-4 rounded border-input accent-primary"
+                />
+                Ativo (incluído nas buscas RAG)
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDocEdit({ mode: "closed" })}
+                  disabled={isPending}
+                >
+                  <X className="size-3.5" />
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? "Salvando…" : "Salvar doc"}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* === ÁRVORE DE PASTAS COM DOCS === */}
+        <div className="rounded-md border">
+          {/* Raiz: docs sem pasta */}
+          {(() => {
+            const rootDocs = docsByPasta.get(null) ?? [];
+            const isExpanded = expanded.has(null);
+            return (
+              <div className="border-b last:border-0">
+                <div className="flex items-center justify-between p-2 hover:bg-muted/30">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(null)}
+                    className="flex flex-1 items-center gap-2 text-left"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="size-4 text-muted-foreground" />
                     ) : (
-                      <Folder className="size-4 text-muted-foreground" />
+                      <ChevronRight className="size-4 text-muted-foreground" />
                     )}
-                    <p className="font-medium">{p.nome}</p>
-                    {p.docs_count !== null && p.docs_count > 0 && (
+                    <Folder className="size-4 text-muted-foreground" />
+                    <span className="font-medium">Raiz (sem pasta)</span>
+                    {rootDocs.length > 0 && (
                       <Badge variant="outline" className="text-[10px]">
-                        {p.docs_count} doc{p.docs_count > 1 ? "s" : ""}
+                        {rootDocs.length} doc{rootDocs.length > 1 ? "s" : ""}
                       </Badge>
                     )}
-                  </div>
-                  {p.descricao && (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {p.descricao}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 gap-1">
+                  </button>
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
                     onClick={() => {
                       clearMessages();
-                      setEdit({ mode: "edit", pasta: p });
+                      setDocEdit({ mode: "create", pastaId: null });
                     }}
                     disabled={isPending}
                   >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDelete(p)}
-                    disabled={isPending}
-                  >
-                    <Trash2 className="size-3.5" />
+                    <Plus className="size-3.5" />
                   </Button>
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
+                {isExpanded && rootDocs.length > 0 && (
+                  <div className="bg-muted/10">
+                    {rootDocs.map((d) => renderDocItem(d, 2.5))}
+                  </div>
+                )}
+                {isExpanded && rootDocs.length === 0 && (
+                  <p className="px-10 pb-3 text-xs text-muted-foreground">
+                    Nenhum doc na raiz.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
+          {tree.length === 0 && (
+            <p className="p-3 text-sm text-muted-foreground">
+              Nenhuma pasta criada. Use &quot;Nova pasta&quot; pra organizar
+              docs por setor/agente.
+            </p>
+          )}
+
+          {tree.map(({ pasta: p, depth }) => {
+            const pastaDocs = docsByPasta.get(p.id) ?? [];
+            const isExpanded = expanded.has(p.id);
+            return (
+              <div key={p.id} className="border-b last:border-0">
+                <div
+                  className="flex items-center justify-between p-2 hover:bg-muted/30"
+                  style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(p.id)}
+                    className="flex flex-1 items-center gap-2 text-left"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="size-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="size-4 text-muted-foreground" />
+                    )}
+                    {depth === 0 ? (
+                      <FolderTree className="size-4 text-brand-primary" />
+                    ) : (
+                      <Folder className="size-4 text-muted-foreground" />
+                    )}
+                    <span className="font-medium">{p.nome}</span>
+                    {p.docs_count !== null && p.docs_count > 0 && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {p.docs_count} doc{p.docs_count > 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                    {p.descricao && (
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        — {p.descricao}
+                      </span>
+                    )}
+                  </button>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      title="Adicionar doc nesta pasta"
+                      onClick={() => {
+                        clearMessages();
+                        setDocEdit({ mode: "create", pastaId: p.id });
+                      }}
+                      disabled={isPending}
+                    >
+                      <Plus className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        clearMessages();
+                        setPastaEdit({ mode: "edit", pasta: p });
+                      }}
+                      disabled={isPending}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeletePasta(p)}
+                      disabled={isPending}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                {isExpanded && pastaDocs.length > 0 && (
+                  <div className="bg-muted/10">
+                    {pastaDocs.map((d) =>
+                      renderDocItem(d, 2.5 + depth * 1.25)
+                    )}
+                  </div>
+                )}
+                {isExpanded && pastaDocs.length === 0 && (
+                  <p
+                    className="pb-3 text-xs text-muted-foreground"
+                    style={{ paddingLeft: `${3 + depth * 1.25}rem` }}
+                  >
+                    Vazia.{" "}
+                    <button
+                      type="button"
+                      className="underline hover:text-foreground"
+                      onClick={() => {
+                        clearMessages();
+                        setDocEdit({ mode: "create", pastaId: p.id });
+                      }}
+                    >
+                      Adicionar doc
+                    </button>
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <p className="rounded-md border border-dashed p-3 text-[11px] text-muted-foreground">
-          Pra colocar documento numa pasta, hoje use o endpoint
-          <code className="mx-1 rounded bg-white/[0.06] px-1 font-mono text-[10px]">
-            POST /api/pastas/{`{id}`}/documentos/{`{doc_id}`}
-          </code>
-          ou inclua <code className="font-mono">pasta_id</code> no upload.
-          Integração no UI do editor de agente vem em iteração seguinte.
+          <strong>Sprint M:</strong> agentes IA com{" "}
+          <code className="font-mono">base_conhecimento_ids</code> configurado
+          (em <code className="font-mono">/agents/db/&lt;slug&gt;</code> aba KB)
+          buscam apenas nas pastas vinculadas. Sem vínculo = busca em toda a
+          empresa.
         </p>
       </CardContent>
     </Card>

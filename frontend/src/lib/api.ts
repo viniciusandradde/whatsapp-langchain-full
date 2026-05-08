@@ -2327,6 +2327,97 @@ export async function reorderMenuItems(
   );
 }
 
+// =====================================================================
+// RAG Quality Dashboard (Sprint M.7)
+// =====================================================================
+
+export interface RAGSummary {
+  queries_24h: number;
+  queries_7d: number;
+  miss_rate_24h: number;
+  avg_score_24h: number | null;
+  avg_duracao_ms_24h: number | null;
+}
+
+export interface TopQuery {
+  query_text: string;
+  n: number;
+  miss_rate: number;
+  avg_score: number | null;
+  last_seen: string;
+}
+
+export interface AgenteStat {
+  agente_slug: string | null;
+  queries: number;
+  miss_rate: number;
+  avg_score: number | null;
+}
+
+export interface RecentQuery {
+  id: number;
+  query_text: string;
+  agente_slug: string | null;
+  pasta_ids: number[];
+  hits: number;
+  top_score: number | null;
+  duracao_ms: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+export interface PreviewHit {
+  doc_id: number;
+  titulo: string;
+  chunk_idx: number;
+  score: number;
+  reason: string | null;
+  snippet: string;
+  pasta_id: number | null;
+}
+
+export async function getRagSummary(): Promise<RAGSummary> {
+  return apiFetch<RAGSummary>(`/api/admin/rag/summary`);
+}
+
+export async function getRagTopQueries(opts?: {
+  days?: number;
+  onlyMiss?: boolean;
+  limit?: number;
+}): Promise<TopQuery[]> {
+  const p = new URLSearchParams();
+  if (opts?.days) p.set("days", String(opts.days));
+  if (opts?.onlyMiss) p.set("only_miss", "true");
+  if (opts?.limit) p.set("limit", String(opts.limit));
+  const q = p.toString();
+  return apiFetch<TopQuery[]>(`/api/admin/rag/top-queries${q ? "?" + q : ""}`);
+}
+
+export async function getRagByAgente(days = 7): Promise<AgenteStat[]> {
+  return apiFetch<AgenteStat[]>(`/api/admin/rag/by-agente?days=${days}`);
+}
+
+export async function getRagRecent(opts?: {
+  limit?: number;
+  onlyMiss?: boolean;
+}): Promise<RecentQuery[]> {
+  const p = new URLSearchParams();
+  if (opts?.limit) p.set("limit", String(opts.limit));
+  if (opts?.onlyMiss) p.set("only_miss", "true");
+  const q = p.toString();
+  return apiFetch<RecentQuery[]>(`/api/admin/rag/recent${q ? "?" + q : ""}`);
+}
+
+export async function previewRagSearch(
+  query: string,
+  pastaIds?: number[]
+): Promise<PreviewHit[]> {
+  return apiFetch<PreviewHit[]>(`/api/admin/rag/preview`, {
+    method: "POST",
+    body: { query, pasta_ids: pastaIds || null },
+  });
+}
+
 export async function seedMenuFromAgentes(
   menuId: number
 ): Promise<{ items: MenuItem[]; qtde_criados: number }> {

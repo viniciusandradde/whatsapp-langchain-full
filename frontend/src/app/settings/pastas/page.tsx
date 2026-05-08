@@ -1,6 +1,10 @@
 import { FolderTree } from "lucide-react";
 
-import { getPastas } from "@/lib/api";
+import {
+  getDocumentosConhecimento,
+  getPastas,
+  type DocumentoConhecimento,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { PastasList } from "./pastas-list";
@@ -9,20 +13,25 @@ export const dynamic = "force-dynamic";
 
 /**
  * Página /settings/pastas — organização hierárquica da base de
- * conhecimento (E2.C M7).
+ * conhecimento (E2.C M7) + gestão de documentos por pasta (Sprint M.6).
  *
- * Pasta é container puramente UI/governança — não afeta o ranking
- * RAG. O agente continua buscando em todos os documentos ativos da
- * empresa via `search_knowledge_base`.
+ * Sprint M: pastas afetam ranking RAG quando o agente_ia tem
+ * `base_conhecimento_ids` configurado — vira filtro WHERE pasta_id IN (...)
+ * no cosine search.
  */
 export default async function PastasPage() {
   await requireSession();
 
   let pastas: Awaited<ReturnType<typeof getPastas>>["items"] = [];
+  let documentos: DocumentoConhecimento[] = [];
   let error: string | null = null;
   try {
-    const data = await getPastas({ comDocs: true });
-    pastas = data.items;
+    const [pastasResp, docsResp] = await Promise.all([
+      getPastas({ comDocs: true }),
+      getDocumentosConhecimento({}),
+    ]);
+    pastas = pastasResp.items;
+    documentos = docsResp.documentos;
   } catch (e) {
     error = e instanceof Error ? e.message : "Erro ao carregar pastas.";
   }
@@ -38,13 +47,18 @@ export default async function PastasPage() {
             Pastas da base de conhecimento
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Estrutura em árvore pra organizar documentos. Não afeta o
-            ranking de busca — apenas categoriza.
+            Cada pasta vira filtro RAG quando vinculada a um agente_ia.
+            Adicione documentos diretamente nas pastas pra restringir o
+            que cada setor enxerga.
           </p>
         </div>
       </div>
 
-      <PastasList initialPastas={pastas} loadError={error} />
+      <PastasList
+        initialPastas={pastas}
+        initialDocumentos={documentos}
+        loadError={error}
+      />
     </div>
   );
 }
