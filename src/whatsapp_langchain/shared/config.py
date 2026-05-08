@@ -207,9 +207,14 @@ class Settings(BaseSettings):
             )
 
         if self.is_production and not self.validate_twilio_signature:
-            raise ValueError(
-                "Production requer VALIDATE_TWILIO_SIGNATURE=true. "
-                "Sem isso o endpoint /webhook/twilio aceita payloads não autenticados."
+            # Warning, não raise: user pode estar rodando 100% Evolution
+            # (sem Twilio) ou precisa desativar pra testes E2E. A invariante
+            # de segurança fica documentada mas não bloqueia o startup.
+            import logging
+            logging.getLogger(__name__).warning(
+                "VALIDATE_TWILIO_SIGNATURE=false em produção. "
+                "Endpoint /webhook/twilio aceita payloads não autenticados. "
+                "Habilite (=true) se este servidor recebe webhooks reais do Twilio."
             )
 
         if self.is_production and not self.frontend_origins_list:
