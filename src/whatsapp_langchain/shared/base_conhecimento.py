@@ -41,6 +41,81 @@ RERANKER_MODEL = "openai/gpt-4o-mini"
 RERANKER_TOP_K = 3
 SEARCH_FETCH_K = 10
 
+# Sprint N.2 — HyDE (Hypothetical Document Embeddings)
+# Quando query é curta/keyword-like, expande pra parágrafo hipotético antes
+# de embedar. Melhora recall em queries tipo "wifi?" / "estaciona?" / "preço".
+HYDE_MODEL = "openai/gpt-4o-mini"
+HYDE_MIN_QUERY_LEN = 50  # queries menores que isso ativam HyDE
+HYDE_CACHE_TTL_SECONDS = 300
+
+# Cache simples in-memory: {(query, agent_slug): (expanded, ts)}
+_hyde_cache: dict[tuple[str, str | None], tuple[str, float]] = {}
+
+
+async def _hyde_expand(query: str, agent_slug: str | None = None) -> str:
+    """Expande query curta em parágrafo hipotético via LLM (Sprint N.2).
+
+    Cache TTL 5min por (query, agent_slug). Falha gracefully — se LLM
+    falhar, retorna query original.
+    """
+    import time
+
+    now = time.time()
+    cache_key = (query, agent_slug)
+    cached = _hyde_cache.get(cache_key)
+    if cached is not None and (now - cached[1]) < HYDE_CACHE_TTL_SECONDS:
+        return cached[0]
+
+    # Limpa cache antigo (best-effort, mantém max 200 entries)
+    if len(_hyde_cache) > 200:
+        for k in list(_hyde_cache.keys()):
+            if (now - _hyde_cache[k][1]) > HYDE_CACHE_TTL_SECONDS:
+                del _hyde_cache[k]
+
+    sector_hint = f" do setor {agent_slug}" if agent_slug else ""
+    prompt = (
+        f"Você é um redator de FAQ. Reescreva a pergunta abaixo como um "
+        f"parágrafo curto (80-150 caracteres) que SERIA a resposta ideal de "
+        f"um documento de atendimento ao cliente{sector_hint}. NÃO responda "
+        f"a pergunta — apenas reformule como se fosse o texto da resposta. "
+        f"Use linguagem natural em português brasileiro.\n\n"
+        f"Pergunta: {query}\n\nParágrafo hipotético:"
+    )
+
+    try:
+        llm = create_chat_model(model=HYDE_MODEL, temperature=0.0, max_tokens=120)
+        from langchain_core.messages import HumanMessage
+
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        expanded = (
+            response.content if isinstance(response.content, str)
+            else str(response.content)
+        ).strip()
+        # Combina query original + expansão pra preservar termos exatos
+        combined = f"{query} {expanded}"[:500]
+        _hyde_cache[cache_key] = (combined, now)
+        logger.info(
+            "hyde_expanded",
+            query_chars=len(query),
+            expanded_chars=len(expanded),
+            agent_slug=agent_slug,
+        )
+        return combined
+    except Exception as e:
+        logger.warning("hyde_failed", error=str(e), query=query[:80])
+        return query
+
+
+def _should_use_hyde(query: str) -> bool:
+    """Heurística: query curta ou só keywords ativa HyDE."""
+    q = query.strip()
+    if len(q) < HYDE_MIN_QUERY_LEN:
+        return True
+    # Sem pontuação + poucas palavras = provável keyword query
+    word_count = len(q.split())
+    has_punct = any(c in q for c in "?!.,;")
+    return word_count <= 4 and not has_punct
+
 
 @dataclass(frozen=True)
 class SearchResult:
@@ -352,6 +427,57 @@ async def _cosine_search(
     return out
 
 
+async def _hybrid_search(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    query: str,
+    *,
+    fetch_k: int,
+    pasta_ids: list[int] | None = None,
+) -> list[tuple[DocumentoConhecimento, int, str, float]]:
+    """Busca híbrida via function SQL `kb_hybrid_search` (Sprint N.1).
+
+    Combina cosine + FTS portuguese com Reciprocal Rank Fusion (K=60,
+    pesos vector=1.0 + text=1.5). Mais robusto que cosine puro pra
+    queries com termos exatos (códigos, nomes, números).
+
+    Retorna no mesmo formato do `_cosine_search` (compat com reranker)
+    com `score` = rrf_score normalizado.
+    """
+    embedding = await _embed(query)
+    vec_lit = _vector_literal(embedding)
+    pasta_arr = list(pasta_ids) if pasta_ids else []
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT
+                f.documento_id, d.empresa_id, d.titulo, d.conteudo,
+                d.tags, d.ativo, d.created_by_user_id, d.created_at,
+                d.updated_at, d.pasta_id,
+                f.chunk_idx, f.conteudo, f.rrf_score,
+                f.score_vector, f.score_text
+            FROM kb_hybrid_search(%s::BIGINT, %s::BIGINT[], %s, %s::vector, %s) f
+            JOIN documento_conhecimento d ON d.id = f.documento_id
+            ORDER BY f.rrf_score DESC
+            """,
+            (empresa_id, pasta_arr, query, vec_lit, fetch_k),
+        )
+        rows = await cur.fetchall()
+
+    out: list[tuple[DocumentoConhecimento, int, str, float]] = []
+    for row in rows:
+        doc = _row_to_documento(row[:10])
+        chunk_idx = row[10]
+        chunk_conteudo = row[11]
+        # Normaliza rrf_score pra [0,1] dividindo pelo máximo teórico
+        # (1/(60+1) * 2 ≈ 0.033). Multiplicamos por 30 pra ficar parecido
+        # com cosine score em [0,1] — útil pro reranker comparar.
+        score = float(row[12]) * 30.0
+        out.append((doc, chunk_idx, chunk_conteudo, min(score, 1.0)))
+    return out
+
+
 async def _llm_rerank(
     query: str,
     candidates: list[tuple[DocumentoConhecimento, int, str, float]],
@@ -465,20 +591,49 @@ async def search_relevant(
     fetch_k: int = SEARCH_FETCH_K,
     rerank: bool = True,
     pasta_ids: list[int] | None = None,
+    mode: str = "hybrid",
+    agent_slug: str | None = None,
 ) -> list[SearchResult]:
-    """Pipeline RAG completo (M5.c.1): cosine top-N → LLM reranker → top-k.
+    """Pipeline RAG completo: retrieval → LLM reranker → top-k.
 
-    Retorna lista de `SearchResult` ordenada do mais relevante pro menos.
-    Filtra candidatos abaixo de `min_score` antes do reranker. Quando
-    `rerank=False`, pula o LLM (mais rápido, mais barato — útil pra UI
-    de debug).
-
-    Sprint M: `pasta_ids` filtra docs apenas das pastas listadas (knowledge
-    base setor-específica). Quando None ou vazio, busca em toda a empresa.
+    Args:
+        mode: "vector" (cosine puro), "hybrid" (cosine+FTS RRF — default),
+            "hybrid_hyde" (HyDE expand + hybrid). Sprint N.1+N.2.
+        rerank: Se False, pula o LLM (debug/perf). Returns top-k sem `reason`.
+        pasta_ids: Filtro setor-específico (Sprint M). Vazio = empresa inteira.
+        agent_slug: Hint pro HyDE expandir com contexto do setor.
     """
-    candidates = await _cosine_search(
-        pool, empresa_id, query, fetch_k=fetch_k, pasta_ids=pasta_ids
-    )
+    # Sprint N.2 — HyDE: expande query curta antes de embedar.
+    # Modo "hybrid_hyde" SEMPRE expande; "auto" decide pela heurística.
+    effective_query = query
+    if mode == "hybrid_hyde" or (mode == "auto" and _should_use_hyde(query)):
+        effective_query = await _hyde_expand(query, agent_slug=agent_slug)
+        if mode == "auto":
+            mode = "hybrid"  # após expandir, usa hybrid normal
+
+    search_mode = "hybrid" if mode in ("hybrid", "hybrid_hyde", "auto") else "vector"
+
+    if search_mode == "hybrid":
+        try:
+            candidates = await _hybrid_search(
+                pool, empresa_id, effective_query,
+                fetch_k=fetch_k, pasta_ids=pasta_ids,
+            )
+        except Exception as e:
+            # Fallback pra cosine se a function SQL falhar (ex: mig 065
+            # ainda não aplicada). Garante que o agente continua funcionando
+            # durante deploy.
+            logger.warning("hybrid_search_fallback_to_cosine", error=str(e))
+            candidates = await _cosine_search(
+                pool, empresa_id, effective_query,
+                fetch_k=fetch_k, pasta_ids=pasta_ids,
+            )
+    else:
+        candidates = await _cosine_search(
+            pool, empresa_id, effective_query,
+            fetch_k=fetch_k, pasta_ids=pasta_ids,
+        )
+
     candidates = [c for c in candidates if c[3] >= min_score]
     if not candidates:
         return []
@@ -492,6 +647,7 @@ async def search_relevant(
             )
             for c in candidates[:k]
         ]
+    # Reranker recebe a query ORIGINAL (não a expandida) — semântica do user
     return await _llm_rerank(query, candidates, top_k=k)
 
 

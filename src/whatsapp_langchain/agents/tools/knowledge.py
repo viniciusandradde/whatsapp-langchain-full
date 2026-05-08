@@ -93,9 +93,22 @@ async def search_knowledge_base(
     started = time.perf_counter()
     error_msg: str | None = None
     results: list = []
+
+    # Sprint N — modo "auto": HyDE quando query é curta, depois hybrid.
+    mode = "auto"
+    hyde_query: str | None = None
     try:
+        # Pre-compute HyDE query separately pra logar (search_relevant
+        # também faz, mas o cache evita custo duplicado).
+        if base_conhecimento._should_use_hyde(query):
+            hyde_query = await base_conhecimento._hyde_expand(
+                query, agent_slug=agente_slug
+            )
         results = await base_conhecimento.search_relevant(
-            pool, empresa_id, query, pasta_ids=pasta_ids
+            pool, empresa_id, query,
+            pasta_ids=pasta_ids,
+            mode=mode,
+            agent_slug=agente_slug,
         )
     except Exception as e:
         error_msg = str(e)[:500]
@@ -103,6 +116,8 @@ async def search_knowledge_base(
 
     duracao_ms = int((time.perf_counter() - started) * 1000)
     top_score = float(results[0].score) if results else None
+    # Após resolver "auto", o modo efetivo é hybrid (com ou sem hyde)
+    effective_mode = "hybrid_hyde" if hyde_query else "hybrid"
 
     # Persiste log pra dashboard (best-effort — não bloqueia resposta)
     with suppress(Exception):
@@ -112,8 +127,8 @@ async def search_knowledge_base(
                 INSERT INTO rag_query_log (
                     empresa_id, query_text, pasta_ids, agente_slug,
                     atendimento_id, thread_id, hits, top_score,
-                    duracao_ms, error
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    duracao_ms, error, mode, hyde_query
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     empresa_id,
@@ -126,6 +141,8 @@ async def search_knowledge_base(
                     top_score,
                     duracao_ms,
                     error_msg,
+                    effective_mode,
+                    hyde_query[:500] if hyde_query else None,
                 ),
             )
             await conn.commit()
@@ -140,6 +157,8 @@ async def search_knowledge_base(
         query_chars=len(query),
         hits=len(results),
         duracao_ms=duracao_ms,
+        mode=effective_mode,
+        hyde_used=hyde_query is not None,
     )
     if not results:
         return "Nenhum documento relevante encontrado na base de conhecimento."

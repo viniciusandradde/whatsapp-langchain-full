@@ -1,0 +1,248 @@
+# Golden dataset pra eval RAG (Sprint N.3).
+# 32 QA pairs (4 por setor) cobrindo cenários típicos.
+# Schema: id, setor (slug do agente), pasta_id, query, expected_doc_id,
+#         must_contain (lista — string que deve aparecer na resposta)
+
+# IDs dos docs (Sprint M.4-M.5 seed_knowledge_base.sql):
+# pasta 6 = KB Atendimento (docs 2, 3, 4)
+# pasta 7 = KB Atendimento Cliente VSA (docs 5, 6)
+# pasta 8 = KB Agendamentos (docs 7, 8, 9)
+# pasta 9 = KB Exames (docs 10, 11, 12)
+# pasta 10 = KB Orçamento (docs 13, 14, 15)
+# pasta 11 = KB Ouvidoria (docs 16, 17, 18)
+# pasta 12 = KB Recrutamento (docs 19, 20, 21)
+# pasta 13 = KB Tesouraria (docs 22, 23, 24)
+
+queries:
+  # ===== Atendimento =====
+  - id: kb-atendimento-1
+    setor: atendimento
+    pasta_id: 6
+    query: "vocês atendem 24 horas?"
+    expected_doc_id: 2
+    must_contain: ["24/7"]
+
+  - id: kb-atendimento-2
+    setor: atendimento
+    pasta_id: 6
+    query: "como funciona o atendimento?"
+    expected_doc_id: 3
+    must_contain: ["menu", "setor"]
+
+  - id: kb-atendimento-3
+    setor: atendimento
+    pasta_id: 6
+    query: "como vocês tratam meus dados?"
+    expected_doc_id: 4
+    must_contain: ["LGPD"]
+
+  - id: kb-atendimento-4
+    setor: atendimento
+    pasta_id: 6
+    query: "lgpd"  # query curta — ativa HyDE
+    expected_doc_id: 4
+    must_contain: ["LGPD"]
+
+  # ===== Atendimento Cliente VSA =====
+  - id: kb-atendimento-cliente-1
+    setor: atendimento-cliente
+    pasta_id: 7
+    query: "tenho problema técnico, sou cliente"
+    expected_doc_id: 5
+    must_contain: ["VIP"]
+
+  - id: kb-atendimento-cliente-2
+    setor: atendimento-cliente
+    pasta_id: 7
+    query: "como mudar meu plano?"
+    expected_doc_id: 6
+    must_contain: ["plano", "ATUALIZAR"]
+
+  # ===== Agendamentos =====
+  - id: kb-agendamentos-1
+    setor: agendamentos
+    pasta_id: 8
+    query: "quero agendar uma consulta"
+    expected_doc_id: 7
+    must_contain: ["agendar"]
+
+  - id: kb-agendamentos-2
+    setor: agendamentos
+    pasta_id: 8
+    query: "preciso cancelar minha consulta"
+    expected_doc_id: 8
+    must_contain: ["24h"]
+
+  - id: kb-agendamentos-3
+    setor: agendamentos
+    pasta_id: 8
+    query: "remarcar"  # short keyword — HyDE
+    expected_doc_id: 9
+    must_contain: ["reagend"]
+
+  - id: kb-agendamentos-4
+    setor: agendamentos
+    pasta_id: 8
+    query: "quanto antes posso cancelar sem cobrança?"
+    expected_doc_id: 8
+    must_contain: ["24h", "gratuito"]
+
+  # ===== Exames =====
+  - id: kb-exames-1
+    setor: exames
+    pasta_id: 9
+    query: "quais exames vocês fazem?"
+    expected_doc_id: 10
+    must_contain: ["sangue", "imagem"]
+
+  - id: kb-exames-2
+    setor: exames
+    pasta_id: 9
+    query: "como pego o resultado?"
+    expected_doc_id: 11
+    must_contain: ["resultado"]
+
+  - id: kb-exames-3
+    setor: exames
+    pasta_id: 9
+    query: "preciso fazer jejum?"
+    expected_doc_id: 12
+    must_contain: ["jejum"]
+
+  - id: kb-exames-4
+    setor: exames
+    pasta_id: 9
+    query: "ressonância"  # keyword — HyDE
+    expected_doc_id: 11
+    must_contain: ["72h"]
+
+  # ===== Orçamento =====
+  - id: kb-orcamento-1
+    setor: orcamento
+    pasta_id: 10
+    query: "quero orçamento de exames"
+    expected_doc_id: 13
+    must_contain: ["orçamento"]
+
+  - id: kb-orcamento-2
+    setor: orcamento
+    pasta_id: 10
+    query: "vocês aceitam unimed?"
+    expected_doc_id: 14
+    must_contain: ["Unimed"]
+
+  - id: kb-orcamento-3
+    setor: orcamento
+    pasta_id: 10
+    query: "posso parcelar?"
+    expected_doc_id: 15
+    must_contain: ["12x"]
+
+  - id: kb-orcamento-4
+    setor: orcamento
+    pasta_id: 10
+    query: "pix"  # keyword — HyDE
+    expected_doc_id: 15
+    must_contain: ["PIX"]
+
+  # ===== Ouvidoria =====
+  - id: kb-ouvidoria-1
+    setor: ouvidoria
+    pasta_id: 11
+    query: "quero fazer uma reclamação"
+    expected_doc_id: 16
+    must_contain: ["protocolo"]
+
+  - id: kb-ouvidoria-2
+    setor: ouvidoria
+    pasta_id: 11
+    query: "tenho uma sugestão de melhoria"
+    expected_doc_id: 17
+    must_contain: ["sugest"]
+
+  - id: kb-ouvidoria-3
+    setor: ouvidoria
+    pasta_id: 11
+    query: "quero excluir meus dados"
+    expected_doc_id: 18
+    must_contain: ["LGPD", "exclus"]
+
+  - id: kb-ouvidoria-4
+    setor: ouvidoria
+    pasta_id: 11
+    query: "lgpd direitos"  # short — HyDE
+    expected_doc_id: 18
+    must_contain: ["titular"]
+
+  # ===== Recrutamento =====
+  - id: kb-rh-1
+    setor: rh-recrutamento-selecao
+    pasta_id: 12
+    query: "tem vaga aberta?"
+    expected_doc_id: 19
+    must_contain: ["Engenheiro"]
+
+  - id: kb-rh-2
+    setor: rh-recrutamento-selecao
+    pasta_id: 12
+    query: "quais benefícios?"
+    expected_doc_id: 20
+    must_contain: ["plano de saúde"]
+
+  - id: kb-rh-3
+    setor: rh-recrutamento-selecao
+    pasta_id: 12
+    query: "como é o processo seletivo?"
+    expected_doc_id: 21
+    must_contain: ["entrevista"]
+
+  - id: kb-rh-4
+    setor: rh-recrutamento-selecao
+    pasta_id: 12
+    query: "vagas"  # keyword — HyDE
+    expected_doc_id: 19
+    must_contain: ["vsa.com"]
+
+  # ===== Tesouraria =====
+  - id: kb-tesouraria-1
+    setor: tesouraria
+    pasta_id: 13
+    query: "preciso de segunda via do boleto"
+    expected_doc_id: 22
+    must_contain: ["boleto"]
+
+  - id: kb-tesouraria-2
+    setor: tesouraria
+    pasta_id: 13
+    query: "quero negociar minha dívida"
+    expected_doc_id: 23
+    must_contain: ["negociar", "12x"]
+
+  - id: kb-tesouraria-3
+    setor: tesouraria
+    pasta_id: 13
+    query: "como pedir reembolso?"
+    expected_doc_id: 24
+    must_contain: ["reembolso"]
+
+  - id: kb-tesouraria-4
+    setor: tesouraria
+    pasta_id: 13
+    query: "boleto vencido"  # short — HyDE
+    expected_doc_id: 22
+    must_contain: ["multa"]
+
+  # ===== Edge cases (testes negativos — esperado low score) =====
+  - id: edge-out-of-scope-1
+    setor: atendimento
+    pasta_id: 6
+    query: "qual a previsão do tempo amanhã?"
+    expected_doc_id: null  # nada deve fazer match
+    must_contain: []
+
+  - id: edge-out-of-scope-2
+    setor: atendimento
+    pasta_id: 6
+    query: "qual a capital do brasil?"
+    expected_doc_id: null
+    must_contain: []

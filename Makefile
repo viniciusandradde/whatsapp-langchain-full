@@ -112,6 +112,9 @@ test-e2e: ## Sprint K — bateria E2E multi-setor (28 cenários) com Allure
 	  --junitxml=tests/reports/junit-e2e.xml \
 	  -m docker_demo
 
+test-rag-eval: ## Sprint N.3 — eval RAG nos 3 modos (vector/hybrid/hybrid_hyde) com dataset golden
+	uv run pytest tests/rag/test_rag_eval.py -v -s
+
 report-e2e: test-e2e ## Gera HTML do Allure em tests/reports/allure
 	@command -v allure >/dev/null 2>&1 || \
 	  { echo "ERRO: allure CLI não instalado. Use 'npm i -g allure-commandline' ou baixe do site oficial."; exit 1; }
