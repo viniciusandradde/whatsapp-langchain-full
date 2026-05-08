@@ -64,6 +64,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
   observabilidade: [
     { label: "Traces", href: "/traces" },
     { label: "Fila", href: "/queue" },
+    { label: "Relatórios E2E", href: "/relatorios/allure" },
     { label: "Histórico de Acesso", href: "/settings/security/login-history" },
     { label: "Audit log", href: "/settings/security/audit" },
     { label: "Feature flags", href: "/settings/feature-flags" },
@@ -117,6 +118,7 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
     prefixos: [
       "/traces",
       "/queue",
+      "/relatorios",
       "/settings/security",
       "/settings/feature-flags",
     ],

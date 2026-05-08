@@ -64,3 +64,4 @@ tests/reports/junit-*.xml
 tests/reports/jornadas-*.md
 docs/FASE_1_APOIO_VISUAL.excalidraw
 docs/FASE_1_APOIO_VISUAL.md
+tests/reports/runs/

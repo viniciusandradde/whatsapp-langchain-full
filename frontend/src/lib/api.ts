@@ -2270,6 +2270,53 @@ export async function getAtendentesRanking(
   );
 }
 
+// =====================================================================
+// Test Runner E2E (Sprint L) — admin only
+// =====================================================================
+
+export type TestRunStatus = "queued" | "running" | "passed" | "failed" | "error";
+
+export interface TestRun {
+  id: number;
+  started_by_user_id: string | null;
+  started_by_name: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  status: TestRunStatus;
+  filtro: string | null;
+  total: number | null;
+  passed: number | null;
+  failed: number | null;
+  duration_seconds: number | null;
+  pid: number | null;
+  storage_path: string;
+  log_size_bytes: number;
+  error_message: string | null;
+}
+
+export async function getTestRuns(): Promise<{ items: TestRun[] }> {
+  return apiFetch<{ items: TestRun[] }>(`/api/admin/tests/runs`);
+}
+
+export async function getTestRun(id: number): Promise<TestRun> {
+  return apiFetch<TestRun>(`/api/admin/tests/runs/${id}`);
+}
+
+export async function startTestRun(filtro?: string): Promise<TestRun> {
+  return apiFetch<TestRun>(`/api/admin/tests/run`, {
+    method: "POST",
+    body: { filtro: filtro || null },
+  });
+}
+
+export async function killTestRun(id: number): Promise<void> {
+  await apiFetch<unknown>(`/api/admin/tests/runs/${id}/kill`, { method: "POST" });
+}
+
+export async function isMyAdmin(): Promise<{ is_superadmin: boolean }> {
+  return apiFetch<{ is_superadmin: boolean }>(`/api/auth/me/admin`);
+}
+
 export async function reorderMenuItems(
   menuId: number,
   body: { parent_id: number | null; ordered_ids: number[] }

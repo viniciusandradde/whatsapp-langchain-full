@@ -108,6 +108,23 @@ async def my_permissions(
     }
 
 
+@router.get("/auth/me/admin")
+async def my_admin_status(
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Sprint L — frontend usa pra esconder UI de superadmin de users comuns.
+
+    Não exige empresa_context (admin é global). Quando user_id ausente
+    (sem session), retorna `{is_superadmin: false}` em vez de 401.
+    """
+    if not user_id:
+        return {"is_superadmin": False}
+    pool = await get_pool()
+    from whatsapp_langchain.shared.empresa import is_superadmin
+
+    return {"is_superadmin": await is_superadmin(pool, user_id)}
+
+
 @router.get("/perfis/{perfil_id}")
 async def get_perfil_endpoint(
     perfil_id: int,

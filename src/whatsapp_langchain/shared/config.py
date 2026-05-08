@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     # Migration 022_rate_limit_generic.sql precisa estar aplicada.
     admin_rate_limit_per_minute: int = 180
 
+    # --- Sprint L — Test Runner UI ---
+    # Quando True, expõe `/api/admin/tests/*` endpoints + UI `/relatorios/allure`.
+    # Default False: feature opt-in (requer Java + allure CLI + dev deps no
+    # container API). Em prod set ENABLE_TEST_RUNNER=true via env.
+    enable_test_runner: bool = False
+
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
 
