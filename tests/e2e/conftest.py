@@ -69,11 +69,15 @@ def db_url() -> str:
 
 @pytest.fixture(scope="session")
 def media_server_urls():
-    """HTTP server local servindo sample.png/ogg/pdf via host.docker.internal.
+    """HTTP server local servindo sample.png/ogg/pdf.
 
-    Yields dict[str, str] com URLs públicas (host.docker.internal) pra worker
-    no container baixar. Encerra server na teardown.
+    URL hostname configurável via env `MEDIA_SERVER_HOST` (default
+    `host.docker.internal` — funciona quando pytest roda no host e workers
+    em container). Em prod, container `tests` está na rede Docker → setar
+    `MEDIA_SERVER_HOST=tests` pro worker baixar via `http://tests:PORT/...`.
     """
+    import os
+
     for arquivo in ("sample.png", "sample.ogg", "sample.pdf"):
         if not (ASSETS_DIR / arquivo).exists():
             pytest.skip(f"Asset {arquivo} ausente em tests/assets/")
@@ -87,38 +91,36 @@ def media_server_urls():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
+    host = os.getenv("MEDIA_SERVER_HOST", "host.docker.internal")
     try:
         yield {
-            "image_url": f"http://host.docker.internal:{port}/sample.png",
-            "audio_url": f"http://host.docker.internal:{port}/sample.ogg",
-            "pdf_url": f"http://host.docker.internal:{port}/sample.pdf",
+            "image_url": f"http://{host}:{port}/sample.png",
+            "audio_url": f"http://{host}:{port}/sample.ogg",
+            "pdf_url": f"http://{host}:{port}/sample.pdf",
         }
     finally:
         server.shutdown()
         thread.join(timeout=5)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def cleanup_test_data(db_url: str):
-    """Limpa atendimentos antigos de telefones de teste (prefix +5511 com mais
-    de 1h) pra evitar acúmulo. Roda 1× no início da sessão.
+SEED_SQL = Path(__file__).resolve().parent / "fixtures" / "seed.sql"
 
-    NÃO mexe em atendentes test-atd-* (cadastrados em SQL fixture global).
+
+@pytest.fixture(scope="session", autouse=True)
+def seed_test_data(db_url: str):
+    """Aplica `tests/e2e/fixtures/seed.sql` antes de qualquer teste.
+
+    Cria empresa+deptos+agentes+menu+items+atendentes idempotentemente
+    (ON CONFLICT DO UPDATE/NOTHING). Garante reprodutibilidade local + CI
+    sem precisar dump do prod.
     """
+    if not SEED_SQL.exists():
+        pytest.skip(f"Seed SQL não encontrado: {SEED_SQL}")
+    sql = SEED_SQL.read_text(encoding="utf-8")
     try:
         with psycopg.connect(db_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                DELETE FROM atendimento_menu_historico
-                 WHERE atendimento_id IN (
-                    SELECT id FROM atendimento
-                     WHERE empresa_id = 1
-                       AND created_at < NOW() - INTERVAL '1 hour'
-                       AND closed_at IS NOT NULL
-                 )
-                """
-            )
+            cur.execute(sql)
             conn.commit()
-    except Exception:
-        pass  # cleanup best-effort
+    except Exception as e:
+        pytest.fail(f"Seed E2E falhou: {e}")
     yield

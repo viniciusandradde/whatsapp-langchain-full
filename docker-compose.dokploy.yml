@@ -86,7 +86,13 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
       LOG_JSON: "true"
+      # API_BASE_URL: usado pelo conftest pra detectar API saudável + helpers
+      # postam webhook. Dentro da rede Docker, api:8000 (não localhost:8081).
+      API_BASE_URL: http://api:8000
       WEBHOOK_BASE_URL: http://api:8000
+      # Workers baixam mídia do http server criado no container `tests`. Como
+      # o tests roda na mesma rede Docker, hostname é `tests` (não localhost).
+      MEDIA_SERVER_HOST: tests
       TEST_RUNNER_REPO_ROOT: /app
     expose:
       - "8001"
