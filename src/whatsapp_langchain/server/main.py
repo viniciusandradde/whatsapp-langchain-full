@@ -25,6 +25,9 @@ from whatsapp_langchain.server.routes.admin import router as admin_router
 from whatsapp_langchain.server.routes.audit import router as audit_router
 from whatsapp_langchain.server.routes.agente import router as agente_router
 from whatsapp_langchain.server.routes.atendente import router as atendente_router
+from whatsapp_langchain.server.routes.dataset_import import (
+    router as rag_dataset_router,
+)
 from whatsapp_langchain.server.routes.rag_stats import (
     router as rag_stats_router,
 )
@@ -266,6 +269,7 @@ app.include_router(ia_budget_router)
 app.include_router(atendente_router)
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
+app.include_router(rag_dataset_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.
