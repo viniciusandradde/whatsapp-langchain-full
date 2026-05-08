@@ -79,8 +79,12 @@ class Settings(BaseSettings):
         "http://localhost:8081/api/google-calendar/oauth/callback"
     )
 
-    # --- Rate Limit ---
-    rate_limit_per_hour: int = 30
+    # --- Rate Limit (webhook inbound por phone_number, sliding window 1h) ---
+    # Default subido de 30 → 120 (2 msg/min sustentado) porque cliente real
+    # facilmente excede 30 em sessão de teste/atendimento longo + retries de
+    # mídia do Evolution (cada upload audio/imagem retenta múltiplas vezes
+    # se o INSERT na fila falha).
+    rate_limit_per_hour: int = 120
     # True ativa Postgres sliding window (necessário em multi-instância).
     # Migration 005_rate_limit_buckets.sql precisa estar aplicada.
     rate_limit_distributed: bool = False

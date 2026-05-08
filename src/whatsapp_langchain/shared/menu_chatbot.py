@@ -607,17 +607,22 @@ _ACOES_SAIDA_MENU = frozenset(
 
 async def find_csat_item_ativo(
     pool: AsyncConnectionPool, empresa_id: int
-) -> "MenuItem | None":
+) -> MenuItem | None:
     """Retorna o primeiro item `acao_tipo='pesquisa_csat'` ativo da empresa.
 
     Usado pra disparar pesquisa de satisfação automaticamente após
     `close_atendimento` (Sprint F.3). Se nenhum item CSAT cadastrado,
     retorna None — o close não envia nada.
     """
+    # `_ITEM_COLS` não tem alias — prefixa com `mi.` no JOIN pra evitar
+    # ambiguidade com `mc.id` (ambas têm coluna `id`).
+    item_cols_aliased = ", ".join(
+        f"mi.{c.strip()}" for c in _ITEM_COLS.split(",")
+    )
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT {_ITEM_COLS}
+            SELECT {item_cols_aliased}
               FROM menu_item mi
               JOIN menu_chatbot mc ON mc.id = mi.menu_id
              WHERE mc.empresa_id = %s
@@ -625,7 +630,7 @@ async def find_csat_item_ativo(
                AND mi.ativo
                AND mi.acao_tipo = 'pesquisa_csat'
              ORDER BY mi.id LIMIT 1
-            """,
+            """,  # type: ignore[arg-type]
             (empresa_id,),
         )
         row = await cur.fetchone()
