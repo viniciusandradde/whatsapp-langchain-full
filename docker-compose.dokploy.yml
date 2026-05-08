@@ -70,5 +70,33 @@ services:
       - api
     restart: unless-stopped
 
+  # Test Runner E2E (Sprint L) — container dedicado pra rodar bateria.
+  # Não está atrás de profile aqui em prod — sobe junto com o stack pra
+  # admin conseguir disparar via UI em https://chat.vsanexus.com/relatorios/allure.
+  # Imagem da API permanece leve (Java/allure só vivem nessa imagem).
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.tests
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
+      LOG_JSON: "true"
+      WEBHOOK_BASE_URL: http://api:8000
+      TEST_RUNNER_REPO_ROOT: /app
+    expose:
+      - "8001"
+    volumes:
+      - tests_reports:/app/tests/reports
+    depends_on:
+      - db
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1024M
+
 volumes:
   postgres_data:
+  tests_reports:
