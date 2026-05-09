@@ -545,6 +545,111 @@ async def reject_suggestion(
     return {"ok": True}
 
 
+class SandboxSummary(BaseModel):
+    empresa_id: int
+    total_atendimentos: int
+    by_setor: dict[str, int]
+    by_outcome: dict[str, int]
+
+
+@router.get("/sandbox/summary", response_model=SandboxSummary)
+async def sandbox_summary(
+    empresa_id: int = Query(default=999),
+) -> SandboxSummary:
+    """Sprint R.6 — KPIs da sandbox (3 meses ZigChat)."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT COUNT(*),
+                   COALESCE(jsonb_object_agg(setor_classificado, n) FILTER (
+                       WHERE setor_classificado IS NOT NULL
+                   ), '{}'::jsonb) as by_setor
+              FROM (
+                SELECT setor_classificado, COUNT(*) as n
+                  FROM fewshot_example
+                 WHERE empresa_id = %s
+                 GROUP BY setor_classificado
+              ) s
+            """,
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+        total = int(row[0] or 0) if row else 0
+        by_setor = dict(row[1] or {}) if row else {}
+
+        cur = await conn.execute(
+            """
+            SELECT outcome, COUNT(*) FROM fewshot_example
+             WHERE empresa_id = %s GROUP BY outcome
+            """,
+            (empresa_id,),
+        )
+        by_outcome = {r[0]: int(r[1]) for r in await cur.fetchall()}
+        # total real (não dependente de classificação)
+        cur = await conn.execute(
+            "SELECT COUNT(*) FROM fewshot_example WHERE empresa_id = %s",
+            (empresa_id,),
+        )
+        r2 = await cur.fetchone()
+        total = int(r2[0] or 0) if r2 else total
+    return SandboxSummary(
+        empresa_id=empresa_id,
+        total_atendimentos=total,
+        by_setor=by_setor,
+        by_outcome=by_outcome,
+    )
+
+
+class TopProblem(BaseModel):
+    setor: str
+    titulo: str
+    cluster_size: int
+    sample_query: str
+
+
+@router.get("/sandbox/top-problems", response_model=list[TopProblem])
+async def sandbox_top_problems(
+    empresa_id: int = Query(default=999),
+    setor: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[TopProblem]:
+    """Top clusters criados por R.4 (documento_sugerido pendentes)."""
+    pool = await get_pool()
+    where_setor = ""
+    params: list = [empresa_id]
+    if setor:
+        where_setor = " AND p.nome ILIKE 'KB Rádio ' || %s || '%%'"
+        params.append(setor.capitalize())
+    params.append(limit)
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT p.nome AS setor, ds.titulo, ds.cluster_size,
+                   COALESCE(ds.queries_amostra[1], '') AS sample_query
+              FROM documento_sugerido ds
+              LEFT JOIN pasta p ON p.id = ds.pasta_id
+             WHERE ds.empresa_id = %s
+               AND ds.status = 'pending'
+               {where_setor}
+             ORDER BY ds.cluster_size DESC
+             LIMIT %s
+            """,
+            tuple(params),
+        )
+        rows = await cur.fetchall()
+    return [
+        TopProblem(
+            setor=(r[0] or "—").replace("KB Rádio ", "").lower(),
+            titulo=r[1],
+            cluster_size=int(r[2]),
+            sample_query=r[3] or "",
+        )
+        for r in rows
+    ]
+
+
 class PreviewRequest(BaseModel):
     query: str
     pasta_ids: list[int] | None = None

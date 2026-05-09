@@ -50,6 +50,9 @@ dev = [
     "deepeval>=3.9,<4.0",
     "allure-pytest>=2.16,<3.0",
     "fpdf2>=2.8,<3.0",
+    # Sprint R — streaming JSON parser pra dump de 178MB+
+    "ijson>=3.3,<4.0",
+    "PyYAML>=6.0,<7.0",
 ]
 
 [tool.ruff]

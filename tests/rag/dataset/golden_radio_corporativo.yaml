@@ -1,0 +1,784 @@
+queries:
+- id: radio-atendimento-1
+  setor: atendimento
+  agente_slug: atendimento
+  query: 'Agradecemos sua mensagem. Não estamos disponíveis no momento, mas responderemos assim que possível. Ou entre em contato com nosso outro número (**) *****-****
+
+    Obrigada'
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-2
+  setor: atendimento
+  agente_slug: atendimento
+  query: Qual horário de atendimento?
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Laboratório
+
+    2. Ultrasson
+
+    3. Tomografia
+
+    4. Raio-X
+
+    5. Voltar'
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-3
+  setor: atendimento
+  agente_slug: atendimento
+  query: Ola tudo bem???
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-4
+  setor: atendimento
+  agente_slug: atendimento
+  query: Qual e o pediatra que está atendendo
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-5
+  setor: atendimento
+  agente_slug: atendimento
+  query: Tem pediatra
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-6
+  setor: atendimento
+  agente_slug: atendimento
+  query: Oi boa tarde
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-7
+  setor: atendimento
+  agente_slug: atendimento
+  query: "Boa noite \nGostaria de saber notícias sobre o paciente Carlos Daniel Vilhalba Lopes\nDe coronel sapucaia \nFoi ontem daqui de vaga zero \nSou tio dele"
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-8
+  setor: atendimento
+  agente_slug: atendimento
+  query: Agradecemos sua mensagem. Não estamos disponíveis no momento, mas responderemos assim que possível.
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-1
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: https://bit.ly/3SWiqnC?zc-numeroTel=(**) *****-****&zc-msgVerify=019c3d3d-ab7d-755e-9ab3-6aa97356563c
+  expected_doc_id: null
+  must_contain: []
+  real_response: Manual do Paciente Atualizado.pdf
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-2
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: https://bit.ly/3SWiqnC?zc-numeroTel=(**) *****-****&zc-msgVerify=019c3f50-4196-744b-be17-9ef58d932fa6
+  expected_doc_id: null
+  must_contain: []
+  real_response: Manual do Paciente Atualizado.pdf
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-3
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: Queria saber de uns pacientes nome Carlos Daniel Lopes vilhalba sou a mãe dele
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-4
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: Vcs tem médico gastro que atende aí pelo plano apivida
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-5
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: https://bit.ly/3SWiqnC?zc-numeroTel=(**) *****-****&zc-msgVerify=019c48d0-d1d3-72fe-937e-d4482a190a00
+  expected_doc_id: null
+  must_contain: []
+  real_response: Manual do Paciente Atualizado.pdf
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-6
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: https://bit.ly/3SWiqnC?zc-numeroTel=(**) *****-****&zc-msgVerify=019c4d52-267d-75cf-9e00-7816c4605b98
+  expected_doc_id: null
+  must_contain: []
+  real_response: Manual do Paciente Atualizado.pdf
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-7
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: Olá boa tarde, tudo bem? quero saber se o Dr Teodoro faz vasectomia pela cassems.
+  expected_doc_id: null
+  must_contain: []
+  real_response: 'Seu protocolo de atendimento: *(**) *****-****94989769.*'
+  source: radio_corporativo_sandbox
+- id: radio-atendimento-cliente-8
+  setor: atendimento-cliente
+  agente_slug: atendimento-cliente
+  query: https://bit.ly/3QJXkWw?zc-numeroTel=(**) *****-****&zc-msgVerify=019c4e18-e0bd-74a9-a39c-4c774dae5cc0
+  expected_doc_id: null
+  must_contain: []
+  real_response: Política de Privacidade do Paciente
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-1
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Assim que abrir agenda da endocrinologista quero agendar
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-2
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Gostaria de agendar uma consulta com o Dr Amauri urologista pela cassems
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-3
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Preciso agendar retorno de procedimento cirúrgico
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-4
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Não vou conseguir ir na consulta
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-5
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Olá bom dia, consigo realizar agendamento de consulta por esse contato?
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-6
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Boa tarde eu agendei hj a tarde consulta tou saindo agora de fatima chego ai se Deus quiser
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-7
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Agendamento.
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-agendamentos-8
+  setor: agendamentos
+  agente_slug: agendamentos
+  query: Qual gastroenterologista disponível vocês tem ?
+  expected_doc_id: null
+  must_contain: []
+  real_response: 'Selecione uma opção:
+
+    1. Agendamento Ambulatorial
+
+    2. Voltar'
+  source: radio_corporativo_sandbox
+- id: radio-exames-1
+  setor: exames
+  agente_slug: exames
+  query: Realiza o exame Ergoespirométrico
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-exames-2
+  setor: exames
+  agente_slug: exames
+  query: Faz tomografia do crânio com anestesia?
+  expected_doc_id: null
+  must_contain: []
+  real_response: Você está na posição 23 da fila de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-exames-3
+  setor: exames
+  agente_slug: exames
+  query: Faz RX sem agendar?
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-exames-4
+  setor: exames
+  agente_slug: exames
+  query: Vc pode me encaminhar os laudos
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-exames-5
+  setor: exames
+  agente_slug: exames
+  query: Preciso saber se vocês fazem o exame de holter mapa e teste ergométrico,, ou onde posso fazer ?? Pela Unimed
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-exames-6
+  setor: exames
+  agente_slug: exames
+  query: Exame eletroneuromiografia
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Agendamento de Consultas
+
+    2. Exames/Cardiologia
+
+    3. Voltar'
+  source: radio_corporativo_sandbox
+- id: radio-exames-7
+  setor: exames
+  agente_slug: exames
+  query: Ola boa tarde vocês poderiam me informar se fazem ultrassonografia
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-exames-8
+  setor: exames
+  agente_slug: exames
+  query: Gostaria de saber se vcs tem ressonância
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-1
+  setor: orcamento
+  agente_slug: orcamento
+  query: Atende convenio Bradesco?
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-2
+  setor: orcamento
+  agente_slug: orcamento
+  query: Boa tarde quantos que fica pra fazer uma cirurgia de abdominoplastia e mastopexia?
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-3
+  setor: orcamento
+  agente_slug: orcamento
+  query: Aceita Unimed
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-4
+  setor: orcamento
+  agente_slug: orcamento
+  query: Orçamentos
+  expected_doc_id: null
+  must_contain: []
+  real_response: 🤖 Desculpe, estamos fora do horário de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-5
+  setor: orcamento
+  agente_slug: orcamento
+  query: Qual valor consulta ortopedista?
+  expected_doc_id: null
+  must_contain: []
+  real_response: 🤖 Desculpe, estamos fora do horário de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-6
+  setor: orcamento
+  agente_slug: orcamento
+  query: Qto fica esses exames?
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-7
+  setor: orcamento
+  agente_slug: orcamento
+  query: Oi boa noite, gostaria de saber se vocês aceitam Unimed para ginecologista?
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-orcamento-8
+  setor: orcamento
+  agente_slug: orcamento
+  query: boa tarde qual valor da consulta com dermatologista
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-1
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Gostaria de falar com vocês sobre essa negativa, é possível?
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-2
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: 'Atendimento encerrado sem ser atendida.
+
+    Atendimento virtual esta péssimo'
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-3
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Sou de outra cidade e não consegui ir conversar com o médico hoje cedo
+  expected_doc_id: null
+  must_contain: []
+  real_response: Você está na posição 1 da fila de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-4
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Bom dia , a ouvidoria fica ai no hospital mesmo, por ordem de chegada ou não
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-5
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Ontem já fiquei esperando um monte então tire do ar esse aplicativo Você não serve para nada!!!!!
+  expected_doc_id: null
+  must_contain: []
+  real_response: Você está na posição 1 da fila de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-6
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Demora hein
+  expected_doc_id: null
+  must_contain: []
+  real_response: Você está na posição 2 da fila de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-7
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Um feedback
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-ouvidoria-8
+  setor: ouvidoria
+  agente_slug: ouvidoria
+  query: Tem algum outro cardiologista que atende pelo plano Hapvida
+  expected_doc_id: null
+  must_contain: []
+  real_response: 'Seu protocolo de atendimento: *(**) *****-****241007805.*'
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-1
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: Olá tudo bem. Me chamo Ana Paula e gostaria de saber se vocês têm vaga para setor administrativo, copa ou cozinha. Desde já agradeço
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-2
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: CV ELANA.pdf
+  expected_doc_id: null
+  must_contain: []
+  real_response: Você está na posição 1 da fila de atendimento.
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-3
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: Olá VCS têm algum número do RH para ver sobre serviço
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-4
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: Currículo Lavínia.pdf
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-5
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: O meu currículo posso deixar e ir pessoalmente também?
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-6
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: Pode mandar currículo por aqui.para motorista
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-7
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: Já trabalhei aí a 16 anos atrás será que é isso
+  expected_doc_id: null
+  must_contain: []
+  real_response: No momento não há atendentes disponíveis neste departamento. O tempo de espera pode ser maior, pedimos que aguarde alguns instantes.
+  source: radio_corporativo_sandbox
+- id: radio-rh-recrutamento-selecao-8
+  setor: rh-recrutamento-selecao
+  agente_slug: rh-recrutamento-selecao
+  query: Solicitação de vaga
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-tesouraria-1
+  setor: tesouraria
+  agente_slug: tesouraria
+  query: Olá, Boa Tarde, sou do laboratório CASSEMS, Gostaria de pedir que estornem uma guia, que foi executada no dia 05/02 do paciente JOSE MARCOS PORTO DOS SANTOS. Carteirinha ***.***.***-**
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-tesouraria-2
+  setor: tesouraria
+  agente_slug: tesouraria
+  query: ComprovanteSantander-(**) *****-****.108862.pdf
+  expected_doc_id: null
+  must_contain: []
+  real_response: "Seja bem vindo à *Central de Atendimento do Mackenzie Hospital Evangélico de Dourados*\n \n1. Atendimento ao Cliente\n2. Agendamentos\n3. Exames\n4. Tesouraria\n5. Orçamentos\n6. Recrutamento\
+    \ e Seleção\n7. Manual do Paciente\n8. Ouvidoria"
+  source: radio_corporativo_sandbox
+- id: radio-tesouraria-3
+  setor: tesouraria
+  agente_slug: tesouraria
+  query: Preciso do comprovante de pagamento dos exames ontem
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-tesouraria-4
+  setor: tesouraria
+  agente_slug: tesouraria
+  query: Preciso falar com a tesouraria
+  expected_doc_id: null
+  must_contain: []
+  real_response: '1. Atendimento ao Cliente
+
+    2. Agendamentos
+
+    3. Exames
+
+    4. Tesouraria
+
+    5. Orçamentos
+
+    6. Recrutamento e Seleção
+
+    7. Manual do Paciente
+
+    8. Ouvidoria'
+  source: radio_corporativo_sandbox
+- id: radio-tesouraria-5
+  setor: tesouraria
+  agente_slug: tesouraria
+  query: Tesouraria
+  expected_doc_id: null
+  must_contain: []
+  real_response: 🤖 Desculpe, estamos fora do horário de atendimento.
+  source: radio_corporativo_sandbox
+metadata:
+  source: Sprint R.5 — extraído do dump 3m sandbox empresa 999
+  total: 61
+  setores:
+  - atendimento
+  - atendimento-cliente
+  - agendamentos
+  - exames
+  - orcamento
+  - ouvidoria
+  - rh-recrutamento-selecao
+  - tesouraria

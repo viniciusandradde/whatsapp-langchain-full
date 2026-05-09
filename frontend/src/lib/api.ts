@@ -2418,6 +2418,46 @@ export async function previewRagSearch(
   });
 }
 
+// =====================================================================
+// RAG Sandbox (Sprint R.6) — análise dump 3 meses
+// =====================================================================
+
+export interface SandboxSummary {
+  empresa_id: number;
+  total_atendimentos: number;
+  by_setor: Record<string, number>;
+  by_outcome: Record<string, number>;
+}
+
+export interface SandboxTopProblem {
+  setor: string;
+  titulo: string;
+  cluster_size: number;
+  sample_query: string;
+}
+
+export async function getSandboxSummary(
+  empresaId = 999
+): Promise<SandboxSummary> {
+  return apiFetch<SandboxSummary>(
+    `/api/admin/rag/sandbox/summary?empresa_id=${empresaId}`
+  );
+}
+
+export async function getSandboxTopProblems(opts?: {
+  empresaId?: number;
+  limit?: number;
+  setor?: string;
+}): Promise<SandboxTopProblem[]> {
+  const p = new URLSearchParams();
+  p.set("empresa_id", String(opts?.empresaId ?? 999));
+  if (opts?.limit) p.set("limit", String(opts.limit));
+  if (opts?.setor) p.set("setor", opts.setor);
+  return apiFetch<SandboxTopProblem[]>(
+    `/api/admin/rag/sandbox/top-problems?${p.toString()}`
+  );
+}
+
 export async function seedMenuFromAgentes(
   menuId: number
 ): Promise<{ items: MenuItem[]; qtde_criados: number }> {

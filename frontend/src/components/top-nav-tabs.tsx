@@ -65,6 +65,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
     { label: "Traces", href: "/traces" },
     { label: "Fila", href: "/queue" },
     { label: "Qualidade RAG", href: "/dashboard/rag" },
+    { label: "RAG Sandbox", href: "/dashboard/rag/sandbox" },
     { label: "Relatórios E2E", href: "/relatorios/allure" },
     { label: "Histórico de Acesso", href: "/settings/security/login-history" },
     { label: "Audit log", href: "/settings/security/audit" },
