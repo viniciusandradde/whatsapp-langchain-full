@@ -18,10 +18,33 @@ class ValidationResult:
     detalhes: dict
 
 
-# Cumprimentos pt-BR comuns + indicadores de "agente apresentando-se"
+# Cumprimentos + indicadores de "agente em modo triagem ativa" — lenient.
+# Inclui:
+#   - Cumprimentos formais (olá, oi, bom dia, sou, equipe)
+#   - Perguntas de triagem (qual seu, me conte, posso ajudar)
+#   - Reconhecimento de mídia (vi/recebi/observei/identifiquei)
+#   - Convites pra continuar (o que você precisa, em que posso)
+# Validar isto = agente respondeu em pt-BR e iniciou interação adequada.
+# Falha quando: silêncio, resposta em outro idioma, "I cannot help".
 _REGEX_CUMPRIMENTO = re.compile(
-    r"\b(ol[áa]|oi|bom dia|boa tarde|boa noite|sou|equipe|posso ajudar|"
-    r"como posso|estou aqui)\b",
+    r"\b(ol[áa]|oi|bom dia|boa tarde|boa noite|sou|equipe|"
+    r"posso ajudar|como posso|estou aqui|claro|qual seu|qual o|"
+    r"qual \w+|me conte|me diga|por favor|gostaria|"
+    r"para te ajudar|para que eu possa|seja bem-?vind[oa]|"
+    r"vi |recebi|observei|identifiquei|notei|detectei|"
+    r"o que você precisa|em que posso|o que posso|"
+    r"você gostaria|me explica|me passa|pode me|me orienta|"
+    r"que dúvida|qual sua dúvida|qual a dúvida|"
+    # Reconhecimento de conteúdo da mídia (áudio/imagem/PDF)
+    r"entendi|entendo|certo|perfeito|ok|"
+    r"li |analisei|conferi|verifiquei|consegui ver|"
+    r"vamos lá|tudo bem|tranquilo|sem problema|"
+    r"compreendi|peguei|anotado|"
+    # Disposição pra continuar
+    r"\\bà disposição|\\baqui pra (te |você )?ajudar|"
+    r"posso (te )?(orientar|esclarecer|auxiliar|atender)|"
+    r"se precisar|qualquer (coisa|dúvida)|"
+    r"fico (aqui|à disposição))\b",
     re.IGNORECASE,
 )
 
