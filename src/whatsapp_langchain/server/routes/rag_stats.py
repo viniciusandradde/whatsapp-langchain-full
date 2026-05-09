@@ -414,9 +414,18 @@ async def run_learner_endpoint(
 
 @router.get("/suggestions", response_model=list[Suggestion])
 async def list_suggestions(
-    empresa_id: int = Depends(get_empresa_context),
+    ctx_empresa_id: int = Depends(get_empresa_context),
     status: str = Query(default="pending"),
+    empresa_id: int | None = Query(
+        default=None,
+        description="Override do contexto. Útil pra ver sandbox=999 sem trocar empresa ativa.",
+    ),
+    limit: int = Query(default=200, ge=1, le=500),
 ) -> list[Suggestion]:
+    """Lista sugestões. Default usa empresa do contexto (cookie); query
+    param `empresa_id` força outra (ex: 999 sandbox).
+    """
+    eid = empresa_id if empresa_id is not None else ctx_empresa_id
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -427,9 +436,9 @@ async def list_suggestions(
             LEFT JOIN pasta p ON p.id = s.pasta_id
             WHERE s.empresa_id = %s AND s.status = %s
             ORDER BY s.cluster_size DESC, s.created_at DESC
-            LIMIT 50
+            LIMIT %s
             """,
-            (empresa_id, status),
+            (eid, status, limit),
         )
         rows = await cur.fetchall()
     return [
@@ -458,13 +467,17 @@ class ApproveSuggestionRequest(BaseModel):
 async def approve_suggestion(
     suggestion_id: int,
     body: ApproveSuggestionRequest,
-    empresa_id: int = Depends(get_empresa_context),
+    ctx_empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(__import__(
         "whatsapp_langchain.server.dependencies",
         fromlist=["get_user_id_from_request"]
     ).get_user_id_from_request),
 ) -> dict:
-    """Aprova sugestão → cria documento_conhecimento + chunks + embeddings."""
+    """Aprova sugestão → cria documento_conhecimento + chunks + embeddings.
+
+    Resolve empresa_id da própria sugestão (NÃO trava em ctx_empresa_id),
+    permitindo aprovar sugestões da sandbox=999 sem trocar empresa ativa.
+    """
     from whatsapp_langchain.shared.base_conhecimento import (
         backfill_chunks,
         upsert_documento,
@@ -475,11 +488,11 @@ async def approve_suggestion(
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT pasta_id, titulo, conteudo_draft
+            SELECT pasta_id, titulo, conteudo_draft, empresa_id
               FROM documento_sugerido
-             WHERE id=%s AND empresa_id=%s AND status='pending'
+             WHERE id=%s AND status='pending'
             """,
-            (suggestion_id, empresa_id),
+            (suggestion_id,),
         )
         row = await cur.fetchone()
     if not row:
@@ -488,6 +501,7 @@ async def approve_suggestion(
     pasta_id = body.pasta_id if body.pasta_id is not None else row[0]
     titulo = (body.titulo_final or row[1]).strip()
     conteudo = (body.conteudo_final or row[2]).strip()
+    sug_empresa_id = int(row[3])  # empresa da sugestão (pode ser 999 sandbox)
     if not titulo or not conteudo:
         raise HTTPException(status_code=422, detail="Titulo+conteudo obrigatórios.")
 
@@ -495,7 +509,7 @@ async def approve_suggestion(
         titulo=titulo, conteudo=conteudo, pasta_id=pasta_id,
         ativo=True, tags=["auto-suggested"],
     )
-    new_doc = await upsert_documento(pool, empresa_id, doc_input, user_id=user_id)
+    new_doc = await upsert_documento(pool, sug_empresa_id, doc_input, user_id=user_id)
 
     async with pool.connection() as conn:
         await conn.execute(
@@ -521,22 +535,23 @@ async def approve_suggestion(
 @router.post("/suggestions/{suggestion_id}/reject")
 async def reject_suggestion(
     suggestion_id: int,
-    empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(__import__(
         "whatsapp_langchain.server.dependencies",
         fromlist=["get_user_id_from_request"]
     ).get_user_id_from_request),
 ) -> dict:
+    """Rejeita sugestão. Sem filtro empresa_id — qualquer admin com sessão
+    pode rejeitar qualquer sugestão (sandbox 999 incluso)."""
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
             UPDATE documento_sugerido
                SET status='rejected', reviewed_by_user_id=%s, reviewed_at=NOW()
-             WHERE id=%s AND empresa_id=%s AND status='pending'
+             WHERE id=%s AND status='pending'
              RETURNING id
             """,
-            (user_id, suggestion_id, empresa_id),
+            (user_id, suggestion_id),
         )
         row = await cur.fetchone()
         await conn.commit()

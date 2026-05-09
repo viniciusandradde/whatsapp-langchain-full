@@ -2477,10 +2477,13 @@ export interface RagSuggestion {
 export async function getRagSuggestions(opts?: {
   status?: string;
   empresaId?: number;
+  limit?: number;
 }): Promise<RagSuggestion[]> {
   const p = new URLSearchParams();
   p.set("status", opts?.status ?? "pending");
-  // empresaId vem do contexto (cookie active_empresa_id) — não passa header
+  // empresa_id como query param (override do contexto) — Sprint S
+  if (opts?.empresaId) p.set("empresa_id", String(opts.empresaId));
+  if (opts?.limit) p.set("limit", String(opts.limit));
   return apiFetch<RagSuggestion[]>(
     `/api/admin/rag/suggestions?${p.toString()}`
   );
