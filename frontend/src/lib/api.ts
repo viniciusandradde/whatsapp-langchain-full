@@ -2458,6 +2458,60 @@ export async function getSandboxTopProblems(opts?: {
   );
 }
 
+// =====================================================================
+// RAG Suggestions (Sprint S.1) — aprovar/rejeitar clusters via UI
+// =====================================================================
+
+export interface RagSuggestion {
+  id: number;
+  pasta_id: number | null;
+  pasta_nome: string | null;
+  titulo: string;
+  conteudo_draft: string;
+  queries_amostra: string[];
+  cluster_size: number;
+  status: "pending" | "approved" | "rejected" | "archived";
+  created_at: string;
+}
+
+export async function getRagSuggestions(opts?: {
+  status?: string;
+  empresaId?: number;
+}): Promise<RagSuggestion[]> {
+  const p = new URLSearchParams();
+  p.set("status", opts?.status ?? "pending");
+  // empresaId vem do contexto (cookie active_empresa_id) — não passa header
+  return apiFetch<RagSuggestion[]>(
+    `/api/admin/rag/suggestions?${p.toString()}`
+  );
+}
+
+export async function approveRagSuggestion(
+  id: number,
+  body?: {
+    titulo_final?: string;
+    conteudo_final?: string;
+    pasta_id?: number;
+  }
+): Promise<{ ok: boolean; doc_id: number }> {
+  return apiFetch<{ ok: boolean; doc_id: number }>(
+    `/api/admin/rag/suggestions/${id}/approve`,
+    {
+      method: "POST",
+      body: body ?? {},
+    }
+  );
+}
+
+export async function rejectRagSuggestion(
+  id: number
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(
+    `/api/admin/rag/suggestions/${id}/reject`,
+    { method: "POST" }
+  );
+}
+
 export async function seedMenuFromAgentes(
   menuId: number
 ): Promise<{ items: MenuItem[]; qtde_criados: number }> {

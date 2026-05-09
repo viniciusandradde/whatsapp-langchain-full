@@ -204,18 +204,21 @@ async def upload_documento(
     titulo: str | None = Form(default=None),
     tags: str = Form(default=""),
     pasta_id: int | None = Form(default=None),
+    split_md_headers: bool = Form(default=True),
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
-) -> DocumentoConhecimento:
-    """Cria documento a partir de upload de PDF/DOCX/MD/TXT (M5.c.2).
+) -> dict:
+    """Cria documento(s) a partir de upload de PDF/DOCX/MD/TXT (M5.c.2 + S.2).
 
     Multipart fields:
     - `arquivo` (file): obrigatório.
     - `titulo` (string): opcional. Default = nome do arquivo sem extensão.
     - `tags` (string): opcional, CSV (ex: "manual,faq").
+    - `pasta_id` (int): opcional.
+    - `split_md_headers` (bool): default true. Se .md, splita por H1/H2.
 
-    O texto extraído passa por `upsert_documento`, que chunkeia + indexa
-    (M5.c.1). Tipo MIME é validado pela extensão do filename.
+    Sprint S.2: pra .md, gera 1 doc por seção (H1/H2). Pra outros tipos,
+    1 doc único. Retorna `{docs_created, doc_ids[]}`.
     """
     if not arquivo.filename:
         raise HTTPException(
@@ -232,29 +235,52 @@ async def upload_documento(
     except FileExtractionError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    titulo_final = (titulo or "").strip() or Path(arquivo.filename).stem
+    titulo_base = (titulo or "").strip() or Path(arquivo.filename).stem
     tags_list = [t.strip() for t in tags.split(",") if t.strip()]
-
-    body = DocumentoConhecimentoInput(
-        titulo=titulo_final[:200],
-        conteudo=texto,
-        tags=tags_list,
-        ativo=True,
-        pasta_id=pasta_id,
-    )
-
+    is_md = arquivo.filename.lower().endswith((".md", ".markdown"))
     pool = await get_pool()
-    out = await base_conhecimento.upsert_documento(
-        pool, empresa_id, body, user_id=user_id
-    )
-    logger.info(
-        "base_conhecimento_uploaded",
-        empresa_id=empresa_id,
-        doc_id=out.id,
-        titulo=out.titulo,
-        filename=arquivo.filename,
-        bytes=len(raw),
-        chars=len(texto),
-        user_id=user_id,
-    )
-    return out
+    doc_ids: list[int] = []
+
+    if is_md and split_md_headers:
+        # Splita por H1/H2 — 1 doc por seção
+        from whatsapp_langchain.shared.markdown_splitter import (
+            split_md_by_headers,
+        )
+
+        sections = split_md_by_headers(texto, max_level=2, fallback_titulo=titulo_base)
+        for sec in sections:
+            body = DocumentoConhecimentoInput(
+                titulo=f"{titulo_base} — {sec.titulo}"[:200],
+                conteudo=sec.conteudo,
+                tags=tags_list,
+                ativo=True,
+                pasta_id=pasta_id,
+            )
+            out = await base_conhecimento.upsert_documento(
+                pool, empresa_id, body, user_id=user_id
+            )
+            doc_ids.append(out.id)
+        logger.info(
+            "base_conhecimento_uploaded_md_split",
+            empresa_id=empresa_id, filename=arquivo.filename,
+            sections=len(sections), bytes=len(raw),
+        )
+    else:
+        body = DocumentoConhecimentoInput(
+            titulo=titulo_base[:200],
+            conteudo=texto,
+            tags=tags_list,
+            ativo=True,
+            pasta_id=pasta_id,
+        )
+        out = await base_conhecimento.upsert_documento(
+            pool, empresa_id, body, user_id=user_id
+        )
+        doc_ids.append(out.id)
+        logger.info(
+            "base_conhecimento_uploaded",
+            empresa_id=empresa_id, doc_id=out.id, titulo=out.titulo,
+            filename=arquivo.filename, bytes=len(raw), chars=len(texto),
+        )
+
+    return {"docs_created": len(doc_ids), "doc_ids": doc_ids}

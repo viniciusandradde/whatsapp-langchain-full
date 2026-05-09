@@ -13,12 +13,14 @@
 import { BarChart3, FlaskConical } from "lucide-react";
 
 import {
+  getRagSuggestions,
   getSandboxSummary,
-  getSandboxTopProblems,
+  type RagSuggestion,
   type SandboxSummary,
-  type SandboxTopProblem as TopProblem,
 } from "@/lib/api";
 import { requireSession } from "@/lib/session";
+
+import { SandboxClient } from "./sandbox-client";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +32,9 @@ async function loadSandboxSummary(): Promise<SandboxSummary | null> {
   }
 }
 
-async function loadTopProblems(): Promise<TopProblem[]> {
+async function loadSuggestions(): Promise<RagSuggestion[]> {
   try {
-    return await getSandboxTopProblems({ empresaId: 999, limit: 40 });
+    return await getRagSuggestions({ status: "pending", empresaId: 999 });
   } catch {
     return [];
   }
@@ -41,21 +43,13 @@ async function loadTopProblems(): Promise<TopProblem[]> {
 export default async function SandboxPage() {
   await requireSession();
 
-  const [summary, topProblems] = await Promise.all([
+  const [summary, suggestions] = await Promise.all([
     loadSandboxSummary(),
-    loadTopProblems(),
+    loadSuggestions(),
   ]);
 
   const setorCounts = summary?.by_setor || {};
   const outcomeCounts = summary?.by_outcome || {};
-
-  // Agrupar top-problems por setor
-  const byPasta = new Map<string, TopProblem[]>();
-  for (const p of topProblems) {
-    const arr = byPasta.get(p.setor) || [];
-    arr.push(p);
-    byPasta.set(p.setor, arr);
-  }
 
   return (
     <div className="space-y-6">
@@ -92,8 +86,8 @@ export default async function SandboxPage() {
           />
           <KpiCard
             label="Sugestões pendentes"
-            value={topProblems.length}
-            hint="docs gerados via cluster"
+            value={suggestions.length}
+            hint="aprovar abaixo pra criar docs"
           />
         </div>
       )}
@@ -145,54 +139,8 @@ export default async function SandboxPage() {
         </div>
       </div>
 
-      {/* Top problems por setor */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">
-            Top clusters por sub-setor (sugestões pendentes)
-          </h2>
-          <span className="text-xs text-muted-foreground">
-            Aprovar via /api/admin/rag/suggestions/&lt;id&gt;/approve
-          </span>
-        </div>
-        {byPasta.size === 0 ? (
-          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            Nenhum cluster gerado ainda. Rode{" "}
-            <code className="font-mono text-xs">scripts/cluster_hospitalar.py</code>.
-          </p>
-        ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {Array.from(byPasta.entries()).map(([setor, problems]) => (
-              <div key={setor} className="rounded-lg border bg-muted/10 p-3">
-                <h3 className="mb-2 text-sm font-semibold capitalize">
-                  {setor}{" "}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    ({problems.length} clusters)
-                  </span>
-                </h3>
-                <ul className="space-y-1.5">
-                  {problems.slice(0, 10).map((p, i) => (
-                    <li
-                      key={i}
-                      className="rounded border bg-background px-2 py-1.5 text-xs"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="font-medium">{p.titulo}</span>
-                        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                          {p.cluster_size}
-                        </span>
-                      </div>
-                      <p className="mt-1 line-clamp-1 text-muted-foreground">
-                        ↳ {p.sample_query}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Sugestões de KB com botões aprovar/rejeitar (Sprint S.1) */}
+      <SandboxClient initialSuggestions={suggestions} />
     </div>
   );
 }

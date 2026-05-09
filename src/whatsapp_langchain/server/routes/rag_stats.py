@@ -552,6 +552,50 @@ class SandboxSummary(BaseModel):
     by_outcome: dict[str, int]
 
 
+class CleanResult(BaseModel):
+    total: int
+    greetings: int
+    low_value: int
+    duplicates: int
+    will_disable: int
+    applied: bool
+
+
+@router.post("/sandbox/clean", response_model=CleanResult)
+async def sandbox_clean(
+    empresa_id: int = Query(default=999),
+    dry_run: bool = Query(default=True),
+) -> CleanResult:
+    """Sprint S.5 — limpa dataset (greetings/low_value/dupes) marcando
+    status='disabled'. dry_run=true só conta, não modifica.
+    """
+    from whatsapp_langchain.shared.dataset_cleaner import (
+        analyze_dataset,
+        clean_dataset,
+    )
+
+    pool = await get_pool()
+    if dry_run:
+        stats = await analyze_dataset(pool, empresa_id)
+        return CleanResult(
+            total=stats.total,
+            greetings=stats.greetings,
+            low_value=stats.low_value,
+            duplicates=stats.duplicates,
+            will_disable=stats.will_disable,
+            applied=False,
+        )
+    stats = await clean_dataset(pool, empresa_id)
+    return CleanResult(
+        total=stats.total,
+        greetings=stats.greetings,
+        low_value=stats.low_value,
+        duplicates=stats.duplicates,
+        will_disable=stats.will_disable,
+        applied=True,
+    )
+
+
 @router.get("/sandbox/summary", response_model=SandboxSummary)
 async def sandbox_summary(
     empresa_id: int = Query(default=999),

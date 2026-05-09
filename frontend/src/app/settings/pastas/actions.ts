@@ -124,3 +124,108 @@ export async function moveDocumentoAction(
     return { ok: false, error: toError(e) };
   }
 }
+
+// ============== Sprint S.2 — Upload .md/.pdf/.docx ==============
+
+type UploadResult =
+  | { ok: true; docs_created: number; doc_ids: number[]; filename: string }
+  | { ok: false; error: string; filename: string };
+
+// Sprint S.3 — Re-cluster on-demand (dispara learner empresa 999)
+type LearnerResult =
+  | { ok: true; misses: number; clusters: number; suggestions_created: number }
+  | { ok: false; error: string };
+
+export async function triggerLearnerAction(): Promise<LearnerResult> {
+  try {
+    const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:8000";
+    const token = process.env.INTERNAL_SERVICE_TOKEN || "";
+    const { headers: nh } = await import("next/headers");
+    const reqHeaders = await nh();
+    const { auth } = await import("@/lib/auth");
+    const session = await auth.api.getSession({ headers: reqHeaders });
+    if (!session?.user?.id) return { ok: false, error: "Sem sessão." };
+
+    const r = await fetch(
+      `${apiUrl}/api/admin/rag/learner/run?days=90`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-User-Id": session.user.id,
+        },
+      }
+    );
+    if (!r.ok) {
+      const txt = await r.text();
+      return { ok: false, error: `${r.status}: ${txt.slice(0, 300)}` };
+    }
+    const data = await r.json();
+    revalidatePath("/dashboard/rag/sandbox");
+    return {
+      ok: true,
+      misses: data.misses ?? 0,
+      clusters: data.clusters ?? 0,
+      suggestions_created: data.suggestions_created ?? 0,
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function uploadFileToFolderAction(
+  pastaId: number | null,
+  formData: FormData
+): Promise<UploadResult> {
+  const file = formData.get("arquivo") as File | null;
+  const filename = file?.name || "(sem nome)";
+  if (!file || file.size === 0) {
+    return { ok: false, error: "Arquivo vazio.", filename };
+  }
+  try {
+    // Forwarda multipart pro endpoint backend /api/base-conhecimento/upload
+    // via fetch direto (apiFetch só suporta JSON body)
+    const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:8000";
+    const token = process.env.INTERNAL_SERVICE_TOKEN || "";
+    const { headers: nh } = await import("next/headers");
+    const reqHeaders = await nh();
+    const { auth } = await import("@/lib/auth");
+    const session = await auth.api.getSession({ headers: reqHeaders });
+    if (!session?.user?.id) {
+      return { ok: false, error: "Sem sessão.", filename };
+    }
+
+    // Re-monta FormData (Next forwards file refs)
+    const fwd = new FormData();
+    fwd.set("arquivo", file, filename);
+    if (pastaId) fwd.set("pasta_id", String(pastaId));
+    fwd.set("split_md_headers", "true");
+
+    const r = await fetch(`${apiUrl}/api/base-conhecimento/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-User-Id": session.user.id,
+      },
+      body: fwd,
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      return {
+        ok: false,
+        error: `${r.status}: ${txt.slice(0, 300)}`,
+        filename,
+      };
+    }
+    const data = (await r.json()) as { docs_created: number; doc_ids: number[] };
+    revalidatePath("/settings/pastas");
+    return {
+      ok: true,
+      docs_created: data.docs_created,
+      doc_ids: data.doc_ids,
+      filename,
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e), filename };
+  }
+}

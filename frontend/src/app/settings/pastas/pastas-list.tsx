@@ -7,10 +7,12 @@ import {
   FileText,
   Folder,
   FolderTree,
+  Loader2,
   MoveRight,
   Pencil,
   Plus,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -30,6 +32,8 @@ import {
   moveDocumentoAction,
   saveDocumentoAction,
   savePastaAction,
+  triggerLearnerAction,
+  uploadFileToFolderAction,
 } from "./actions";
 
 interface Props {
@@ -90,6 +94,9 @@ export function PastasList({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [uploadPastaId, setUploadPastaId] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
 
   const tree = useMemo(() => flattenTree(pastas), [pastas]);
 
@@ -211,6 +218,51 @@ export function PastasList({
       );
       setSuccess("Documento removido.");
     });
+  }
+
+  async function handleAnalyzeSandbox() {
+    clearMessages();
+    setAnalyzing(true);
+    const r = await triggerLearnerAction();
+    setAnalyzing(false);
+    if (!r.ok) {
+      setError(`Falha analyze: ${r.error}`);
+      return;
+    }
+    setSuccess(
+      `🧪 Analisado: ${r.misses} misses → ${r.clusters} clusters → ${r.suggestions_created} sugestões. Veja em /dashboard/rag/sandbox`
+    );
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    clearMessages();
+    setUploading(true);
+    let totalDocs = 0;
+    let totalFiles = 0;
+    const errors: string[] = [];
+    for (const f of files) {
+      const fd = new FormData();
+      fd.set("arquivo", f, f.name);
+      const r = await uploadFileToFolderAction(uploadPastaId, fd);
+      if (r.ok) {
+        totalDocs += r.docs_created;
+        totalFiles += 1;
+      } else {
+        errors.push(`${r.filename}: ${r.error}`);
+      }
+    }
+    setUploading(false);
+    e.target.value = "";  // reset input
+    if (errors.length === 0) {
+      setSuccess(
+        `${totalFiles} arquivo(s) → ${totalDocs} doc(s) criado(s)` +
+          (uploadPastaId ? ` na pasta selecionada` : ` na raiz`)
+      );
+    } else {
+      setError(`${totalDocs} OK / ${errors.length} falhas:\n${errors.slice(0, 3).join("\n")}`);
+    }
   }
 
   function handleMoveDoc(d: DocumentoConhecimento, newPastaId: number | null) {
@@ -349,6 +401,67 @@ export function PastasList({
             {loadError}
           </p>
         )}
+
+        {/* Sprint S.2 — Upload arquivo (.md splita por H1/H2 automático) */}
+        <div className="rounded-md border border-emerald-500/30 bg-emerald-950/10 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Upload className="size-4 text-emerald-400" />
+            <span className="text-sm font-medium">Upload arquivo</span>
+            <select
+              value={String(uploadPastaId ?? "")}
+              onChange={(e) =>
+                setUploadPastaId(e.target.value ? Number(e.target.value) : null)
+              }
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              disabled={uploading}
+            >
+              <option value="">Raiz (sem pasta)</option>
+              {pastas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
+            </select>
+            <label
+              className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-background px-3 text-xs hover:bg-accent ${
+                uploading ? "opacity-50 cursor-wait" : ""
+              }`}
+            >
+              {uploading ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Upload className="size-3.5" />
+              )}
+              {uploading ? "Enviando…" : "Selecionar arquivos"}
+              <input
+                type="file"
+                accept=".md,.markdown,.pdf,.docx,.txt"
+                multiple
+                onChange={handleUpload}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+            <span className="text-[11px] text-muted-foreground">
+              .md splita por headers H1/H2 automaticamente
+            </span>
+            <span className="ml-auto" />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleAnalyzeSandbox}
+              disabled={analyzing}
+              title="Re-roda clusterização sandbox e gera novas sugestões"
+            >
+              {analyzing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : null}
+              {analyzing ? "Analisando…" : "🧪 Analisar via sandbox"}
+            </Button>
+          </div>
+        </div>
+
+
         {error && <p className="text-sm text-destructive">{error}</p>}
         {success && <p className="text-sm text-emerald-300">{success}</p>}
 
