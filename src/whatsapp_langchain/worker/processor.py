@@ -1671,8 +1671,12 @@ async def process_message(
             # O.1 — Content filter (jailbreak/injection)
             input_check = check_input(normalized_text)
             if input_check.blocked:
+                import os as _os
+                shadow = _os.environ.get(
+                    "GUARDRAIL_INPUT_SHADOW", "true"
+                ).lower() == "true"
                 logger.warning(
-                    "guardrail_input_blocked_in_worker",
+                    "guardrail_input_blocked" + ("_shadow" if shadow else ""),
                     pattern=input_check.pattern,
                     atendimento_id=message.atendimento_id,
                 )
@@ -1683,25 +1687,29 @@ async def process_message(
                           (empresa_id, atendimento_id, layer, guardrail,
                            decision, pattern_matched, sample)
                         VALUES (%s, %s, 'input', 'content_filter',
-                                'block', %s, %s)
+                                %s, %s, %s)
                         """,
                         (
                             message.empresa_id, message.atendimento_id,
+                            "shadow_block" if shadow else "block",
                             input_check.pattern, input_check.sample,
                         ),
                     )
                     await _conn.commit()
-                # Bloqueia e responde com mensagem padrão
-                response_text = (
-                    "Desculpe, não consigo processar essa mensagem. "
-                    "Vou transferir você para um atendente."
-                )
-                await outbound.send_message(message.phone_number, response_text)
-                await mark_done(
-                    pool, message.id, response_text,
-                    normalized_input=pre.normalized_text,
-                )
-                return
+                if not shadow:
+                    response_text = (
+                        "Olá! Não consigo processar essa mensagem. "
+                        "Vou te transferir para um atendente humano."
+                    )
+                    await outbound.send_message(
+                        message.phone_number, response_text
+                    )
+                    await mark_done(
+                        pool, message.id, response_text,
+                        normalized_input=pre.normalized_text,
+                    )
+                    return
+                # shadow=true: só registrou, deixa fluir normal
 
             # O.2 — PII redaction (input antes de LLM)
             redact_in = redact_pii(normalized_text, mode="mask")
@@ -1911,15 +1919,28 @@ async def process_message(
                     )
                     await _conn.commit()
                 if not judge.safe:
-                    logger.warning(
-                        "guardrail_output_unsafe_replacing_response",
-                        atendimento_id=message.atendimento_id,
-                    )
-                    response_text = (
-                        "Não tenho certeza dessa informação no momento. "
-                        "Vou transferir você para um atendente que possa "
-                        "te ajudar com mais precisão."
-                    )
+                    # Shadow mode: GUARDRAIL_OUTPUT_SHADOW=true só loga,
+                    # NÃO substitui (default agora — coleta dados antes
+                    # de bloquear de fato).
+                    import os as _os
+                    shadow = _os.environ.get(
+                        "GUARDRAIL_OUTPUT_SHADOW", "true"
+                    ).lower() == "true"
+                    if shadow:
+                        logger.warning(
+                            "guardrail_output_unsafe_shadow_only",
+                            atendimento_id=message.atendimento_id,
+                        )
+                    else:
+                        logger.warning(
+                            "guardrail_output_unsafe_replacing_response",
+                            atendimento_id=message.atendimento_id,
+                        )
+                        response_text = (
+                            "Olá! Não tenho certeza dessa informação no "
+                            "momento. Vou te transferir para um atendente "
+                            "humano que pode te ajudar com mais precisão."
+                        )
         except Exception as guard_err:
             logger.warning("guardrail_output_failed", error=str(guard_err))
 

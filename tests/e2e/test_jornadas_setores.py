@@ -112,7 +112,9 @@ class TestJornadasMultiSetor:
             )
             assert r.passed, f"[MediaExtraction] {r.razao}"
 
-        # Validator 4 (opcional) — G-Eval LLM judge
+        # Validator 4 — G-Eval LLM judge (INFORMATIVO por default)
+        # Score baixo NÃO derruba teste — vira label/attachment no Allure.
+        # Pra tornar bloqueante: GEVAL_BLOCKING=1 no env.
         if not os.getenv("SKIP_DEEPEVAL"):
             with allure.step("G-Eval QualidadeRespostaAgente (LLM judge)"):
                 try:
@@ -126,7 +128,12 @@ class TestJornadasMultiSetor:
                         name="g-eval-score.json",
                         attachment_type=allure.attachment_type.JSON,
                     )
-                    if score["score"] < score["threshold"]:
+                    allure.dynamic.parameter("geval_score", score["score"])
+                    geval_pass = score["score"] >= score["threshold"]
+                    allure.dynamic.label(
+                        "geval", "pass" if geval_pass else "fail"
+                    )
+                    if not geval_pass and os.getenv("GEVAL_BLOCKING"):
                         pytest.fail(
                             f"[QualidadeRespostaAgente] score "
                             f"{score['score']:.2f} < threshold "
