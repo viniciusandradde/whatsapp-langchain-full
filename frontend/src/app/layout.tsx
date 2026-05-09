@@ -4,6 +4,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { EmpresaSwitcher } from "@/components/empresa-switcher";
+import { ServiceWorkerRegister } from "@/components/sw-register";
 import {
   SidebarProvider,
   SIDEBAR_INIT_SCRIPT,
@@ -98,6 +99,7 @@ export default async function RootLayout({
         <SidebarProvider>
           <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
         </SidebarProvider>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
