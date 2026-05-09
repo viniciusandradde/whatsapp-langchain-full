@@ -257,7 +257,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
         className="flex h-full w-full max-w-2xl flex-col bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-4 border-b p-5">
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-card p-3 md:p-5">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-lg font-semibold">

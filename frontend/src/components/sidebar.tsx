@@ -14,36 +14,21 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Headphones,
-  UsersRound,
-  MessageSquare,
-  MessagesSquare,
   Bot,
-  Brain,
   Activity,
-  Building2,
-  Braces,
-  Building,
-  CalendarDays,
-  Clock,
-  DollarSign,
-  Flag,
-  FolderTree,
-  ListOrdered,
-  ListTree,
-  Megaphone,
-  Plug,
-  ScrollText,
+  ChevronLeft,
+  ChevronRight,
   ShieldCheck,
   Smartphone,
   LogOut,
   Menu,
-  Webhook,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MyStatusToggle } from "@/components/my-status-toggle";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { resolveGroup } from "@/components/top-nav-tabs";
+import { useSidebar } from "@/components/sidebar-context";
 import { signOut } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +63,7 @@ export function Sidebar({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const { collapsed, toggle } = useSidebar();
 
   // Active state por GRUPO: destaca o grupo cuja resolveGroup() bate com a
   // URL atual. Isso garante consistência com TopNavTabs (mesma lógica).
@@ -119,17 +105,34 @@ export function Sidebar({
         />
       )}
 
-      {/* Sidebar — obsidian-900 com accent laranja Obsidian */}
+      {/* Sidebar — obsidian-900 com accent laranja Obsidian.
+          Mobile: drawer (open/closed via state).
+          Desktop: collapsed/expanded via context (localStorage). */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar transition-transform md:translate-x-0",
-          open ? "translate-x-0" : "-translate-x-full"
+          "fixed inset-y-0 left-0 z-40 flex flex-col bg-sidebar",
+          "transition-[transform,width] duration-200 ease-out",
+          open ? "translate-x-0" : "-translate-x-full",
+          "md:translate-x-0",
+          collapsed ? "md:w-16" : "md:w-64",
+          // Mobile sempre w-64 (drawer)
+          "w-64"
         )}
       >
         {/* Header com marca */}
-        <div className="flex h-16 items-center gap-3 px-6">
-          <Image src="/vsa-logo.png" alt="VSA Tech" width={28} height={28} className="rounded" unoptimized />
-          <div>
+        <div className={cn(
+          "flex h-16 items-center gap-3",
+          collapsed ? "md:px-3 md:justify-center px-6" : "px-6"
+        )}>
+          <Image
+            src="/vsa-logo.png"
+            alt="VSA Tech"
+            width={28}
+            height={28}
+            className="rounded shrink-0"
+            unoptimized
+          />
+          <div className={cn(collapsed && "md:hidden")}>
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
               VSA Tech
             </span>
@@ -139,50 +142,89 @@ export function Sidebar({
           </div>
         </div>
 
+        {/* Toggle collapse/expand — só desktop */}
+        <button
+          type="button"
+          onClick={toggle}
+          className={cn(
+            "hidden md:flex absolute -right-3 top-14 z-50",
+            "size-6 items-center justify-center rounded-full",
+            "border border-sidebar-border bg-sidebar shadow-sm",
+            "text-sidebar-foreground/70 hover:text-sidebar-foreground",
+            "transition-colors"
+          )}
+          title={collapsed ? "Expandir menu" : "Recolher menu"}
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+        >
+          {collapsed ? (
+            <ChevronRight className="size-3.5" />
+          ) : (
+            <ChevronLeft className="size-3.5" />
+          )}
+        </button>
+
         {/* Separador sutil */}
         <div className="mx-4 h-px bg-sidebar-border" />
 
-        {/* Switcher de empresa (renderizado só com >1 empresa ou superadmin) */}
-        {empresaSwitcher ? (
-          <div className="px-3 pt-3">{empresaSwitcher}</div>
+        {/* Switcher de empresa (esconde quando colapsado) */}
+        {empresaSwitcher && !collapsed ? (
+          <div className="px-3 pt-3 md:block">
+            {empresaSwitcher}
+          </div>
         ) : null}
 
-        {/* Navegação enxuta — 6 grupos top-level. Sub-páginas viram tabs
-            horizontais via <TopNavTabs /> no AppShell. */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <div className="space-y-1">
+        {/* Navegação — 6 grupos top-level. */}
+        <nav className="flex-1 overflow-y-auto py-4">
+          <div className={cn("space-y-1", collapsed ? "md:px-2 px-3" : "px-3")}>
             {NAV_GROUPS.map((g) => (
               <Link
                 key={g.grupo}
                 href={g.href}
                 onClick={() => setOpen(false)}
+                title={collapsed ? g.label : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150",
+                  "flex items-center rounded-lg text-sm transition-all duration-150",
+                  collapsed
+                    ? "md:justify-center md:px-2 md:py-2.5 gap-3 px-3 py-2.5"
+                    : "gap-3 px-3 py-2.5",
                   isGroupActive(g.grupo)
                     ? "bg-sidebar-accent text-brand-primary font-medium shadow-glow-orange"
                     : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                 )}
               >
-                <g.icon className="h-4 w-4" />
-                {g.label}
+                <g.icon className="h-4 w-4 shrink-0" />
+                <span className={cn(collapsed && "md:hidden")}>{g.label}</span>
               </Link>
             ))}
           </div>
         </nav>
 
         {/* Footer */}
-        <div className="px-3 pb-4">
+        <div className={cn("pb-4", collapsed ? "md:px-2 px-3" : "px-3")}>
           <div className="mx-1 mb-3 h-px bg-sidebar-border" />
-          <MyStatusToggle />
-          <ThemeSwitcher />
+          <div className={cn(collapsed && "md:hidden")}>
+            <MyStatusToggle />
+            <ThemeSwitcher />
+          </div>
           <button
             type="button"
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground disabled:opacity-50"
+            title={collapsed ? "Sair" : undefined}
+            className={cn(
+              "flex w-full items-center rounded-lg text-sm",
+              "text-sidebar-foreground/50 transition-colors",
+              "hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              "disabled:opacity-50",
+              collapsed
+                ? "md:justify-center md:px-2 md:py-2.5 gap-3 px-3 py-2.5"
+                : "gap-3 px-3 py-2.5"
+            )}
             onClick={handleSignOut}
             disabled={signingOut}
           >
-            <LogOut className="h-4 w-4" />
-            {signingOut ? "Saindo..." : "Sair"}
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span className={cn(collapsed && "md:hidden")}>
+              {signingOut ? "Saindo..." : "Sair"}
+            </span>
           </button>
         </div>
       </aside>

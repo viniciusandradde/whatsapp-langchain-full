@@ -4,6 +4,10 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { EmpresaSwitcher } from "@/components/empresa-switcher";
+import {
+  SidebarProvider,
+  SIDEBAR_INIT_SCRIPT,
+} from "@/components/sidebar-context";
 import { getMyEmpresas } from "@/lib/api";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
@@ -35,9 +39,19 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Nexus Chat AI",
   description: "Painel administrativo Nexus Chat AI — VSA Tech",
+  applicationName: "Nexus Chat AI",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icon.png",
     apple: "/apple-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Nexus Chat",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
   },
 };
 
@@ -59,6 +73,9 @@ export default async function RootLayout({
         {/* Anti-FOUC: aplica data-theme do localStorage antes do React
             montar. Sem isso há flash escuro→claro no carregamento. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* Anti-flash sidebar: aplica data-sidebar-collapsed antes da
+            hidratação. Evita flicker w-64 → w-16 quando colapsada. */}
+        <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT_SCRIPT }} />
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
@@ -78,7 +95,9 @@ export default async function RootLayout({
           aria-hidden
           className="fixed top-[30%] right-[35%] w-[350px] h-[350px] bg-brand-primary/[0.05] blur-[110px] rounded-full pointer-events-none -z-10 animate-pulse-slow"
         />
-        <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
+        <SidebarProvider>
+          <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
+        </SidebarProvider>
       </body>
     </html>
   );
