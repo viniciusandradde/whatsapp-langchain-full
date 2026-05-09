@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
+  FlaskConical,
   Loader2,
   Sparkles,
   Upload,
@@ -36,6 +38,7 @@ import {
   importDatasetAction,
   previewCleanAction,
   rejectSuggestionAction,
+  syncLangsmithAction,
 } from "./actions";
 
 interface Props {
@@ -61,6 +64,14 @@ export function SandboxClient({ initialSuggestions }: Props) {
     will_disable: number;
   } | null>(null);
   const [cleaning, setCleaning] = useState(false);
+  const [syncingLs, setSyncingLs] = useState(false);
+  const [lsFilterSuccess, setLsFilterSuccess] = useState(false);
+  const [lsResult, setLsResult] = useState<{
+    url: string;
+    created: number;
+    already: number;
+    total: number;
+  } | null>(null);
 
   function clearMessages() {
     setError(null);
@@ -108,6 +119,27 @@ export function SandboxClient({ initialSuggestions }: Props) {
     }
     setSuggestions((prev) => prev.filter((s) => s.id !== id));
     setSuccess(`Sugestão #${id} rejeitada`);
+  }
+
+  async function handleSyncLangsmith() {
+    clearMessages();
+    setSyncingLs(true);
+    setLsResult(null);
+    const r = await syncLangsmithAction(lsFilterSuccess);
+    setSyncingLs(false);
+    if (!r.ok) {
+      setError(`LangSmith sync: ${r.error}`);
+      return;
+    }
+    setLsResult({
+      url: r.dataset_url,
+      created: r.created,
+      already: r.already_synced,
+      total: r.total_db,
+    });
+    setSuccess(
+      `🔬 Dataset sincronizado: ${r.created} novos / ${r.already_synced} já presentes / total ${r.total_db}`
+    );
   }
 
   async function handlePreviewClean() {
@@ -296,6 +328,54 @@ export function SandboxClient({ initialSuggestions }: Props) {
             </label>
             <p className="mt-2 text-[11px] text-muted-foreground">
               agente_slug, cliente_msg, agente_resposta, outcome
+            </p>
+          </div>
+
+          {/* Sprint T.3 — LangSmith Eval sync */}
+          <div className="rounded-md border border-cyan-500/30 bg-cyan-950/10 p-3 lg:col-span-2">
+            <div className="mb-2 flex items-center gap-2">
+              <FlaskConical className="size-4 text-cyan-400" />
+              <span className="text-sm font-medium">LangSmith Eval</span>
+              <label className="ml-auto flex items-center gap-1.5 text-xs">
+                <input
+                  type="checkbox"
+                  checked={lsFilterSuccess}
+                  onChange={(e) => setLsFilterSuccess(e.target.checked)}
+                  className="size-3.5 rounded border-input accent-cyan-500"
+                  disabled={syncingLs}
+                />
+                Apenas success (curado)
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSyncLangsmith}
+                disabled={syncingLs}
+              >
+                {syncingLs ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <FlaskConical className="size-3.5" />
+                )}
+                {syncingLs ? "Sincronizando…" : "Sincronizar dataset"}
+              </Button>
+              {lsResult && (
+                <a
+                  href={lsResult.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-md border bg-background px-3 py-1.5 text-xs hover:bg-accent"
+                >
+                  <ExternalLink className="size-3" />
+                  Abrir no LangSmith
+                </a>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Cópia normalizada dos fewshots → dataset LangSmith pra eval
+              sistemática. Idempotente (re-run só insere novos).
             </p>
           </div>
 

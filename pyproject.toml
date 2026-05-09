@@ -53,6 +53,8 @@ dev = [
     # Sprint R — streaming JSON parser pra dump de 178MB+
     "ijson>=3.3,<4.0",
     "PyYAML>=6.0,<7.0",
+    # Sprint T — LangSmith built-in evaluators (LLM-as-judge correctness)
+    "openevals>=0.0.1",
 ]
 
 [tool.ruff]

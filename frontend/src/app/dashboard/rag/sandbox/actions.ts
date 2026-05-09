@@ -75,6 +75,64 @@ type ImportResult =
     }
   | { ok: false; error: string };
 
+// Sprint T.3 — Sync dataset pro LangSmith
+type LangsmithSyncResult =
+  | {
+      ok: true;
+      dataset_id: string;
+      dataset_url: string;
+      total_db: number;
+      already_synced: number;
+      created: number;
+      errors: string[];
+    }
+  | { ok: false; error: string };
+
+export async function syncLangsmithAction(
+  filterSuccess: boolean
+): Promise<LangsmithSyncResult> {
+  try {
+    const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:8000";
+    const token = process.env.INTERNAL_SERVICE_TOKEN || "";
+    const { headers: nh } = await import("next/headers");
+    const reqHeaders = await nh();
+    const { auth } = await import("@/lib/auth");
+    const session = await auth.api.getSession({ headers: reqHeaders });
+    if (!session?.user?.id) return { ok: false, error: "Sem sessão." };
+
+    const params = new URLSearchParams({
+      empresa_id: "999",
+      filter_success: String(filterSuccess),
+    });
+    const r = await fetch(
+      `${apiUrl}/api/admin/rag/langsmith/sync?${params}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-User-Id": session.user.id,
+        },
+      }
+    );
+    if (!r.ok) {
+      const txt = await r.text();
+      return { ok: false, error: `${r.status}: ${txt.slice(0, 300)}` };
+    }
+    const data = await r.json();
+    return {
+      ok: true,
+      dataset_id: data.dataset_id,
+      dataset_url: data.dataset_url,
+      total_db: data.total_db,
+      already_synced: data.already_synced,
+      created: data.created,
+      errors: data.errors || [],
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
 // Sprint S.5 — Limpeza dataset (preview + apply)
 type CleanResult =
   | {

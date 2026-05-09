@@ -9,8 +9,7 @@ Endpoints admin pra monitorar uso da knowledge base:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -468,10 +467,12 @@ async def approve_suggestion(
     suggestion_id: int,
     body: ApproveSuggestionRequest,
     ctx_empresa_id: int = Depends(get_empresa_context),
-    user_id: str = Depends(__import__(
-        "whatsapp_langchain.server.dependencies",
-        fromlist=["get_user_id_from_request"]
-    ).get_user_id_from_request),
+    user_id: str = Depends(
+        __import__(
+            "whatsapp_langchain.server.dependencies",
+            fromlist=["get_user_id_from_request"],
+        ).get_user_id_from_request
+    ),
 ) -> dict:
     """Aprova sugestão → cria documento_conhecimento + chunks + embeddings.
 
@@ -506,8 +507,11 @@ async def approve_suggestion(
         raise HTTPException(status_code=422, detail="Titulo+conteudo obrigatórios.")
 
     doc_input = DocumentoConhecimentoInput(
-        titulo=titulo, conteudo=conteudo, pasta_id=pasta_id,
-        ativo=True, tags=["auto-suggested"],
+        titulo=titulo,
+        conteudo=conteudo,
+        pasta_id=pasta_id,
+        ativo=True,
+        tags=["auto-suggested"],
     )
     new_doc = await upsert_documento(pool, sug_empresa_id, doc_input, user_id=user_id)
 
@@ -535,10 +539,12 @@ async def approve_suggestion(
 @router.post("/suggestions/{suggestion_id}/reject")
 async def reject_suggestion(
     suggestion_id: int,
-    user_id: str = Depends(__import__(
-        "whatsapp_langchain.server.dependencies",
-        fromlist=["get_user_id_from_request"]
-    ).get_user_id_from_request),
+    user_id: str = Depends(
+        __import__(
+            "whatsapp_langchain.server.dependencies",
+            fromlist=["get_user_id_from_request"],
+        ).get_user_id_from_request
+    ),
 ) -> dict:
     """Rejeita sugestão. Sem filtro empresa_id — qualquer admin com sessão
     pode rejeitar qualquer sugestão (sandbox 999 incluso)."""
@@ -565,6 +571,65 @@ class SandboxSummary(BaseModel):
     total_atendimentos: int
     by_setor: dict[str, int]
     by_outcome: dict[str, int]
+
+
+class LangsmithSyncResponse(BaseModel):
+    dataset_id: str
+    dataset_url: str
+    total_db: int
+    already_synced: int
+    created: int
+    errors: list[str]
+
+
+@router.post("/langsmith/sync", response_model=LangsmithSyncResponse)
+async def sync_langsmith(
+    empresa_id: int = Query(default=999),
+    filter_success: bool = Query(default=False),
+    dataset_name: str = Query(default=""),
+    dry_run: bool = Query(default=False),
+) -> LangsmithSyncResponse:
+    """Sprint T.2 — sincroniza fewshot_example sandbox → dataset LangSmith.
+
+    Idempotente. Retorna URL do dataset pra abrir no smith.langchain.com.
+    503 se LANGCHAIN_API_KEY não configurada.
+    """
+    from whatsapp_langchain.shared.config import settings
+    from whatsapp_langchain.shared.langsmith_sync import (
+        DEFAULT_DATASET_NAME,
+        sync_to_langsmith,
+    )
+
+    api_key_secret = settings.langchain_api_key
+    if not api_key_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="LANGCHAIN_API_KEY não configurada — habilite LangSmith no env.",
+        )
+    api_key = api_key_secret.get_secret_value()
+
+    pool = await get_pool()
+    try:
+        result = await sync_to_langsmith(
+            pool,
+            api_key=api_key,
+            empresa_id=empresa_id,
+            dataset_name=dataset_name or DEFAULT_DATASET_NAME,
+            filter_success=filter_success,
+            dry_run=dry_run,
+        )
+    except Exception as e:
+        logger.warning("langsmith_sync_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)[:300]) from e
+
+    return LangsmithSyncResponse(
+        dataset_id=result.dataset_id,
+        dataset_url=result.dataset_url,
+        total_db=result.total_db,
+        already_synced=result.already_synced,
+        created=result.created,
+        errors=result.errors,
+    )
 
 
 class CleanResult(BaseModel):
@@ -768,7 +833,9 @@ async def preview_search(
             if mode == "hybrid_hyde":
                 hyde_q = await base_conhecimento._hyde_expand(body.query)
             results = await base_conhecimento.search_relevant(
-                pool, empresa_id, body.query,
+                pool,
+                empresa_id,
+                body.query,
                 pasta_ids=body.pasta_ids,
                 mode=mode,
             )
