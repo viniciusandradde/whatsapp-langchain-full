@@ -194,9 +194,43 @@ async def main() -> int:
                 print(f"  [warn] pasta não encontrada para {slug}", flush=True)
                 continue
 
+            # Anti-dupe: preserva sugestões já criadas (qualquer status)
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    """
+                    SELECT titulo, queries_amostra
+                      FROM documento_sugerido
+                     WHERE empresa_id = %s AND pasta_id = %s
+                       AND status IN ('pending','approved','rejected')
+                    """,
+                    (args.empresa_id, pasta_id),
+                )
+                existing_rows = await cur.fetchall()
+            existing_titles = {(r[0] or "").strip().lower() for r in existing_rows}
+            existing_queries: set[str] = set()
+            for r in existing_rows:
+                for q in (r[1] or [])[:3]:
+                    existing_queries.add(q.strip().lower()[:100])
+
             top_clusters = clusters[:args.top]
+            skipped = 0
             for i, cluster in enumerate(top_clusters):
                 titulo, conteudo = await generate_draft(slug, cluster)
+                # Skip se duplicata
+                title_lower = titulo.strip().lower()
+                if title_lower in existing_titles:
+                    skipped += 1
+                    print(f"    [{i+1}/{len(top_clusters)}] SKIP dup-title → {titulo[:60]}", flush=True)
+                    continue
+                new_q = {q.strip().lower()[:100] for q in cluster[:3]}
+                if len(new_q & existing_queries) >= 2:
+                    skipped += 1
+                    print(f"    [{i+1}/{len(top_clusters)}] SKIP dup-queries → {titulo[:60]}", flush=True)
+                    continue
+                # Add ao set imediatamente
+                existing_titles.add(title_lower)
+                for q in cluster[:3]:
+                    existing_queries.add(q.strip().lower()[:100])
                 async with pool.connection() as conn:
                     await conn.execute(
                         """
@@ -210,6 +244,8 @@ async def main() -> int:
                     )
                     await conn.commit()
                 print(f"    [{i+1}/{len(top_clusters)}] cluster_size={len(cluster)} → {titulo[:60]}", flush=True)
+            if skipped > 0:
+                print(f"    skipped {skipped} duplicates (preservou trabalho do admin)", flush=True)
                 total_created += 1
     finally:
         await close_pool()

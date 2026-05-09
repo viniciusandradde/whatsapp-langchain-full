@@ -238,14 +238,41 @@ async def run_learner(
     if not clusters:
         return {"misses": len(misses), "clusters": 0, "suggestions_created": 0}
 
-    # Existing pending titles (anti-dupe)
+    # Anti-dupe expandido (Sprint S correção):
+    # Skip se JÁ EXISTE sugestão com título/queries similares em QUALQUER
+    # status. Preserva trabalho do admin (aprovações + rejeições) e evita
+    # regenerar drafts duplicados.
+    # - approved: já virou documento_conhecimento, não recriar
+    # - rejected: admin disse "não", respeitar
+    # - pending: já está na fila pra revisão
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT titulo FROM documento_sugerido WHERE empresa_id=%s AND status='pending'",
+            """
+            SELECT titulo, queries_amostra
+              FROM documento_sugerido
+             WHERE empresa_id = %s
+               AND status IN ('pending','approved','rejected')
+            """,
             (empresa_id,),
         )
         rows = await cur.fetchall()
-    existing = {r[0] for r in rows}
+    # Set de títulos lowercased
+    existing_titles = {(r[0] or "").strip().lower() for r in rows}
+    # Set de queries antigas (1ª de cada cluster) pra detectar overlap
+    # de cluster mesmo com título diferente
+    existing_queries: set[str] = set()
+    for r in rows:
+        for q in (r[1] or [])[:3]:  # primeiras 3 queries do cluster antigo
+            existing_queries.add(q.strip().lower()[:100])
+
+    def _is_duplicate(titulo: str, queries: list[str]) -> bool:
+        if titulo.strip().lower() in existing_titles:
+            return True
+        # Se ≥2 das primeiras 3 queries do novo cluster batem com qualquer
+        # cluster antigo, considera duplicata
+        new_q = {q.strip().lower()[:100] for q in queries[:3]}
+        overlap = len(new_q & existing_queries)
+        return overlap >= 2
 
     # Resolve pasta_id por agente_slug (busca o agente_ia.base_conhecimento_ids[0])
     async def _pasta_for_agent(slug: str | None) -> int | None:
@@ -265,10 +292,21 @@ async def run_learner(
         return int(row[0]) if row and row[0] else None
 
     created = 0
+    skipped = 0
     for cluster in clusters[:10]:  # max 10 sugestões por run
         titulo, conteudo = await _generate_draft(cluster)
-        if titulo in existing:
+        if _is_duplicate(titulo, cluster.queries):
+            skipped += 1
+            logger.info(
+                "rag_learner_skip_duplicate",
+                titulo=titulo[:60],
+                cluster_size=len(cluster.queries),
+            )
             continue
+        # Add ao set imediatamente (anti-dupe entre clusters da mesma run)
+        existing_titles.add(titulo.strip().lower())
+        for q in cluster.queries[:3]:
+            existing_queries.add(q.strip().lower()[:100])
         pasta_id = cluster.pasta_id or await _pasta_for_agent(cluster.agente_slug)
         async with pool.connection() as conn:
             await conn.execute(
@@ -293,11 +331,13 @@ async def run_learner(
         misses=len(misses),
         clusters=len(clusters),
         suggestions_created=created,
+        skipped_duplicates=skipped,
     )
     return {
         "misses": len(misses),
         "clusters": len(clusters),
         "suggestions_created": created,
+        "skipped_duplicates": skipped,
     }
 
 
