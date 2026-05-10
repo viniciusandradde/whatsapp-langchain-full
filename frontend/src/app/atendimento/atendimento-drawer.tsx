@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
+  AtendenteStatus,
   Atendimento,
   AtendimentoMensagem,
   Departamento,
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils";
 import {
   claimAction,
   closeAction,
+  loadAtendentesOnlineAction,
   loadDepartamentosAction,
   loadMensagensAction,
   loadModelosAction,
@@ -82,6 +84,10 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [transferUserId, setTransferUserId] = useState("");
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [loadingDeps, setLoadingDeps] = useState(false);
+  const [atendentesOnline, setAtendentesOnline] = useState<AtendenteStatus[]>(
+    []
+  );
+  const [loadingAtds, setLoadingAtds] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -185,18 +191,33 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     });
   }
 
-  // Lazy: carrega departamentos só quando user abre o popover de transferência
-  // pela 1ª vez. Via server action — api.ts é server-only e não pode ser
-  // importado direto neste client component.
+  // Lazy: carrega departamentos + atendentes online só quando user abre o
+  // popover. Via server actions — api.ts é server-only.
   useEffect(() => {
-    if (!transferOpen || departamentos.length > 0 || loadingDeps) return;
-    setLoadingDeps(true);
-    loadDepartamentosAction()
-      .then((r) => {
-        if (r.ok) setDepartamentos(r.departamentos);
-      })
-      .finally(() => setLoadingDeps(false));
-  }, [transferOpen, departamentos.length, loadingDeps]);
+    if (!transferOpen) return;
+    if (departamentos.length === 0 && !loadingDeps) {
+      setLoadingDeps(true);
+      loadDepartamentosAction()
+        .then((r) => {
+          if (r.ok) setDepartamentos(r.departamentos);
+        })
+        .finally(() => setLoadingDeps(false));
+    }
+    if (atendentesOnline.length === 0 && !loadingAtds) {
+      setLoadingAtds(true);
+      loadAtendentesOnlineAction()
+        .then((r) => {
+          if (r.ok) setAtendentesOnline(r.atendentes);
+        })
+        .finally(() => setLoadingAtds(false));
+    }
+  }, [
+    transferOpen,
+    departamentos.length,
+    loadingDeps,
+    atendentesOnline.length,
+    loadingAtds,
+  ]);
 
   const isOpen =
     atendimento.status === "aguardando" || atendimento.status === "em_andamento";
@@ -583,14 +604,28 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                       ))}
                     </select>
                   ) : (
-                    <input
-                      type="text"
+                    <select
                       value={transferUserId}
                       onChange={(e) => setTransferUserId(e.target.value)}
-                      placeholder="user_id (Better Auth)"
                       className="mb-3 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      aria-label="ID do atendente"
-                    />
+                      aria-label="Atendente online de destino"
+                    >
+                      <option value="">
+                        {loadingAtds
+                          ? "Carregando…"
+                          : atendentesOnline.length === 0
+                            ? "Nenhum atendente online no momento"
+                            : "Selecione o atendente"}
+                      </option>
+                      {atendentesOnline.map((a) => (
+                        <option key={a.user_id} value={a.user_id}>
+                          🟢 {a.nome || a.email || a.user_id}
+                          {a.count_atendimentos_abertos > 0
+                            ? ` (${a.count_atendimentos_abertos} abertos)`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
                   )}
                     <div className="flex justify-end gap-2">
                       <Button

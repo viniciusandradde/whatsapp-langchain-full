@@ -7,11 +7,13 @@ import {
   closeAtendimento,
   getAtendimentoMensagens,
   getDepartamentos,
+  getEmpresaAtendentes,
   getModelosMensagem,
   resetAtendimentoThread,
   responderAtendimento,
   transferAtendimento,
   transferAtendimentoParaDepartamento,
+  type AtendenteStatus,
   type AtendimentoMensagem,
   type Departamento,
   type ModeloMensagem,
@@ -124,6 +126,23 @@ export async function loadDepartamentosAction(): Promise<DepartamentosResult> {
   try {
     const r = await getDepartamentos();
     return { ok: true, departamentos: r.departamentos.filter((d) => d.ativo) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type AtendentesOnlineResult =
+  | { ok: true; atendentes: AtendenteStatus[] }
+  | { ok: false; error: string };
+
+export async function loadAtendentesOnlineAction(): Promise<AtendentesOnlineResult> {
+  try {
+    const r = await getEmpresaAtendentes();
+    // Só ativos + status=online (excluindo offline/ausente/pausa).
+    const online = r.atendentes.filter(
+      (a) => a.is_active && a.atendente_status === "online"
+    );
+    return { ok: true, atendentes: online };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }
