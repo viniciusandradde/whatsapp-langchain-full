@@ -389,6 +389,30 @@ async def transfer_atendimento(
     return _row_to_atendimento(row) if row else None
 
 
+async def transfer_atendimento_to_departamento(
+    pool: AsyncConnectionPool, atendimento_id: int, departamento_id: int
+) -> Atendimento | None:
+    """Transfere o atendimento pra um departamento — limpa o atendente atual e
+    volta o status pra 'aguardando' (atendimento entra na fila do depto, qualquer
+    atendente do depto pode puxar via `claim`).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            UPDATE atendimento
+               SET departamento_id = %s,
+                   assigned_to_user_id = NULL,
+                   status = 'aguardando',
+                   updated_at = NOW()
+             WHERE id = %s
+            RETURNING {_BARE_COLS}
+            """,
+            (departamento_id, atendimento_id),
+        )
+        row = await cur.fetchone()
+    return _row_to_atendimento(row) if row else None
+
+
 # --- Triagem omnichannel (mig 061) ---
 
 

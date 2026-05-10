@@ -12,7 +12,7 @@ from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
@@ -26,6 +26,7 @@ from whatsapp_langchain.shared.atendimento import (
     list_atendimento_mensagens,
     list_atendimentos,
     transfer_atendimento,
+    transfer_atendimento_to_departamento,
 )
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.db import get_pool
@@ -53,7 +54,18 @@ class CloseInput(BaseModel):
 
 
 class TransferInput(BaseModel):
-    user_id: str
+    """Aceita exatamente um destino: atendente (user_id) ou departamento."""
+
+    user_id: str | None = None
+    departamento_id: int | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> TransferInput:
+        if bool(self.user_id) == bool(self.departamento_id):
+            raise ValueError(
+                "Informe exatamente um: user_id OU departamento_id"
+            )
+        return self
 
 
 class ResponderInput(BaseModel):
@@ -377,18 +389,48 @@ async def transfer(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> Atendimento:
-    """Transfere a um operador (mantém em_andamento, troca assigned)."""
+    """Transfere o atendimento — modo `user_id` (atribui a outro operador,
+    mantém em_andamento) OU modo `departamento_id` (limpa atendente, volta
+    pra status=aguardando = entra na fila do depto).
+    """
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
     pool = await get_pool()
-    out = await transfer_atendimento(pool, atendimento_id, body.user_id)
-    if out is None:
-        raise HTTPException(status_code=404, detail="Atendimento não encontrado.")
+
+    departamento_nome: str | None = None
+    if body.departamento_id is not None:
+        out = await transfer_atendimento_to_departamento(
+            pool, atendimento_id, body.departamento_id
+        )
+        if out is None:
+            raise HTTPException(
+                status_code=404, detail="Atendimento não encontrado."
+            )
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT nome FROM departamento WHERE id = %s AND empresa_id = %s",
+                (body.departamento_id, empresa_id),
+            )
+            row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail="Departamento não encontrado."
+            )
+        departamento_nome = row[0]
+    else:
+        assert body.user_id is not None  # validator garante
+        out = await transfer_atendimento(pool, atendimento_id, body.user_id)
+        if out is None:
+            raise HTTPException(
+                status_code=404, detail="Atendimento não encontrado."
+            )
+
     logger.info(
         "atendimento_transferred",
         empresa_id=empresa_id,
         atendimento_id=atendimento_id,
         from_user=user_id,
         to_user=body.user_id,
+        to_departamento=body.departamento_id,
     )
     # Payload unificado entre tool (IA) e endpoint manual — mesmo schema.
     await dispatch_event(
@@ -400,7 +442,7 @@ async def transfer(
             "from_user_id": user_id,
             "to_user_id": body.user_id,
             "departamento_id": out.departamento_id,
-            "departamento_nome": None,  # endpoint manual não resolve nome — caller pode resolver
+            "departamento_nome": departamento_nome,
             "prioridade": out.prioridade,
             "classificacao": out.classificacao,
             "sentimento": out.sentimento,

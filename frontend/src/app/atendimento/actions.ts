@@ -10,6 +10,7 @@ import {
   resetAtendimentoThread,
   responderAtendimento,
   transferAtendimento,
+  transferAtendimentoParaDepartamento,
   type AtendimentoMensagem,
   type ModeloMensagem,
 } from "@/lib/api";
@@ -93,6 +94,19 @@ export async function transferAction(
 ): Promise<Result> {
   try {
     await transferAtendimento(atendimentoId, userId);
+    revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function transferDepartamentoAction(
+  atendimentoId: number,
+  departamentoId: number
+): Promise<Result> {
+  try {
+    await transferAtendimentoParaDepartamento(atendimentoId, departamentoId);
     revalidatePath("/atendimento");
     return { ok: true };
   } catch (e) {

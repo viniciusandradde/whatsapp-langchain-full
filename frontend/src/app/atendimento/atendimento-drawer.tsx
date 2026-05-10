@@ -16,10 +16,12 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type {
-  Atendimento,
-  AtendimentoMensagem,
-  ModeloMensagem,
+import {
+  getDepartamentos,
+  type Atendimento,
+  type AtendimentoMensagem,
+  type Departamento,
+  type ModeloMensagem,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +33,7 @@ import {
   resetThreadAction,
   responderAction,
   transferAction,
+  transferDepartamentoAction,
 } from "./actions";
 
 interface Props {
@@ -69,6 +72,16 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [modelosOpen, setModelosOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"conversa" | "arquivos">("conversa");
   const [isPending, startTransition] = useTransition();
+
+  // Transferência (Sprint V) — popover inline com 2 modos.
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferMode, setTransferMode] = useState<"departamento" | "atendente">(
+    "departamento"
+  );
+  const [transferDepId, setTransferDepId] = useState<number | "">("");
+  const [transferUserId, setTransferUserId] = useState("");
+  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
+  const [loadingDeps, setLoadingDeps] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -172,15 +185,41 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     });
   }
 
+  // Lazy: carrega departamentos só quando user abre o popover de transferência
+  // pela 1ª vez. Evita chamada extra ao abrir um drawer só pra responder.
+  useEffect(() => {
+    if (!transferOpen || departamentos.length > 0 || loadingDeps) return;
+    setLoadingDeps(true);
+    getDepartamentos()
+      .then((r) => setDepartamentos(r.departamentos.filter((d) => d.ativo)))
+      .catch(() => {
+        /* silencioso — UI mostra select vazio se falhar */
+      })
+      .finally(() => setLoadingDeps(false));
+  }, [transferOpen, departamentos.length, loadingDeps]);
+
   const isOpen =
     atendimento.status === "aguardando" || atendimento.status === "em_andamento";
 
-  function handleTransfer() {
-    const userId = prompt(
-      "ID do operador para transferência (Better Auth user_id):"
-    );
-    if (!userId) return;
-    runAction(() => transferAction(atendimento.id, userId.trim()));
+  function handleConfirmTransfer() {
+    if (transferMode === "departamento") {
+      if (!transferDepId) return;
+      runAction(() =>
+        transferDepartamentoAction(atendimento.id, Number(transferDepId))
+      );
+    } else {
+      if (!transferUserId.trim()) return;
+      runAction(() =>
+        transferAction(atendimento.id, transferUserId.trim())
+      );
+    }
+    setTransferOpen(false);
+  }
+
+  function handleCancelTransfer() {
+    setTransferOpen(false);
+    setTransferDepId("");
+    setTransferUserId("");
   }
 
   function handleClose(status: "resolvido" | "abandonado") {
@@ -479,14 +518,97 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                 Atender
               </Button>
             )}
-            <Button
-              variant="ghost"
-              onClick={handleTransfer}
-              disabled={isPending}
-            >
-              <UserPlus className="size-3.5" />
-              Transferir
-            </Button>
+            <div className="relative">
+              <Button
+                variant="ghost"
+                onClick={() => setTransferOpen((v) => !v)}
+                disabled={isPending}
+              >
+                <UserPlus className="size-3.5" />
+                Transferir
+              </Button>
+              {transferOpen && (
+                <div className="absolute bottom-full right-0 mb-2 w-80 rounded-md border bg-background p-3 shadow-lg z-10">
+                  <div className="mb-2 text-xs font-semibold text-muted-foreground">
+                    Transferir atendimento
+                  </div>
+                  <div className="mb-3 flex gap-3 text-sm">
+                    <label className="inline-flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        checked={transferMode === "departamento"}
+                        onChange={() => setTransferMode("departamento")}
+                      />
+                      Para departamento
+                    </label>
+                    <label className="inline-flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        checked={transferMode === "atendente"}
+                        onChange={() => setTransferMode("atendente")}
+                      />
+                      Para atendente
+                    </label>
+                  </div>
+                  {transferMode === "departamento" ? (
+                    <select
+                      value={transferDepId}
+                      onChange={(e) =>
+                        setTransferDepId(
+                          e.target.value ? Number(e.target.value) : ""
+                        )
+                      }
+                      className="mb-3 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label="Departamento de destino"
+                    >
+                      <option value="">
+                        {loadingDeps
+                          ? "Carregando…"
+                          : departamentos.length === 0
+                            ? "Nenhum departamento ativo"
+                            : "Selecione o departamento"}
+                      </option>
+                      {departamentos.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.nome}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={transferUserId}
+                      onChange={(e) => setTransferUserId(e.target.value)}
+                      placeholder="user_id (Better Auth)"
+                      className="mb-3 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label="ID do atendente"
+                    />
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancelTransfer}
+                      disabled={isPending}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleConfirmTransfer}
+                      disabled={
+                        isPending ||
+                        (transferMode === "departamento"
+                          ? !transferDepId
+                          : !transferUserId.trim())
+                      }
+                    >
+                      Confirmar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
             <Button
               variant="ghost"
               onClick={() => handleClose("resolvido")}

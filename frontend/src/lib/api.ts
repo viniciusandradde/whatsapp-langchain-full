@@ -1339,6 +1339,16 @@ export async function transferAtendimento(
   });
 }
 
+export async function transferAtendimentoParaDepartamento(
+  id: number,
+  departamento_id: number
+): Promise<Atendimento> {
+  return apiFetch<Atendimento>(`/api/atendimentos/${id}/transfer`, {
+    method: "POST",
+    body: { departamento_id },
+  });
+}
+
 // --- M5.c: Base de Conhecimento ---
 
 export async function getDocumentosConhecimento(opts?: {
