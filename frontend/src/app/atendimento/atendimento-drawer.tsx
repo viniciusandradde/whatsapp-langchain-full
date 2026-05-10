@@ -528,10 +528,18 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                 Transferir
               </Button>
               {transferOpen && (
-                <div className="absolute bottom-full right-0 mb-2 w-80 rounded-md border bg-background p-3 shadow-lg z-10">
-                  <div className="mb-2 text-xs font-semibold text-muted-foreground">
-                    Transferir atendimento
-                  </div>
+                <>
+                  {/* backdrop só no mobile pra fechar tocando fora */}
+                  <button
+                    type="button"
+                    aria-label="Fechar transferência"
+                    className="fixed inset-0 z-10 bg-black/40 sm:hidden"
+                    onClick={handleCancelTransfer}
+                  />
+                  <div className="fixed inset-x-2 bottom-2 z-20 rounded-lg border bg-background p-3 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-full sm:right-0 sm:mb-2 sm:w-80 sm:rounded-md">
+                    <div className="mb-2 text-xs font-semibold text-muted-foreground">
+                      Transferir atendimento
+                    </div>
                   <div className="mb-3 flex gap-3 text-sm">
                     <label className="inline-flex items-center gap-1.5">
                       <input
@@ -584,29 +592,30 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                       aria-label="ID do atendente"
                     />
                   )}
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleCancelTransfer}
-                      disabled={isPending}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleConfirmTransfer}
-                      disabled={
-                        isPending ||
-                        (transferMode === "departamento"
-                          ? !transferDepId
-                          : !transferUserId.trim())
-                      }
-                    >
-                      Confirmar
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelTransfer}
+                        disabled={isPending}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleConfirmTransfer}
+                        disabled={
+                          isPending ||
+                          (transferMode === "departamento"
+                            ? !transferDepId
+                            : !transferUserId.trim())
+                        }
+                      >
+                        Confirmar
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
             <Button

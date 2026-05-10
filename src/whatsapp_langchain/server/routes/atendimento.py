@@ -416,6 +416,28 @@ async def transfer(
                 status_code=404, detail="Departamento não encontrado."
             )
         departamento_nome = row[0]
+
+        # Notifica o cliente via WhatsApp — best-effort. Falha não bloqueia
+        # a transferência (atendimento já foi atualizado no DB).
+        try:
+            await send_outbound_manual(
+                pool,
+                atendimento_id=atendimento_id,
+                empresa_id=empresa_id,
+                user_id=user_id,
+                conteudo=(
+                    f"Você foi transferido para o setor *{departamento_nome}*. "
+                    "Em breve um atendente entrará em contato. 😊"
+                ),
+            )
+        except OutboundError as exc:
+            logger.warning(
+                "transfer_notify_failed",
+                atendimento_id=atendimento_id,
+                empresa_id=empresa_id,
+                departamento_id=body.departamento_id,
+                error=str(exc),
+            )
     else:
         assert body.user_id is not None  # validator garante
         out = await transfer_atendimento(pool, atendimento_id, body.user_id)
