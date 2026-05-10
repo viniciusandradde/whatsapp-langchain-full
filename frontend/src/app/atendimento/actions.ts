@@ -6,12 +6,14 @@ import {
   claimAtendimento,
   closeAtendimento,
   getAtendimentoMensagens,
+  getDepartamentos,
   getModelosMensagem,
   resetAtendimentoThread,
   responderAtendimento,
   transferAtendimento,
   transferAtendimentoParaDepartamento,
   type AtendimentoMensagem,
+  type Departamento,
   type ModeloMensagem,
 } from "@/lib/api";
 
@@ -109,6 +111,19 @@ export async function transferDepartamentoAction(
     await transferAtendimentoParaDepartamento(atendimentoId, departamentoId);
     revalidatePath("/atendimento");
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type DepartamentosResult =
+  | { ok: true; departamentos: Departamento[] }
+  | { ok: false; error: string };
+
+export async function loadDepartamentosAction(): Promise<DepartamentosResult> {
+  try {
+    const r = await getDepartamentos();
+    return { ok: true, departamentos: r.departamentos.filter((d) => d.ativo) };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

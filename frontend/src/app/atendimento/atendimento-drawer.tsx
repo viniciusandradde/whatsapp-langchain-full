@@ -16,18 +16,18 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  getDepartamentos,
-  type Atendimento,
-  type AtendimentoMensagem,
-  type Departamento,
-  type ModeloMensagem,
+import type {
+  Atendimento,
+  AtendimentoMensagem,
+  Departamento,
+  ModeloMensagem,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import {
   claimAction,
   closeAction,
+  loadDepartamentosAction,
   loadMensagensAction,
   loadModelosAction,
   resetThreadAction,
@@ -186,14 +186,14 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   }
 
   // Lazy: carrega departamentos só quando user abre o popover de transferência
-  // pela 1ª vez. Evita chamada extra ao abrir um drawer só pra responder.
+  // pela 1ª vez. Via server action — api.ts é server-only e não pode ser
+  // importado direto neste client component.
   useEffect(() => {
     if (!transferOpen || departamentos.length > 0 || loadingDeps) return;
     setLoadingDeps(true);
-    getDepartamentos()
-      .then((r) => setDepartamentos(r.departamentos.filter((d) => d.ativo)))
-      .catch(() => {
-        /* silencioso — UI mostra select vazio se falhar */
+    loadDepartamentosAction()
+      .then((r) => {
+        if (r.ok) setDepartamentos(r.departamentos);
       })
       .finally(() => setLoadingDeps(false));
   }, [transferOpen, departamentos.length, loadingDeps]);
