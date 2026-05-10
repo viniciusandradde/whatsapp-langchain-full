@@ -343,6 +343,12 @@ async def close(
             "cliente_id": out.cliente_id,
         },
     )
+    # Sprint Y fix: dispara CSAT se a empresa tiver csat_ativo=true.
+    # Best-effort — falha aqui não bloqueia o close.
+    if body.status == "resolvido":
+        from whatsapp_langchain.shared.avaliacao import trigger_csat_se_ativo
+
+        await trigger_csat_se_ativo(pool, empresa_id, atendimento_id)
     return out
 
 

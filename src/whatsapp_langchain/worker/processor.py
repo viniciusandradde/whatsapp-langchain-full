@@ -551,59 +551,29 @@ async def _send_csat_se_configurado(
     phone_number: str,
     pool: AsyncConnectionPool,
 ) -> None:
-    """Envia pesquisa CSAT se a empresa tiver csat_ativo=true (mig 074).
-
-    Sprint Y: config vem direto de `empresa.csat_*` (não mais de menu_item).
-    Sprint X: escala fixa 0-10 + set `aguardando_avaliacao_at` pra captura
-    da resposta via `_try_capture_avaliacao`.
+    """Worker-side helper: resolve o atendimento mais recente do cliente
+    pelo telefone, depois delega pra trigger_csat_se_ativo (shared).
     """
-    try:
-        config = await get_empresa_csat_config(pool, empresa_id)
-        if config is None:
-            return  # csat_ativo=false ou empresa inexistente
-        pergunta = (
-            config["pergunta"]
-            + "\n\nResponda com um número de *0* a *10*."
-        )
-        from whatsapp_langchain.shared.avaliacao import set_aguardando_avaliacao
-        from whatsapp_langchain.shared.outbound import send_system_outbound
+    from whatsapp_langchain.shared.avaliacao import trigger_csat_se_ativo
 
-        # send_system_outbound exige atendimento aberto — busca o último
-        # do cliente. Pra simplicidade, pula CSAT se nenhum aberto.
-        async with pool.connection() as conn:
-            cur = await conn.execute(
-                """
-                SELECT id FROM atendimento
-                 WHERE empresa_id = %s
-                   AND cliente_id = (
-                       SELECT id FROM cliente
-                        WHERE empresa_id = %s AND telefone = %s
-                        LIMIT 1
-                   )
-                 ORDER BY id DESC LIMIT 1
-                """,
-                (empresa_id, empresa_id, phone_number),
-            )
-            row = await cur.fetchone()
-        if not row:
-            return
-        atendimento_id = int(row[0])
-        await send_system_outbound(
-            pool,
-            atendimento_id=atendimento_id,
-            empresa_id=empresa_id,
-            conteudo=pergunta,
-            tag_user_id="system:csat",
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id FROM atendimento
+             WHERE empresa_id = %s
+               AND cliente_id = (
+                   SELECT id FROM cliente
+                    WHERE empresa_id = %s AND telefone = %s
+                    LIMIT 1
+               )
+             ORDER BY id DESC LIMIT 1
+            """,
+            (empresa_id, empresa_id, phone_number),
         )
-        await set_aguardando_avaliacao(pool, atendimento_id)
-        logger.info(
-            "csat_enviado",
-            empresa_id=empresa_id,
-            phone=phone_number,
-            atendimento_id=atendimento_id,
-        )
-    except Exception as exc:
-        logger.warning("csat_send_failed", phone=phone_number, error=str(exc))
+        row = await cur.fetchone()
+    if not row:
+        return
+    await trigger_csat_se_ativo(pool, empresa_id, int(row[0]))
 
 
 async def _try_handle_menu(

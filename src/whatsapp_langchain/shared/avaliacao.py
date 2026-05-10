@@ -206,3 +206,54 @@ async def clear_flags(
             (atendimento_id,),
         )
         await conn.commit()
+
+
+async def trigger_csat_se_ativo(
+    pool: AsyncConnectionPool, empresa_id: int, atendimento_id: int
+) -> bool:
+    """Dispara pesquisa CSAT pro cliente do atendimento se a empresa tiver
+    csat_ativo=true (config Sprint Y).
+
+    Best-effort: retorna True se enviou, False se config off / cliente sem
+    telefone / falha de envio. Não levanta exceção.
+
+    Usado tanto pelo worker (cliente digita 'encerrar atendimento') quanto
+    pelo endpoint POST /api/atendimentos/{id}/close (operador resolve via
+    painel).
+    """
+    import structlog
+
+    from whatsapp_langchain.shared.empresa import get_empresa_csat_config
+    from whatsapp_langchain.shared.outbound import send_system_outbound
+
+    log = structlog.get_logger()
+    try:
+        config = await get_empresa_csat_config(pool, empresa_id)
+        if config is None:
+            return False
+        pergunta = (
+            config["pergunta"]
+            + "\n\nResponda com um número de *0* a *10*."
+        )
+        await send_system_outbound(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            conteudo=pergunta,
+            tag_user_id="system:csat",
+        )
+        await set_aguardando_avaliacao(pool, atendimento_id)
+        log.info(
+            "csat_enviado",
+            empresa_id=empresa_id,
+            atendimento_id=atendimento_id,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "csat_send_failed",
+            empresa_id=empresa_id,
+            atendimento_id=atendimento_id,
+            error=str(exc),
+        )
+        return False
