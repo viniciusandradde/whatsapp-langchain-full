@@ -151,13 +151,16 @@ async def main() -> int:
     print()
 
     try:
-        results = client.evaluate(
+        from langsmith import aevaluate
+
+        results = await aevaluate(
             target,
-            data=client.list_examples(dataset_id=dataset.id, limit=args.limit),
+            data=list(client.list_examples(dataset_id=dataset.id, limit=args.limit)),
             evaluators=[correctness_evaluator],
             experiment_prefix=args.experiment_prefix,
             max_concurrency=args.max_concurrency,
             metadata={"runner": "scripts/eval_langsmith.py"},
+            client=client,
         )
     except Exception as e:
         print(f"ERRO no evaluate: {e}", file=sys.stderr)

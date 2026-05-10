@@ -34,19 +34,50 @@ import argparse
 import asyncio
 import hashlib
 import json
-import os
+import re
 import sys
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
 
 import ijson
+
+# Sprint U.1 — descarta mensagens system-generated do ZigChat que não são respostas
+# substantivas. Identificadas durante eval (Sprint T): saudações de menu, transferências
+# entre atendentes, NPS automático, status de bot, ack curtos, etc.
+SYSTEM_GENERATED_RE = re.compile(
+    r"(seja\s+bem.+vind|posi[cç][aã]o\s+\d+\s+da\s+fila|"
+    r"central\s+de\s+atendimento\s+do|"
+    r"^\s*aguarde\b|^\s*um\s+momento|"
+    r"\b1\.\s*atendimento.+2\.\s*agend|"
+    r"voc[eê]\s+foi\s+transferido\s+para|"
+    r"transferindo\s+para\s+o?\s*atendente|"
+    r"atribua\s+uma\s+nota\s+de\s+0|"
+    r"avalie\s+o?\s*atendimento|"
+    r"deseja\s+confirmar.+digite\s*\*?1\*?|"
+    r"atendente\s+\*?\w+\*?\s+est[áa]\s+indispon[ií]vel|"
+    r"fora\s+de\s+hor[áa]rio|"
+    r"sua\s+mensagem\s+ser[áa]\s+respondida|"
+    r"🔴|🟢|🟡|"
+    r"^\s*(ok|tudo\s+bem|certo|obrigad[oa])\s*[!\.]*\s*$)",
+    re.I | re.S,
+)
+
+
+def _is_system_generated(text: str) -> bool:
+    """Retorna True se o texto é claramente uma mensagem automática do sistema
+    (não uma resposta substantiva do bot ou atendente).
+    """
+    if not text or len(text.strip()) < 5:
+        return True
+    head = text[:300]
+    return bool(SYSTEM_GENERATED_RE.search(head))
+
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from whatsapp_langchain.shared.db import close_pool, get_pool
 from whatsapp_langchain.shared.guardrails.pii_redactor import redact_pii
-
 
 # Map dept_id ZigChat -> nome legivel (placeholder; user pode ajustar)
 DEPT_LABELS: dict[int, str] = {
@@ -77,47 +108,47 @@ def _hash_phone(phone: str) -> str:
 
 
 def _extract_last_pair(mensagens: list[dict]) -> tuple[str | None, str | None]:
-    """Pega ultimo par (cliente_msg, agente_resposta_bot).
+    """Pega ÚLTIMO par substantivo (cliente_msg, resposta).
 
-    Mensagens vem em ordem: a mais recente eh primeiro (LIFO no dump observado).
-    Procura a ultima msg cliente (usuario=null E content do cliente) e a ultima
-    msg do bot (automatica=true) imediatamente apos.
+    Sprint U.1: aceita resposta de BOT OU HUMANO, descartando system-generated
+    (saudação/menu/transferência/NPS/status). Resposta humana é preferível porque
+    tem contexto/julgamento — bot só responde substancialmente em casos automatizáveis.
+
+    Algoritmo:
+    - Itera mensagens em ordem cronológica
+    - Marca pending_cliente quando vê msg do cliente (usuario=null AND automatica=false)
+    - Quando vê resposta (automatica OR humano) com pending: avalia is_system_generated.
+      Se substantiva → registra como último par; se system → reseta pending sem registrar.
+    - Retorna o ÚLTIMO par válido encontrado (assume que é a resolução final).
     """
     if not mensagens:
         return None, None
 
-    # Ordena por timestamp ASC pra processar em ordem cronologica
     msgs = sorted(mensagens, key=lambda m: m.get("timestamp") or 0)
+    last_pair: tuple[str, str] | None = None
+    pending_cliente: str | None = None
 
-    last_cliente = None
-    last_bot_response = None
-
-    # Itera procurando o ultimo par
-    pending_cliente = None
     for m in msgs:
         body = (m.get("mensagem") or "").strip()
         if not body or len(body) < 3:
             continue
-        # Filtra mensagens automaticas de sistema sem valor
         if body.lower() in ("atendimento encerrado.", "ok", "."):
             continue
 
         is_auto = bool(m.get("automatica"))
         usuario = m.get("usuario")
-        is_human_op = usuario is not None  # operador humano
+        is_human_op = usuario is not None
 
         if not is_auto and not is_human_op:
-            # Mensagem do cliente
             pending_cliente = body
-        elif is_auto and pending_cliente:
-            # Resposta do bot apos pergunta do cliente
-            last_cliente = pending_cliente
-            last_bot_response = body
+        elif (is_auto or is_human_op) and pending_cliente:
+            if not _is_system_generated(body):
+                last_pair = (pending_cliente, body)
             pending_cliente = None
-        elif is_human_op:
-            pending_cliente = None  # interrompe — operador assumiu
 
-    return last_cliente, last_bot_response
+    if last_pair:
+        return last_pair[0], last_pair[1]
+    return None, None
 
 
 def _detect_outcome(atendimento: dict) -> str:
@@ -138,7 +169,7 @@ def _detect_outcome(atendimento: dict) -> str:
     if ultima:
         try:
             ts = datetime.fromisoformat(ultima.replace("Z", "+00:00"))
-            age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+            age_hours = (datetime.now(UTC) - ts).total_seconds() / 3600
             if age_hours > 24:
                 return "abandoned"
         except (ValueError, AttributeError):
@@ -184,10 +215,13 @@ async def insert_batch(pool, rows: list[dict]) -> int:
     if not rows:
         return 0
     import json as _json
+
     fewshot_params = [
         (
-            r["empresa_id"], r["agente_slug"],
-            r["cliente_msg"][:1000], r["agente_resposta"][:1500],
+            r["empresa_id"],
+            r["agente_slug"],
+            r["cliente_msg"][:1000],
+            r["agente_resposta"][:1500],
             r["outcome"],
             _json.dumps({"zigchat_atendimento_id": r["zigchat_atendimento_id"]}),
             r["created_at"],
@@ -196,8 +230,11 @@ async def insert_batch(pool, rows: list[dict]) -> int:
     ]
     log_params = [
         (
-            r["empresa_id"], r["cliente_msg"][:500], r["agente_slug"],
-            1 if r["agente_resposta"] else 0, r["outcome"],
+            r["empresa_id"],
+            r["cliente_msg"][:500],
+            r["agente_slug"],
+            1 if r["agente_resposta"] else 0,
+            r["outcome"],
             r["created_at"],
         )
         for r in rows
@@ -238,8 +275,9 @@ async def main() -> int:
     parser.add_argument("--file", required=True, type=Path)
     parser.add_argument("--empresa-id", type=int, default=999)
     parser.add_argument("--batch", type=int, default=500)
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Limita atendimentos processados (0=todos)")
+    parser.add_argument(
+        "--limit", type=int, default=0, help="Limita atendimentos processados (0=todos)"
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -247,7 +285,7 @@ async def main() -> int:
         print(f"ERROR: file not found: {args.file}", file=sys.stderr)
         return 2
 
-    print(f"=== Sprint R.1 ZigChat Importer ===")
+    print("=== Sprint R.1 ZigChat Importer ===")
     print(f"file: {args.file}")
     print(f"empresa_id: {args.empresa_id}")
     print(f"batch: {args.batch}")
@@ -264,7 +302,7 @@ async def main() -> int:
 
     stats = {
         "seen": 0,
-        "skip_no_pair": 0,
+        "skip_no_pair": 0,  # nenhum par cliente-resposta substantivo encontrado
         "skip_already": 0,
         "by_outcome": {},
         "by_dept": {},
@@ -309,9 +347,15 @@ async def main() -> int:
             # agente_slug derivado do dept (placeholder — R.2 reclassifica)
             slug_safe = (
                 dept_label.lower()
-                .replace(" ", "-").replace("ç", "c").replace("ã", "a")
-                .replace("á", "a").replace("ó", "o").replace("ô", "o")
-                .replace("é", "e").replace("ê", "e").replace("í", "i")
+                .replace(" ", "-")
+                .replace("ç", "c")
+                .replace("ã", "a")
+                .replace("á", "a")
+                .replace("ó", "o")
+                .replace("ô", "o")
+                .replace("é", "e")
+                .replace("ê", "e")
+                .replace("í", "i")
                 .replace("ú", "u")
             )
             agente_slug = f"radio-{slug_safe}"
