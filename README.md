@@ -61,6 +61,8 @@ O objetivo deste repositório é ensinar arquitetura de harness em volta do agen
   - Pendentes (próximos sprints): regras de negócio configuráveis (S3), aprovação via WhatsApp ao gestor (S4), sync periódico Google→DB + reschedule + audit (S5)
 - **stress test com Locust** (Evolution + Twilio): `make stress-evolution`, `make stress-twilio`, `make stress-both` com defaults `-u 10 -r 2 -t 60s` (sobrescrevíveis via `USERS=`, `RATE=`, `TIME=`, `HOST=`); fallback Docker pra ambientes sem `uv`
 - **deploy Dokploy** documentado em [docs/DOKPLOY.md](docs/DOKPLOY.md): compose dedicado (`docker-compose.dokploy.yml`), passo a passo de Project + Compose service + Domains + envs
+- **transferência de atendimento por departamento** (Sprint V/W): drawer `/atendimento` tem popover com 2 modos — "Para departamento" (dropdown lista deptos ativos via `getDepartamentos`) e "Para atendente" (lista atendentes online filtrados por `atendente_status='online'` + count de abertos). Modo departamento volta o atendimento pra `aguardando` e limpa o atribuído (entra na fila do depto). Cliente recebe mensagem WhatsApp "Você foi transferido para o setor *X*. Em breve um atendente entrará em contato." automaticamente. Mobile responsivo (popover vira bottom-sheet em <640px com backdrop tap-to-close)
+- **módulo NPS / pesquisa de satisfação** (Sprint X/Y) — captura automática 0-10 ao fechar atendimento (clique "Resolver" no painel ou keyword "encerrar atendimento" via WhatsApp), comentário textual como follow-up opcional (60s), dashboard executivo `/dashboard/qualidade` com 4 cards (NPS Score, Total, %Promotores, %Detratores) + tabela por departamento + ranking de operadores + lista paginada de comentários filtrando por categoria. Config 100% no cadastro da empresa (toggle `csat_ativo` + pergunta customizável + msg agradecimento + checkbox solicita comentário). Tabela `atendimento_avaliacao` (UNIQUE 1:1 com atendimento), captura via flags `aguardando_avaliacao_at` (24h) + `aguardando_comentario_at` (60s) — veja [docs/NPS.md](docs/NPS.md)
 
 O harness foi desenhado para funcionar tanto em desenvolvimento local
 (`sandbox`/`mock`) quanto em ambiente publicado com Twilio real. Para o fluxo
@@ -286,7 +288,11 @@ Para detalhes técnicos:
 - [Banco de Dados](docs/DATABASE.md)
 - [Integração Twilio](docs/TWILIO.md)
 - [Integração Evolution API](docs/EVOLUTION.md) — provider WhatsApp não-oficial (Baileys)
-- [Deploy](docs/DEPLOY.md)
+- [NPS / Pesquisa de Satisfação](docs/NPS.md) — captura automática + dashboard executivo
+- [LangSmith](docs/LANGSMITH.md) — datasets + LLM-as-judge eval
+- [Autenticação](docs/AUTH.md)
+- [Deploy](docs/DEPLOY.md) · [Dokploy](docs/DOKPLOY.md) · [Railway](docs/RAILWAY.md)
+- [Stress testing](docs/STRESS_TESTING.md)
 - [Diagramas](docs/diagrams/)
 
 

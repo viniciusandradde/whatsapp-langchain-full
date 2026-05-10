@@ -36,6 +36,49 @@ Campos principais:
 
 Resumo por conversa (`phone_number + agent_id`) para o painel/admin.
 
+### `atendimento`
+
+Atendimentos do painel CRM. Sprint X adicionou flags de captura NPS:
+
+| Coluna | Tipo | Uso |
+|---|---|---|
+| `aguardando_avaliacao_at` | `TIMESTAMPTZ` | Set quando o bot envia a pergunta NPS pós-close. Janela de 24h. |
+| `aguardando_comentario_at` | `TIMESTAMPTZ` | Set quando o bot pergunta o comentário pós-nota. Janela de 60s. |
+
+Worker `_try_capture_avaliacao` checa essas flags antes de invocar agente
+IA / menu pra interceptar a resposta como nota/comentário.
+
+### `empresa`
+
+Sprint Y adicionou 4 colunas de config NPS (mig 074):
+
+| Coluna | Default | Uso |
+|---|---|---|
+| `csat_ativo` | `false` | Toggle global NPS por empresa |
+| `csat_pergunta` | `null` | Texto enviado ao cliente; vazio = padrão |
+| `csat_msg_agradecimento` | `null` | Resposta após nota/comentário |
+| `csat_solicita_comentario` | `true` | Se faz follow-up pedindo comentário |
+
+### `atendimento_avaliacao`
+
+Captura de NPS por atendimento (mig 073). Veja [docs/NPS.md](NPS.md) pro
+fluxo completo.
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `atendimento_id` | `BIGINT UNIQUE` | 1:1 com `atendimento` (ON DELETE CASCADE) |
+| `empresa_id` | `BIGINT` | Tenant scope |
+| `cliente_id` | `BIGINT` | FK opcional pra `cliente` |
+| `departamento_id` | `INT` | Snapshot do depto no momento do close |
+| `assigned_to_user_id` | `TEXT` | Snapshot do operador atribuído |
+| `nota` | `SMALLINT 0-10` | NPS clássico |
+| `comentario` | `TEXT` | Follow-up opcional |
+| `categoria` | `TEXT` | `promotor` (9-10) / `neutro` (7-8) / `detrator` (0-6) |
+| `created_at` | `TIMESTAMPTZ` | Default NOW |
+
+Indexes em `(empresa_id, created_at DESC)`, `(departamento_id, ...)`,
+`(assigned_to_user_id, ...)` pra agregações em `/api/relatorios/nps`.
+
 ## Tabelas do LangGraph
 
 ### `checkpoints`
