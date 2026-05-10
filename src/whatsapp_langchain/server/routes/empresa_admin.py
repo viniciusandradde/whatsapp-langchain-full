@@ -26,6 +26,7 @@ from whatsapp_langchain.shared.empresa import (
     remove_member,
     set_user_status,
     update_empresa,
+    update_empresa_csat,
     update_member_role,
 )
 from whatsapp_langchain.shared.models import Empresa, EmpresaMembro
@@ -116,6 +117,73 @@ async def update_empresa_endpoint(
     if out is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     return out
+
+
+# Sprint Y: configuração da pesquisa NPS por empresa
+class CsatConfig(BaseModel):
+    csat_ativo: bool
+    csat_pergunta: str | None = None
+    csat_msg_agradecimento: str | None = None
+    csat_solicita_comentario: bool = True
+
+
+@router.get("/{empresa_id}/csat", response_model=CsatConfig)
+async def get_empresa_csat_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Lê a config CSAT da empresa. Acesso pra qualquer membro (admin lê
+    + pode editar; não-admin só vê)."""
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT csat_ativo, csat_pergunta, csat_msg_agradecimento,
+                      csat_solicita_comentario FROM empresa WHERE id = %s""",
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    return CsatConfig(
+        csat_ativo=bool(row[0]),
+        csat_pergunta=row[1],
+        csat_msg_agradecimento=row[2],
+        csat_solicita_comentario=bool(row[3]),
+    )
+
+
+@router.put("/{empresa_id}/csat", response_model=CsatConfig)
+async def update_empresa_csat_endpoint(
+    empresa_id: int,
+    body: CsatConfig,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Atualiza config CSAT da empresa. Só admin local ou superadmin."""
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
+    ok = await update_empresa_csat(
+        pool,
+        empresa_id,
+        csat_ativo=body.csat_ativo,
+        csat_pergunta=body.csat_pergunta,
+        csat_msg_agradecimento=body.csat_msg_agradecimento,
+        csat_solicita_comentario=body.csat_solicita_comentario,
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    logger.info(
+        "empresa_csat_updated",
+        empresa_id=empresa_id,
+        csat_ativo=body.csat_ativo,
+        actor=user_id,
+    )
+    return body
 
 
 @router.get("/{empresa_id}/membros", response_model=list[EmpresaMembro])

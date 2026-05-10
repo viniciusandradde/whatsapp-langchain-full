@@ -4,12 +4,19 @@ import { revalidatePath } from "next/cache";
 
 import {
   createEmpresa,
+  getEmpresaCsat,
   updateEmpresa,
+  updateEmpresaCsat,
+  type EmpresaCsatConfig,
   type EmpresaInput,
   type EmpresaUpdateInput,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
+
+type CsatResult =
+  | { ok: true; config: EmpresaCsatConfig }
+  | { ok: false; error: string };
 
 export async function saveEmpresa(
   empresaId: number | null,
@@ -40,5 +47,29 @@ export async function saveEmpresa(
       ok: false,
       error: e instanceof Error ? e.message : "Erro desconhecido.",
     };
+  }
+}
+
+export async function loadEmpresaCsatAction(
+  empresaId: number
+): Promise<CsatResult> {
+  try {
+    const config = await getEmpresaCsat(empresaId);
+    return { ok: true, config };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro" };
+  }
+}
+
+export async function saveEmpresaCsatAction(
+  empresaId: number,
+  body: EmpresaCsatConfig
+): Promise<CsatResult> {
+  try {
+    const config = await updateEmpresaCsat(empresaId, body);
+    revalidatePath("/companies");
+    return { ok: true, config };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro" };
   }
 }

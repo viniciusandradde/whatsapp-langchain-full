@@ -2838,6 +2838,31 @@ export async function getNPSRankingOperadores(
     `/api/relatorios/nps/ranking-operadores?periodo=${periodo}`
   );
 }
+// --- Sprint Y: Config CSAT/NPS por empresa ---
+
+export interface EmpresaCsatConfig {
+  csat_ativo: boolean;
+  csat_pergunta: string | null;
+  csat_msg_agradecimento: string | null;
+  csat_solicita_comentario: boolean;
+}
+
+export async function getEmpresaCsat(
+  empresaId: number
+): Promise<EmpresaCsatConfig> {
+  return apiFetch<EmpresaCsatConfig>(`/api/empresas/${empresaId}/csat`);
+}
+
+export async function updateEmpresaCsat(
+  empresaId: number,
+  body: EmpresaCsatConfig
+): Promise<EmpresaCsatConfig> {
+  return apiFetch<EmpresaCsatConfig>(`/api/empresas/${empresaId}/csat`, {
+    method: "PUT",
+    body,
+  });
+}
+
 export async function getNPSAvaliacoes(opts: {
   periodo?: number;
   categoria?: "promotor" | "neutro" | "detrator";

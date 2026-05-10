@@ -151,6 +151,72 @@ async def get_empresa_by_id(
     return _row_to_empresa(row) if row else None
 
 
+# Sprint Y: configuração CSAT/NPS direta na empresa (mig 074).
+DEFAULT_CSAT_PERGUNTA = "Como você avalia o atendimento que acabou de receber?"
+DEFAULT_CSAT_AGRADECIMENTO = "Obrigado pelo seu feedback! 😊"
+
+
+async def get_empresa_csat_config(
+    pool: AsyncConnectionPool, empresa_id: int
+) -> dict | None:
+    """Retorna config CSAT da empresa, ou None se desativada.
+
+    Default fallbacks pra textos vazios (admin pode deixar campo vazio
+    e ainda assim usar o texto padrão amigável).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT csat_ativo, csat_pergunta, csat_msg_agradecimento,
+                   csat_solicita_comentario
+              FROM empresa
+             WHERE id = %s
+            """,
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    if not row or not row[0]:  # não existe ou csat_ativo=false
+        return None
+    return {
+        "pergunta": (row[1] or "").strip() or DEFAULT_CSAT_PERGUNTA,
+        "agradecimento": (row[2] or "").strip() or DEFAULT_CSAT_AGRADECIMENTO,
+        "solicita_comentario": bool(row[3]),
+    }
+
+
+async def update_empresa_csat(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    csat_ativo: bool,
+    csat_pergunta: str | None,
+    csat_msg_agradecimento: str | None,
+    csat_solicita_comentario: bool,
+) -> bool:
+    """Atualiza os 4 campos csat_* da empresa. True se row foi tocada."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE empresa
+               SET csat_ativo = %s,
+                   csat_pergunta = %s,
+                   csat_msg_agradecimento = %s,
+                   csat_solicita_comentario = %s,
+                   updated_at = NOW()
+             WHERE id = %s
+            """,
+            (
+                csat_ativo,
+                (csat_pergunta or "").strip() or None,
+                (csat_msg_agradecimento or "").strip() or None,
+                csat_solicita_comentario,
+                empresa_id,
+            ),
+        )
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
+
+
 async def create_empresa(
     pool: AsyncConnectionPool,
     nome: str,

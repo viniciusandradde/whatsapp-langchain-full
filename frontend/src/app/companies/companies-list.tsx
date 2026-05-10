@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 import type { Empresa } from "@/lib/api";
 
-import { EmpresaForm } from "./empresa-form";
+import { CsatConfigSection, EmpresaForm } from "./empresa-form";
 
 interface Props {
   empresas: Empresa[];
@@ -39,7 +39,10 @@ export function CompaniesList({ empresas }: Props) {
 
       {editing === "new" && <EmpresaForm onDone={() => setEditing(null)} />}
       {editing && editing !== "new" && (
-        <EmpresaForm initial={editing} onDone={() => setEditing(null)} />
+        <>
+          <EmpresaForm initial={editing} onDone={() => setEditing(null)} />
+          <CsatConfigSection empresaId={editing.id} />
+        </>
       )}
 
       {empresas.length === 0 && !editing && (

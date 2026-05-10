@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,9 +11,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Empresa } from "@/lib/api";
+import type { Empresa, EmpresaCsatConfig } from "@/lib/api";
 
-import { saveEmpresa } from "./actions";
+import {
+  loadEmpresaCsatAction,
+  saveEmpresa,
+  saveEmpresaCsatAction,
+} from "./actions";
 
 interface Props {
   initial?: Empresa;
@@ -158,5 +162,136 @@ function Field({
       </label>
       {children}
     </div>
+  );
+}
+
+// Sprint Y — section CSAT/NPS dentro do edit empresa
+const DEFAULT_PERGUNTA = "Como você avalia o atendimento que acabou de receber?";
+const DEFAULT_AGRADECIMENTO = "Obrigado pelo seu feedback! 😊";
+
+export function CsatConfigSection({ empresaId }: { empresaId: number }) {
+  const [config, setConfig] = useState<EmpresaCsatConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, startSaving] = useTransition();
+  const [feedback, setFeedback] = useState<
+    { kind: "ok" } | { kind: "err"; message: string } | null
+  >(null);
+
+  useEffect(() => {
+    setLoading(true);
+    loadEmpresaCsatAction(empresaId)
+      .then((r) => {
+        if (r.ok) setConfig(r.config);
+      })
+      .finally(() => setLoading(false));
+  }, [empresaId]);
+
+  if (loading || config === null) {
+    return (
+      <Card className="mt-4">
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          Carregando config NPS…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  function handleSubmit(formData: FormData) {
+    setFeedback(null);
+    const body: EmpresaCsatConfig = {
+      csat_ativo: formData.get("csat_ativo") === "on",
+      csat_pergunta: String(formData.get("csat_pergunta") || "").trim() || null,
+      csat_msg_agradecimento:
+        String(formData.get("csat_msg_agradecimento") || "").trim() || null,
+      csat_solicita_comentario:
+        formData.get("csat_solicita_comentario") === "on",
+    };
+    startSaving(async () => {
+      const r = await saveEmpresaCsatAction(empresaId, body);
+      if (r.ok) {
+        setConfig(r.config);
+        setFeedback({ kind: "ok" });
+      } else {
+        setFeedback({ kind: "err", message: r.error });
+      }
+    });
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="text-base">Pesquisa de Satisfação (NPS)</CardTitle>
+        <CardDescription>
+          Quando ativada, o cliente recebe uma pergunta com nota 0-10 ao
+          fim de cada atendimento. Resultados em /dashboard/qualidade.
+        </CardDescription>
+      </CardHeader>
+      <form action={handleSubmit}>
+        <CardContent className="space-y-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="csat_ativo"
+              defaultChecked={config.csat_ativo}
+              disabled={saving}
+            />
+            <span className="font-medium">Ativar pesquisa NPS</span>
+          </label>
+
+          <Field label="Pergunta enviada ao cliente" htmlFor="csat_pergunta">
+            <textarea
+              id="csat_pergunta"
+              name="csat_pergunta"
+              rows={2}
+              defaultValue={config.csat_pergunta ?? ""}
+              placeholder={DEFAULT_PERGUNTA}
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Vazio = usa o texto padrão.
+            </p>
+          </Field>
+
+          <Field
+            label="Mensagem de agradecimento (após nota/comentário)"
+            htmlFor="csat_msg_agradecimento"
+          >
+            <textarea
+              id="csat_msg_agradecimento"
+              name="csat_msg_agradecimento"
+              rows={2}
+              defaultValue={config.csat_msg_agradecimento ?? ""}
+              placeholder={DEFAULT_AGRADECIMENTO}
+              className={INPUT_CLASS}
+              disabled={saving}
+            />
+          </Field>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="csat_solicita_comentario"
+              defaultChecked={config.csat_solicita_comentario}
+              disabled={saving}
+            />
+            <span>Pedir comentário textual após a nota (60s pra responder)</span>
+          </label>
+        </CardContent>
+        <CardFooter className="flex items-center justify-between gap-2">
+          <div className="text-sm">
+            {feedback?.kind === "ok" && (
+              <span className="text-green-500">Salvo.</span>
+            )}
+            {feedback?.kind === "err" && (
+              <span className="text-destructive">{feedback.message}</span>
+            )}
+          </div>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Salvando…" : "Salvar config NPS"}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
   );
 }

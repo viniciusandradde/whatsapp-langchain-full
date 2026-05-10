@@ -58,9 +58,9 @@ from whatsapp_langchain.shared.cliente import (
 )
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
+from whatsapp_langchain.shared.empresa import get_empresa_csat_config
 from whatsapp_langchain.shared.menu_chatbot import (
     cliente_ja_saiu_do_menu,
-    find_csat_item_ativo,
     format_menu_message,
     get_menu_ativo_para_conexao,
     get_posicao_atual,
@@ -460,6 +460,16 @@ async def _try_capture_avaliacao(
 
     atendimento_id = aguardando["atendimento_id"]
 
+    # Resolve config da empresa pra customizar mensagens (agradecimento +
+    # toggle solicita_comentario). Default fallback se não configurada.
+    config = await get_empresa_csat_config(pool, message.empresa_id)
+    msg_agradecimento = (
+        config["agradecimento"]
+        if config
+        else "Obrigado pelo seu feedback! 😊"
+    )
+    solicita_comentario = bool(config["solicita_comentario"]) if config else True
+
     # Estado COMENTÁRIO tem prioridade (janela mais curta) — se cliente envia
     # texto livre dentro de 60s pós-nota, grava como comentário.
     if aguardando["aguardando_comentario_at"] is not None:
@@ -468,13 +478,11 @@ async def _try_capture_avaliacao(
                 pool, atendimento_id=atendimento_id, comentario=text
             )
             await clear_flags(pool, atendimento_id)
-            await outbound.send_message(
-                message.phone_number, "Obrigado pelo seu feedback! 😊"
-            )
+            await outbound.send_message(message.phone_number, msg_agradecimento)
             await mark_done(
                 pool,
                 message.id,
-                "Obrigado pelo seu feedback! 😊",
+                msg_agradecimento,
                 normalized_input=text,
             )
             logger.info(
@@ -503,12 +511,16 @@ async def _try_capture_avaliacao(
             await save_avaliacao(
                 pool, atendimento_id=atendimento_id, nota=nota
             )
-            await set_aguardando_comentario(pool, atendimento_id)
-            resposta = (
-                f"Obrigado pela sua nota *{nota}*! 🙏\n\n"
-                "Quer deixar um comentário sobre o atendimento? "
-                "(Opcional — basta responder a próxima mensagem)"
-            )
+            if solicita_comentario:
+                await set_aguardando_comentario(pool, atendimento_id)
+                resposta = (
+                    f"Obrigado pela sua nota *{nota}*! 🙏\n\n"
+                    "Quer deixar um comentário sobre o atendimento? "
+                    "(Opcional — basta responder a próxima mensagem)"
+                )
+            else:
+                await clear_flags(pool, atendimento_id)
+                resposta = msg_agradecimento
             await outbound.send_message(message.phone_number, resposta)
             await mark_done(
                 pool, message.id, resposta, normalized_input=text
@@ -518,6 +530,7 @@ async def _try_capture_avaliacao(
                 atendimento_id=atendimento_id,
                 empresa_id=message.empresa_id,
                 nota=nota,
+                solicita_comentario=solicita_comentario,
             )
             return True
         except Exception as exc:
@@ -538,19 +551,18 @@ async def _send_csat_se_configurado(
     phone_number: str,
     pool: AsyncConnectionPool,
 ) -> None:
-    """Envia pesquisa CSAT se houver item `pesquisa_csat` ativo na empresa.
+    """Envia pesquisa CSAT se a empresa tiver csat_ativo=true (mig 074).
 
-    Sprint X: força escala NPS 0-10 (override do menu_item) + set flag
-    `aguardando_avaliacao_at` no atendimento pra captura da resposta no
-    próximo turno (handler `_try_capture_avaliacao`).
+    Sprint Y: config vem direto de `empresa.csat_*` (não mais de menu_item).
+    Sprint X: escala fixa 0-10 + set `aguardando_avaliacao_at` pra captura
+    da resposta via `_try_capture_avaliacao`.
     """
     try:
-        item = await find_csat_item_ativo(pool, empresa_id)
-        if item is None:
-            return
-        # Sprint X: escala fixa 0-10 (NPS clássico). Override do menu_item.
+        config = await get_empresa_csat_config(pool, empresa_id)
+        if config is None:
+            return  # csat_ativo=false ou empresa inexistente
         pergunta = (
-            (item.nota_pergunta or "Como você avalia nosso atendimento?").strip()
+            config["pergunta"]
             + "\n\nResponda com um número de *0* a *10*."
         )
         from whatsapp_langchain.shared.avaliacao import set_aguardando_avaliacao
@@ -583,13 +595,11 @@ async def _send_csat_se_configurado(
             conteudo=pergunta,
             tag_user_id="system:csat",
         )
-        # Sprint X: marca como aguardando avaliação (24h window)
         await set_aguardando_avaliacao(pool, atendimento_id)
         logger.info(
             "csat_enviado",
             empresa_id=empresa_id,
             phone=phone_number,
-            menu_item_id=item.id,
             atendimento_id=atendimento_id,
         )
     except Exception as exc:
