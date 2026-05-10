@@ -34,6 +34,9 @@ from whatsapp_langchain.server.routes.hitl import (
 from whatsapp_langchain.server.routes.rag_stats import (
     router as rag_stats_router,
 )
+from whatsapp_langchain.server.routes.relatorios_nps import (
+    router as relatorios_nps_router,
+)
 from whatsapp_langchain.server.routes.test_runner import (
     router as test_runner_router,
 )
@@ -272,6 +275,7 @@ app.include_router(ia_budget_router)
 app.include_router(atendente_router)
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
+app.include_router(relatorios_nps_router)
 app.include_router(rag_dataset_router)
 app.include_router(hitl_router)
 

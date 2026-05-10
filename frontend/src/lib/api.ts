@@ -2763,3 +2763,91 @@ export async function upsertIaBudget(
 ): Promise<IaBudget> {
   return apiFetch<IaBudget>(`/api/v1/ia-budget`, { method: "PUT", body });
 }
+
+// --- Sprint X: Relatórios NPS de atendimento ---
+
+export interface NPSSerieDia {
+  data: string;
+  score: number | null;
+  total: number;
+}
+export interface NPSResumo {
+  score: number | null;
+  total: number;
+  promotores: number;
+  neutros: number;
+  detratores: number;
+  pct_promotores: number | null;
+  pct_detratores: number | null;
+  csat_medio: number | null;
+  serie_diaria: NPSSerieDia[];
+}
+export interface NPSPorDepartamento {
+  departamento_id: number | null;
+  departamento_nome: string | null;
+  total: number;
+  promotores: number;
+  neutros: number;
+  detratores: number;
+  score: number | null;
+  csat_medio: number | null;
+}
+export interface RankingOperadorNPS {
+  user_id: string | null;
+  nome: string | null;
+  image: string | null;
+  avaliacoes_total: number;
+  promotores: number;
+  detratores: number;
+  score: number | null;
+  csat_medio: number | null;
+}
+export interface NPSAvaliacaoItem {
+  id: number;
+  atendimento_id: number;
+  nota: number;
+  categoria: "promotor" | "neutro" | "detrator";
+  comentario: string | null;
+  created_at: string;
+  cliente_nome: string | null;
+  departamento_nome: string | null;
+  atendente_nome: string | null;
+  protocolo: string | null;
+}
+export interface NPSAvaliacoesPage {
+  items: NPSAvaliacaoItem[];
+  total: number;
+  pagina: number;
+  limit: number;
+}
+
+export async function getNPSResumo(periodo = 30): Promise<NPSResumo> {
+  return apiFetch<NPSResumo>(`/api/relatorios/nps?periodo=${periodo}`);
+}
+export async function getNPSPorDepartamento(
+  periodo = 30
+): Promise<NPSPorDepartamento[]> {
+  return apiFetch<NPSPorDepartamento[]>(
+    `/api/relatorios/nps/por-departamento?periodo=${periodo}`
+  );
+}
+export async function getNPSRankingOperadores(
+  periodo = 30
+): Promise<RankingOperadorNPS[]> {
+  return apiFetch<RankingOperadorNPS[]>(
+    `/api/relatorios/nps/ranking-operadores?periodo=${periodo}`
+  );
+}
+export async function getNPSAvaliacoes(opts: {
+  periodo?: number;
+  categoria?: "promotor" | "neutro" | "detrator";
+  pagina?: number;
+  limit?: number;
+}): Promise<NPSAvaliacoesPage> {
+  const q = new URLSearchParams();
+  q.set("periodo", String(opts.periodo ?? 30));
+  if (opts.categoria) q.set("categoria", opts.categoria);
+  q.set("pagina", String(opts.pagina ?? 1));
+  q.set("limit", String(opts.limit ?? 50));
+  return apiFetch<NPSAvaliacoesPage>(`/api/relatorios/nps/avaliacoes?${q}`);
+}

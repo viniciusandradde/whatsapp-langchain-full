@@ -64,6 +64,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
   observabilidade: [
     { label: "Traces", href: "/traces" },
     { label: "Fila", href: "/queue" },
+    { label: "NPS / Qualidade", href: "/dashboard/qualidade" },
     { label: "Qualidade RAG", href: "/dashboard/rag" },
     { label: "RAG Sandbox", href: "/dashboard/rag/sandbox" },
     { label: "Relatórios E2E", href: "/relatorios/allure" },

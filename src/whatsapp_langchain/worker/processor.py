@@ -414,6 +414,125 @@ async def _try_handle_encerrar_keyword(
     return True
 
 
+async def _try_capture_avaliacao(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+) -> bool:
+    """Sprint X — captura resposta NPS pós-pesquisa CSAT.
+
+    Fluxo:
+    - Se cliente tem atendimento aguardando_avaliacao_at (≤24h) e mensagem
+      é número 0-10 → grava nota + pergunta comentário (set
+      aguardando_comentario_at) + early return.
+    - Se cliente tem atendimento aguardando_comentario_at (≤60s) → grava
+      texto como comentário + agradece + early return.
+    - Caso contrário: return False (segue fluxo normal).
+    """
+    from whatsapp_langchain.shared.avaliacao import (
+        clear_flags,
+        find_aguardando_avaliacao,
+        parse_nota,
+        save_avaliacao,
+        set_aguardando_comentario,
+    )
+
+    text = (message.incoming_message or "").strip()
+    if not text:
+        return False
+
+    # Resolve cliente_id pelo telefone
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id FROM cliente WHERE empresa_id = %s AND telefone = %s LIMIT 1",
+            (message.empresa_id, message.phone_number),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return False
+    cliente_id = int(row[0])
+
+    aguardando = await find_aguardando_avaliacao(
+        pool, empresa_id=message.empresa_id, cliente_id=cliente_id
+    )
+    if aguardando is None:
+        return False
+
+    atendimento_id = aguardando["atendimento_id"]
+
+    # Estado COMENTÁRIO tem prioridade (janela mais curta) — se cliente envia
+    # texto livre dentro de 60s pós-nota, grava como comentário.
+    if aguardando["aguardando_comentario_at"] is not None:
+        try:
+            await save_avaliacao(
+                pool, atendimento_id=atendimento_id, comentario=text
+            )
+            await clear_flags(pool, atendimento_id)
+            await outbound.send_message(
+                message.phone_number, "Obrigado pelo seu feedback! 😊"
+            )
+            await mark_done(
+                pool,
+                message.id,
+                "Obrigado pelo seu feedback! 😊",
+                normalized_input=text,
+            )
+            logger.info(
+                "nps_comentario_capturado",
+                atendimento_id=atendimento_id,
+                empresa_id=message.empresa_id,
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "nps_comentario_falhou",
+                atendimento_id=atendimento_id,
+                error=str(exc),
+            )
+            await clear_flags(pool, atendimento_id)
+            return False
+
+    # Estado AVALIAÇÃO — espera número 0-10
+    if aguardando["aguardando_avaliacao_at"] is not None:
+        nota = parse_nota(text)
+        if nota is None:
+            # Cliente respondeu mas sem número — ignora a flag e deixa cair
+            # no fluxo normal (vai pro agente IA / menu como mensagem comum)
+            return False
+        try:
+            await save_avaliacao(
+                pool, atendimento_id=atendimento_id, nota=nota
+            )
+            await set_aguardando_comentario(pool, atendimento_id)
+            resposta = (
+                f"Obrigado pela sua nota *{nota}*! 🙏\n\n"
+                "Quer deixar um comentário sobre o atendimento? "
+                "(Opcional — basta responder a próxima mensagem)"
+            )
+            await outbound.send_message(message.phone_number, resposta)
+            await mark_done(
+                pool, message.id, resposta, normalized_input=text
+            )
+            logger.info(
+                "nps_nota_capturada",
+                atendimento_id=atendimento_id,
+                empresa_id=message.empresa_id,
+                nota=nota,
+            )
+            return True
+        except Exception as exc:
+            logger.warning(
+                "nps_nota_falhou",
+                atendimento_id=atendimento_id,
+                nota=nota,
+                error=str(exc),
+            )
+            await clear_flags(pool, atendimento_id)
+            return False
+
+    return False
+
+
 async def _send_csat_se_configurado(
     empresa_id: int,
     phone_number: str,
@@ -421,23 +540,21 @@ async def _send_csat_se_configurado(
 ) -> None:
     """Envia pesquisa CSAT se houver item `pesquisa_csat` ativo na empresa.
 
-    Captura da resposta (gravar a nota numérica) ainda não está implementada
-    — pra MVP só dispara o envio. Cliente responde nota mas vai abrir
-    atendimento novo. Roadmap: detectar resposta numérica em janela curta
-    pós-close e gravar como anotação no cliente.
+    Sprint X: força escala NPS 0-10 (override do menu_item) + set flag
+    `aguardando_avaliacao_at` no atendimento pra captura da resposta no
+    próximo turno (handler `_try_capture_avaliacao`).
     """
     try:
         item = await find_csat_item_ativo(pool, empresa_id)
         if item is None:
             return
-        nota_min = item.nota_min if item.nota_min is not None else 1
-        nota_max = item.nota_max if item.nota_max is not None else 5
+        # Sprint X: escala fixa 0-10 (NPS clássico). Override do menu_item.
         pergunta = (
             (item.nota_pergunta or "Como você avalia nosso atendimento?").strip()
-            + f"\n\nResponda com um número de *{nota_min}* a *{nota_max}*."
+            + "\n\nResponda com um número de *0* a *10*."
         )
+        from whatsapp_langchain.shared.avaliacao import set_aguardando_avaliacao
         from whatsapp_langchain.shared.outbound import send_system_outbound
-        from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
 
         # send_system_outbound exige atendimento aberto — busca o último
         # do cliente. Pra simplicidade, pula CSAT se nenhum aberto.
@@ -458,18 +575,22 @@ async def _send_csat_se_configurado(
             row = await cur.fetchone()
         if not row:
             return
+        atendimento_id = int(row[0])
         await send_system_outbound(
             pool,
-            atendimento_id=int(row[0]),
+            atendimento_id=atendimento_id,
             empresa_id=empresa_id,
             conteudo=pergunta,
             tag_user_id="system:csat",
         )
+        # Sprint X: marca como aguardando avaliação (24h window)
+        await set_aguardando_avaliacao(pool, atendimento_id)
         logger.info(
             "csat_enviado",
             empresa_id=empresa_id,
             phone=phone_number,
             menu_item_id=item.id,
+            atendimento_id=atendimento_id,
         )
     except Exception as exc:
         logger.warning("csat_send_failed", phone=phone_number, error=str(exc))
@@ -1550,6 +1671,12 @@ async def process_message(
         # tudo. Se for, processa a decisão (cria/cancela evento Google),
         # responde, marca done e retorna early (não chama agente).
         if await _try_handle_approval(message, pool, outbound):
+            return
+
+        # X: captura resposta NPS pós-pesquisa CSAT (nota 0-10 + comentário).
+        # Só intercepta se atendimento estiver aguardando avaliação/comentário
+        # e mensagem encaixar no formato esperado.
+        if await _try_capture_avaliacao(message, pool, outbound):
             return
 
         # E.1 — keyword "encerrar atendimento" → fecha como resolvido.
