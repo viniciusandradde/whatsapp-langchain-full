@@ -39,6 +39,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
   ia: [
     { label: "Agentes", href: "/agents" },
     { label: "Menu chatbot", href: "/menus" },
+    { label: "Workflows", href: "/workflows" },
     { label: "Catálogo Modelos", href: "/catalog/models" },
     { label: "MCP Servers", href: "/catalog/mcp" },
     { label: "Quick Replies", href: "/modelos" },
@@ -92,6 +93,7 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
     prefixos: [
       "/agents",
       "/menus",
+      "/workflows",
       "/catalog",
       "/models",
       "/modelos",
