@@ -2883,3 +2883,87 @@ export async function getNPSAvaliacoes(opts: {
   q.set("limit", String(opts.limit ?? 50));
   return apiFetch<NPSAvaliacoesPage>(`/api/relatorios/nps/avaliacoes?${q}`);
 }
+
+// ============================================================
+// Workflows ZigChat (proposta/menu-langgraph-workflows)
+// ============================================================
+
+export interface WorkflowListItem {
+  id: number;
+  slug: string;
+  nome: string;
+  descricao: string | null;
+  versao: number;
+  versao_ativa_id: number | null;
+  ativo: boolean;
+  updated_at: string | null;
+}
+
+export interface WorkflowDetail {
+  id: number;
+  empresa_id: number;
+  slug: string;
+  nome: string;
+  descricao: string | null;
+  definicao: Record<string, unknown>;
+  versao: number;
+  versao_ativa_id: number | null;
+  ativo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface WorkflowState {
+  atendimento_id: number;
+  current_nodes: string[];
+  vars: Record<string, unknown>;
+  history: string[];
+  interrupt_pending: unknown;
+  workflow_version_id: number;
+  is_terminal: boolean;
+  events: Array<{
+    node_id: string;
+    evento: string;
+    payload: Record<string, unknown> | null;
+    created_at: string | null;
+  }>;
+}
+
+export async function listWorkflows(): Promise<WorkflowListItem[]> {
+  return apiFetch<WorkflowListItem[]>(`/api/admin/workflows`);
+}
+
+export async function getWorkflowDetail(id: number): Promise<WorkflowDetail> {
+  return apiFetch<WorkflowDetail>(`/api/admin/workflows/${id}`);
+}
+
+export async function updateWorkflow(
+  id: number,
+  body: {
+    nome?: string;
+    descricao?: string;
+    definicao?: Record<string, unknown>;
+  }
+): Promise<WorkflowDetail> {
+  return apiFetch<WorkflowDetail>(`/api/admin/workflows/${id}`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export async function toggleWorkflowActive(
+  id: number
+): Promise<{ workflow_id: number; ativo: boolean }> {
+  return apiFetch<{ workflow_id: number; ativo: boolean }>(
+    `/api/admin/workflows/${id}/toggle-active`,
+    { method: "POST" }
+  );
+}
+
+export async function getAtendimentoWorkflowState(
+  atendimentoId: number
+): Promise<WorkflowState | null> {
+  return apiFetch<WorkflowState | null>(
+    `/api/admin/atendimentos/${atendimentoId}/workflow-state`
+  );
+}

@@ -60,6 +60,98 @@ async def load_active_workflow(
         return version_id_to_use, definicao
 
 
+async def get_workflow_state_snapshot(
+    pool: Any,
+    checkpointer: Any,
+    atendimento_id: int,
+    empresa_id: int,
+) -> dict[str, Any] | None:
+    """Retorna snapshot do state do workflow pra um atendimento.
+
+    Útil pra debug L2 — admin abre o drawer e vê em que node o cliente
+    travou, quais vars já foram coletadas, qual interrupt está pendente.
+
+    Returns:
+        None se atendimento não tem workflow ativo nem state salvo.
+        Dict com:
+            - current_nodes: list[str] (state.next)
+            - vars: dict (sem _pool helper)
+            - history: list[str]
+            - interrupt_pending: dict | None (payload do interrupt)
+            - workflow_version_id: int
+            - events: list[dict] (últimos 20 de workflow_evento)
+            - is_terminal: bool
+    """
+    runner = await build_runner_for_empresa(pool, checkpointer, empresa_id)
+    if runner is None:
+        return None
+
+    config = {"configurable": {"thread_id": f"wf:{atendimento_id}"}}
+    snapshot = await runner._graph.aget_state(config)
+    if not snapshot.values:
+        return None
+
+    vars_clean = {
+        k: v
+        for k, v in (snapshot.values.get("vars") or {}).items()
+        if not k.startswith("_")
+    }
+
+    # Detecta interrupt pendente via state.tasks
+    interrupt_pending = None
+    if snapshot.tasks:
+        for task in snapshot.tasks:
+            interrupts = getattr(task, "interrupts", None)
+            if interrupts:
+                iv = interrupts[0]
+                interrupt_pending = getattr(iv, "value", iv)
+                break
+
+    # Últimos eventos do workflow_evento
+    events: list[dict] = []
+    try:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT node_id, evento, payload, created_at
+                  FROM workflow_evento
+                 WHERE atendimento_id = %s
+                 ORDER BY created_at DESC
+                 LIMIT 20
+                """,
+                (atendimento_id,),
+            )
+            rows = await cur.fetchall()
+            events = [
+                {
+                    "node_id": r[0],
+                    "evento": r[1],
+                    "payload": r[2],
+                    "created_at": r[3].isoformat() if r[3] else None,
+                }
+                for r in rows
+            ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("workflow_state_events_load_failed err=%s", exc)
+
+    is_terminal = (
+        bool(snapshot.values)
+        and not snapshot.next
+        and not snapshot.tasks
+    )
+
+    return {
+        "atendimento_id": atendimento_id,
+        "current_nodes": list(snapshot.next) if snapshot.next else [],
+        "vars": vars_clean,
+        "history": snapshot.values.get("history") or [],
+        "interrupt_pending": interrupt_pending,
+        "workflow_version_id": snapshot.values.get("workflow_version_id", 0),
+        "is_terminal": is_terminal,
+        "events": events,
+    }
+
+
 async def build_runner_for_empresa(
     pool: Any,
     checkpointer: Any,
