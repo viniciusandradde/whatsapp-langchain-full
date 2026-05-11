@@ -40,9 +40,19 @@ class WorkflowRunner:
         checkpointer: BaseCheckpointSaver,
         *,
         workflow_version_id: int = 0,
+        pool: Any = None,
     ) -> None:
+        """Args:
+        definicao: dict com entry+nodes (single workflow, sem refs `wf:`)
+        checkpointer: AsyncPostgresSaver / MemorySaver
+        workflow_version_id: snapshot da version usada (Sprint v2 #5)
+        pool: AsyncConnectionPool — necessário pros nodes que tocam DB
+            (transfer_departamento, handover, delegate_to_agent, audit_event).
+            None ⇒ esses nodes viram no-op (útil pra MemorySaver em tests).
+        """
         self._graph = compile_workflow(definicao, checkpointer=checkpointer)
         self._workflow_version_id = workflow_version_id
+        self._pool = pool
 
     async def process(
         self,
@@ -57,6 +67,34 @@ class WorkflowRunner:
             Lista de mensagens a enviar ao cliente (cada item: dict com `kind`).
             Vazio quando workflow já terminou (END).
         """
+        # Sprint v2 #10 — advisory lock por thread pra serializar workers
+        # concorrentes processando mensagens do MESMO atendimento.
+        if self._pool is not None:
+            return await self._process_with_lock(atendimento_id, empresa_id, msg)
+        return await self._process_inner(atendimento_id, empresa_id, msg)
+
+    async def _process_with_lock(
+        self, atendimento_id: int, empresa_id: int, msg: str
+    ) -> list[dict[str, Any]]:
+        """Wrap process() em pg_advisory_xact_lock pra evitar race
+        multi-worker no mesmo thread (= mesmo atendimento)."""
+        import hashlib
+
+        thread_id = f"wf:{atendimento_id}"
+        lock_key = int.from_bytes(
+            hashlib.sha256(thread_id.encode()).digest()[:8],
+            "big",
+            signed=True,
+        )
+        async with self._pool.connection() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
+                return await self._process_inner(atendimento_id, empresa_id, msg)
+
+    async def _process_inner(
+        self, atendimento_id: int, empresa_id: int, msg: str
+    ) -> list[dict[str, Any]]:
+        """Lógica core sem lock (chamada via _process_with_lock ou direto)."""
         config: RunnableConfig = {
             "configurable": {"thread_id": f"wf:{atendimento_id}"},
         }
@@ -64,9 +102,6 @@ class WorkflowRunner:
         # Verifica se já tem state (atendimento em curso)
         state_snapshot = await self._graph.aget_state(config)
         has_state = bool(state_snapshot.values)
-        # Detecção de "workflow terminou": NÃO tem state.next nem state.tasks
-        # pendentes. Re-interrupt no mesmo node não popula state.next mas mantém
-        # state.tasks — precisa checar ambos.
         has_pending_task = bool(state_snapshot.tasks) if has_state else False
         is_terminal = has_state and not state_snapshot.next and not has_pending_task
 
@@ -74,20 +109,32 @@ class WorkflowRunner:
             logger.info("workflow_already_ended atendimento_id=%s", atendimento_id)
             return []
 
+        # Vars _pool injetada pra nodes que precisam de DB
+        # (será stripada antes de salvar em metadata via handover node)
+        bootstrap_vars: dict[str, Any] = {}
+        if self._pool is not None:
+            bootstrap_vars["_pool"] = self._pool
+
         if not has_state:
-            # Primeiro turn: passa estado inicial
             input_payload: Any = {
                 "atendimento_id": atendimento_id,
                 "empresa_id": empresa_id,
                 "workflow_version_id": self._workflow_version_id,
-                "vars": {},
+                "vars": bootstrap_vars,
                 "outbox": [],
                 "history": [],
                 "last_input": msg,
             }
         else:
-            # Retomada: envia msg como resposta do interrupt pendente
-            input_payload = Command(resume=msg)
+            # Garante que _pool está nas vars no resume também (caso checkpoint
+            # antigo não tenha)
+            if bootstrap_vars:
+                input_payload = Command(
+                    resume=msg,
+                    update={"vars": bootstrap_vars},
+                )
+            else:
+                input_payload = Command(resume=msg)
 
         # Sprint v2 #2: usa `astream(stream_mode="updates")` pra pegar APENAS
         # os deltas do turn atual — evita ler `outbox` acumulado do checkpoint

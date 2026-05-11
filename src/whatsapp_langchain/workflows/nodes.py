@@ -356,6 +356,200 @@ def make_audit_event_node(spec: dict) -> Callable:
     return node
 
 
+def make_transfer_departamento_node(spec: dict) -> Callable:
+    """Transfere atendimento pra um departamento (reusa shared/atendimento.py).
+
+    Spec:
+        type: transfer_departamento
+        departamento_id: int
+        message: str | None — texto enviado ao cliente após transferência
+        next: str (geralmente "__end__")
+
+    Side effect: UPDATE atendimento.departamento_id +
+    transfer_atendimento_to_departamento (volta status='aguardando',
+    limpa assigned_to_user_id).
+    """
+    departamento_id = spec.get("departamento_id")
+    message_template = spec.get(
+        "message",
+        "Você foi transferido para o setor responsável."
+        " Em breve um atendente irá te atender.",
+    )
+
+    async def node(state: WorkflowState) -> dict:
+        from whatsapp_langchain.shared.atendimento import (
+            transfer_atendimento_to_departamento,
+        )
+
+        pool = (state.get("vars") or {}).get("_pool")
+        atend_id = state.get("atendimento_id", 0)
+        if pool is not None and atend_id and departamento_id:
+            try:
+                await transfer_atendimento_to_departamento(
+                    pool, atend_id, int(departamento_id)
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Audit + segue (cliente recebe msg mesmo se DB falhar)
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "workflow_transfer_dep_failed atend=%s dep=%s err=%s",
+                    atend_id,
+                    departamento_id,
+                    exc,
+                )
+        rendered = _render(message_template, state.get("vars") or {})
+        return {
+            "outbox": [{"kind": "text", "text": rendered}] if rendered else [],
+            "history": [spec.get("__node_id__", f"transfer_dep:{departamento_id}")],
+        }
+
+    return node
+
+
+def make_handover_node(spec: dict) -> Callable:
+    """Handover final: marca vars no metadata + manda atendimento pra fila
+    humana com 'Resumo do Chamado'.
+
+    Spec:
+        type: handover
+        departamento_id: int | None — se vier, transfere; senão fica em fila geral
+        resumo_template: str — texto formatado com {{vars.*}} pra operador
+        message_to_client: str — texto pro cliente (default: "Você está na fila")
+        next: str (geralmente "__end__")
+
+    Side effects:
+    - UPDATE atendimento.metadata.vars_workflow ← state.vars (sync pro drawer)
+    - Se departamento_id: transfer_atendimento_to_departamento
+    - Outbox: msg pro cliente (não pro operador — operador vê via drawer)
+    """
+    departamento_id = spec.get("departamento_id")
+    resumo_template = spec.get("resumo_template", "")
+    message_to_client = spec.get(
+        "message_to_client",
+        "Você está na fila. Em breve um atendente irá te atender.",
+    )
+
+    async def node(state: WorkflowState) -> dict:
+        import json as _json
+
+        pool = (state.get("vars") or {}).get("_pool")
+        atend_id = state.get("atendimento_id", 0)
+        vars_dict = state.get("vars") or {}
+        # Remove pool helper antes de serializar
+        clean_vars = {k: v for k, v in vars_dict.items() if not k.startswith("_")}
+        resumo = _render(resumo_template, vars_dict) if resumo_template else ""
+
+        if pool is not None and atend_id:
+            try:
+                # Sync vars pra metadata (drawer humano lê isso)
+                payload = {**clean_vars}
+                if resumo:
+                    payload["_resumo_chamado"] = resumo
+                async with pool.connection() as conn:
+                    await conn.execute(
+                        """
+                        UPDATE atendimento
+                           SET metadata = jsonb_set(
+                                 COALESCE(metadata, '{}'::jsonb),
+                                 '{vars_workflow}',
+                                 COALESCE(metadata->'vars_workflow', '{}'::jsonb)
+                                 || %s::jsonb
+                               )
+                         WHERE id = %s
+                        """,
+                        (_json.dumps(payload, ensure_ascii=False), atend_id),
+                    )
+                    await conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "workflow_handover_metadata_sync_failed atend=%s err=%s",
+                    atend_id,
+                    exc,
+                )
+
+            if departamento_id:
+                try:
+                    from whatsapp_langchain.shared.atendimento import (
+                        transfer_atendimento_to_departamento,
+                    )
+
+                    await transfer_atendimento_to_departamento(
+                        pool, atend_id, int(departamento_id)
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "workflow_handover_transfer_failed atend=%s dep=%s err=%s",
+                        atend_id,
+                        departamento_id,
+                        exc,
+                    )
+
+        rendered_msg = _render(message_to_client, clean_vars)
+        return {
+            "outbox": [{"kind": "text", "text": rendered_msg}] if rendered_msg else [],
+            "history": [spec.get("__node_id__", "handover")],
+        }
+
+    return node
+
+
+def make_delegate_to_agent_node(spec: dict) -> Callable:
+    """Delega controle pro agente IA (Sprint v2 #6).
+
+    Spec:
+        type: delegate_to_agent
+        agent_slug: str — slug do agente IA (catálogo)
+        message: str | None — opcional, texto antes de delegar
+        next: str (geralmente "__end__")
+
+    Side effect: UPDATE atendimento.agente_atual = agent_slug.
+    Worker checa primeiro `agente_atual` — se setado, ignora workflow e
+    roda agente IA. Pra voltar pro workflow, alguém faz UPDATE = NULL.
+    """
+    agent_slug = spec["agent_slug"]
+    message_template = spec.get("message", "")
+
+    async def node(state: WorkflowState) -> dict:
+        pool = (state.get("vars") or {}).get("_pool")
+        atend_id = state.get("atendimento_id", 0)
+
+        if pool is not None and atend_id:
+            try:
+                async with pool.connection() as conn:
+                    await conn.execute(
+                        "UPDATE atendimento SET agente_atual = %s WHERE id = %s",
+                        (agent_slug, atend_id),
+                    )
+                    await conn.commit()
+            except Exception as exc:  # noqa: BLE001
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "workflow_delegate_failed atend=%s slug=%s err=%s",
+                    atend_id,
+                    agent_slug,
+                    exc,
+                )
+
+        outbox: list[dict[str, Any]] = []
+        if message_template:
+            rendered = _render(message_template, state.get("vars") or {})
+            if rendered:
+                outbox.append({"kind": "text", "text": rendered})
+
+        return {
+            "outbox": outbox,
+            "history": [spec.get("__node_id__", f"delegate:{agent_slug}")],
+        }
+
+    return node
+
+
 NODE_FACTORIES: dict[str, Callable[[dict], Callable]] = {
     "send_messages": make_send_messages_node,
     "send_media": make_send_media_node,
@@ -365,6 +559,9 @@ NODE_FACTORIES: dict[str, Callable[[dict], Callable]] = {
     "set_var": make_set_var_node,
     "branch": make_branch_node,
     "audit_event": make_audit_event_node,
+    "transfer_departamento": make_transfer_departamento_node,
+    "handover": make_handover_node,
+    "delegate_to_agent": make_delegate_to_agent_node,
     # Nota: não há node type "end" — `next: "__end__"` no spec basta
     # (o compiler mapeia pra langgraph.constants.END).
 }

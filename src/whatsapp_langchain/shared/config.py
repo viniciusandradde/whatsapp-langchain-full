@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     # container API). Em prod set ENABLE_TEST_RUNNER=true via env.
     enable_test_runner: bool = False
 
+    # --- Sprint Workflow-LangGraph (proposta/menu-langgraph-workflows) ---
+    # Quando True, worker tenta `workflows.runner.process()` antes de cair
+    # no `_try_handle_menu` legacy. Feature flag por empresa via
+    # `workflow_chatbot.ativo` — desabilitada empresa-por-empresa fica no menu_item.
+    # Default False: feature opt-in, evita regressão em prod.
+    enable_workflow_engine: bool = False
+
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
 
