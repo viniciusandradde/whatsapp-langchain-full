@@ -25,6 +25,7 @@ import {
   killTestRunClient as killTestRun,
   startTestRunClient as startTestRun,
   type TestRun,
+  type TestRunModo,
   type TestRunStatus,
 } from "@/lib/test-runner-client";
 
@@ -37,6 +38,21 @@ const STATUS_VARIANT: Record<
   passed: { label: "Passou", variant: "outline" },
   failed: { label: "Falhou", variant: "destructive" },
   error: { label: "Erro", variant: "destructive" },
+};
+
+const MODO_VARIANT: Record<
+  TestRunModo,
+  { label: string; cls: string }
+> = {
+  "e2e": { label: "E2E", cls: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300" },
+  "eval-offline": {
+    label: "Eval Offline",
+    cls: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
+  },
+  "eval-online": {
+    label: "Eval Online",
+    cls: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
+  },
 };
 
 function formatDuration(seconds: number | null): string {
@@ -54,6 +70,7 @@ interface Props {
 export function TestRunnerClient({ initialRuns }: Props) {
   const [runs, setRuns] = useState(initialRuns);
   const [filtro, setFiltro] = useState("");
+  const [modo, setModo] = useState<TestRunModo>("e2e");
   const [activeRun, setActiveRun] = useState<TestRun | null>(
     initialRuns.find((r) => r.status === "running" || r.status === "queued") ||
       null
@@ -132,7 +149,7 @@ export function TestRunnerClient({ initialRuns }: Props) {
     setError(null);
     setLog("");
     try {
-      const run = await startTestRun(filtro.trim() || undefined);
+      const run = await startTestRun(filtro.trim() || undefined, modo);
       setActiveRun(run);
       void refreshList();
     } catch (e) {
@@ -168,15 +185,40 @@ export function TestRunnerClient({ initialRuns }: Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="space-y-1 sm:w-72">
+              <label className="text-xs text-muted-foreground">
+                Tipo de run
+              </label>
+              <select
+                value={modo}
+                onChange={(e) => setModo(e.target.value as TestRunModo)}
+                disabled={isRunning || starting}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              >
+                <option value="e2e">Testes E2E (tests/e2e/)</option>
+                <option value="eval-offline">
+                  Eval agentes — offline (goldens.json)
+                </option>
+                <option value="eval-online">
+                  Eval agentes — online (LangSmith)
+                </option>
+              </select>
+            </div>
             <div className="flex-1 space-y-1">
               <label className="text-xs text-muted-foreground">
-                Filtro pytest -k (opcional)
+                {modo === "e2e"
+                  ? "Filtro pytest -k (opcional)"
+                  : "Filtro -k (opcional — ex: agendamentos)"}
               </label>
               <input
                 type="text"
                 value={filtro}
                 onChange={(e) => setFiltro(e.target.value)}
-                placeholder='Ex: "atendimento and texto" ou deixe vazio pra rodar 32 cenários'
+                placeholder={
+                  modo === "e2e"
+                    ? 'Ex: "atendimento and texto" ou deixe vazio pra rodar 32 cenários'
+                    : "Ex: agendamentos (1 agente) ou vazio (6 agentes)"
+                }
                 disabled={isRunning || starting}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               />
@@ -258,6 +300,7 @@ export function TestRunnerClient({ initialRuns }: Props) {
               <thead className="border-b text-xs text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-2 text-left font-normal">#</th>
+                  <th className="py-2 pr-2 text-left font-normal">Tipo</th>
                   <th className="py-2 pr-2 text-left font-normal">Status</th>
                   <th className="py-2 pr-2 text-left font-normal">
                     Pass/Total
@@ -271,9 +314,20 @@ export function TestRunnerClient({ initialRuns }: Props) {
               <tbody>
                 {runs.map((r) => {
                   const meta = STATUS_VARIANT[r.status];
+                  const modoMeta = MODO_VARIANT[r.modo ?? "e2e"];
                   return (
                     <tr key={r.id} className="border-b last:border-0">
                       <td className="py-2 pr-2 font-mono text-xs">{r.id}</td>
+                      <td className="py-2 pr-2">
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            modoMeta.cls
+                          )}
+                        >
+                          {modoMeta.label}
+                        </span>
+                      </td>
                       <td className="py-2 pr-2">
                         <Badge variant={meta.variant} className="text-[10px]">
                           {meta.label}

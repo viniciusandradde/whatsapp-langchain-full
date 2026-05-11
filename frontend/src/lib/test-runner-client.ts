@@ -8,6 +8,8 @@
  */
 
 export type TestRunStatus = "queued" | "running" | "passed" | "failed" | "error";
+// Sprint Eval-UI (mig 075): roteia subprocess pytest entre tests/e2e/ e tests/eval/.
+export type TestRunModo = "e2e" | "eval-online" | "eval-offline";
 
 export interface TestRun {
   id: number;
@@ -16,6 +18,7 @@ export interface TestRun {
   started_at: string | null;
   finished_at: string | null;
   status: TestRunStatus;
+  modo?: TestRunModo;
   filtro: string | null;
   total: number | null;
   passed: number | null;
@@ -56,10 +59,13 @@ export async function getTestRunClient(id: number): Promise<TestRun> {
   return jsonFetch<TestRun>(`/api/proxy/admin-tests/runs/${id}`);
 }
 
-export async function startTestRunClient(filtro?: string): Promise<TestRun> {
+export async function startTestRunClient(
+  filtro?: string,
+  modo: TestRunModo = "e2e"
+): Promise<TestRun> {
   return jsonFetch<TestRun>("/api/proxy/admin-tests/run", {
     method: "POST",
-    body: JSON.stringify({ filtro: filtro || null }),
+    body: JSON.stringify({ filtro: filtro || null, modo }),
   });
 }
 

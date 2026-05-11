@@ -63,6 +63,8 @@ async def _require_admin_and_enabled(user_id: str) -> None:
 
 class RunRequest(BaseModel):
     filtro: str | None = Field(default=None, max_length=200)
+    # Sprint Eval-UI: roteia entre tests/e2e/ e tests/eval/ (mig 075).
+    modo: str = Field(default="e2e", pattern=r"^(e2e|eval-online|eval-offline)$")
 
 
 @router.post("/run", status_code=201)
@@ -71,7 +73,7 @@ async def run_endpoint(
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict:
     await _require_admin_and_enabled(user_id)
-    payload = {"user_id": user_id, "filtro": body.filtro}
+    payload = {"user_id": user_id, "filtro": body.filtro, "modo": body.modo}
     async with httpx.AsyncClient(timeout=30) as client:
         try:
             r = await client.post(f"{_runner_url()}/run", json=payload)

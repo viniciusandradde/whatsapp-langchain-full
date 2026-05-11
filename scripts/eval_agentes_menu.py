@@ -2,7 +2,7 @@
 
 Lê dataset LangSmith (read-only) OU goldens.json local, amostra balanceado
 por agente_slug, invoca cada agente local, roda LLM-as-judge correctness
-(binary + continuous), salva JSON local.
+(binary + continuous), retorna dict + salva JSON local.
 
 Judge continuous (Sprint Eval): CoT estruturada com `EVALUATION_STEPS` (5
 passos) + `RUBRIC` 4 bandas → JSON `{score, reason}`. Inspirado em
@@ -14,7 +14,10 @@ Modos:
 - `--source local`: lê `--goldens-file` (default docs/agente/eval-runs/goldens.json)
 - `--export-goldens`: amostra do LangSmith, escreve goldens.json e sai
 
-Uso (dentro do container api):
+Função pública `evaluate_agentes(...)` (Sprint Eval-UI) é importada por
+`tests/eval/test_eval_agentes_menu.py` pra rodar via pytest + Allure.
+
+Uso CLI (dentro do container api):
     OPENAI_API_KEY=$OPENROUTER_API_KEY \
     OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
     python /app/eval_agentes_menu.py --per-agent 6
@@ -115,7 +118,6 @@ def build_continuous_prompt(cliente_msg: str, referencia: str, resposta: str) ->
     Retorna string pronta pra `_judge_llm.ainvoke([HumanMessage(content=...)])`.
     O modelo deve devolver JSON `{"score": int 0-10, "reason": str pt-BR}`.
     """
-    # noqa: E501 — prompt em pt-BR; quebrar linhas confunde o LLM.
     steps_txt = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(EVALUATION_STEPS))
     rubric_txt = "\n".join(f"- {lo}-{hi}: {outcome}" for lo, hi, outcome in RUBRIC)
     return (
@@ -205,147 +207,139 @@ DEFAULT_GOLDENS_PATH = (
 )
 
 
-async def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default=DEFAULT_DATASET_V2)
-    parser.add_argument(
-        "--per-agent",
-        type=int,
-        default=6,
-        help="Quantos exemplos por agente_slug (8 agentes × 6 = 48 total)",
-    )
-    parser.add_argument(
-        "--max-pool",
-        type=int,
-        default=500,
-        help="Quantos exemplos do dataset percorrer pra fazer sampling balanceado",
-    )
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output", default=None)
-    parser.add_argument(
-        "--keep-saudacao",
-        action="store_true",
-        help="NÃO filtrar exemplos com expected = saudação/menu (default: filtrar)",
-    )
-    parser.add_argument(
-        "--judge",
-        choices=["binary", "continuous", "both"],
-        default="both",
-        help="binary=openevals strict; continuous=custom 0-10 helpful; both=ambos",
-    )
-    parser.add_argument(
-        "--source",
-        choices=["langsmith", "local"],
-        default="langsmith",
-        help="local = lê --goldens-file. langsmith = lê dataset via API.",
-    )
-    parser.add_argument(
-        "--export-goldens",
-        action="store_true",
-        help=(
-            "Em vez de rodar eval: amostra do LangSmith e escreve --goldens-file. "
-            "Sai 0 ao terminar."
-        ),
-    )
-    parser.add_argument(
-        "--goldens-file",
-        default=str(DEFAULT_GOLDENS_PATH),
-        help="Caminho do goldens.json (relativo à raiz do projeto).",
-    )
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.WARNING)
-    random.seed(args.seed)
-
-    # Resolução do source dos exemplos: local (goldens.json) vs LangSmith API.
-    # `--export-goldens` reusa o caminho LangSmith e sai cedo após escrever.
-    samples: list = []
-    dataset_id_str: str
-    dataset_name: str
-
-    if args.source == "local":
-        goldens_path = Path(args.goldens_file)
-        if not goldens_path.exists():
-            print(
-                f"ERRO: --source local mas {goldens_path} não existe. "
-                f"Rode `--export-goldens` primeiro.",
-                file=sys.stderr,
-            )
-            return 2
-        samples = load_local_goldens(goldens_path)
-        print(f"=== Eval Agentes Menu (LOCAL goldens, {len(samples)} exemplos) ===")
-        print(f"goldens: {goldens_path}\n")
-        dataset_id_str = f"local:{goldens_path.name}"
-        dataset_name = goldens_path.name
-    else:
-        # Modo LangSmith — exige API key.
-        api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get(
-            "LANGSMITH_API_KEY"
+def _resolve_samples_from_local(goldens_file: Path) -> tuple[list, str, str]:
+    """Carrega samples de goldens.json local; retorna (samples, dataset_id, name)."""
+    if not goldens_file.exists():
+        raise FileNotFoundError(
+            f"goldens local {goldens_file} não existe. "
+            f"Rode `--export-goldens` primeiro."
         )
-        if not api_key:
-            print("ERRO: LANGCHAIN_API_KEY ausente", file=sys.stderr)
-            return 2
+    samples = load_local_goldens(goldens_file)
+    return samples, f"local:{goldens_file.name}", goldens_file.name
 
-        print("=== Eval Agentes Menu (sandbox 999) ===")
-        print(f"dataset: {args.dataset}")
-        print(f"per_agent: {args.per_agent}\n")
 
-        from langsmith import Client
+def _resolve_samples_from_langsmith(
+    *,
+    dataset_name: str,
+    per_agent: int,
+    max_pool: int,
+    keep_saudacao: bool,
+    verbose: bool = True,
+) -> tuple[list, str, str, int]:
+    """Lê dataset LangSmith + sampling balanceado.
 
-        client = Client(api_key=api_key)
-        dataset = client.read_dataset(dataset_name=args.dataset)
+    Retorna `(samples, dataset_id_str, dataset_name, n_descartados)`.
+    Levanta `RuntimeError` se LANGCHAIN_API_KEY ausente.
+    """
+    api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get("LANGSMITH_API_KEY")
+    if not api_key:
+        raise RuntimeError("LANGCHAIN_API_KEY ausente — modo langsmith exige.")
 
-        # 1. Sampling balanceado: lê pool grande, agrupa por agente_slug,
-        # pega N de cada
-        print(f"Lendo até {args.max_pool} exemplos do dataset...")
-        pool: dict[str, list] = defaultdict(list)
-        discarded_saudacao = 0
-        for ex in client.list_examples(dataset_id=dataset.id, limit=args.max_pool):
-            slug = (ex.inputs or {}).get("agente_slug") or "?"
-            expected = (ex.outputs or {}).get("agente_resposta_esperada", "")
-            if not args.keep_saudacao and is_saudacao_menu(expected):
-                discarded_saudacao += 1
-                continue
-            pool[slug].append(ex)
+    from langsmith import Client
 
-        if discarded_saudacao:
-            print(
-                f"⚠ Descartados {discarded_saudacao} exemplos com "
-                f"expected=saudação/menu"
-            )
+    client = Client(api_key=api_key)
+    dataset = client.read_dataset(dataset_name=dataset_name)
+
+    if verbose:
+        print(f"Lendo até {max_pool} exemplos do dataset...")
+    pool: dict[str, list] = defaultdict(list)
+    discarded = 0
+    for ex in client.list_examples(dataset_id=dataset.id, limit=max_pool):
+        slug = (ex.inputs or {}).get("agente_slug") or "?"
+        expected = (ex.outputs or {}).get("agente_resposta_esperada", "")
+        if not keep_saudacao and is_saudacao_menu(expected):
+            discarded += 1
+            continue
+        pool[slug].append(ex)
+
+    if verbose:
+        if discarded:
+            print(f"⚠ Descartados {discarded} exemplos com expected=saudação/menu")
         print("Distribuição no pool (filtrado):")
         for slug, items in sorted(pool.items()):
             print(f"  {slug}: {len(items)}")
 
-        for slug, items in sorted(pool.items()):
-            if slug == "?":
-                continue
-            random.shuffle(items)
-            samples.extend(items[: args.per_agent])
-        print(f"\nTotal sampled: {len(samples)} (cap {args.per_agent}/agente)\n")
+    samples: list = []
+    for slug, items in sorted(pool.items()):
+        if slug == "?":
+            continue
+        random.shuffle(items)
+        samples.extend(items[:per_agent])
 
-        dataset_id_str = str(dataset.id)
-        dataset_name = args.dataset
+    return samples, str(dataset.id), dataset_name, discarded
 
-        # Early-exit: --export-goldens só escreve o JSON e sai.
-        if args.export_goldens:
-            out_path = Path(args.goldens_file)
-            dump_goldens(samples, out_path)
-            print(f"✓ Exportados {len(samples)} goldens para {out_path}")
-            return 0
+
+async def evaluate_agentes(
+    *,
+    source: str = "local",
+    per_agent: int = 3,
+    max_pool: int = 1500,
+    seed: int = 42,
+    judge: str = "continuous",
+    keep_saudacao: bool = False,
+    dataset_name: str = DEFAULT_DATASET_V2,
+    goldens_file: Path | None = None,
+    filter_agente: str | None = None,
+    verbose: bool = True,
+) -> dict:
+    """Roda eval programática (sem CLI). Retorna dict com `results`,
+    `overall_continuous`, `overall_binary`, `by_agent_avg`, `total`.
+
+    Usada por `tests/eval/test_eval_agentes_menu.py` (pytest) e por `main()`.
+
+    Args:
+        source: "local" (lê goldens.json) ou "langsmith" (lê dataset via API)
+        per_agent: quantos exemplos amostrar por agente_slug
+        filter_agente: se preenchido, filtra `samples` pra só esse slug
+        judge: "binary" | "continuous" | "both"
+    """
+    random.seed(seed)
+    if goldens_file is None:
+        goldens_file = DEFAULT_GOLDENS_PATH
+
+    # 1. Resolve samples
+    if source == "local":
+        samples, dataset_id_str, ds_name = _resolve_samples_from_local(goldens_file)
+        if verbose:
+            print(f"=== Eval Agentes Menu (LOCAL goldens, {len(samples)} exemplos) ===")
+            print(f"goldens: {goldens_file}\n")
+    elif source == "langsmith":
+        if verbose:
+            print("=== Eval Agentes Menu (sandbox 999) ===")
+            print(f"dataset: {dataset_name}")
+            print(f"per_agent: {per_agent}\n")
+        samples, dataset_id_str, ds_name, _ = _resolve_samples_from_langsmith(
+            dataset_name=dataset_name,
+            per_agent=per_agent,
+            max_pool=max_pool,
+            keep_saudacao=keep_saudacao,
+            verbose=verbose,
+        )
+        if verbose:
+            print(f"\nTotal sampled: {len(samples)} (cap {per_agent}/agente)\n")
+    else:
+        raise ValueError(f"source inválido: {source}")
+
+    # Filtra por agente_slug se requisitado (T.2)
+    if filter_agente:
+        samples = [
+            s for s in samples if (s.inputs or {}).get("agente_slug") == filter_agente
+        ]
+        if verbose:
+            print(f"Filtrado por agente_slug={filter_agente}: {len(samples)} ex")
 
     # 2. Loaders
     from langchain_core.messages import HumanMessage
 
     from whatsapp_langchain.agents.loader import load_graph
     from whatsapp_langchain.shared.agente import resolve_agente_runtime
-    from whatsapp_langchain.shared.db import close_pool, get_pool
+    from whatsapp_langchain.shared.db import get_pool
 
     pool_db = await get_pool()
 
     # 3. Judges
     judge_binary = None
-    if args.judge in ("binary", "both"):
+    if judge in ("binary", "both"):
         try:
             from openevals.llm import create_llm_as_judge
             from openevals.prompts import CORRECTNESS_PROMPT
@@ -355,12 +349,14 @@ async def main() -> int:
                 model="openai:gpt-4o-mini",
                 feedback_key="correctness",
             )
-            print("Judge binary: openevals correctness gpt-4o-mini")
+            if verbose:
+                print("Judge binary: openevals correctness gpt-4o-mini")
         except ImportError:
-            print("WARN: openevals não instalado")
+            if verbose:
+                print("WARN: openevals não instalado")
 
     judge_continuous = None
-    if args.judge in ("continuous", "both"):
+    if judge in ("continuous", "both"):
         from langchain_openai import ChatOpenAI
 
         _judge_llm = ChatOpenAI(
@@ -374,7 +370,6 @@ async def main() -> int:
             try:
                 resp = await _judge_llm.ainvoke([HumanMessage(content=prompt)])
                 content = resp.content.strip()
-                # Extrai JSON: limpa code fences se vierem
                 if "```" in content:
                     content = content.split("```")[1]
                     if content.startswith("json"):
@@ -383,9 +378,6 @@ async def main() -> int:
                 if m:
                     data = json.loads(m.group(0))
                     raw = int(data.get("score", 0))
-                    # Sprint Eval: campo preferido é "reason" (compat com
-                    # geval_template_ptbr de eval-101); fallback pra "rationale"
-                    # caso o modelo gere o nome antigo.
                     reason = data.get("reason") or data.get("rationale") or ""
                     return {
                         "score": max(0, min(10, raw)) / 10.0,
@@ -395,22 +387,24 @@ async def main() -> int:
                 return {"score": None, "reason": f"judge_error: {e}"}
             return {"score": None, "reason": "parse_failed"}
 
-        print(
-            "Judge continuous: custom 0-10 (CoT + rubric) gpt-4o-mini "
-            "[returns {score, reason}]"
-        )
-    print()
+        if verbose:
+            print(
+                "Judge continuous: custom 0-10 (CoT + rubric) gpt-4o-mini "
+                "[returns {score, reason}]"
+            )
+    if verbose:
+        print()
 
     # 4. Loop
-    results = []
+    results: list[dict] = []
     by_agent: dict[str, list[float]] = defaultdict(list)
     for i, ex in enumerate(samples, 1):
         slug = ex.inputs.get("agente_slug", "atendimento")
         cliente_msg = ex.inputs.get("cliente_msg", "")
         expected = (ex.outputs or {}).get("agente_resposta_esperada", "")
-        print(f"[{i}/{len(samples)}] {slug} :: {cliente_msg[:60]}", flush=True)
+        if verbose:
+            print(f"[{i}/{len(samples)}] {slug} :: {cliente_msg[:60]}", flush=True)
 
-        # Invoca agente
         try:
             runtime = await resolve_agente_runtime(pool_db, EMPRESA_ID, slug)
             graph = await load_graph(
@@ -442,7 +436,8 @@ async def main() -> int:
         except Exception as e:
             actual = ""
             error = f"{type(e).__name__}: {e}"
-            print(f"  ⚠️ ERROR: {error}")
+            if verbose:
+                print(f"  ⚠️ ERROR: {error}")
 
         # Judges
         score_binary = None
@@ -472,7 +467,6 @@ async def main() -> int:
                 except Exception as e:
                     reason_continuous = f"judge_continuous_error: {e}"
 
-        # Métrica primária pra agregação: continuous se disponível, senão binary
         primary_score = (
             score_continuous if score_continuous is not None else score_binary
         )
@@ -490,38 +484,123 @@ async def main() -> int:
                 "score_binary": score_binary,
                 "score_continuous": score_continuous,
                 "comment_binary": comment_binary,
-                # Sprint Eval: campo preferido é `reason_continuous`. Mantemos
-                # `rationale_continuous` como espelho por 1 sprint pra compat
-                # com parsers dos JSONs antigos em docs/agente/eval-runs/.
                 "reason_continuous": reason_continuous,
-                "rationale_continuous": reason_continuous,
+                "rationale_continuous": reason_continuous,  # compat shim
                 "error": error,
             }
         )
-        sb = "—" if score_binary is None else f"{score_binary:.2f}"
-        sc = "—" if score_continuous is None else f"{score_continuous:.2f}"
-        print(f"  → bin={sb} cont={sc} resp={actual[:70]}")
+        if verbose:
+            sb = "—" if score_binary is None else f"{score_binary:.2f}"
+            sc = "—" if score_continuous is None else f"{score_continuous:.2f}"
+            print(f"  → bin={sb} cont={sc} resp={actual[:70]}")
 
-    # 5. Summary
-    print("\n=== SUMMARY ===")
+    # 5. Agregados
     bin_scores = [r["score_binary"] for r in results if r["score_binary"] is not None]
     cont_scores = [
         r["score_continuous"] for r in results if r["score_continuous"] is not None
     ]
-    if bin_scores:
-        avg = sum(bin_scores) / len(bin_scores)
-        ok = sum(1 for s in bin_scores if s >= 0.7)
-        print(f"BINARY     overall avg: {avg:.3f} ({ok}/{len(bin_scores)} ≥ 0.7)")
-    if cont_scores:
-        avg = sum(cont_scores) / len(cont_scores)
-        ok = sum(1 for s in cont_scores if s >= 0.6)
-        print(f"CONTINUOUS overall avg: {avg:.3f} ({ok}/{len(cont_scores)} ≥ 0.6)")
-    print("\nPor agente (continuous primário):")
-    for slug in sorted(by_agent):
-        scores = by_agent[slug]
-        avg = sum(scores) / len(scores)
-        ok = sum(1 for s in scores if s >= 0.6)
-        print(f"  {slug:30s} avg={avg:.3f}  {ok}/{len(scores)} ≥ 0.6")
+    overall_binary = sum(bin_scores) / len(bin_scores) if bin_scores else None
+    overall_continuous = sum(cont_scores) / len(cont_scores) if cont_scores else None
+    by_agent_avg = {slug: sum(s) / len(s) for slug, s in by_agent.items()}
+
+    if verbose:
+        print("\n=== SUMMARY ===")
+        if bin_scores:
+            ok = sum(1 for s in bin_scores if s >= 0.7)
+            print(
+                f"BINARY     overall avg: {overall_binary:.3f} "
+                f"({ok}/{len(bin_scores)} ≥ 0.7)"
+            )
+        if cont_scores:
+            ok = sum(1 for s in cont_scores if s >= 0.6)
+            print(
+                f"CONTINUOUS overall avg: {overall_continuous:.3f} "
+                f"({ok}/{len(cont_scores)} ≥ 0.6)"
+            )
+        print("\nPor agente (continuous primário):")
+        for slug in sorted(by_agent):
+            scores = by_agent[slug]
+            avg = sum(scores) / len(scores)
+            ok = sum(1 for s in scores if s >= 0.6)
+            print(f"  {slug:30s} avg={avg:.3f}  {ok}/{len(scores)} ≥ 0.6")
+
+    return {
+        "dataset": ds_name,
+        "dataset_id": dataset_id_str,
+        "source": source,
+        "total": len(results),
+        "per_agent_target": per_agent,
+        "filter_agente": filter_agente,
+        "overall_binary": overall_binary,
+        "overall_continuous": overall_continuous,
+        "by_agent_avg": by_agent_avg,
+        "results": results,
+    }
+
+
+async def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", default=DEFAULT_DATASET_V2)
+    parser.add_argument("--per-agent", type=int, default=6)
+    parser.add_argument("--max-pool", type=int, default=500)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--keep-saudacao", action="store_true")
+    parser.add_argument(
+        "--judge", choices=["binary", "continuous", "both"], default="both"
+    )
+    parser.add_argument("--source", choices=["langsmith", "local"], default="langsmith")
+    parser.add_argument("--export-goldens", action="store_true")
+    parser.add_argument("--goldens-file", default=str(DEFAULT_GOLDENS_PATH))
+    parser.add_argument(
+        "--filter-agente",
+        default=None,
+        help="Se preenchido, filtra samples pra só esse agente_slug",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.WARNING)
+
+    # Early-exit: --export-goldens roda só amostragem LangSmith e salva
+    if args.export_goldens:
+        if args.source != "langsmith":
+            print(
+                "--export-goldens exige --source langsmith (default)",
+                file=sys.stderr,
+            )
+            return 2
+        random.seed(args.seed)
+        samples, _, _, _ = _resolve_samples_from_langsmith(
+            dataset_name=args.dataset,
+            per_agent=args.per_agent,
+            max_pool=args.max_pool,
+            keep_saudacao=args.keep_saudacao,
+            verbose=True,
+        )
+        out_path = Path(args.goldens_file)
+        dump_goldens(samples, out_path)
+        print(f"✓ Exportados {len(samples)} goldens para {out_path}")
+        return 0
+
+    try:
+        result = await evaluate_agentes(
+            source=args.source,
+            per_agent=args.per_agent,
+            max_pool=args.max_pool,
+            seed=args.seed,
+            judge=args.judge,
+            keep_saudacao=args.keep_saudacao,
+            dataset_name=args.dataset,
+            goldens_file=Path(args.goldens_file),
+            filter_agente=args.filter_agente,
+            verbose=True,
+        )
+    except FileNotFoundError as exc:
+        print(f"ERRO: {exc}", file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
+        print(f"ERRO: {exc}", file=sys.stderr)
+        return 2
 
     # 6. Save JSON
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -529,20 +608,17 @@ async def main() -> int:
     out.write_text(
         json.dumps(
             {
-                "dataset": dataset_name,
-                "dataset_id": dataset_id_str,
-                "source": args.source,
+                **{k: v for k, v in result.items() if k != "results"},
                 "timestamp": datetime.now().isoformat(),
-                "per_agent_target": args.per_agent,
-                "total": len(results),
-                "by_agent_avg": {slug: sum(s) / len(s) for slug, s in by_agent.items()},
-                "results": results,
+                "results": result["results"],
             },
             ensure_ascii=False,
             indent=2,
         )
     )
     print(f"\nJSON salvo em: {out}")
+
+    from whatsapp_langchain.shared.db import close_pool
 
     await close_pool()
     return 0

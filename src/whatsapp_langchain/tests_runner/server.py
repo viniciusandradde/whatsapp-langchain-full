@@ -51,13 +51,17 @@ async def health() -> dict:
 class RunRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=100)
     filtro: str | None = Field(default=None, max_length=200)
+    # Sprint Eval-UI (mig 075): roteia entre tests/e2e/ e tests/eval/.
+    modo: str = Field(default="e2e", max_length=20)
 
 
 @app.post("/run", status_code=201)
 async def run_endpoint(body: RunRequest) -> dict:
     pool = await get_pool()
     try:
-        run = await start_run(pool, user_id=body.user_id, filtro=body.filtro)
+        run = await start_run(
+            pool, user_id=body.user_id, filtro=body.filtro, modo=body.modo
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return run.to_dict()

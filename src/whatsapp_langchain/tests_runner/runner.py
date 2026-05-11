@@ -46,6 +46,7 @@ class TestRun:
     storage_path: str
     log_size_bytes: int
     error_message: str | None
+    modo: str = "e2e"  # Sprint Eval-UI (mig 075)
     started_by_name: str | None = None
 
     def to_dict(self) -> dict:
@@ -56,6 +57,7 @@ class TestRun:
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": (self.finished_at.isoformat() if self.finished_at else None),
             "status": self.status,
+            "modo": self.modo,
             "filtro": self.filtro,
             "total": self.total,
             "passed": self.passed,
@@ -74,7 +76,7 @@ _COLS = (
     "tr.id, tr.started_by_user_id, tr.started_at, tr.finished_at, "
     "tr.status, tr.filtro, tr.total, tr.passed, tr.failed, "
     "tr.duration_seconds, tr.pid, tr.storage_path, tr.log_size_bytes, "
-    "tr.error_message, u.name"
+    "tr.error_message, tr.modo, u.name"
 )
 
 
@@ -84,7 +86,8 @@ def _row_to_run(row) -> TestRun:
         finished_at=row[3], status=row[4], filtro=row[5], total=row[6],
         passed=row[7], failed=row[8], duration_seconds=row[9], pid=row[10],
         storage_path=row[11], log_size_bytes=row[12], error_message=row[13],
-        started_by_name=row[14] if len(row) > 14 else None,
+        modo=row[14] if len(row) > 14 and row[14] else "e2e",
+        started_by_name=row[15] if len(row) > 15 else None,
     )
 
 
@@ -97,16 +100,26 @@ async def has_running_run(pool: AsyncConnectionPool) -> bool:
 
 
 async def start_run(
-    pool: AsyncConnectionPool, *, user_id: str, filtro: str | None
+    pool: AsyncConnectionPool,
+    *,
+    user_id: str,
+    filtro: str | None,
+    modo: str = "e2e",
 ) -> TestRun:
+    """Sprint Eval-UI: param `modo` controla qual suite roda.
+    'e2e' (default) → tests/e2e/; 'eval-online'/'eval-offline' → tests/eval/.
+    """
+    if modo not in ("e2e", "eval-online", "eval-offline"):
+        raise ValueError(f"modo inválido: {modo}")
     if await has_running_run(pool):
         raise RuntimeError("Ja ha um run em andamento. Aguarde finalizar.")
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "INSERT INTO test_run (started_by_user_id, status, filtro, storage_path) "
-            "VALUES (%s, 'queued', %s, '') RETURNING id",
-            (user_id, filtro),
+            "INSERT INTO test_run "
+            "(started_by_user_id, status, filtro, modo, storage_path) "
+            "VALUES (%s, 'queued', %s, %s, '') RETURNING id",
+            (user_id, filtro, modo),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -118,7 +131,7 @@ async def start_run(
     abs_path.mkdir(parents=True, exist_ok=True)
     (abs_path / "allure-results").mkdir(exist_ok=True)
     (abs_path / "stdout.log").touch()
-    _write_manifest(abs_path, status="queued", filtro=filtro)
+    _write_manifest(abs_path, status="queued", filtro=filtro, modo=modo)
 
     async with pool.connection() as conn:
         await conn.execute(
@@ -127,7 +140,7 @@ async def start_run(
         )
         await conn.commit()
 
-    asyncio.create_task(_spawn_pytest_async(pool, run_id, filtro, abs_path))
+    asyncio.create_task(_spawn_pytest_async(pool, run_id, filtro, abs_path, modo))
     return await get_run(pool, run_id)  # type: ignore[return-value]
 
 
@@ -143,11 +156,21 @@ def _write_manifest(abs_path: Path, **kwargs: Any) -> None:
 
 
 async def _spawn_pytest_async(
-    pool: AsyncConnectionPool, run_id: int, filtro: str | None, abs_path: Path,
+    pool: AsyncConnectionPool,
+    run_id: int,
+    filtro: str | None,
+    abs_path: Path,
+    modo: str = "e2e",
 ) -> None:
     log_path = abs_path / "stdout.log"
+    # Sprint Eval-UI: roteia suite + env var por modo.
+    if modo in ("eval-online", "eval-offline"):
+        target_dir = "tests/eval/"
+    else:
+        target_dir = "tests/e2e/"
+
     cmd = [
-        sys.executable, "-m", "pytest", "tests/e2e/",
+        sys.executable, "-m", "pytest", target_dir,
         f"--alluredir={abs_path}/allure-results",
         f"--junitxml={abs_path}/junit.xml",
         "-m", "docker_demo", "-v", "--tb=line",
@@ -159,6 +182,11 @@ async def _spawn_pytest_async(
     env = os.environ.copy()
     if not env.get("OPENROUTER_API_KEY"):
         env["SKIP_DEEPEVAL"] = "1"
+    # Sprint Eval-UI: pyteste eval lê esse env pra escolher fonte do dataset.
+    if modo == "eval-online":
+        env["EVAL_SOURCE"] = "langsmith"
+    elif modo == "eval-offline":
+        env["EVAL_SOURCE"] = "local"
 
     started_at = datetime.now()
     try:

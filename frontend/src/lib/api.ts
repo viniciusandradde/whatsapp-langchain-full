@@ -2293,6 +2293,8 @@ export interface TestRun {
   started_at: string | null;
   finished_at: string | null;
   status: TestRunStatus;
+  // Sprint Eval-UI (mig 075): "e2e" | "eval-online" | "eval-offline".
+  modo?: TestRunModo;
   filtro: string | null;
   total: number | null;
   passed: number | null;
@@ -2304,6 +2306,8 @@ export interface TestRun {
   error_message: string | null;
 }
 
+export type TestRunModo = "e2e" | "eval-online" | "eval-offline";
+
 export async function getTestRuns(): Promise<{ items: TestRun[] }> {
   return apiFetch<{ items: TestRun[] }>(`/api/admin/tests/runs`);
 }
@@ -2312,10 +2316,13 @@ export async function getTestRun(id: number): Promise<TestRun> {
   return apiFetch<TestRun>(`/api/admin/tests/runs/${id}`);
 }
 
-export async function startTestRun(filtro?: string): Promise<TestRun> {
+export async function startTestRun(
+  filtro?: string,
+  modo: TestRunModo = "e2e"
+): Promise<TestRun> {
   return apiFetch<TestRun>(`/api/admin/tests/run`, {
     method: "POST",
-    body: { filtro: filtro || null },
+    body: { filtro: filtro || null, modo },
   });
 }
 
