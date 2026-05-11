@@ -24,6 +24,7 @@ from langgraph.constants import END
 from langgraph.types import Command, interrupt
 
 from whatsapp_langchain.workflows.state import WorkflowState
+from whatsapp_langchain.workflows.validators import validate_input
 
 # Map "__end__"/"end" no spec → langgraph END sentinel
 # (usado por ask_choice → Command(goto=...))
@@ -76,20 +77,23 @@ def make_send_messages_node(spec: dict) -> Callable:
 
 
 def make_ask_text_node(spec: dict) -> Callable:
-    """Interrupt() pedindo texto. Salva em `vars[save_as]` no resume.
+    """Interrupt() pedindo texto. Valida (via `validators.py`) e salva em
+    `vars[save_as]` no resume.
 
     Spec:
         type: ask_text
         prompt: str (renderizado com vars.*)
         save_as: str (chave em state.vars)
-        validate: dict | None  — ex: {"min_len": 2}
-        retry_message: str | None
+        validate: dict | None  — legacy ex: {"min_len": 2}
+        validate_with: str | None  — MVP: "cpf"/"cnpj"/"cep"/"data_br"/"min_len:N"
+        retry_message: str | None  — mensagem custom (default: errMsg do validator)
         next: str
     """
     save_as = spec["save_as"]
     prompt_template = spec["prompt"]
-    validate_cfg = spec.get("validate") or {}
-    retry_msg = spec.get("retry_message", "Resposta inválida. Tente de novo.")
+    # Aceita ambos: `validate` (dict legacy) ou `validate_with` (str MVP)
+    validate_rule: Any = spec.get("validate_with") or spec.get("validate")
+    custom_retry = spec.get("retry_message")
 
     def node(state: WorkflowState) -> dict:
         # ⚠ interrupt() PRIMEIRO — Sprint v2 #2
@@ -106,13 +110,13 @@ def make_ask_text_node(spec: dict) -> Callable:
 
         # Validação pós-resume (re-prompt se inválido via loop em interrupt)
         while True:
-            ok, _err = _validate_answer(answer, validate_cfg)
+            ok, err = validate_input(str(answer or ""), validate_rule)
             if ok:
                 break
             answer = interrupt(
                 {
                     "kind": "ask_text",
-                    "prompt": retry_msg,
+                    "prompt": custom_retry or err,
                     "save_as": save_as,
                 }
             )
@@ -123,17 +127,6 @@ def make_ask_text_node(spec: dict) -> Callable:
         }
 
     return node
-
-
-def _validate_answer(answer: Any, cfg: dict) -> tuple[bool, str]:
-    """Validators básicos do PoC (MVP adiciona validators_br)."""
-    if not cfg:
-        return True, ""
-    text = str(answer or "").strip()
-    min_len = cfg.get("min_len")
-    if min_len is not None and len(text) < int(min_len):
-        return False, f"Mínimo {min_len} caracteres."
-    return True, ""
 
 
 def make_ask_choice_node(spec: dict) -> Callable:
@@ -198,10 +191,180 @@ def _match_choice(answer: Any, choices: list[dict]) -> dict | None:
     return None
 
 
+def make_send_media_node(spec: dict) -> Callable:
+    """Envia mídia (PDF, imagem, áudio) com URL pública + caption opcional.
+
+    Spec:
+        type: send_media
+        url: str (HTTPS público — provider faz pull)
+        content_type: str (ex: "application/pdf", "image/jpeg")
+        caption: str | None
+        next: str
+    """
+    url = spec["url"]
+    content_type = spec.get("content_type", "application/octet-stream")
+    caption_template = spec.get("caption", "")
+
+    def node(state: WorkflowState) -> dict:
+        vars_dict = state.get("vars") or {}
+        caption = _render(caption_template, vars_dict) if caption_template else ""
+        return {
+            "outbox": [
+                {
+                    "kind": "media",
+                    "url": url,
+                    "content_type": content_type,
+                    "caption": caption,
+                }
+            ],
+            "history": [spec.get("__node_id__", "send_media")],
+        }
+
+    return node
+
+
+def make_send_link_node(spec: dict) -> Callable:
+    """Envia link clicável (texto + URL).
+
+    Spec:
+        type: send_link
+        url: str
+        text: str (pode usar {{vars.*}})
+        next: str
+    """
+    url = spec["url"]
+    text_template = spec.get("text", url)
+
+    def node(state: WorkflowState) -> dict:
+        vars_dict = state.get("vars") or {}
+        text = _render(text_template, vars_dict)
+        return {
+            "outbox": [{"kind": "text", "text": f"{text}\n{url}"}],
+            "history": [spec.get("__node_id__", "send_link")],
+        }
+
+    return node
+
+
+def make_set_var_node(spec: dict) -> Callable:
+    """Define variável estática ou calculada.
+
+    Spec:
+        type: set_var
+        save_as: str
+        value: str (renderizado com vars.*)
+        next: str
+    """
+    save_as = spec["save_as"]
+    value_template = spec.get("value", "")
+
+    def node(state: WorkflowState) -> dict:
+        vars_dict = state.get("vars") or {}
+        value = _render(value_template, vars_dict)
+        return {
+            "vars": {save_as: value},
+            "history": [spec.get("__node_id__", f"set_var:{save_as}")],
+        }
+
+    return node
+
+
+def make_branch_node(spec: dict) -> Callable:
+    """Branch condicional baseado em vars.
+
+    Spec:
+        type: branch
+        when: list de [{condition: "vars.foo == 'bar'", next: "node_id"}]
+        else: str (node_id default)
+
+    `condition` é parser restrito (regex): aceita apenas comparações simples
+    sobre vars. NÃO usa interpretador Python arbitrário.
+    """
+    branches = spec.get("when", [])
+    else_target = spec.get("else", "__end__")
+
+    def node(state: WorkflowState) -> Command:
+        vars_dict = state.get("vars") or {}
+        for branch in branches:
+            cond = branch.get("condition", "")
+            if _check_condition(cond, vars_dict):
+                return Command(
+                    update={"history": [spec.get("__node_id__", "branch")]},
+                    goto=_resolve_goto(branch["next"]),
+                )
+        return Command(
+            update={"history": [spec.get("__node_id__", "branch") + ":else"]},
+            goto=_resolve_goto(else_target),
+        )
+
+    return node
+
+
+# Regex muito restrita pra evitar interpretação arbitrária.
+# Aceita apenas: `vars.<key> <op> '<value>'` com op em {==, !=, contains}.
+_COND_RE = re.compile(r"^vars\.([a-zA-Z_][\w]*)\s*(==|!=|contains)\s*'([^']*)'$")
+
+
+def _check_condition(cond: str, vars_dict: dict[str, Any]) -> bool:
+    """Checa condição simples via regex pattern matching (sem interpreter)."""
+    if not cond:
+        return False
+    m = _COND_RE.fullmatch(cond.strip())
+    if not m:
+        return False
+    key, op, value = m.group(1), m.group(2), m.group(3)
+    actual = str(vars_dict.get(key, "")).strip()
+    if op == "==":
+        return actual == value
+    if op == "!=":
+        return actual != value
+    if op == "contains":
+        return value in actual
+    return False
+
+
+def make_audit_event_node(spec: dict) -> Callable:
+    """Grava evento em `workflow_evento` (mig 078).
+
+    Spec:
+        type: audit_event
+        evento: str (ex: "lgpd_consented")
+        next: str
+
+    Side effect: usa pool injetado via state["vars"]["_pool"] (set pelo runner).
+    Best-effort: falha silenciosa se pool ausente (PoC sem audit DB).
+    """
+    evento = spec["evento"]
+
+    async def node(state: WorkflowState) -> dict:
+        from whatsapp_langchain.workflows.audit import log_event
+
+        pool = (state.get("vars") or {}).get("_pool")
+        if pool is not None:
+            await log_event(
+                pool,
+                atendimento_id=state.get("atendimento_id", 0),
+                empresa_id=state.get("empresa_id", 0),
+                node_id=spec.get("__node_id__", evento),
+                evento=evento,
+                workflow_version_id=state.get("workflow_version_id"),
+            )
+        return {
+            "history": [spec.get("__node_id__", f"audit:{evento}")],
+        }
+
+    return node
+
+
 NODE_FACTORIES: dict[str, Callable[[dict], Callable]] = {
     "send_messages": make_send_messages_node,
+    "send_media": make_send_media_node,
+    "send_link": make_send_link_node,
     "ask_text": make_ask_text_node,
     "ask_choice": make_ask_choice_node,
+    "set_var": make_set_var_node,
+    "branch": make_branch_node,
+    "audit_event": make_audit_event_node,
     # Nota: não há node type "end" — `next: "__end__"` no spec basta
     # (o compiler mapeia pra langgraph.constants.END).
 }
