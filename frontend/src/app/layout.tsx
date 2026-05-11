@@ -4,6 +4,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/app-shell";
 import { EmpresaSwitcher } from "@/components/empresa-switcher";
+import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import {
   SidebarProvider,
@@ -104,6 +105,7 @@ export default async function RootLayout({
           <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
         </SidebarProvider>
         <ServiceWorkerRegister />
+        <InstallPwaPrompt />
       </body>
     </html>
   );
