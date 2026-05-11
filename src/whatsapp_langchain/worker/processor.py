@@ -104,7 +104,8 @@ _APPROVAL_NUMERIC_RE = re.compile(r"^\s*([12])[.\s]*$")
 def _match_approval_intent(text: str) -> dict | None:
     """Decide se a mensagem é tentativa de aprovação. Retorna dict ou None.
 
-    - {"kind": "explicit", "action": "APROVAR"|"REJEITAR", "token": str, "motivo": str|None}
+    - {"kind": "explicit", "action": "APROVAR"|"REJEITAR",
+       "token": str, "motivo": str|None}
     - {"kind": "numeric", "choice": "1"|"2"}
     """
     m = _APPROVAL_EXPLICIT_RE.match(text)
@@ -169,7 +170,9 @@ async def _try_handle_approval(
                 "APROVAR <token>\nou\nREJEITAR <token>\n\n"
                 "Pedidos pendentes:\n"
                 + "\n".join(
-                    f"• {p['summary']} ({p['data_inicio'].strftime('%d/%m %H:%M')}) — {p['token']}"
+                    f"• {p['summary']} "
+                    f"({p['data_inicio'].strftime('%d/%m %H:%M')}) "
+                    f"— {p['token']}"
                     for p in pending
                 )
             )
