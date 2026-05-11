@@ -126,6 +126,27 @@ Cada exemplo no dataset tem:
 **Idempotência**: re-runs filtram via `metadata.fewshot_id` — só inserem novos.
 A tabela `fewshot_example` no PostgreSQL continua sendo a fonte de verdade.
 
+### 3.5 Eval offline com `goldens.json`
+
+Pra CI ou iteração rápida sem rate limit do LangSmith, exporte um subset
+reproduzível pra arquivo local versionado em git:
+
+```bash
+# 1. Exporta goldens (precisa LANGCHAIN_API_KEY uma vez só)
+python scripts/eval_agentes_menu.py --export-goldens --per-agent 5
+
+# 2. Roda eval offline (não chama LangSmith — só o judge LLM via OpenRouter)
+python scripts/eval_agentes_menu.py --source local --judge continuous
+```
+
+`goldens.json` fica em `docs/agente/eval-runs/goldens.json` (~50KB),
+versionável em git. Útil pra comparar agente vN vs vN+1 contra o **mesmo
+conjunto fixo**, sem deriva de sampling random.
+
+Schema do `goldens.json` espelha o `Example` do LangSmith (`inputs` /
+`outputs` / `metadata`) — o loop principal do script não muda entre os
+dois modos.
+
 ---
 
 ## 4. Rodar avaliação
@@ -159,6 +180,14 @@ Abra no LangSmith pra ver scores por exemplo.
 ```
 
 ### 4.3 Custom evaluators
+
+> **Sprint Eval** — o `scripts/eval_agentes_menu.py` agora usa um judge
+> continuous estruturado com **Chain-of-Thought (5 passos)** e **rubric de
+> 4 bandas com `expected_outcome` verbal** (inspirado em
+> `docs/eval-101/src/eval_101/geval_template_ptbr.py`). Retorna JSON
+> `{"score": int 0-10, "reason": str pt-BR}` por exemplo. Funções públicas
+> reutilizáveis: `build_continuous_prompt(...)`, `EVALUATION_STEPS`,
+> `RUBRIC`.
 
 Pra criar um evaluator próprio, edite `scripts/eval_langsmith.py`:
 

@@ -1,0 +1,632 @@
+[
+  {
+    "name": "fewshot-14899",
+    "inputs": {
+      "setor": "agendamentos",
+      "agente_slug": "agendamentos",
+      "cliente_msg": "Hj não conseguimos já agendar?"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Ainda não temos as datas que ela vai atender!"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14899,
+      "imported_at": "2026-05-10T03:55:53.112269+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14529",
+    "inputs": {
+      "setor": "agendamentos",
+      "agente_slug": "agendamentos",
+      "cliente_msg": "só alterar"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "alterado !"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14529,
+      "imported_at": "2026-05-10T03:55:51.893591+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14369",
+    "inputs": {
+      "setor": "agendamentos",
+      "agente_slug": "agendamentos",
+      "cliente_msg": "No momento não. Consegui uma data mais próxima. Obrigada"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Por nada, disponha !"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14369,
+      "imported_at": "2026-05-10T03:55:51.286180+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15541",
+    "inputs": {
+      "setor": "agendamentos",
+      "agente_slug": "agendamentos",
+      "cliente_msg": "Como faço pra consultar com médico dos pulmão"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "não temos pneumologista.."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15541,
+      "imported_at": "2026-05-10T03:55:54.967844+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14678",
+    "inputs": {
+      "setor": "agendamentos",
+      "agente_slug": "agendamentos",
+      "cliente_msg": "Nem pra encaixe"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Infelizmente não, como ela ficou alguns dias ausente ai esta semana está cheia já."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14678,
+      "imported_at": "2026-05-10T03:55:51.894099+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15249",
+    "inputs": {
+      "setor": "atendimento",
+      "agente_slug": "atendimento",
+      "cliente_msg": "Ok\nObrigada"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Por nada, disponha !"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15249,
+      "imported_at": "2026-05-10T03:55:53.674126+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15580",
+    "inputs": {
+      "setor": "atendimento",
+      "agente_slug": "atendimento",
+      "cliente_msg": "Obg"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Agradecemos seu contato, desejamos um excelente tarde e que Deus abençoe.\nSolicitamos, por gentileza, que responda à nossa pesquisa de satisfação, pois sua participação é importante para nós."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15580,
+      "imported_at": "2026-05-10T03:55:54.967994+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14745",
+    "inputs": {
+      "setor": "atendimento",
+      "agente_slug": "atendimento",
+      "cliente_msg": "Obrigadaaa! Ótima semana! E bom trabalho! 😍"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "muito obrigada!  😊"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14745,
+      "imported_at": "2026-05-10T03:55:52.453562+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15323",
+    "inputs": {
+      "setor": "atendimento",
+      "agente_slug": "atendimento",
+      "cliente_msg": "Não"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "o site está fora do ar?"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15323,
+      "imported_at": "2026-05-10T03:55:54.319985+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14739",
+    "inputs": {
+      "setor": "atendimento",
+      "agente_slug": "atendimento",
+      "cliente_msg": "ah sim, beleza"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Talita bom dia, conseguiu falar com o seu plano ?"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14739,
+      "imported_at": "2026-05-10T03:55:52.453544+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15237",
+    "inputs": {
+      "setor": "atendimento-cliente",
+      "agente_slug": "atendimento-cliente",
+      "cliente_msg": "https://bit.ly/3SWiqnC?zc-numeroTel=(**) *****-****&zc-msgVerify=019c5d8b-4cf1-733c-b25f-655cb80b6a86"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Manual do Paciente Atualizado.pdf"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "success",
+      "csat_nota": null,
+      "fewshot_id": 15237,
+      "imported_at": "2026-05-10T03:55:53.674085+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14235",
+    "inputs": {
+      "setor": "atendimento-cliente",
+      "agente_slug": "atendimento-cliente",
+      "cliente_msg": "carteirinha.pdf"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Luciely ja vou montar seu orçamento ."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14235,
+      "imported_at": "2026-05-10T03:55:50.766516+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14973",
+    "inputs": {
+      "setor": "atendimento-cliente",
+      "agente_slug": "atendimento-cliente",
+      "cliente_msg": "Eu só não tenho a identidade mas a numeração da na CNH"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "o senhor nao tem nenhum documento com foto?"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14973,
+      "imported_at": "2026-05-10T03:55:53.112511+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15501",
+    "inputs": {
+      "setor": "atendimento-cliente",
+      "agente_slug": "atendimento-cliente",
+      "cliente_msg": "Não   muito obg pelo atendimento"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Por nada, disponha !"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15501,
+      "imported_at": "2026-05-10T03:55:54.967713+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15498",
+    "inputs": {
+      "setor": "atendimento-cliente",
+      "agente_slug": "atendimento-cliente",
+      "cliente_msg": "Mandei a documentação que precisava"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "sim sim, é que tem varios pra adiantamento tb, mandei pra menina aqui! quando ela me retornar lhe aviso"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15498,
+      "imported_at": "2026-05-10T03:55:54.967703+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15474",
+    "inputs": {
+      "setor": "exames",
+      "agente_slug": "exames",
+      "cliente_msg": "Pedido Prontuário Laor Francisco Santiago.pdf"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "ah sim!! Esse valor é que o prontuário tem um custo de 0,40 centavos por folha, quando é liberado nos entramos em contato passando certinho o valor!!"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15474,
+      "imported_at": "2026-05-10T03:55:54.320500+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14140",
+    "inputs": {
+      "setor": "exames",
+      "agente_slug": "exames",
+      "cliente_msg": "Eletroencefalograma"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "\"Recebido. Nossa equipe financeira vai calcular o valor e te informar as formas de pagamento em instantes.\""
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14140,
+      "imported_at": "2026-05-10T03:55:50.766196+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14112",
+    "inputs": {
+      "setor": "exames",
+      "agente_slug": "exames",
+      "cliente_msg": "Se fazer um exame de sangue e urina com urgência o resultado sai hj?"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Certo! vou lhe transferir para uma atendente pessoal do setor especifico. 😀"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14112,
+      "imported_at": "2026-05-10T03:55:50.766101+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14884",
+    "inputs": {
+      "setor": "exames",
+      "agente_slug": "exames",
+      "cliente_msg": "Bom dia, tudo bem? Me chamo André Luiz Amaral, realizei na quarta feira um ecocardiograma com vocês"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Seu protocolo de atendimento: *(**) *****-****76996748.*"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "success",
+      "csat_nota": null,
+      "fewshot_id": 14884,
+      "imported_at": "2026-05-10T03:55:53.112212+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15087",
+    "inputs": {
+      "setor": "exames",
+      "agente_slug": "exames",
+      "cliente_msg": "Coluna- lombar"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Dr Gabriel Cerqueira que atende nas quartas as 08 horas , vaga somente para março, favor entrar em contato novamente segunda para agendar!"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15087,
+      "imported_at": "2026-05-10T03:55:53.673586+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15019",
+    "inputs": {
+      "setor": "orcamento",
+      "agente_slug": "orcamento",
+      "cliente_msg": "Orçamentos"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "🤖 Desculpe, estamos fora do horário de atendimento."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "success",
+      "csat_nota": null,
+      "fewshot_id": 15019,
+      "imported_at": "2026-05-10T03:55:53.112656+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14835",
+    "inputs": {
+      "setor": "orcamento",
+      "agente_slug": "orcamento",
+      "cliente_msg": "meu convênio é SulAmérica"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Dr Miranda terça, quinta e sexta as 11:00 h, Dr Paulo na quarta as 09:30 h, na quinta as 13:00 h e sexta as 13:00 h e Dr Flavio de Paula na segunda  as 09:00 h."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14835,
+      "imported_at": "2026-05-10T03:55:52.453859+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14868",
+    "inputs": {
+      "setor": "orcamento",
+      "agente_slug": "orcamento",
+      "cliente_msg": "E o valor da consulta"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Sim, tem no pronto socorro por ordem de chegada e tem por agendamento."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14868,
+      "imported_at": "2026-05-10T03:55:52.453966+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14920",
+    "inputs": {
+      "setor": "orcamento",
+      "agente_slug": "orcamento",
+      "cliente_msg": "Como faço para fazer orçamento para parto cesaria com laqueadura"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Olá, boa noite"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14920,
+      "imported_at": "2026-05-10T03:55:53.112338+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14164",
+    "inputs": {
+      "setor": "orcamento",
+      "agente_slug": "orcamento",
+      "cliente_msg": "Que atenda pelo plano hapvida ou sul-americano"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Olá, tudo bem? Em nome do Hospital Presbisteriano Mackenzie agradecemos o seu contato. 😊\n\nSra. Tina, é muito importante que a senhora já possua um médico de referência ou um pedido de atendimento, pois nosso quadro de plantão funciona em sistema de escala, atendendo diversos convênios. Para verificar se as especialidades de Tricologia, Ginecologia e Pneumologia possuem atendimento hoje pelos planos Hapvida ou Sul-Americano, é necessário confirmar a escala.\n\nInformamos que temos um quadro geral de plantonistas disponível todos os dias, e a melhor forma de garantir o atendimento na especialidade desejada é:\n\nJá ter um médico próprio: Se a senhora já tem um médico que atende pelo seu plano, pode nos informar o nome dele que verificamos a agenda.\n\nConfirmação por telefone: Caso não tenha um médico específico, orientamos que entre em contato com a nossa equipe por telefone para que possamos verificar, no momento da ligação, qual especialista está de plantão e se há disponibilidade para o seu convênio.\n\n📍 Telefone para contato: (**) *****-****\n\nAviso importante sobre plantões:\nLembramos que as especialidades com plantão 24h em nossa unidade são: Clínico Geral, Pediatria e Obstetrícia. Para as demais especialidades, a confirmação da escala e do convênio é essencial."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14164,
+      "imported_at": "2026-05-10T03:55:50.766275+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14928",
+    "inputs": {
+      "setor": "ouvidoria",
+      "agente_slug": "ouvidoria",
+      "cliente_msg": "Muito obrigada"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Agradecemos seu contato, desejamos um excelente tarde e que Deus abençoe.\nSolicitamos, por gentileza, que responda à nossa pesquisa de satisfação, pois sua participação é importante para nós."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14928,
+      "imported_at": "2026-05-10T03:55:53.112363+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14311",
+    "inputs": {
+      "setor": "ouvidoria",
+      "agente_slug": "ouvidoria",
+      "cliente_msg": "Até semana que vem devolvemos assinado. Pode ser?"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "tudo bem, ai é horario comercial ok? por que caso o senhor mande em outro horario, não chega para mim"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14311,
+      "imported_at": "2026-05-10T03:55:51.285987+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15467",
+    "inputs": {
+      "setor": "ouvidoria",
+      "agente_slug": "ouvidoria",
+      "cliente_msg": "Agradeço"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "pode verificar neste e-mail n***@***.br"
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15467,
+      "imported_at": "2026-05-10T03:55:54.320477+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-14355",
+    "inputs": {
+      "setor": "ouvidoria",
+      "agente_slug": "ouvidoria",
+      "cliente_msg": "Muito obrigada"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Agradecemos seu contato, desejamos um excelente fim de tarde e que Deus abençoe.\nSolicitamos, por gentileza, que responda à nossa pesquisa de satisfação, pois sua participação é importante para nós."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 14355,
+      "imported_at": "2026-05-10T03:55:51.286134+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  },
+  {
+    "name": "fewshot-15111",
+    "inputs": {
+      "setor": "ouvidoria",
+      "agente_slug": "ouvidoria",
+      "cliente_msg": "Bom trabalho"
+    },
+    "outputs": {
+      "agente_resposta_esperada": "Agradecemos seu contato, desejamos um excelente tarde e que Deus abençoe.\nSolicitamos, por gentileza, que responda à nossa pesquisa de satisfação, pois sua participação é importante para nós."
+    },
+    "metadata": {
+      "source": "sandbox_999",
+      "outcome": "transferred",
+      "csat_nota": null,
+      "fewshot_id": 15111,
+      "imported_at": "2026-05-10T03:55:53.673669+00:00",
+      "dataset_split": [
+        "base"
+      ]
+    }
+  }
+]

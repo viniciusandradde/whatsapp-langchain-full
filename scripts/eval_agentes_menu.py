@@ -1,8 +1,18 @@
 """Eval offline-first dos 8 agentes do menu (sandbox empresa 999).
 
-Lê dataset LangSmith (read-only), amostra balanceado por agente_slug, invoca
-cada agente local, roda LLM-as-judge correctness, salva JSON local com tudo.
-Tenta também sincronizar pro LangSmith (best-effort — silencia 429).
+Lê dataset LangSmith (read-only) OU goldens.json local, amostra balanceado
+por agente_slug, invoca cada agente local, roda LLM-as-judge correctness
+(binary + continuous), salva JSON local.
+
+Judge continuous (Sprint Eval): CoT estruturada com `EVALUATION_STEPS` (5
+passos) + `RUBRIC` 4 bandas → JSON `{score, reason}`. Inspirado em
+`docs/eval-101/src/eval_101/geval_template_ptbr.py` mas sem dependência
+DeepEval — usa LangChain ChatOpenAI direto.
+
+Modos:
+- `--source langsmith` (default): lê dataset via API
+- `--source local`: lê `--goldens-file` (default docs/agente/eval-runs/goldens.json)
+- `--export-goldens`: amostra do LangSmith, escreve goldens.json e sai
 
 Uso (dentro do container api):
     OPENAI_API_KEY=$OPENROUTER_API_KEY \
@@ -23,6 +33,7 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 # Regex pra descartar exemplos onde o "expected" é apenas ruído operacional —
 # resíduo do importer Sprint R/S: 1º turno do atendente é menu, transferência ou NPS.
@@ -56,12 +67,142 @@ def is_saudacao_menu(text: str) -> bool:
     return bool(SAUDACAO_RE.search(head))
 
 
+# === Sprint Eval: judge continuous estruturado (CoT + rubric) ===
+#
+# Inspirado em eval-101 (docs/eval-101/src/eval_101/*).
+# O prompt antigo era monolítico com critérios inline — agora está separado em
+# CRITERIA + EVALUATION_STEPS (CoT explícita, 5 passos) + RUBRIC (4 bandas com
+# expected_outcome verbal). Reduz variance do judge e produz `reason` rica.
+
+CRITERIA = (
+    "Avaliar se a RESPOSTA_DO_AGENTE atendeu a MENSAGEM_DO_CLIENTE em contexto "
+    "hospitalar (Mackenzie Hospital Evangélico de Dourados), aceitando paráfrases "
+    "e respostas diferentes da REFERENCIA quando o sentido estiver preservado. "
+    "Penalizar contradições factuais, omissões importantes, jargão inadequado "
+    "e respostas não-acionáveis."
+)
+
+EVALUATION_STEPS = [
+    "Identifique a intenção principal da MENSAGEM_DO_CLIENTE.",
+    "Compare os fatos da RESPOSTA_DO_AGENTE com a REFERENCIA "
+    "(datas, valores, encaminhamentos).",
+    "Verifique contradições ou informações inventadas (alucinação).",
+    "Avalie se o cliente sai sabendo o próximo passo (acionabilidade).",
+    "Não penalize diferenças de estilo, brevidade adequada, ou encaminhamento "
+    "humano em casos complexos.",
+]
+
+RUBRIC = [
+    (0, 2, "Irrelevante, contraditória ou prejudicial ao cliente."),
+    (3, 5, "Parcialmente correta, com omissões importantes ou formulação vaga."),
+    (
+        6,
+        8,
+        "Majoritariamente correta, atende a necessidade com pequenas perdas "
+        "de clareza.",
+    ),
+    (
+        9,
+        10,
+        "Correta, completa, clara e acionável; equivalente ou melhor que a REFERENCIA.",
+    ),
+]
+
+
+def build_continuous_prompt(cliente_msg: str, referencia: str, resposta: str) -> str:
+    """Monta o prompt do judge continuous com CoT + rubric estruturada.
+
+    Retorna string pronta pra `_judge_llm.ainvoke([HumanMessage(content=...)])`.
+    O modelo deve devolver JSON `{"score": int 0-10, "reason": str pt-BR}`.
+    """
+    # noqa: E501 — prompt em pt-BR; quebrar linhas confunde o LLM.
+    steps_txt = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(EVALUATION_STEPS))
+    rubric_txt = "\n".join(f"- {lo}-{hi}: {outcome}" for lo, hi, outcome in RUBRIC)
+    return (
+        "Você é um avaliador criterioso de respostas de atendimento"
+        " em português brasileiro.\n"
+        "\n"
+        "CRITÉRIO:\n"
+        f"{CRITERIA}\n"
+        "\n"
+        "PASSOS DE AVALIAÇÃO (siga em ordem):\n"
+        f"{steps_txt}\n"
+        "\n"
+        "RUBRICA (escala 0-10):\n"
+        f"{rubric_txt}\n"
+        "\n"
+        "REGRAS:\n"
+        "- Não use conhecimento externo; baseie-se apenas nas evidências do caso.\n"
+        "- Aceite paráfrases quando o sentido estiver preservado.\n"
+        "- Penalize alucinações (informação não suportada pela referência "
+        "ou que claramente inventa fato).\n"
+        "\n"
+        "DADOS DO CASO:\n"
+        f"MENSAGEM_DO_CLIENTE: {cliente_msg[:800]}\n"
+        f"REFERENCIA: {referencia[:800]}\n"
+        f"RESPOSTA_DO_AGENTE: {resposta[:800]}\n"
+        "\n"
+        "Retorne APENAS JSON válido com as chaves:\n"
+        '- "score": inteiro entre 0 e 10\n'
+        '- "reason": justificativa curta em pt-BR (1-2 frases, '
+        "específica sobre acertos/omissões/contradições)\n"
+        "\n"
+        "Exemplo:\n"
+        '{"score": 7, "reason": "Direciona ao setor correto mas omite '
+        'o horário de funcionamento da referência."}\n'
+        "\n"
+        "JSON:"
+    )
+
+
+# === Sprint Eval: goldens.json offline ===
+#
+# Schema espelha LangSmith Example pra o loop principal não precisar mudar.
+# Cada item: {name, inputs: {cliente_msg, setor, agente_slug},
+#             outputs: {agente_resposta_esperada}, metadata: {fewshot_id, ...}}
+
+
+def load_local_goldens(path: Path) -> list:
+    """Carrega goldens.json e retorna lista de SimpleNamespace com mesma
+    forma de `langsmith.schemas.Example` (inputs/outputs/metadata).
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return [
+        SimpleNamespace(
+            inputs=item.get("inputs", {}),
+            outputs=item.get("outputs", {}),
+            metadata=item.get("metadata") or {},
+        )
+        for item in raw
+    ]
+
+
+def dump_goldens(samples: list, path: Path) -> None:
+    """Escreve `samples` (list de Examples LangSmith ou SimpleNamespace
+    compatível) em `path` no formato goldens.json.
+    """
+    payload = [
+        {
+            "name": f"fewshot-{(ex.metadata or {}).get('fewshot_id', i)}",
+            "inputs": dict(ex.inputs or {}),
+            "outputs": dict(ex.outputs or {}),
+            "metadata": dict(ex.metadata or {}),
+        }
+        for i, ex in enumerate(samples)
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 EMPRESA_ID = 999
 DEFAULT_DATASET_V2 = "mackenzie-hospital-curated-v2"
 OUTPUT_DIR = Path("/app") if Path("/app/src").exists() else Path.cwd()
+DEFAULT_GOLDENS_PATH = (
+    Path(__file__).parent.parent / "docs/agente/eval-runs/goldens.json"
+)
 
 
 async def main() -> int:
@@ -92,50 +233,106 @@ async def main() -> int:
         default="both",
         help="binary=openevals strict; continuous=custom 0-10 helpful; both=ambos",
     )
+    parser.add_argument(
+        "--source",
+        choices=["langsmith", "local"],
+        default="langsmith",
+        help="local = lê --goldens-file. langsmith = lê dataset via API.",
+    )
+    parser.add_argument(
+        "--export-goldens",
+        action="store_true",
+        help=(
+            "Em vez de rodar eval: amostra do LangSmith e escreve --goldens-file. "
+            "Sai 0 ao terminar."
+        ),
+    )
+    parser.add_argument(
+        "--goldens-file",
+        default=str(DEFAULT_GOLDENS_PATH),
+        help="Caminho do goldens.json (relativo à raiz do projeto).",
+    )
     args = parser.parse_args()
-
-    api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get("LANGSMITH_API_KEY")
-    if not api_key:
-        print("ERRO: LANGCHAIN_API_KEY ausente", file=sys.stderr)
-        return 2
 
     logging.basicConfig(level=logging.WARNING)
     random.seed(args.seed)
 
-    print("=== Eval Agentes Menu (sandbox 999) ===")
-    print(f"dataset: {args.dataset}")
-    print(f"per_agent: {args.per_agent}\n")
-
-    from langsmith import Client
-
-    client = Client(api_key=api_key)
-    dataset = client.read_dataset(dataset_name=args.dataset)
-
-    # 1. Sampling balanceado: lê pool grande, agrupa por agente_slug, pega N de cada
-    print(f"Lendo até {args.max_pool} exemplos do dataset...")
-    pool: dict[str, list] = defaultdict(list)
-    discarded_saudacao = 0
-    for ex in client.list_examples(dataset_id=dataset.id, limit=args.max_pool):
-        slug = (ex.inputs or {}).get("agente_slug") or "?"
-        expected = (ex.outputs or {}).get("agente_resposta_esperada", "")
-        if not args.keep_saudacao and is_saudacao_menu(expected):
-            discarded_saudacao += 1
-            continue
-        pool[slug].append(ex)
-
-    if discarded_saudacao:
-        print(f"⚠ Descartados {discarded_saudacao} exemplos com expected=saudação/menu")
-    print("Distribuição no pool (filtrado):")
-    for slug, items in sorted(pool.items()):
-        print(f"  {slug}: {len(items)}")
-
+    # Resolução do source dos exemplos: local (goldens.json) vs LangSmith API.
+    # `--export-goldens` reusa o caminho LangSmith e sai cedo após escrever.
     samples: list = []
-    for slug, items in sorted(pool.items()):
-        if slug == "?":
-            continue
-        random.shuffle(items)
-        samples.extend(items[: args.per_agent])
-    print(f"\nTotal sampled: {len(samples)} (cap {args.per_agent}/agente)\n")
+    dataset_id_str: str
+    dataset_name: str
+
+    if args.source == "local":
+        goldens_path = Path(args.goldens_file)
+        if not goldens_path.exists():
+            print(
+                f"ERRO: --source local mas {goldens_path} não existe. "
+                f"Rode `--export-goldens` primeiro.",
+                file=sys.stderr,
+            )
+            return 2
+        samples = load_local_goldens(goldens_path)
+        print(f"=== Eval Agentes Menu (LOCAL goldens, {len(samples)} exemplos) ===")
+        print(f"goldens: {goldens_path}\n")
+        dataset_id_str = f"local:{goldens_path.name}"
+        dataset_name = goldens_path.name
+    else:
+        # Modo LangSmith — exige API key.
+        api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get(
+            "LANGSMITH_API_KEY"
+        )
+        if not api_key:
+            print("ERRO: LANGCHAIN_API_KEY ausente", file=sys.stderr)
+            return 2
+
+        print("=== Eval Agentes Menu (sandbox 999) ===")
+        print(f"dataset: {args.dataset}")
+        print(f"per_agent: {args.per_agent}\n")
+
+        from langsmith import Client
+
+        client = Client(api_key=api_key)
+        dataset = client.read_dataset(dataset_name=args.dataset)
+
+        # 1. Sampling balanceado: lê pool grande, agrupa por agente_slug,
+        # pega N de cada
+        print(f"Lendo até {args.max_pool} exemplos do dataset...")
+        pool: dict[str, list] = defaultdict(list)
+        discarded_saudacao = 0
+        for ex in client.list_examples(dataset_id=dataset.id, limit=args.max_pool):
+            slug = (ex.inputs or {}).get("agente_slug") or "?"
+            expected = (ex.outputs or {}).get("agente_resposta_esperada", "")
+            if not args.keep_saudacao and is_saudacao_menu(expected):
+                discarded_saudacao += 1
+                continue
+            pool[slug].append(ex)
+
+        if discarded_saudacao:
+            print(
+                f"⚠ Descartados {discarded_saudacao} exemplos com "
+                f"expected=saudação/menu"
+            )
+        print("Distribuição no pool (filtrado):")
+        for slug, items in sorted(pool.items()):
+            print(f"  {slug}: {len(items)}")
+
+        for slug, items in sorted(pool.items()):
+            if slug == "?":
+                continue
+            random.shuffle(items)
+            samples.extend(items[: args.per_agent])
+        print(f"\nTotal sampled: {len(samples)} (cap {args.per_agent}/agente)\n")
+
+        dataset_id_str = str(dataset.id)
+        dataset_name = args.dataset
+
+        # Early-exit: --export-goldens só escreve o JSON e sai.
+        if args.export_goldens:
+            out_path = Path(args.goldens_file)
+            dump_goldens(samples, out_path)
+            print(f"✓ Exportados {len(samples)} goldens para {out_path}")
+            return 0
 
     # 2. Loaders
     from langchain_core.messages import HumanMessage
@@ -169,71 +366,39 @@ async def main() -> int:
         _judge_llm = ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0.0,
-            max_tokens=200,
+            max_tokens=320,
         )
-        CONTINUOUS_PROMPT = """Você é um avaliador imparcial de respostas de um agente de IA \
-hospitalar (Mackenzie Hospital Evangélico de Dourados).
-
-Sua tarefa: avaliar de 0 a 10 quão bem a RESPOSTA_DO_AGENTE atendeu a MENSAGEM_DO_CLIENTE,
-considerando que a REFERENCIA é apenas um exemplo histórico — pode haver respostas igualmente
-válidas ou MELHORES que sejam diferentes da referência.
-
-CRITÉRIOS:
-- 0-2: Irrelevante, errado ou prejudicial.
-- 3-5: Tópico certo mas incompleto, vago ou sem informação útil.
-- 6-7: Atende à necessidade do cliente, mesmo se diferente da referência.
-- 8-9: Resposta clara, correta e útil; melhor ou igual à referência.
-- 10: Excelente — completa, precisa, empática e acionável.
-
-Considere:
-- Pertinência ao pedido (resolveu o que foi perguntado?)
-- Tom apropriado pra hospital (cordial, claro, sem jargão excessivo)
-- Acionabilidade (o cliente sabe o próximo passo?)
-- Faithfulness (não inventa info — se incerto, encaminha pra humano é OK)
-
-NÃO penalize por:
-- Diferença textual com a REFERENCIA se a resposta resolve o problema
-- Brevidade quando o cliente fez pergunta simples
-- Encaminhar pra atendente humano em casos complexos (é o comportamento correto)
-
-Retorne APENAS um JSON válido:
-{{"score": <inteiro 0-10>, "rationale": "<1 frase em pt-BR>"}}
-
-DADOS:
-MENSAGEM_DO_CLIENTE: {cliente_msg}
-REFERENCIA: {referencia}
-RESPOSTA_DO_AGENTE: {resposta}
-"""
 
         async def judge_continuous(cliente_msg, referencia, resposta):
-            from langchain_core.messages import HumanMessage
-
-            prompt = CONTINUOUS_PROMPT.format(
-                cliente_msg=cliente_msg[:800],
-                referencia=referencia[:800],
-                resposta=resposta[:800],
-            )
+            prompt = build_continuous_prompt(cliente_msg, referencia, resposta)
             try:
                 resp = await _judge_llm.ainvoke([HumanMessage(content=prompt)])
                 content = resp.content.strip()
-                # Extrai JSON
+                # Extrai JSON: limpa code fences se vierem
                 if "```" in content:
                     content = content.split("```")[1]
                     if content.startswith("json"):
                         content = content[4:].strip()
-                m = re.search(r"\{[^{}]+\}", content, re.S)
+                m = re.search(r"\{.*\}", content, re.S)
                 if m:
                     data = json.loads(m.group(0))
                     raw = int(data.get("score", 0))
+                    # Sprint Eval: campo preferido é "reason" (compat com
+                    # geval_template_ptbr de eval-101); fallback pra "rationale"
+                    # caso o modelo gere o nome antigo.
+                    reason = data.get("reason") or data.get("rationale") or ""
                     return {
                         "score": max(0, min(10, raw)) / 10.0,
-                        "rationale": data.get("rationale", "")[:200],
+                        "reason": reason[:300],
                     }
             except Exception as e:
-                return {"score": None, "rationale": f"judge_error: {e}"}
-            return {"score": None, "rationale": "parse_failed"}
+                return {"score": None, "reason": f"judge_error: {e}"}
+            return {"score": None, "reason": "parse_failed"}
 
-        print("Judge continuous: custom 0-10 helpful gpt-4o-mini")
+        print(
+            "Judge continuous: custom 0-10 (CoT + rubric) gpt-4o-mini "
+            "[returns {score, reason}]"
+        )
     print()
 
     # 4. Loop
@@ -283,7 +448,7 @@ RESPOSTA_DO_AGENTE: {resposta}
         score_binary = None
         comment_binary = ""
         score_continuous = None
-        rationale_continuous = ""
+        reason_continuous = ""
 
         if actual:
             if judge_binary:
@@ -303,9 +468,9 @@ RESPOSTA_DO_AGENTE: {resposta}
                 try:
                     fb = await judge_continuous(cliente_msg, expected, actual)
                     score_continuous = fb.get("score")
-                    rationale_continuous = fb.get("rationale", "")
+                    reason_continuous = fb.get("reason", "")
                 except Exception as e:
-                    rationale_continuous = f"judge_continuous_error: {e}"
+                    reason_continuous = f"judge_continuous_error: {e}"
 
         # Métrica primária pra agregação: continuous se disponível, senão binary
         primary_score = (
@@ -325,7 +490,11 @@ RESPOSTA_DO_AGENTE: {resposta}
                 "score_binary": score_binary,
                 "score_continuous": score_continuous,
                 "comment_binary": comment_binary,
-                "rationale_continuous": rationale_continuous,
+                # Sprint Eval: campo preferido é `reason_continuous`. Mantemos
+                # `rationale_continuous` como espelho por 1 sprint pra compat
+                # com parsers dos JSONs antigos em docs/agente/eval-runs/.
+                "reason_continuous": reason_continuous,
+                "rationale_continuous": reason_continuous,
                 "error": error,
             }
         )
@@ -360,8 +529,9 @@ RESPOSTA_DO_AGENTE: {resposta}
     out.write_text(
         json.dumps(
             {
-                "dataset": args.dataset,
-                "dataset_id": str(dataset.id),
+                "dataset": dataset_name,
+                "dataset_id": dataset_id_str,
+                "source": args.source,
                 "timestamp": datetime.now().isoformat(),
                 "per_agent_target": args.per_agent,
                 "total": len(results),
