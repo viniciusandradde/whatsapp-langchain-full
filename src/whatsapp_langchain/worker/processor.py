@@ -34,6 +34,7 @@ Uso:
 """
 
 import re
+from typing import Any
 
 import structlog
 from langchain_core.messages import HumanMessage
@@ -51,14 +52,15 @@ from whatsapp_langchain.shared.atendimento import (
     count_fila_departamento,
     get_atendimento_by_id,
 )
-from whatsapp_langchain.shared.departamento import get_departamento_by_id
 from whatsapp_langchain.shared.cliente import (
     get_cliente_by_telefone,
     update_cliente_partial,
 )
+from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.departamento import get_departamento_by_id
+from whatsapp_langchain.shared.empresa import get_empresa_csat_config
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
-from whatsapp_langchain.shared.empresa import get_empresa_csat_config
 from whatsapp_langchain.shared.menu_chatbot import (
     cliente_ja_saiu_do_menu,
     format_menu_message,
@@ -102,7 +104,8 @@ _APPROVAL_NUMERIC_RE = re.compile(r"^\s*([12])[.\s]*$")
 def _match_approval_intent(text: str) -> dict | None:
     """Decide se a mensagem é tentativa de aprovação. Retorna dict ou None.
 
-    - {"kind": "explicit", "action": "APROVAR"|"REJEITAR", "token": str, "motivo": str|None}
+    - {"kind": "explicit", "action": "APROVAR"|"REJEITAR",
+       "token": str, "motivo": str|None}
     - {"kind": "numeric", "choice": "1"|"2"}
     """
     m = _APPROVAL_EXPLICIT_RE.match(text)
@@ -136,6 +139,8 @@ async def _try_handle_approval(
     """
     from whatsapp_langchain.shared import (
         agendamento as _agendamento_helpers,
+    )
+    from whatsapp_langchain.shared import (
         calendar_integration as _cal,
     )
 
@@ -165,7 +170,9 @@ async def _try_handle_approval(
                 "APROVAR <token>\nou\nREJEITAR <token>\n\n"
                 "Pedidos pendentes:\n"
                 + "\n".join(
-                    f"• {p['summary']} ({p['data_inicio'].strftime('%d/%m %H:%M')}) — {p['token']}"
+                    f"• {p['summary']} "
+                    f"({p['data_inicio'].strftime('%d/%m %H:%M')}) "
+                    f"— {p['token']}"
                     for p in pending
                 )
             )
@@ -544,6 +551,97 @@ async def _try_capture_avaliacao(
             return False
 
     return False
+
+
+async def _try_handle_workflow(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+    checkpointer: Any,
+) -> bool:
+    """Sprint Workflow-LangGraph — tenta processar via workflow ativo.
+
+    Retorna True se workflow handled (mensagens enviadas + mark_done).
+    Retorna False se: (a) atendimento já tem agente_atual setado
+    (delegou pra IA via #6), (b) empresa não tem workflow ativo, ou
+    (c) workflow já terminou (cliente já saiu).
+
+    Quando False, fluxo cai pro _try_handle_menu / agente IA normal.
+    """
+    atend_id = message.atendimento_id
+    if atend_id is None:
+        return False
+
+    # #6 — se agente IA já assumiu, não roda workflow
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT agente_atual FROM atendimento WHERE id = %s",
+            (atend_id,),
+        )
+        row = await cur.fetchone()
+    if row and row[0]:
+        return False
+
+    from whatsapp_langchain.workflows.loader import build_runner_for_empresa
+
+    runner = await build_runner_for_empresa(pool, checkpointer, message.empresa_id)
+    if runner is None:
+        return False
+
+    text = (message.incoming_message or "").strip()
+    outbound_msgs = await runner.process(
+        atendimento_id=atend_id,
+        empresa_id=message.empresa_id,
+        msg=text,
+    )
+
+    if not outbound_msgs:
+        # Workflow terminou (END) — deixa caír pro fluxo normal
+        return False
+
+    # Envia mensagens ao cliente (text + media)
+    sent_text_parts: list[str] = []
+    for m in outbound_msgs:
+        kind = m.get("kind", "text")
+        if kind == "media":
+            url = m.get("url", "")
+            caption = m.get("caption", "")
+            try:
+                # Outbound clients podem ter send_media (Twilio/Evolution).
+                # Sem suporte garantido pelo Protocol, fazemos getattr seguro.
+                send_media = getattr(outbound, "send_media", None)
+                if callable(send_media):
+                    import inspect
+
+                    result = send_media(message.phone_number, url, caption=caption)
+                    if inspect.isawaitable(result):
+                        await result
+                else:
+                    # Fallback: envia URL como texto se provider não suporta
+                    fallback = f"{caption}\n{url}" if caption else url
+                    await outbound.send_message(message.phone_number, fallback)
+                    sent_text_parts.append(fallback)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "workflow_send_media_failed",
+                    url=url,
+                    error=str(exc),
+                )
+        else:
+            text_out = m.get("text", "")
+            if text_out:
+                await outbound.send_message(message.phone_number, text_out)
+                sent_text_parts.append(text_out)
+
+    summary = "\n".join(sent_text_parts) if sent_text_parts else "[workflow]"
+    await mark_done(pool, message.id, summary, normalized_input=text)
+    logger.info(
+        "workflow_handled",
+        atendimento_id=message.atendimento_id,
+        empresa_id=message.empresa_id,
+        msgs_sent=len(outbound_msgs),
+    )
+    return True
 
 
 async def _send_csat_se_configurado(
@@ -1664,6 +1762,24 @@ async def process_message(
         # rica menciona "digite *encerrar atendimento* pra finalizar").
         if await _try_handle_encerrar_keyword(message, pool, outbound):
             return
+
+        # Sprint Workflow-LangGraph (opt-in via ENABLE_WORKFLOW_ENGINE).
+        # Tenta workflow declarativo da empresa antes do menu_item legacy.
+        # Se `atendimento.agente_atual` já estiver setado, não roda workflow
+        # (#6 hand-off pro agente IA). Workflow ativo da empresa é detectado
+        # via `workflow_chatbot.ativo` + slug='menu_principal'.
+        if settings.enable_workflow_engine:
+            try:
+                if await _try_handle_workflow(
+                    message, pool, outbound, checkpointer
+                ):
+                    return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "workflow_runner_failed",
+                    atendimento_id=message.atendimento_id,
+                    error=str(exc),
+                )
 
         # B.3 — Menu chatbot árvore (Sub-fase B). Detecta cliente em
         # navegação de menu OU primeira mensagem precisando de boas-vindas.

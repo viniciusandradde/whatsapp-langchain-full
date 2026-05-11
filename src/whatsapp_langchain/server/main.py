@@ -22,49 +22,42 @@ from whatsapp_langchain.server.middlewares import (
     install_security_headers,
 )
 from whatsapp_langchain.server.routes.admin import router as admin_router
-from whatsapp_langchain.server.routes.audit import router as audit_router
-from whatsapp_langchain.server.routes.agente import router as agente_router
-from whatsapp_langchain.server.routes.atendente import router as atendente_router
-from whatsapp_langchain.server.routes.dataset_import import (
-    router as rag_dataset_router,
-)
-from whatsapp_langchain.server.routes.hitl import (
-    router as hitl_router,
-)
-from whatsapp_langchain.server.routes.rag_stats import (
-    router as rag_stats_router,
-)
-from whatsapp_langchain.server.routes.relatorios_nps import (
-    router as relatorios_nps_router,
-)
-from whatsapp_langchain.server.routes.test_runner import (
-    router as test_runner_router,
-)
-from whatsapp_langchain.server.routes.catalogo import (
-    router_mcp as mcp_router,
-    router_modelo_llm as modelo_llm_router,
-)
-from whatsapp_langchain.server.routes.dashboard_ia import (
-    router as dashboard_ia_router,
-    router_budget as ia_budget_router,
-)
 from whatsapp_langchain.server.routes.agendamento import (
     router as agendamento_router,
 )
 from whatsapp_langchain.server.routes.agendamento_regras import (
     router as agendamento_regras_router,
 )
+from whatsapp_langchain.server.routes.agente import router as agente_router
+from whatsapp_langchain.server.routes.atendente import router as atendente_router
 from whatsapp_langchain.server.routes.atendimento import (
     router as atendimento_router,
 )
+from whatsapp_langchain.server.routes.audit import router as audit_router
 from whatsapp_langchain.server.routes.base_conhecimento import (
     router as base_conhecimento_router,
 )
 from whatsapp_langchain.server.routes.calendar_integration import (
     router as calendar_integration_router,
 )
+from whatsapp_langchain.server.routes.campanha import router as campanha_router
+from whatsapp_langchain.server.routes.catalogo import (
+    router_mcp as mcp_router,
+)
+from whatsapp_langchain.server.routes.catalogo import (
+    router_modelo_llm as modelo_llm_router,
+)
 from whatsapp_langchain.server.routes.cliente import router as cliente_router
 from whatsapp_langchain.server.routes.conexao import router as conexao_router
+from whatsapp_langchain.server.routes.dashboard_ia import (
+    router as dashboard_ia_router,
+)
+from whatsapp_langchain.server.routes.dashboard_ia import (
+    router_budget as ia_budget_router,
+)
+from whatsapp_langchain.server.routes.dataset_import import (
+    router as rag_dataset_router,
+)
 from whatsapp_langchain.server.routes.departamento import (
     router as departamento_router,
 )
@@ -74,7 +67,11 @@ from whatsapp_langchain.server.routes.empresa_admin import (
 from whatsapp_langchain.server.routes.evolution_webhook import (
     router as evolution_webhook_router,
 )
+from whatsapp_langchain.server.routes.feature_flag import router as feature_flag_router
 from whatsapp_langchain.server.routes.health import router as health_router
+from whatsapp_langchain.server.routes.hitl import (
+    router as hitl_router,
+)
 from whatsapp_langchain.server.routes.hook import router as hook_router
 from whatsapp_langchain.server.routes.horario import (
     router_feriado as feriado_router,
@@ -88,16 +85,24 @@ from whatsapp_langchain.server.routes.menu_chatbot import (
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
-from whatsapp_langchain.server.routes.campanha import router as campanha_router
-from whatsapp_langchain.server.routes.feature_flag import router as feature_flag_router
 from whatsapp_langchain.server.routes.pasta import router as pasta_router
 from whatsapp_langchain.server.routes.perfil import router as perfil_router
+from whatsapp_langchain.server.routes.rag_stats import (
+    router as rag_stats_router,
+)
+from whatsapp_langchain.server.routes.relatorios_nps import (
+    router as relatorios_nps_router,
+)
 from whatsapp_langchain.server.routes.security import router as security_router
+from whatsapp_langchain.server.routes.test_runner import (
+    router as test_runner_router,
+)
 from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.variavel import (
     router as variavel_router,
 )
 from whatsapp_langchain.server.routes.webhook import router as webhook_router
+from whatsapp_langchain.server.routes.workflows import router as workflows_router
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import (
     bootstrap_langgraph_schema,
@@ -278,6 +283,7 @@ app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)
 app.include_router(rag_dataset_router)
 app.include_router(hitl_router)
+app.include_router(workflows_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
 # Em producao, use o webhook async (Twilio) que passa pela fila.

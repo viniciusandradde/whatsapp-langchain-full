@@ -1,0 +1,58 @@
+{
+  "entry": "boas_vindas",
+  "nodes": {
+    "boas_vindas": {
+      "type": "send_messages",
+      "messages": [
+        "Olá! Seja bem-vindo ao Hospital Presbiteriano Mackenzie - Dr. e Sra. Goldsby King.",
+        "Sou seu assistente virtual e estou aqui para iniciar seu atendimento com agilidade."
+      ],
+      "next": "lgpd_ask"
+    },
+    "lgpd_ask": {
+      "type": "ask_choice",
+      "prompt": "Para continuarmos com segurança, leia https://bit.ly/3QJXkWw e confirme:",
+      "choices": [
+        { "label": "Sim, Li e Concordo", "value": "1", "next": "ask_nome" },
+        { "label": "Não concordo / Sair", "value": "2", "next": "encerrar_lgpd_neg" }
+      ],
+      "retry_message": "Por favor, responda 1 ou 2."
+    },
+    "ask_nome": {
+      "type": "ask_text",
+      "prompt": "Obrigado! Digite seu Nome Completo:",
+      "save_as": "nome_cliente",
+      "validate": { "min_len": 2 },
+      "retry_message": "Por favor digite seu nome completo (mín. 2 caracteres).",
+      "next": "saudacao_personalizada"
+    },
+    "saudacao_personalizada": {
+      "type": "send_messages",
+      "messages": ["Seja bem-vindo, {{vars.nome_cliente}}!"],
+      "next": "menu_global"
+    },
+    "menu_global": {
+      "type": "ask_choice",
+      "prompt": "Selecione o departamento:",
+      "choices": [
+        { "label": "Atendimento ao Cliente", "value": "1", "next": "stub_atendimento" },
+        { "label": "Agendamentos", "value": "2", "next": "stub_agendamento" }
+      ]
+    },
+    "stub_atendimento": {
+      "type": "send_messages",
+      "messages": ["[PoC stub] Você selecionou Atendimento ao Cliente."],
+      "next": "__end__"
+    },
+    "stub_agendamento": {
+      "type": "send_messages",
+      "messages": ["[PoC stub] Você selecionou Agendamentos."],
+      "next": "__end__"
+    },
+    "encerrar_lgpd_neg": {
+      "type": "send_messages",
+      "messages": ["Entendemos. Sem o aceite, não podemos prosseguir pelo canal digital. Agradecemos o contato!"],
+      "next": "__end__"
+    }
+  }
+}
