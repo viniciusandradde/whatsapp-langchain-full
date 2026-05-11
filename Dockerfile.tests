@@ -25,6 +25,10 @@ COPY src/ src/
 COPY db/ db/
 COPY tests/ tests/
 COPY scripts/ scripts/
+# Sprint Eval-UI: goldens.json + baselines pro modo `--source local`
+# do scripts/eval_agentes_menu.py (caminho default
+# docs/agente/eval-runs/goldens.json relativo a /app).
+COPY docs/agente/eval-runs/ docs/agente/eval-runs/
 
 # Deps base + extras de teste (pytest, deepeval, allure-pytest, fpdf2)
 RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
