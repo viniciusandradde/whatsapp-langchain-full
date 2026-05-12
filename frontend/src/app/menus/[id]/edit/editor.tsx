@@ -62,6 +62,11 @@ const inputCls =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 const textareaCls =
   "flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+// `<select>` precisa de bg sólido + cor explícita nas options porque o
+// dropdown nativo é renderizado pelo OS/browser e NÃO herda bg-transparent
+// do parent — no dark mode ficava texto branco em fundo branco.
+const selectCls =
+  "flex h-9 w-full rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring [&>option]:bg-background [&>option]:text-foreground";
 const labelCls = "text-sm font-medium";
 const helpCls = "text-xs text-muted-foreground";
 
@@ -983,7 +988,7 @@ function ItemForm({
           <select
             value={acao}
             onChange={(e) => setAcao(e.target.value as MenuItemAcaoTipo)}
-            className={inputCls}
+            className={selectCls}
           >
             {(Object.keys(ACAO_LABELS) as MenuItemAcaoTipo[]).map((a) => (
               <option key={a} value={a}>
@@ -1416,7 +1421,7 @@ function DepartamentoSelect({
             departamento_id: e.target.value ? Number(e.target.value) : null,
           })
         }
-        className={inputCls}
+        className={selectCls}
       >
         <option value="">— selecione —</option>
         {departamentos
@@ -1449,7 +1454,7 @@ function HookSelect({ item, hooks }: { item: MenuItem; hooks: Hook[] }) {
         name="hook_id"
         value={hookId}
         onChange={(e) => setHookId(e.target.value)}
-        className={inputCls}
+        className={selectCls}
       >
         <option value="">— sem hook (usar URL livre abaixo) —</option>
         {hooks
@@ -1570,7 +1575,7 @@ function AgenteSelect({
         onChange={(e) =>
           setPayload({ ...payload, agente_slug: e.target.value })
         }
-        className={inputCls}
+        className={selectCls}
       >
         <option value="">— selecione —</option>
         {agentes.map((a) => (

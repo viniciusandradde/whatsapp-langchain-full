@@ -18,6 +18,10 @@ const inputCls =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 const textareaCls =
   "flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+// `<select>` precisa de bg sólido + cor explícita nas options (dropdown
+// nativo do OS não herda bg-transparent → some no dark mode).
+const selectCls =
+  "flex h-9 w-full rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring [&>option]:bg-background [&>option]:text-foreground";
 const labelCls = "text-sm font-medium";
 const helpCls = "text-xs text-muted-foreground";
 
@@ -110,7 +114,7 @@ export default async function NewMenuPage({ searchParams }: PageProps) {
                 id="conexao_id"
                 name="conexao_id"
                 defaultValue="all"
-                className={inputCls}
+                className={selectCls}
               >
                 <option value="all">Todas as conexões</option>
                 {conexoes.map((c) => (
