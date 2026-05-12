@@ -572,17 +572,30 @@ async def _try_handle_workflow(
     if atend_id is None:
         return False
 
-    # #6 — se agente IA já assumiu (via delegate_to_agent), não roda workflow.
-    # Default histórico 'vsa_tech' é o estado inicial — não conta como delegação.
-    _DEFAULT_AGENT = "vsa_tech"
+    # #6 — só pula workflow quando agente foi EXPLICITAMENTE delegado.
+    # Como atendimento.agente_atual é NOT NULL com default 'vsa_tech' (e a
+    # webhook ainda pode substituir pelo default da empresa via fallback),
+    # comparamos contra: (a) literal 'vsa_tech' (default histórico do schema)
+    # e (b) o agente default ativo da empresa (resolvido em DB).
+    _SCHEMA_DEFAULT_AGENT = "vsa_tech"
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT agente_atual FROM atendimento WHERE id = %s",
+            """
+            SELECT a.agente_atual,
+                   (SELECT slug FROM agente_ia
+                     WHERE empresa_id = a.empresa_id
+                       AND is_default = TRUE AND ativo = TRUE
+                     LIMIT 1) AS empresa_default
+              FROM atendimento a WHERE a.id = %s
+            """,
             (atend_id,),
         )
         row = await cur.fetchone()
-    if row and row[0] and row[0] != _DEFAULT_AGENT:
-        return False
+    if row and row[0]:
+        agente_atual, empresa_default = row[0], row[1]
+        is_initial = agente_atual in (_SCHEMA_DEFAULT_AGENT, empresa_default)
+        if not is_initial:
+            return False
 
     from whatsapp_langchain.workflows.loader import build_runner_for_empresa
 
