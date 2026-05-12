@@ -157,19 +157,90 @@ async def build_runner_for_empresa(
     checkpointer: Any,
     empresa_id: int,
 ) -> WorkflowRunner | None:
-    """High-level: carrega workflow ativo + retorna runner pronto pra
-    `process(...)`. Returns None se empresa não tem workflow ativo.
+    """High-level: carrega workflow ativo + sub-workflows referenciados +
+    retorna runner pronto pra `process(...)`.
+
+    Returns None se empresa não tem workflow ativo (slug='menu_principal').
     """
     loaded = await load_active_workflow(pool, empresa_id)
     if loaded is None:
         return None
     version_id, definicao = loaded
+    sub_workflows = await _load_sub_workflows(pool, empresa_id, definicao)
     return WorkflowRunner(
         definicao,
         checkpointer=checkpointer,
         workflow_version_id=version_id,
         pool=pool,
+        sub_workflows=sub_workflows,
+        root_slug="menu_principal",
     )
+
+
+async def _load_sub_workflows(
+    pool: Any, empresa_id: int, root_definicao: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Carrega todos os workflows `wf:<slug>` referenciados pelo root.
+
+    Faz BFS — se um sub-workflow referencia outro, também carrega.
+    Usa `versao_ativa_id` quando existe (versão imutável), senão lê a
+    definicao mutável.
+    """
+    subs: dict[str, dict[str, Any]] = {}
+    to_load = _extract_wf_refs(root_definicao)
+    loaded_slugs: set[str] = set()
+    while to_load:
+        slug = to_load.pop()
+        if slug in loaded_slugs:
+            continue
+        loaded_slugs.add(slug)
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT definicao, versao_ativa_id FROM workflow_chatbot
+                 WHERE empresa_id = %s AND slug = %s
+                """,
+                (empresa_id, slug),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                logger.warning(
+                    "sub_workflow_missing empresa=%s slug=%s", empresa_id, slug
+                )
+                continue
+            definicao, versao_ativa_id = row[0], row[1]
+            if versao_ativa_id:
+                cur = await conn.execute(
+                    "SELECT definicao FROM workflow_chatbot_version WHERE id = %s",
+                    (versao_ativa_id,),
+                )
+                v_row = await cur.fetchone()
+                if v_row is not None:
+                    definicao = v_row[0]
+        if isinstance(definicao, str):
+            definicao = json.loads(definicao)
+        subs[slug] = definicao
+        to_load.extend(_extract_wf_refs(definicao))
+    return subs
+
+
+def _extract_wf_refs(definicao: dict[str, Any]) -> list[str]:
+    """Coleta slugs referenciados via `wf:<slug>` em next/choices[].next."""
+    refs: list[str] = []
+    for spec in (definicao.get("nodes") or {}).values():
+        for tgt_field in ("next",):
+            tgt = spec.get(tgt_field)
+            if isinstance(tgt, str) and tgt.startswith("wf:"):
+                refs.append(tgt[3:].split(":")[0])
+        for choice in spec.get("choices") or []:
+            tgt = choice.get("next")
+            if isinstance(tgt, str) and tgt.startswith("wf:"):
+                refs.append(tgt[3:].split(":")[0])
+        for branch in spec.get("when") or []:
+            tgt = branch.get("next")
+            if isinstance(tgt, str) and tgt.startswith("wf:"):
+                refs.append(tgt[3:].split(":")[0])
+    return refs
 
 
 # Cache LRU não-async pra evitar recompile a cada turno — a key inclui o

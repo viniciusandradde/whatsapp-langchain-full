@@ -22,7 +22,10 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 
-from whatsapp_langchain.workflows.compiler import compile_workflow
+from whatsapp_langchain.workflows.compiler import (
+    compile_workflow,
+    compile_workflow_root,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +44,29 @@ class WorkflowRunner:
         *,
         workflow_version_id: int = 0,
         pool: Any = None,
+        sub_workflows: dict[str, dict[str, Any]] | None = None,
+        root_slug: str = "menu_principal",
     ) -> None:
         """Args:
-        definicao: dict com entry+nodes (single workflow, sem refs `wf:`)
+        definicao: dict com entry+nodes do workflow ROOT.
         checkpointer: AsyncPostgresSaver / MemorySaver
         workflow_version_id: snapshot da version usada (Sprint v2 #5)
         pool: AsyncConnectionPool — necessário pros nodes que tocam DB
             (transfer_departamento, handover, delegate_to_agent, audit_event).
             None ⇒ esses nodes viram no-op (útil pra MemorySaver em tests).
+        sub_workflows: dict {slug: definicao} dos sub-workflows
+            referenciados via `wf:<slug>` no root. Quando fornecido, usa
+            `compile_workflow_root` que resolve refs. Quando None, cai
+            pro `compile_workflow` (single, sem refs `wf:`).
+        root_slug: slug do workflow root (default `menu_principal`).
         """
-        self._graph = compile_workflow(definicao, checkpointer=checkpointer)
+        if sub_workflows:
+            definicoes = {root_slug: definicao, **sub_workflows}
+            self._graph = compile_workflow_root(
+                root_slug, definicoes, checkpointer=checkpointer
+            )
+        else:
+            self._graph = compile_workflow(definicao, checkpointer=checkpointer)
         self._workflow_version_id = workflow_version_id
         self._pool = pool
 

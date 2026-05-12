@@ -350,10 +350,13 @@ async def get_atendimento_workflow_state(
     # Abre checkpointer sob demanda — em prod, worker já tem 1 aberto, mas o
     # API server roda separado e pode não ter. Pra simplicidade, abrimos
     # 1 ad-hoc (mais lento mas raríssimo).
-    async with open_checkpointer() as checkpointer:
+    stack, checkpointer = await open_checkpointer()
+    try:
         snapshot = await get_workflow_state_snapshot(
             pool, checkpointer, atendimento_id, empresa_id
         )
+    finally:
+        await stack.aclose()
     if snapshot is None:
         raise HTTPException(
             status_code=404,
