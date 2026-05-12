@@ -75,7 +75,7 @@ class UpdateMenuInput(BaseModel):
     trigger_keywords: list[str] | None = Field(default=None, max_length=20)
     mensagem_opcao_invalida: str | None = Field(default=None, max_length=2000)
     ativo: bool | None = None
-    # Sub-fase B+ paridade ZigChat (mig 041)
+    # Sub-fase B+ (padrão profissional) (mig 041)
     atalho: str | None = Field(default=None, max_length=60)
     solicitar_nome: bool | None = None
     menu_moderno: bool | None = None
@@ -108,7 +108,7 @@ class UpdateItemInput(BaseModel):
     acao_payload: dict[str, Any] | None = None
     ordem: int | None = Field(default=None, ge=1, le=99)
     ativo: bool | None = None
-    # Sub-fase B+ paridade ZigChat (mig 042)
+    # Sub-fase B+ (padrão profissional) (mig 042)
     comando: str | None = Field(default=None, max_length=120)
     acao_atendente_id: str | None = Field(default=None, max_length=120)
     acao_modelo_mensagem_id: int | None = None

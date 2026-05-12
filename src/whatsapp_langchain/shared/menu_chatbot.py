@@ -35,7 +35,7 @@ ACAO_TIPOS = (
     "chamar_agente",
     "enviar_msg",
     "fechar",
-    # Sub-fase B+ paridade ZigChat (mig 042)
+    # Sub-fase B+ (padrão profissional) (mig 042)
     "transferir_atendente",
     "enviar_template",
     "chamar_webhook",
@@ -66,7 +66,7 @@ class MenuChatbot:
     created_at: Any
     updated_at: Any
     created_by_user_id: str | None
-    # Sub-fase B+ paridade ZigChat (mig 041)
+    # Sub-fase B+ (padrão profissional) (mig 041)
     atalho: str | None = None
     solicitar_nome: bool = False
     menu_moderno: bool = False
@@ -116,7 +116,7 @@ class MenuItem:
     ativo: bool
     created_at: Any
     updated_at: Any
-    # Sub-fase B+ paridade ZigChat (mig 042)
+    # Sub-fase B+ (padrão profissional) (mig 042)
     comando: str | None = None
     acao_atendente_id: str | None = None
     acao_modelo_mensagem_id: int | None = None

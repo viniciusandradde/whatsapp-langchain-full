@@ -680,7 +680,7 @@ async def sandbox_clean(
 async def sandbox_summary(
     empresa_id: int = Query(default=999),
 ) -> SandboxSummary:
-    """Sprint R.6 — KPIs da sandbox (3 meses ZigChat)."""
+    """Sprint R.6 — KPIs da sandbox (3 meses dump)."""
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(

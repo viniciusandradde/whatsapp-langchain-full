@@ -27,12 +27,12 @@ logger = structlog.get_logger()
 
 
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
-# Ordem: 11 colunas base + 5 mig 047 (paridade ZigChat) + 7 mig 061 (triagem) = 23.
+# Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061 (triagem) = 23.
 _BARE_COLS = (
     "id, empresa_id, cliente_id, conexao_id, agente_atual, "
     "status, assigned_to_user_id, last_message_at, closed_at, "
     "created_at, updated_at, "
-    # Mig 047 paridade ZigChat
+    # Mig 047 padrão profissional
     "protocolo, qtde_resposta_invalida, iniciado_cliente, "
     "finalizado_por_user_id, solicitou_encerramento, "
     # Mig 061 triagem omnichannel

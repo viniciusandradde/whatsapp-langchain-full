@@ -1,4 +1,4 @@
-"""Workflows ZigChat-style com LangGraph (Sprint Workflow-LangGraph PoC).
+"""Workflows estilo state-machine com LangGraph (Sprint Workflow-LangGraph PoC).
 
 Sistema de fluxos conversacionais declarativos com state machine,
 `interrupt()` + checkpointing nativos do LangGraph.

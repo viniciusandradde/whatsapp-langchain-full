@@ -15,7 +15,7 @@ import { requireSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * /catalog/models — catálogo de modelos LLM (mig 042 + 044 paridade ZigChat).
+ * /catalog/models — catálogo de modelos LLM (mig 042 + 044 padrão profissional).
  *
  * Mostra:
  * - Modelos globais (empresa_id NULL) — read-only, seedados na mig 042

@@ -1,4 +1,4 @@
-"""Catálogo de modelos LLM + servidores MCP — Sprint 1+ paridade ZigChat.
+"""Catálogo de modelos LLM + servidores MCP — Sprint 1+ padrão profissional.
 
 modelo_llm: catálogo central de modelos LLM com custo USD/M tokens.
 mcp_server: catálogo de servidores MCP (Model Context Protocol) por empresa.

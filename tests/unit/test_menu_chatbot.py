@@ -38,7 +38,7 @@ class _ItemStub:
 
 
 class TestAcaoTipos:
-    def test_12_tipos_apos_paridade_zigchat(self):
+    def test_12_tipos_acoes(self):
         """Sub-fase B+ (mig 042) expandiu de 5 → 12 ações."""
         assert set(ACAO_TIPOS) == {
             # MVP (mig 040)
@@ -47,7 +47,7 @@ class TestAcaoTipos:
             "chamar_agente",
             "enviar_msg",
             "fechar",
-            # Sub-fase B+ paridade ZigChat (mig 042)
+            # Sub-fase B+ (padrão profissional) (mig 042)
             "transferir_atendente",
             "enviar_template",
             "chamar_webhook",

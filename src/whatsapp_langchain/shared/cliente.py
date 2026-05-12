@@ -29,7 +29,7 @@ _SELECT_COLS = (
     "segmento, lifecycle_stage, score, source, responsavel_user_id, valor_estimado_brl, "
     "instagram, linkedin, facebook, website, email_alternativo, telefone_alternativo, "
     "locale, timezone, avatar_url, last_interaction_at, notes, "
-    # Sub-fase B+ paridade ZigChat (mig 046)
+    # Sub-fase B+ (padrão profissional) (mig 046)
     "whatsapp_state, numero_verificado, whatsapp_lid, remote_id, "
     "msg_apos_encerramento, field_1, field_2, field_3, field_4, field_5, "
     "ignora_inatividade, desconsidera_turno"
@@ -84,7 +84,7 @@ def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
         avatar_url=row[40],
         last_interaction_at=row[41],
         notes=row[42],
-        # Sub-fase B+ paridade ZigChat (mig 046)
+        # Sub-fase B+ (padrão profissional) (mig 046)
         whatsapp_state=row[43],
         numero_verificado=row[44] or False,
         whatsapp_lid=row[45],
@@ -196,7 +196,7 @@ async def update_cliente_partial(
     timezone: str | None = None,
     avatar_url: str | None = None,
     notes: str | None = None,
-    # Sub-fase B+ paridade ZigChat (mig 046)
+    # Sub-fase B+ (padrão profissional) (mig 046)
     whatsapp_state: str | None = None,
     numero_verificado: bool | None = None,
     whatsapp_lid: str | None = None,
@@ -259,7 +259,7 @@ async def update_cliente_partial(
     _add("timezone", timezone)
     _add("avatar_url", avatar_url)
     _add("notes", notes)
-    # Sub-fase B+ paridade ZigChat (mig 046)
+    # Sub-fase B+ (padrão profissional) (mig 046)
     _add("whatsapp_state", whatsapp_state)
     _add("numero_verificado", numero_verificado)
     _add("whatsapp_lid", whatsapp_lid)

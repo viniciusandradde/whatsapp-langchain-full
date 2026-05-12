@@ -386,12 +386,12 @@ export function MenuEditor({
         </Card>
       )}
 
-      {/* Config B+ (paridade ZigChat) */}
+      {/* Config B+ (padrão profissional) */}
       {tab === "config" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Avançado — Sub-fase B+ (paridade ZigChat)
+              Avançado — Sub-fase B+ (padrão profissional)
             </CardTitle>
           </CardHeader>
           <CardContent>

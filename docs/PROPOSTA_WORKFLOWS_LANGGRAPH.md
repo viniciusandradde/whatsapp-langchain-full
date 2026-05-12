@@ -1,4 +1,4 @@
-# Proposta v2: Workflows ZigChat-style com LangGraph (Hospital Mackenzie)
+# Proposta v2: Workflows estilo state-machine com LangGraph (Hospital Mackenzie)
 
 > **Branch alvo**: `proposta/menu-langgraph-workflows` — proposta técnica
 > revisável, NÃO mergear em `master` sem PoC validado.

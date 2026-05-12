@@ -1,4 +1,4 @@
-"""Smoke tests dos endpoints de workflows ZigChat-style.
+"""Smoke tests dos endpoints de workflows estilo state-machine.
 
 Branch: proposta/menu-langgraph-workflows.
 

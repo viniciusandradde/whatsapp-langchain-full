@@ -80,7 +80,7 @@ const LIMITE_OPTIONS: { v: LimiteCustoAcao; l: string }[] = [
   { v: "bloquear", l: "Bloquear (não responde)" },
 ];
 
-// 13 tools que ZigChat tem (mapeado em docs/agente/MAPEAMENTO.md).
+// 13 tools de referência (mapeadas em docs/agente/MAPEAMENTO.md).
 // Alguns vão exigir implementação no loader/agente Python — flag `pending`
 // indica isso pra UI mostrar warning.
 const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = [
@@ -155,7 +155,7 @@ export function AgenteEditor({
       patch.departamento_default_id = getNum("departamento_default_id");
     }
     if (tab === "modelo") {
-      // Sprint 2 paridade ZigChat (mig 043): preferencialmente salva
+      // Sprint 2 padrão profissional (mig 043): preferencialmente salva
       // modelo_provedor + modelo_nome (separados); modelo único legacy
       // permanece editável via fallback quando catálogo modelo_llm vazio.
       const provedor = getStr("modelo_provedor");
@@ -171,7 +171,7 @@ export function AgenteEditor({
       patch.temperatura_override = getNum("temperatura_override");
       patch.top_p_override = getNum("top_p_override");
       patch.max_tokens = getNum("max_tokens");
-      // Sprint 2 paridade ZigChat (mig 043) — campos de memória + governança
+      // Sprint 2 padrão profissional (mig 043) — campos de memória + governança
       patch.tipo_memoria = getStr("tipo_memoria") ?? undefined;
       patch.janela_memoria = getNum("janela_memoria");
       patch.timeout_minutos = getNum("timeout_minutos");
@@ -584,7 +584,7 @@ function TabModelo({
         type="number"
       />
 
-      {/* Sub-fase B+ paridade ZigChat (mig 043) — memória + governança */}
+      {/* Sub-fase B+ (padrão profissional) (mig 043) — memória + governança */}
       <FieldSelect
         label="Tipo de memória"
         name="tipo_memoria"

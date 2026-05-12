@@ -2,7 +2,7 @@
 
 Captura automática de NPS (Net Promoter Score 0-10) ao fechar atendimentos
 no WhatsApp, com dashboard executivo, ranking de operadores e breakdown por
-departamento. Padrão de mercado (estilo ZigChat).
+departamento. Padrão de mercado (padrão de mercado).
 
 Status: **production** (Sprint X + Y).
 

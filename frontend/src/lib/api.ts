@@ -268,7 +268,7 @@ export interface Cliente {
   avatar_url: string | null;
   last_interaction_at: string | null;
   notes: string | null;
-  // Sprint 3 paridade ZigChat (mig 046)
+  // Sprint 3 padrão profissional (mig 046)
   whatsapp_state: string | null;
   numero_verificado: boolean;
   whatsapp_lid: string | null;
@@ -338,7 +338,7 @@ export interface Atendimento {
   updated_at: string;
   cliente_nome: string | null;
   cliente_telefone: string | null;
-  // Sprint 3 paridade ZigChat (mig 047)
+  // Sprint 3 padrão profissional (mig 047)
   protocolo: string | null;
   qtde_resposta_invalida: number;
   iniciado_cliente: boolean;
@@ -1385,7 +1385,7 @@ export interface Campanha {
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
-  // Sub-fase B+ paridade ZigChat (mig 051)
+  // Sub-fase B+ (padrão profissional) (mig 051)
   modelo_mensagem_id: number | null;
   scheduled_at: string | null;
   tipo: "broadcast" | "transactional" | "reativacao";
@@ -1410,7 +1410,7 @@ export interface CampanhaCreateInput {
   intervalo_ms?: number;
   max_destinatarios?: number;
   telefones: string[];
-  // Sub-fase B+ paridade ZigChat (mig 051)
+  // Sub-fase B+ (padrão profissional) (mig 051)
   modelo_mensagem_id?: number | null;
   scheduled_at?: string | null;
   tipo?: "broadcast" | "transactional" | "reativacao";
@@ -1910,7 +1910,7 @@ export interface AgenteIA {
   // Derivados (computados no backend baseado em estilo + override)
   temperatura_efetiva: number;
   top_p_efetivo: number;
-  // Sprint 2 paridade ZigChat (mig 043)
+  // Sprint 2 padrão profissional (mig 043)
   modelo_provedor: string | null;
   modelo_nome: string | null;
   tipo_memoria: string;
@@ -1995,7 +1995,7 @@ export async function getAgenteTemplates(): Promise<{ items: AgenteTemplate[] }>
 }
 
 // =====================================================================
-// Menu chatbot (Sub-fase B + B+ paridade ZigChat)
+// Menu chatbot (Sub-fase B + B+ padrão profissional)
 // =====================================================================
 
 export interface MenuChatbot {
@@ -2010,7 +2010,7 @@ export interface MenuChatbot {
   created_at: string | null;
   updated_at: string | null;
   created_by_user_id: string | null;
-  // B+ paridade ZigChat (mig 041)
+  // B+ padrão profissional (mig 041)
   atalho: string | null;
   solicitar_nome: boolean;
   menu_moderno: boolean;
@@ -2542,7 +2542,7 @@ export async function seedMenuFromAgentes(
 }
 
 // =====================================================================
-// Catálogo modelo_llm (Sprint 1+ paridade ZigChat)
+// Catálogo modelo_llm (Sprint 1+ padrão profissional)
 // =====================================================================
 
 export interface ModeloLLM {
@@ -2613,7 +2613,7 @@ export async function deleteModeloLLM(id: number): Promise<void> {
   await apiFetch<void>(`/api/v1/modelos-llm/${id}`, { method: "DELETE" });
 }
 
-// MCP Server (Sprint 1+ paridade ZigChat)
+// MCP Server (Sprint 1+ padrão profissional)
 
 export interface McpServer {
   id: number;
@@ -2697,7 +2697,7 @@ export async function testMcpServer(id: number): Promise<McpTestResult> {
 }
 
 // =====================================================================
-// Dashboard IA (Sprint 7 paridade ZigChat)
+// Dashboard IA (Sprint 7 padrão profissional)
 // =====================================================================
 
 export interface DashboardIa {
@@ -2885,7 +2885,7 @@ export async function getNPSAvaliacoes(opts: {
 }
 
 // ============================================================
-// Workflows ZigChat (proposta/menu-langgraph-workflows)
+// Workflows (proposta/menu-langgraph-workflows)
 // ============================================================
 
 export interface WorkflowListItem {

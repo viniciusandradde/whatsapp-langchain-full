@@ -1,4 +1,4 @@
-"""Endpoints admin de Workflows ZigChat (proposta/menu-langgraph-workflows).
+"""Endpoints admin de Workflows (proposta/menu-langgraph-workflows).
 
 CRUD de `workflow_chatbot` + leitura de state ativo pra debug.
 

@@ -36,7 +36,7 @@ class CampanhaCreate(BaseModel):
     max_destinatarios: int = Field(default=1000, ge=1, le=10_000)
     # Lista crua (será normalizada em E.164 no helper)
     telefones: list[str] = Field(min_length=1, max_length=10_000)
-    # Sub-fase B+ paridade ZigChat (mig 051)
+    # Sub-fase B+ (padrão profissional) (mig 051)
     modelo_mensagem_id: int | None = None
     scheduled_at: str | None = None  # ISO datetime
     tipo: str = "broadcast"  # broadcast|transactional|reativacao
@@ -98,7 +98,7 @@ async def create_endpoint(
             max_destinatarios=body.max_destinatarios,
             telefones_brutos=body.telefones,
             user_id=user_id,
-            # Sub-fase B+ paridade ZigChat (mig 051)
+            # Sub-fase B+ (padrão profissional) (mig 051)
             modelo_mensagem_id=body.modelo_mensagem_id,
             scheduled_at=body.scheduled_at,
             tipo=body.tipo,

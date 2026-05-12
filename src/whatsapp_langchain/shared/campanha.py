@@ -71,7 +71,7 @@ class CampanhaSummary:
     created_by_user_id: str | None
     created_at: datetime
     updated_at: datetime
-    # Sub-fase B+ paridade ZigChat (mig 051)
+    # Sub-fase B+ (padrão profissional) (mig 051)
     modelo_mensagem_id: int | None = None
     scheduled_at: datetime | None = None
     tipo: str = "broadcast"
@@ -97,7 +97,7 @@ class CampanhaSummary:
             "created_by_user_id": self.created_by_user_id,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            # B+ paridade ZigChat
+            # B+ padrão profissional
             "modelo_mensagem_id": self.modelo_mensagem_id,
             "scheduled_at": (
                 self.scheduled_at.isoformat() if self.scheduled_at else None
@@ -112,7 +112,7 @@ _COLS = (
     "id, empresa_id, nome, descricao, mensagem, conexao_id, status, "
     "intervalo_ms, max_destinatarios, total_destinatarios, enviados, falhas, "
     "started_at, finished_at, created_by_user_id, created_at, updated_at, "
-    # B+ paridade ZigChat (mig 051)
+    # B+ padrão profissional (mig 051)
     "modelo_mensagem_id, scheduled_at, tipo, filtro_segmento, filtro_tags"
 )
 
@@ -158,7 +158,7 @@ async def create_campanha(
     max_destinatarios: int,
     telefones_brutos: list[str],
     user_id: str | None,
-    # Sub-fase B+ paridade ZigChat (mig 051)
+    # Sub-fase B+ (padrão profissional) (mig 051)
     modelo_mensagem_id: int | None = None,
     scheduled_at: str | None = None,
     tipo: str = "broadcast",

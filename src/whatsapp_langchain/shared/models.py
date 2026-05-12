@@ -194,7 +194,7 @@ class Empresa(BaseModel):
     created_at: datetime
     updated_at: datetime
     my_role: str | None = None
-    # Sprint 8 paridade ZigChat (mig 060)
+    # Sprint 8 padrão profissional (mig 060)
     menu_coleta_id: int | None = None
     hook_id: int | None = None
     plano_id: int | None = None
@@ -252,7 +252,7 @@ class Conexao(BaseModel):
     payload_json: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
-    # Sprint 4 paridade ZigChat (mig 048)
+    # Sprint 4 padrão profissional (mig 048)
     tipo_atendimento: str = "ia"  # manual|ia|hibrido
     whatsapp_state: str | None = None
     waba_account_id: str | None = None
@@ -342,7 +342,7 @@ class Cliente(BaseModel):
     last_interaction_at: datetime | None = None
     notes: str | None = None
 
-    # ---- Sub-fase B+ paridade ZigChat (mig 046) ----
+    # ---- Sub-fase B+ (padrão profissional) (mig 046) ----
     whatsapp_state: str | None = None
     numero_verificado: bool = False
     whatsapp_lid: str | None = None
@@ -574,7 +574,7 @@ class Atendimento(BaseModel):
     # Campos derivados (preenchidos pelas queries que fazem JOIN):
     cliente_nome: str | None = None
     cliente_telefone: str | None = None
-    # Sprint 3 paridade ZigChat (mig 047)
+    # Sprint 3 padrão profissional (mig 047)
     protocolo: str | None = None
     qtde_resposta_invalida: int = 0
     iniciado_cliente: bool = True
@@ -673,7 +673,7 @@ class Departamento(BaseModel):
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
-    # Sprint 4 paridade ZigChat (mig 049)
+    # Sprint 4 padrão profissional (mig 049)
     turno_id: int | None = None
     posicao_fila_transferencia: int | None = None
     encerra_atendimento: bool = False

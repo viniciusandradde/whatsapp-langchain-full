@@ -1,4 +1,4 @@
-"""Endpoints catálogo: modelo_llm + mcp_server (Sprint 1+ paridade ZigChat)."""
+"""Endpoints catálogo: modelo_llm + mcp_server (Sprint 1+ padrão profissional)."""
 
 from __future__ import annotations
 
@@ -329,7 +329,7 @@ async def test_mcp_endpoint(
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
-    """Health check do MCP server (paridade `testarMcpServer` do ZigChat).
+    """Health check do MCP server (paridade `testarMcpServer` do padrão de mercado).
 
     Pra http/sse/websocket: GET no URL com timeout 5s, espera 2xx.
     Pra stdio: NÃO testa (spawn arbitrário no container é risco — admin

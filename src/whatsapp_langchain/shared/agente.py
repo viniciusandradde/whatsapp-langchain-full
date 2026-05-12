@@ -62,7 +62,7 @@ _COLS = (
     "base_conhecimento_ids, variavel_ids, mcp_server_ids, "
     "limite_custo_acao, ativo, is_default, "
     "created_by_user_id, created_at, updated_at, "
-    # Sprint 2 paridade ZigChat (mig 043)
+    # Sprint 2 padrão profissional (mig 043)
     "modelo_provedor, modelo_nome, tipo_memoria, janela_memoria, "
     "timeout_minutos, acao_limite_menu_id, "
     # Triagem omnichannel (mig 061): depto destino fixo quando agente
@@ -99,7 +99,7 @@ class AgenteIA:
     created_by_user_id: str | None
     created_at: Any
     updated_at: Any
-    # Sprint 2 paridade ZigChat (mig 043)
+    # Sprint 2 padrão profissional (mig 043)
     modelo_provedor: str | None = None
     modelo_nome: str | None = None
     tipo_memoria: str = "window"
@@ -143,7 +143,7 @@ class AgenteIA:
             "created_by_user_id": self.created_by_user_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            # Sprint 2 paridade ZigChat
+            # Sprint 2 padrão profissional
             "modelo_provedor": self.modelo_provedor,
             "modelo_nome": self.modelo_nome,
             "tipo_memoria": self.tipo_memoria,
@@ -355,7 +355,7 @@ class AgenteRuntime:
     max_tokens: int | None
     tools_enabled: list[str]
     base_conhecimento_ids: list[int]
-    # Sprint 2 paridade ZigChat (mig 043)
+    # Sprint 2 padrão profissional (mig 043)
     tipo_memoria: str = "window"
     janela_memoria: int | None = None
     timeout_minutos: int | None = None

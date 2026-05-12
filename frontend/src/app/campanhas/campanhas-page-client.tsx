@@ -79,7 +79,7 @@ export function CampanhasPageClient({
       intervalo_ms: Number(fd.get("intervalo_ms") || 500),
       max_destinatarios: Number(fd.get("max_destinatarios") || 1000),
       telefones,
-      // Sub-fase B+ paridade ZigChat (mig 051)
+      // Sub-fase B+ (padrão profissional) (mig 051)
       modelo_mensagem_id: modeloRaw ? Number(modeloRaw) : null,
       scheduled_at: scheduledRaw ? new Date(scheduledRaw).toISOString() : null,
       tipo: (String(fd.get("tipo") || "broadcast") as "broadcast" | "transactional" | "reativacao"),
@@ -244,10 +244,10 @@ export function CampanhasPageClient({
                 </p>
               </div>
 
-              {/* Sub-fase B+ paridade ZigChat (mig 051) */}
+              {/* Sub-fase B+ (padrão profissional) (mig 051) */}
               <div className="rounded-md border border-border/40 bg-muted/20 p-3 space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wide">
-                  Avançado (paridade ZigChat)
+                  Avançado (padrão profissional)
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>

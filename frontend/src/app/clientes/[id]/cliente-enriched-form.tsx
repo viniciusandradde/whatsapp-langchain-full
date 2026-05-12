@@ -129,7 +129,7 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
       add("avatar_url", getStr("avatar_url"));
     }
     if (tab === "avancado") {
-      // Sub-fase B+ paridade ZigChat (mig 046)
+      // Sub-fase B+ (padrão profissional) (mig 046)
       add("whatsapp_state", getStr("whatsapp_state"));
       add("whatsapp_lid", getStr("whatsapp_lid"));
       add("remote_id", getStr("remote_id"));
@@ -368,7 +368,7 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
             </div>
           )}
 
-          {/* ---- Sub-fase B+ paridade ZigChat (mig 046) ---- */}
+          {/* ---- Sub-fase B+ (padrão profissional) (mig 046) ---- */}
           {tab === "avancado" && (
             <div className="space-y-5">
               <div>

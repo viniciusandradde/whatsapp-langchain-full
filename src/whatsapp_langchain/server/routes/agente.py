@@ -83,7 +83,7 @@ class UpdateAgenteInput(BaseModel):
     mcp_server_ids: list[int] | None = None
     limite_custo_acao: str | None = None
     ativo: bool | None = None
-    # Sprint 2 paridade ZigChat (mig 043)
+    # Sprint 2 padrão profissional (mig 043)
     modelo_provedor: str | None = Field(default=None, max_length=60)
     modelo_nome: str | None = Field(default=None, max_length=120)
     tipo_memoria: str | None = None

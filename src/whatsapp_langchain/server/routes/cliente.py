@@ -150,7 +150,7 @@ class ClienteUpdateInput(BaseModel):
     avatar_url: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=4000)
 
-    # Sub-fase B+ paridade ZigChat (mig 046)
+    # Sub-fase B+ (padrão profissional) (mig 046)
     whatsapp_state: str | None = Field(default=None, max_length=60)
     numero_verificado: bool | None = None
     whatsapp_lid: str | None = Field(default=None, max_length=200)

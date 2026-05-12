@@ -1211,7 +1211,7 @@ async def _try_handle_menu(
             resposta=text,
         )
 
-        # Mensagem rica estilo ZigChat: pre + transferência + encerrar +
+        # Mensagem rica padrão de mercado: pre + transferência + encerrar +
         # posição na fila. Cada bloco em mensagens separadas pra parecer
         # natural no WhatsApp (pequenas bolhas em sequência).
         partes: list[str] = []
@@ -1773,8 +1773,8 @@ async def process_message(
             return
 
         # E.1 — keyword "encerrar atendimento" → fecha como resolvido.
-        # Avisada pelo sistema na transferência ZigChat-like (mensagem
-        # rica menciona "digite *encerrar atendimento* pra finalizar").
+        # Avisada pelo sistema na transferência (mensagem rica menciona
+        # "digite *encerrar atendimento* pra finalizar").
         if await _try_handle_encerrar_keyword(message, pool, outbound):
             return
 
@@ -2026,7 +2026,7 @@ async def process_message(
             return
 
         # Callback que registra ia_execucao + atualiza ia_budget após cada
-        # chamada LLM (mig 057 + 058 paridade ZigChat).
+        # chamada LLM (mig 057 + 058 padrão profissional).
         from whatsapp_langchain.shared.llm_callback import IaExecucaoCallback
 
         ia_callback = IaExecucaoCallback(

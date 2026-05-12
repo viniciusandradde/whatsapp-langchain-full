@@ -15,7 +15,7 @@ import { requireSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * /catalog/mcp — gestão MCP servers (mig 041 paridade ZigChat).
+ * /catalog/mcp — gestão MCP servers (mig 041 padrão profissional).
  *
  * MCP = Model Context Protocol. Permite ao agente IA chamar tools de
  * servidores externos (ex: filesystem, GitHub, Slack, custom). Cada

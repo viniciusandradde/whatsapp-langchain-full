@@ -16,7 +16,7 @@ import { requireSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * Página /workflows — workflows ZigChat-style (LangGraph state machines).
+ * Página /workflows — workflows estilo state-machine (LangGraph state machines).
  *
  * Diferente de /menus (árvore simples), workflow é uma máquina de estado
  * declarativa com nodes tipados, vars persistidas, validação inline.
