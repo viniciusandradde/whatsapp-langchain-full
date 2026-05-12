@@ -572,14 +572,16 @@ async def _try_handle_workflow(
     if atend_id is None:
         return False
 
-    # #6 — se agente IA já assumiu, não roda workflow
+    # #6 — se agente IA já assumiu (via delegate_to_agent), não roda workflow.
+    # Default histórico 'vsa_tech' é o estado inicial — não conta como delegação.
+    _DEFAULT_AGENT = "vsa_tech"
     async with pool.connection() as conn:
         cur = await conn.execute(
             "SELECT agente_atual FROM atendimento WHERE id = %s",
             (atend_id,),
         )
         row = await cur.fetchone()
-    if row and row[0]:
+    if row and row[0] and row[0] != _DEFAULT_AGENT:
         return False
 
     from whatsapp_langchain.workflows.loader import build_runner_for_empresa
