@@ -99,6 +99,11 @@ class WorkflowRunner:
             "configurable": {"thread_id": f"wf:{atendimento_id}"},
         }
 
+        # Pool não é msgpack-serializável → vai via configurable, não no state.
+        # Nodes que precisam de DB leem via `config["configurable"]["pool"]`.
+        if self._pool is not None:
+            config["configurable"]["pool"] = self._pool
+
         # Verifica se já tem state (atendimento em curso)
         state_snapshot = await self._graph.aget_state(config)
         has_state = bool(state_snapshot.values)
@@ -109,32 +114,18 @@ class WorkflowRunner:
             logger.info("workflow_already_ended atendimento_id=%s", atendimento_id)
             return []
 
-        # Vars _pool injetada pra nodes que precisam de DB
-        # (será stripada antes de salvar em metadata via handover node)
-        bootstrap_vars: dict[str, Any] = {}
-        if self._pool is not None:
-            bootstrap_vars["_pool"] = self._pool
-
         if not has_state:
             input_payload: Any = {
                 "atendimento_id": atendimento_id,
                 "empresa_id": empresa_id,
                 "workflow_version_id": self._workflow_version_id,
-                "vars": bootstrap_vars,
+                "vars": {},
                 "outbox": [],
                 "history": [],
                 "last_input": msg,
             }
         else:
-            # Garante que _pool está nas vars no resume também (caso checkpoint
-            # antigo não tenha)
-            if bootstrap_vars:
-                input_payload = Command(
-                    resume=msg,
-                    update={"vars": bootstrap_vars},
-                )
-            else:
-                input_payload = Command(resume=msg)
+            input_payload = Command(resume=msg)
 
         # Sprint v2 #2: usa `astream(stream_mode="updates")` pra pegar APENAS
         # os deltas do turn atual — evita ler `outbox` acumulado do checkpoint

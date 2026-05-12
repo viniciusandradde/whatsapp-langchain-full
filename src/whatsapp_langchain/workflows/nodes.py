@@ -20,11 +20,24 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END
 from langgraph.types import Command, interrupt
 
 from whatsapp_langchain.workflows.state import WorkflowState
 from whatsapp_langchain.workflows.validators import validate_input
+
+
+def _pool_from_config(config: RunnableConfig | None) -> Any:
+    """Lê o pool injetado via config.configurable pelo runner.
+
+    Pool não é msgpack-serializável → não pode viver no state. Quando o
+    node não recebe config (testes locais sem runner), retorna None e o
+    side effect vira no-op.
+    """
+    if config is None:
+        return None
+    return (config.get("configurable") or {}).get("pool")
 
 # Map "__end__"/"end" no spec → langgraph END sentinel
 # (usado por ask_choice → Command(goto=...))
@@ -331,15 +344,17 @@ def make_audit_event_node(spec: dict) -> Callable:
         evento: str (ex: "lgpd_consented")
         next: str
 
-    Side effect: usa pool injetado via state["vars"]["_pool"] (set pelo runner).
+    Side effect: usa pool injetado via config.configurable (set pelo runner).
     Best-effort: falha silenciosa se pool ausente (PoC sem audit DB).
     """
     evento = spec["evento"]
 
-    async def node(state: WorkflowState) -> dict:
+    async def node(
+        state: WorkflowState, config: RunnableConfig | None = None
+    ) -> dict:
         from whatsapp_langchain.workflows.audit import log_event
 
-        pool = (state.get("vars") or {}).get("_pool")
+        pool = _pool_from_config(config)
         if pool is not None:
             await log_event(
                 pool,
@@ -376,12 +391,14 @@ def make_transfer_departamento_node(spec: dict) -> Callable:
         " Em breve um atendente irá te atender.",
     )
 
-    async def node(state: WorkflowState) -> dict:
+    async def node(
+        state: WorkflowState, config: RunnableConfig | None = None
+    ) -> dict:
         from whatsapp_langchain.shared.atendimento import (
             transfer_atendimento_to_departamento,
         )
 
-        pool = (state.get("vars") or {}).get("_pool")
+        pool = _pool_from_config(config)
         atend_id = state.get("atendimento_id", 0)
         if pool is not None and atend_id and departamento_id:
             try:
@@ -430,13 +447,16 @@ def make_handover_node(spec: dict) -> Callable:
         "Você está na fila. Em breve um atendente irá te atender.",
     )
 
-    async def node(state: WorkflowState) -> dict:
+    async def node(
+        state: WorkflowState, config: RunnableConfig | None = None
+    ) -> dict:
         import json as _json
 
-        pool = (state.get("vars") or {}).get("_pool")
+        pool = _pool_from_config(config)
         atend_id = state.get("atendimento_id", 0)
         vars_dict = state.get("vars") or {}
-        # Remove pool helper antes de serializar
+        # Pool não está mais em vars (vai via config), mas mantemos o filtro
+        # `_` por segurança contra chaves internas adicionadas no futuro.
         clean_vars = {k: v for k, v in vars_dict.items() if not k.startswith("_")}
         resumo = _render(resumo_template, vars_dict) if resumo_template else ""
 
@@ -514,8 +534,10 @@ def make_delegate_to_agent_node(spec: dict) -> Callable:
     agent_slug = spec["agent_slug"]
     message_template = spec.get("message", "")
 
-    async def node(state: WorkflowState) -> dict:
-        pool = (state.get("vars") or {}).get("_pool")
+    async def node(
+        state: WorkflowState, config: RunnableConfig | None = None
+    ) -> dict:
+        pool = _pool_from_config(config)
         atend_id = state.get("atendimento_id", 0)
 
         if pool is not None and atend_id:
