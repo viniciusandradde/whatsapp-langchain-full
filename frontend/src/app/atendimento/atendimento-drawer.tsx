@@ -374,6 +374,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
         </header>
 
         <TriagemCard atendimento={atendimento} />
+        <ColetaPreviaCard atendimento={atendimento} />
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b px-5 py-2">
@@ -741,6 +742,45 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
           </pre>
         </div>
       )}
+    </div>
+  );
+}
+
+// Card "Coleta prévia" — exibe as respostas do wizard de coleta que
+// rodou antes de chegar no atendente. Inclui label da pergunta e valor
+// pra contexto. Renderiza só quando `coleta_resumo` está populado.
+function ColetaPreviaCard({ atendimento }: { atendimento: Atendimento }) {
+  const resumo = atendimento.coleta_resumo;
+  if (!resumo || !resumo.respostas) return null;
+  const entries = Object.entries(resumo.respostas);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="border-b bg-blue-500/5 px-5 py-3">
+      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+        <span>🗂 Coleta prévia</span>
+        {resumo.item_label && (
+          <Badge variant="outline" className="text-[10px]">
+            via &ldquo;{resumo.item_label}&rdquo;
+          </Badge>
+        )}
+      </div>
+      <dl className="space-y-1.5 text-xs">
+        {entries.map(([key, val]) => (
+          <div key={key} className="flex flex-col gap-0.5">
+            <dt className="text-[11px] font-medium text-muted-foreground">
+              {val.label}
+            </dt>
+            <dd className="rounded-md bg-background/70 px-2 py-1 font-mono text-foreground">
+              {val.valor || (
+                <span className="text-muted-foreground italic">
+                  (sem resposta)
+                </span>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

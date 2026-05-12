@@ -352,6 +352,16 @@ export interface Atendimento {
   resumo_ia: string | null;
   triagem_completa: boolean;
   triagem_at: string | null;
+  // Wizard coleta (mig 081/082) — coleta_resumo é exibido no drawer
+  coleta_estado?: Record<string, unknown> | null;
+  coleta_resumo?: ColetaResumo | null;
+}
+
+export interface ColetaResumo {
+  item_id: number | null;
+  item_label?: string | null;
+  respostas: Record<string, { label: string; valor: string }>;
+  completed_at?: string | null;
 }
 
 export interface AtendimentosResponse {
@@ -2039,6 +2049,26 @@ export type MenuItemAcaoTipo =
   | "mudar_manual"
   | "setar_nome";
 
+export type ColetaValidator =
+  | "cpf"
+  | "cnpj"
+  | "cep"
+  | "uf"
+  | "data_br"
+  | "telefone_br"
+  | "email"
+  | `min_len:${number}`
+  | `max_len:${number}`
+  | `regex:${string}`;
+
+export interface ColetaPergunta {
+  label: string;
+  save_as: string;
+  validate_with?: ColetaValidator | string | null;
+  retry_message?: string | null;
+  obrigatorio?: boolean;
+}
+
 export interface MenuItem {
   id: number;
   menu_id: number;
@@ -2061,6 +2091,8 @@ export interface MenuItem {
   nota_max: number | null;
   nota_pergunta: string | null;
   grupo: string | null;
+  // Wizard coleta multi-pergunta (mig 080)
+  coleta_perguntas: ColetaPergunta[] | null;
 }
 
 export interface MenuChatbotCreateInput {
@@ -2098,6 +2130,7 @@ export interface MenuItemCreateInput {
   acao_payload?: Record<string, unknown>;
   parent_id?: number | null;
   ordem?: number;
+  coleta_perguntas?: ColetaPergunta[] | null;
 }
 
 export type MenuItemUpdateInput = Partial<
@@ -2118,6 +2151,7 @@ export type MenuItemUpdateInput = Partial<
     | "nota_max"
     | "nota_pergunta"
     | "grupo"
+    | "coleta_perguntas"
   >
 >;
 

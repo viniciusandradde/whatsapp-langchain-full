@@ -590,6 +590,13 @@ class Atendimento(BaseModel):
     resumo_ia: str | None = None
     triagem_completa: bool = False
     triagem_at: datetime | None = None
+    # Wizard de coleta multi-pergunta (mig 081/082)
+    # `coleta_estado`: runtime do wizard em andamento ({item_id, idx,
+    # respostas, perguntas, started_at}). NULL = sem wizard.
+    # `coleta_resumo`: snapshot final ({item_id, item_label, respostas:
+    # {save_as: {label, valor}}, completed_at}). Exibido no drawer.
+    coleta_estado: dict | None = None
+    coleta_resumo: dict | None = None
 
 
 class DocumentoConhecimento(BaseModel):

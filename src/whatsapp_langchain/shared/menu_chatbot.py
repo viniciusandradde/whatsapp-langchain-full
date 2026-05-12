@@ -127,6 +127,9 @@ class MenuItem:
     nota_max: int | None = None
     nota_pergunta: str | None = None
     grupo: str | None = None
+    # Wizard de coleta multi-pergunta (mig 080) — array opcional. Cada item
+    # tem label/save_as/validate_with/retry_message/obrigatorio.
+    coleta_perguntas: list[dict] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -150,6 +153,7 @@ class MenuItem:
             "nota_max": self.nota_max,
             "nota_pergunta": self.nota_pergunta,
             "grupo": self.grupo,
+            "coleta_perguntas": self.coleta_perguntas,
         }
 
 
@@ -167,7 +171,9 @@ _ITEM_COLS = (
     "ativo, created_at, updated_at, "
     # B+ (mig 042)
     "comando, acao_atendente_id, acao_modelo_mensagem_id, webhook_url, "
-    "hook_id, link_url, nota_min, nota_max, nota_pergunta, grupo"
+    "hook_id, link_url, nota_min, nota_max, nota_pergunta, grupo, "
+    # Wizard coleta multi-pergunta (mig 080)
+    "coleta_perguntas"
 )
 
 
@@ -384,6 +390,7 @@ async def create_item(
     acao_payload: dict | None = None,
     parent_id: int | None = None,
     ordem: int | None = None,
+    coleta_perguntas: list[dict] | None = None,
 ) -> MenuItem:
     if acao_tipo not in ACAO_TIPOS:
         raise ValueError(
@@ -408,15 +415,24 @@ async def create_item(
             row = await cur.fetchone()
             ordem = (row[0] if row else 1) or 1
 
+    coleta_json = (
+        json.dumps(coleta_perguntas, ensure_ascii=False)
+        if coleta_perguntas
+        else None
+    )
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
             INSERT INTO menu_item
-                (menu_id, parent_id, ordem, label, acao_tipo, acao_payload)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                (menu_id, parent_id, ordem, label, acao_tipo, acao_payload,
+                 coleta_perguntas)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
             RETURNING {_ITEM_COLS}
             """,
-            (menu_id, parent_id, ordem, label, acao_tipo, json.dumps(payload)),
+            (
+                menu_id, parent_id, ordem, label, acao_tipo,
+                json.dumps(payload), coleta_json,
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -438,6 +454,9 @@ async def update_item(
         if k == "acao_payload":
             sets.append("acao_payload = %s::jsonb")
             params.append(json.dumps(v))
+        elif k == "coleta_perguntas":
+            sets.append("coleta_perguntas = %s::jsonb")
+            params.append(json.dumps(v, ensure_ascii=False) if v else None)
         else:
             sets.append(f"{k} = %s")
             params.append(v)

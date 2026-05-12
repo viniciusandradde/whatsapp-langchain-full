@@ -48,13 +48,26 @@ from whatsapp_langchain.shared.agente import (
     resolve_agente_runtime,
 )
 from whatsapp_langchain.shared.atendimento import (
+    clear_coleta_estado,
     close_atendimento,
     count_fila_departamento,
     get_atendimento_by_id,
+    get_coleta_estado,
+    set_coleta_estado,
+    set_coleta_resumo,
 )
 from whatsapp_langchain.shared.cliente import (
     get_cliente_by_telefone,
     update_cliente_partial,
+)
+from whatsapp_langchain.shared.coleta import (
+    build_coleta_render_ctx,
+    is_em_andamento,
+    make_estado_inicial,
+    make_resumo_final,
+    pergunta_atual,
+    render_pergunta_label,
+    validar_e_processar,
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.departamento import get_departamento_by_id
@@ -64,6 +77,7 @@ from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.menu_chatbot import (
     cliente_ja_saiu_do_menu,
     format_menu_message,
+    get_item,
     get_menu_ativo_para_conexao,
     get_posicao_atual,
     is_trigger_keyword,
@@ -551,6 +565,192 @@ async def _try_capture_avaliacao(
             return False
 
     return False
+
+
+# Quais acoes do menu se beneficiam de coleta antes de despachar.
+# Submenu e setar_nome não rodam wizard (submenu navega, setar_nome JÁ é
+# coleta na sua semântica). Pesquisa_csat também não — ele coleta nota.
+_ACAO_TIPOS_COM_COLETA = frozenset({
+    "chamar_agente",
+    "transferir_dep",
+    "transferir_atendente",
+    "mudar_manual",
+    "enviar_template",
+    "chamar_webhook",
+    "enviar_link",
+    "enviar_msg",
+})
+
+
+def _coleta_ja_executada_pro_item(atendimento, item_id: int) -> bool:
+    """True se o atendimento já tem coleta_resumo populado pra esse item.
+
+    Evita re-iniciar wizard quando o handler de coleta acabou de terminar
+    e fez re-entry com texto sintético da ordem do item.
+    """
+    if atendimento is None:
+        return False
+    resumo = getattr(atendimento, "coleta_resumo", None)
+    if not resumo:
+        return False
+    return resumo.get("item_id") == item_id
+
+
+async def _iniciar_coleta_wizard(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+    menu,
+    item,
+    text: str,
+) -> None:
+    """Inicia o wizard: grava estado idx=0 + envia primeira pergunta."""
+    from whatsapp_langchain.shared.variavel import build_render_context
+
+    perguntas = item.coleta_perguntas or []
+    if not perguntas:
+        return
+    estado = make_estado_inicial(item.id, perguntas)
+    try:
+        base_ctx = await build_render_context(
+            pool, empresa_id=message.empresa_id, cliente_phone=message.phone_number
+        )
+    except Exception:  # noqa: BLE001
+        base_ctx = {}
+    ctx = build_coleta_render_ctx(base_ctx, {})
+    primeira = perguntas[0]
+    label = render_pergunta_label(primeira.get("label", ""), ctx)
+    await set_coleta_estado(pool, message.atendimento_id, estado)
+    await outbound.send_message(message.phone_number, label)
+    await registrar_historico(
+        pool,
+        atendimento_id=message.atendimento_id,
+        menu_id=menu.id,
+        item_id=item.id,
+        posicao_atual_item_id=None,
+        resposta=text,
+    )
+    await mark_done(pool, message.id, label, normalized_input=text)
+    await upsert_conversation(
+        pool,
+        phone_number=message.phone_number,
+        agent_id=message.agent_id,
+        last_message=label,
+        empresa_id=message.empresa_id,
+    )
+    logger.info(
+        "coleta_wizard_iniciado",
+        atendimento_id=message.atendimento_id,
+        item_id=item.id,
+        n_perguntas=len(perguntas),
+    )
+
+
+async def _try_handle_coleta_em_curso(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+) -> bool:
+    """Sprint Wizard Coleta — processa próxima pergunta se há wizard ativo.
+
+    Lê `atendimento.coleta_estado`. Se existe e idx<len(perguntas),
+    valida texto contra a pergunta atual:
+
+    - inválido → manda retry, return True (consumiu turno)
+    - válido + tem próxima → avança idx, manda próxima, return True
+    - válido + última → grava resumo, limpa estado, RE-ENTRA no
+      _try_handle_menu com texto sintético = ordem do item escolhido
+      pra disparar acao_tipo original
+
+    Retorna False quando NÃO há wizard ativo (deixa fluxo seguir
+    normalmente pro _try_handle_workflow / _try_handle_menu).
+    """
+    atend_id = message.atendimento_id
+    if atend_id is None:
+        return False
+    estado = await get_coleta_estado(pool, atend_id)
+    if not is_em_andamento(estado):
+        return False
+    assert estado is not None  # narrow pro mypy
+
+    text = (message.incoming_message or "").strip()
+    ok, erro, novo_estado = validar_e_processar(estado, text)
+    if not ok:
+        # Inválido — manda retry, mantém estado, consome turno
+        retry = erro or "Resposta inválida, tente novamente."
+        await outbound.send_message(message.phone_number, retry)
+        await mark_done(pool, message.id, retry, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=retry,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "coleta_resposta_invalida",
+            atendimento_id=atend_id,
+            idx=estado.get("idx"),
+        )
+        return True
+
+    # Resposta válida — checa se tem próxima pergunta
+    prox = pergunta_atual(novo_estado)
+    if prox is not None:
+        # Tem mais perguntas: salva estado + manda próxima
+        # Render context: globais + respostas já dadas
+        from whatsapp_langchain.shared.variavel import build_render_context
+
+        try:
+            base_ctx = await build_render_context(
+                pool, empresa_id=message.empresa_id, cliente_phone=message.phone_number
+            )
+        except Exception:  # noqa: BLE001
+            base_ctx = {}
+        ctx = build_coleta_render_ctx(base_ctx, novo_estado.get("respostas") or {})
+        label_render = render_pergunta_label(prox.get("label", ""), ctx)
+        await set_coleta_estado(pool, atend_id, novo_estado)
+        await outbound.send_message(message.phone_number, label_render)
+        await mark_done(pool, message.id, label_render, normalized_input=text)
+        await upsert_conversation(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            last_message=label_render,
+            empresa_id=message.empresa_id,
+        )
+        logger.info(
+            "coleta_proxima_pergunta",
+            atendimento_id=atend_id,
+            idx=novo_estado.get("idx"),
+        )
+        return True
+
+    # Última pergunta — grava resumo, limpa estado, re-entra no menu
+    # com texto sintético = ordem do item escolhido originalmente
+    item_id = novo_estado.get("item_id")
+    item = await get_item(pool, item_id) if item_id else None
+    item_label = item.label if item else None
+    resumo = make_resumo_final(novo_estado, item_label=item_label)
+    await set_coleta_resumo(pool, atend_id, resumo)
+    await clear_coleta_estado(pool, atend_id)
+    logger.info(
+        "coleta_concluida",
+        atendimento_id=atend_id,
+        item_id=item_id,
+        n_respostas=len(novo_estado.get("respostas") or {}),
+    )
+
+    # Re-entra no menu com texto = ordem do item (cliente "escolhe de novo")
+    if item is not None:
+        sintetica = message.model_copy(
+            update={"incoming_message": str(item.ordem)}
+        )
+        # `_try_handle_menu` agora não vai re-iniciar wizard porque
+        # coleta_resumo está populado pro mesmo item_id.
+        return await _try_handle_menu(sintetica, pool, outbound)
+    # Sem item resolvido (raro): só consome turno
+    return True
 
 
 async def _try_handle_workflow(
@@ -1052,6 +1252,21 @@ async def _try_handle_menu(
             "phone": message.phone_number,
         },
     )
+
+    # Sprint Wizard Coleta — se item tem perguntas E ainda não rodamos
+    # coleta pra ele neste atendimento, inicia o wizard antes de despachar
+    # a acao_tipo. Quando wizard termina, _try_handle_coleta_em_curso
+    # re-entra aqui (com mesma `text` numérica) e a verificação `coleta_resumo
+    # já preenchido pro mesmo item` pula este bloco.
+    if (
+        item.coleta_perguntas
+        and item.acao_tipo in _ACAO_TIPOS_COM_COLETA
+        and not _coleta_ja_executada_pro_item(atendimento, item.id)
+    ):
+        await _iniciar_coleta_wizard(
+            message, pool, outbound, menu, item, text
+        )
+        return True
 
     if item.acao_tipo == "submenu":
         sub_children = await list_children(pool, menu.id, item.id)
@@ -1777,6 +1992,20 @@ async def process_message(
         # "digite *encerrar atendimento* pra finalizar").
         if await _try_handle_encerrar_keyword(message, pool, outbound):
             return
+
+        # Sprint Wizard Coleta — se há wizard em andamento no atendimento,
+        # processa a próxima pergunta ANTES de tudo. Quando wizard termina,
+        # ele mesmo re-entra no _try_handle_menu pra despachar a ação do
+        # item escolhido originalmente (via `coleta_estado.item_id`).
+        try:
+            if await _try_handle_coleta_em_curso(message, pool, outbound):
+                return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "coleta_handler_failed",
+                atendimento_id=message.atendimento_id,
+                error=str(exc),
+            )
 
         # Sprint Workflow-LangGraph (opt-in via ENABLE_WORKFLOW_ENGINE).
         # Tenta workflow declarativo da empresa antes do menu_item legacy.

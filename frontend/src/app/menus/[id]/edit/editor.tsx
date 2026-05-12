@@ -41,12 +41,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
   AgenteIA,
+  ColetaPergunta,
   Departamento,
   Hook,
   MenuChatbot,
   MenuItem,
   MenuItemAcaoTipo,
 } from "@/lib/api";
+
+import { ColetaEditor } from "./coleta-editor";
 
 import {
   createItemAction,
@@ -923,6 +926,9 @@ function ItemForm({
   const [payload, setPayload] = useState<Record<string, unknown>>(
     item.acao_payload || {}
   );
+  const [coletaPerguntas, setColetaPerguntas] = useState<ColetaPergunta[]>(
+    item.coleta_perguntas || []
+  );
 
   return (
     <form
@@ -937,6 +943,7 @@ function ItemForm({
           ativo: fd.get("ativo") === "on",
           comando: String(fd.get("comando") || "") || null,
           grupo: String(fd.get("grupo") || "") || null,
+          coleta_perguntas: coletaPerguntas.length > 0 ? coletaPerguntas : null,
         };
         // Campos diretos (não-payload) usados quando aplicável
         if (acao === "transferir_atendente") {
@@ -1278,6 +1285,16 @@ function ItemForm({
           />
         )}
       </div>
+
+      {/* Wizard de coleta multi-pergunta — só pra ações que se beneficiam
+          de triagem (transferência humana, agente IA). Submenu/setar_nome
+          não usam (submenu navega; setar_nome JÁ é coleta na sua semântica). */}
+      {acao !== "submenu" && acao !== "setar_nome" && acao !== "pesquisa_csat" && (
+        <ColetaEditor
+          value={coletaPerguntas}
+          onChange={setColetaPerguntas}
+        />
+      )}
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="ativo" defaultChecked={item.ativo} className="size-4" />

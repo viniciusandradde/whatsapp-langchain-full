@@ -93,6 +93,8 @@ class CreateItemInput(BaseModel):
     acao_payload: dict[str, Any] = Field(default_factory=dict)
     parent_id: int | None = None
     ordem: int | None = Field(default=None, ge=1, le=99)
+    # Wizard coleta multi-pergunta (mig 080)
+    coleta_perguntas: list[dict[str, Any]] | None = None
 
     @field_validator("acao_tipo")
     @classmethod
@@ -100,6 +102,17 @@ class CreateItemInput(BaseModel):
         if v not in ACAO_TIPOS:
             raise ValueError(f"acao_tipo deve ser um de {sorted(ACAO_TIPOS)}")
         return v
+
+    @field_validator("coleta_perguntas")
+    @classmethod
+    def _validate_coleta(
+        cls, v: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]] | None:
+        if v is None:
+            return v
+        from whatsapp_langchain.shared.coleta import normalize_perguntas
+
+        return normalize_perguntas(v)
 
 
 class UpdateItemInput(BaseModel):
@@ -119,6 +132,8 @@ class UpdateItemInput(BaseModel):
     nota_max: int | None = Field(default=None, ge=1, le=10)
     nota_pergunta: str | None = Field(default=None, max_length=500)
     grupo: str | None = Field(default=None, max_length=60)
+    # Wizard coleta multi-pergunta (mig 080)
+    coleta_perguntas: list[dict[str, Any]] | None = None
 
     @field_validator("acao_tipo")
     @classmethod
@@ -126,6 +141,17 @@ class UpdateItemInput(BaseModel):
         if v is not None and v not in ACAO_TIPOS:
             raise ValueError(f"acao_tipo deve ser um de {sorted(ACAO_TIPOS)}")
         return v
+
+    @field_validator("coleta_perguntas")
+    @classmethod
+    def _validate_coleta(
+        cls, v: list[dict[str, Any]] | None
+    ) -> list[dict[str, Any]] | None:
+        if v is None:
+            return v
+        from whatsapp_langchain.shared.coleta import normalize_perguntas
+
+        return normalize_perguntas(v)
 
 
 class ReorderInput(BaseModel):
@@ -361,6 +387,7 @@ async def create_item_endpoint(
         acao_payload=body.acao_payload,
         parent_id=body.parent_id,
         ordem=body.ordem,
+        coleta_perguntas=body.coleta_perguntas,
     )
     await record_audit(
         pool,

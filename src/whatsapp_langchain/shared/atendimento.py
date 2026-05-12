@@ -27,7 +27,8 @@ logger = structlog.get_logger()
 
 
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
-# Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061 (triagem) = 23.
+# Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061
+# (triagem) + 2 mig 081/082 (coleta) = 25.
 _BARE_COLS = (
     "id, empresa_id, cliente_id, conexao_id, agente_atual, "
     "status, assigned_to_user_id, last_message_at, closed_at, "
@@ -37,7 +38,9 @@ _BARE_COLS = (
     "finalizado_por_user_id, solicitou_encerramento, "
     # Mig 061 triagem omnichannel
     "departamento_id, classificacao, prioridade, sentimento, "
-    "resumo_ia, triagem_completa, triagem_at"
+    "resumo_ia, triagem_completa, triagem_at, "
+    # Mig 081/082 wizard coleta
+    "coleta_estado, coleta_resumo"
 )
 # Com alias `a.` — usado em SELECTs com JOIN.
 _BASE_COLS = ", ".join(f"a.{c.strip()}" for c in _BARE_COLS.split(","))
@@ -45,8 +48,8 @@ _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 
 def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
-    # Índices fixos (lista BARE_COLS): 0..10 base, 11..15 mig 047, 16..22 mig 061
-    base_len = 23
+    # Índices: 0..10 base, 11..15 mig 047, 16..22 mig 061, 23..24 coleta
+    base_len = 25
     return Atendimento(
         id=row[0],
         empresa_id=row[1],
@@ -73,6 +76,9 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         resumo_ia=row[20],
         triagem_completa=row[21] if row[21] is not None else False,
         triagem_at=row[22],
+        # Mig 081/082 wizard coleta
+        coleta_estado=row[23],
+        coleta_resumo=row[24],
         # JOIN extras (apenas quando _JOIN_COLS é usado)
         cliente_nome=row[base_len] if with_cliente and len(row) > base_len else None,
         cliente_telefone=row[base_len + 1]
@@ -528,3 +534,60 @@ async def complete_triagem(
         )
         row = await cur.fetchone()
     return _row_to_atendimento(row) if row else None
+
+
+# ============================================================
+# Wizard de coleta multi-pergunta (mig 081/082)
+# ============================================================
+
+
+async def get_coleta_estado(
+    pool: AsyncConnectionPool, atendimento_id: int
+) -> dict | None:
+    """Lê apenas o coleta_estado de um atendimento (1 query rápida)."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT coleta_estado FROM atendimento WHERE id = %s",
+            (atendimento_id,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        return None
+    return row[0]
+
+
+async def set_coleta_estado(
+    pool: AsyncConnectionPool, atendimento_id: int, estado: dict | None
+) -> None:
+    """Sobrescreve coleta_estado. Passe None pra limpar."""
+    import json as _json
+
+    payload = _json.dumps(estado, ensure_ascii=False) if estado else None
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE atendimento SET coleta_estado = %s::jsonb, "
+            "updated_at = NOW() WHERE id = %s",
+            (payload, atendimento_id),
+        )
+
+
+async def clear_coleta_estado(
+    pool: AsyncConnectionPool, atendimento_id: int
+) -> None:
+    """Limpa o estado runtime (chama após gravar resumo final)."""
+    await set_coleta_estado(pool, atendimento_id, None)
+
+
+async def set_coleta_resumo(
+    pool: AsyncConnectionPool, atendimento_id: int, resumo: dict
+) -> None:
+    """Grava snapshot final do wizard pro drawer exibir."""
+    import json as _json
+
+    payload = _json.dumps(resumo, ensure_ascii=False)
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE atendimento SET coleta_resumo = %s::jsonb, "
+            "updated_at = NOW() WHERE id = %s",
+            (payload, atendimento_id),
+        )
