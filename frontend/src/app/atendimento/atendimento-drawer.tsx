@@ -861,7 +861,7 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
     bubbles.push({
       side: "out",
       kind: "text",
-      text: "⚠ Falha ao processar essa mensagem. Tente reenviar ou veja os logs.",
+      text: "⚠ Falha ao processar essa mensagem. Tente reenviar ou entre em contato com suporte.",
       meta: `erro · ${m.error.slice(0, 80)}`,
     });
   }
