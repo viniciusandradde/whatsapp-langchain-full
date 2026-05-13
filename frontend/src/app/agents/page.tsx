@@ -13,6 +13,8 @@ import {
 import { getAgentesIA, getAgents } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
+import { DeactivateAllAgentesButton } from "./deactivate-all-button";
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -60,12 +62,17 @@ export default async function AgentsPage() {
             </p>
           </div>
         </div>
-        <Link href="/agents/new">
-          <Button>
-            <Plus className="size-4" />
-            Novo agente
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <DeactivateAllAgentesButton
+            ativosCount={agentesDb.filter((a) => a.ativo).length}
+          />
+          <Link href="/agents/new">
+            <Button>
+              <Plus className="size-4" />
+              Novo agente
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* ---- Agentes DB (cadastrados via UI) ---- */}
