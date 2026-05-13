@@ -219,3 +219,31 @@
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.8; }
 }
+
+/*
+ * Fix global pro dropdown <select>: as <option>s são renderizadas pelo OS
+ * (não pelo navegador), e quando o select tem `bg-transparent` o dropdown
+ * herda fundo branco do OS → no dark mode fica texto branco em fundo
+ * branco (invisível). Forçamos bg sólido + cor explícita pra TODAS as
+ * options da app inteira — assim novos selects criados em qualquer lugar
+ * já nascem corretos, sem precisar lembrar do `selectCls`.
+ *
+ * `select` em si não muda (mantém o `bg-transparent` ou o que vier do
+ * componente). Só as `option` ganham fundo/cor explícitos.
+ */
+select option {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+select optgroup {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-weight: 600;
+}
+/* Default sane pro <select> em si: bg sólido + cor herdada do tema.
+ * Componentes podem sobrescrever via Tailwind, mas o default já fica
+ * visível em dark mode sem precisar de classe extra. */
+select {
+  background-color: var(--background);
+  color: var(--foreground);
+}
