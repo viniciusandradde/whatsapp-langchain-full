@@ -853,7 +853,17 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
     bubbles.push({ side: "out", kind: "text", text: m.response });
   }
   if (m.error) {
-    bubbles.push({ side: "out", kind: "text", text: `Erro: ${m.error}`, meta: "erro" });
+    // NUNCA renderizar o detalhe técnico do erro como texto visível.
+    // O backend já manda string sanitizada tipo `processing_failed:Xerror`,
+    // mas como blindagem renderizamos sempre uma frase fixa pro operador;
+    // detalhe vai pra `meta` (linha cinza menor) só pra correlação rápida
+    // com logs do worker. Erro real fica no `docker logs worker`.
+    bubbles.push({
+      side: "out",
+      kind: "text",
+      text: "⚠ Falha ao processar essa mensagem. Tente reenviar ou veja os logs.",
+      meta: `erro · ${m.error.slice(0, 80)}`,
+    });
   }
 
   return (

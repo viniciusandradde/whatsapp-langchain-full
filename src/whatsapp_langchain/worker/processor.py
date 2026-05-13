@@ -1376,7 +1376,11 @@ async def _try_handle_menu(
                 empresa_id=message.empresa_id,
                 ativo=getattr(agente_db, "ativo", None),
             )
-            # Reset pra raiz + reenvia menu pra cliente escolher outra opção
+            # Agente desativado: avisa cliente reapresentando o menu raiz.
+            # NÃO tentar resetar `posicao_atual_item_id` em `atendimento` —
+            # essa coluna mora em `atendimento_menu_historico` (mig 040), e
+            # a confusão histórica gerava `column does not exist` que vazava
+            # como bolha de erro técnico no drawer do operador.
             root_children = await list_children(pool, menu.id, None)
             erro_msg = (
                 f"{menu.mensagem_opcao_invalida}\n\n"
@@ -1384,13 +1388,6 @@ async def _try_handle_menu(
                 if root_children
                 else menu.mensagem_opcao_invalida
             )
-            async with pool.connection() as conn:
-                await conn.execute(
-                    "UPDATE atendimento SET posicao_atual_item_id = NULL, "
-                    "updated_at = NOW() WHERE id = %s",
-                    (message.atendimento_id,),
-                )
-                await conn.commit()
             await outbound.send_message(message.phone_number, erro_msg)
             await mark_done(pool, message.id, erro_msg, normalized_input=text)
             await upsert_conversation(
@@ -2440,11 +2437,11 @@ async def process_message(
         )
 
     except Exception as e:
-        # str(e) pode vir vazia em exceptions construídas sem args
-        # (ex: HTTPError 4xx do provider sem detail). Garante que o
-        # campo `error` na DB sempre tem informação útil pra debug —
-        # antes ficavam rows com error='' e admins viam "falhou sem
-        # explicação" no painel.
+        # Detalhe técnico (stack-like) FICA APENAS NO LOG. O que vai
+        # pra `message_queue.error` é uma string curta + sanitizada:
+        # o drawer do operador renderiza isso como bolha de chat
+        # (atendimento-drawer.tsx), então NUNCA pode conter mensagem
+        # de exception bruta — vazaria SQL/Python pro humano.
         err_msg = str(e) or f"{type(e).__name__}: <no message>"
         logger.error(
             "message_processing_error",
@@ -2454,4 +2451,7 @@ async def process_message(
             error=err_msg,
             error_type=type(e).__name__,
         )
-        await mark_failed(pool, message.id, err_msg)
+        # Código curto + tipo da exception ajuda a correlacionar com
+        # log via `error_type`, sem expor detalhe interno.
+        safe_db_error = f"processing_failed:{type(e).__name__}"
+        await mark_failed(pool, message.id, safe_db_error)
