@@ -196,11 +196,38 @@ async def _calendar_sync_loop(pool) -> None:
                 try:
                     await sync_calendar_for_empresa(pool, empresa_id)
                 except Exception as e:  # noqa: BLE001
-                    logger.warning(
-                        "calendar_sync_empresa_failed",
-                        empresa_id=empresa_id,
-                        error=str(e),
-                    )
+                    err_str = str(e)
+                    # `invalid_grant` é PERMANENTE — token revogado/expirado
+                    # nunca volta sozinho. Auto-desabilita pra parar spam de
+                    # logs a cada 5min. Admin re-conecta no painel.
+                    if "invalid_grant" in err_str:
+                        try:
+                            async with pool.connection() as conn:
+                                await conn.execute(
+                                    "UPDATE empresa_calendar_config "
+                                    "SET ativo = FALSE, updated_at = NOW() "
+                                    "WHERE empresa_id = %s",
+                                    (empresa_id,),
+                                )
+                                await conn.commit()
+                            logger.error(
+                                "calendar_auto_disabled_token_revoked",
+                                empresa_id=empresa_id,
+                                reason="invalid_grant",
+                                action="admin_must_reconnect_oauth",
+                            )
+                        except Exception as inner:  # noqa: BLE001
+                            logger.warning(
+                                "calendar_auto_disable_failed",
+                                empresa_id=empresa_id,
+                                error=str(inner),
+                            )
+                    else:
+                        logger.warning(
+                            "calendar_sync_empresa_failed",
+                            empresa_id=empresa_id,
+                            error=err_str,
+                        )
         except Exception as e:  # noqa: BLE001
             logger.warning("calendar_sync_loop_error", error=str(e))
         await asyncio.sleep(CALENDAR_SYNC_INTERVAL_SECONDS)
