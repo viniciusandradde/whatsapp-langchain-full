@@ -71,6 +71,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
     { label: "Relatórios E2E", href: "/relatorios/allure" },
     { label: "Histórico de Acesso", href: "/settings/security/login-history" },
     { label: "Audit log", href: "/settings/security/audit" },
+    { label: "Governança", href: "/settings/security/governanca" },
     { label: "Feature flags", href: "/settings/feature-flags" },
   ],
 };

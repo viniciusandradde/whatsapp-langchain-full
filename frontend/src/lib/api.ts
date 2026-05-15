@@ -897,6 +897,104 @@ export async function setMemberStatus(
   );
 }
 
+// ============================================================
+// Sprint Governança RBAC — atribuição perfis/deptos por member + audit
+// ============================================================
+
+export interface MemberPerfisResponse {
+  user_id: string;
+  perfil_ids: number[];
+}
+
+export interface MemberDepartamentosResponse {
+  user_id: string;
+  departamento_ids: number[];
+}
+
+export interface AuditGovernancaEvent {
+  id: number;
+  empresa_id: number;
+  actor_user_id: string;
+  target_user_id: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  payload_before: Record<string, unknown> | null;
+  payload_after: Record<string, unknown> | null;
+  request_id: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string | null;
+}
+
+export async function getMemberPerfis(
+  empresaId: number,
+  userId: string
+): Promise<MemberPerfisResponse> {
+  return apiFetch<MemberPerfisResponse>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/perfis`
+  );
+}
+
+export async function setMemberPerfis(
+  empresaId: number,
+  userId: string,
+  perfilIds: number[]
+): Promise<MemberPerfisResponse> {
+  return apiFetch<MemberPerfisResponse>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/perfis`,
+    { method: "PUT", body: { perfil_ids: perfilIds } }
+  );
+}
+
+export async function getMemberDepartamentos(
+  empresaId: number,
+  userId: string
+): Promise<MemberDepartamentosResponse> {
+  return apiFetch<MemberDepartamentosResponse>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(
+      userId
+    )}/departamentos`
+  );
+}
+
+export async function setMemberDepartamentos(
+  empresaId: number,
+  userId: string,
+  departamentoIds: number[]
+): Promise<MemberDepartamentosResponse> {
+  return apiFetch<MemberDepartamentosResponse>(
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(
+      userId
+    )}/departamentos`,
+    { method: "PUT", body: { departamento_ids: departamentoIds } }
+  );
+}
+
+export async function listAuditGovernanca(
+  empresaId: number,
+  opts?: {
+    actor_user_id?: string;
+    target_user_id?: string;
+    action?: string;
+    limit?: number;
+    offset?: number;
+  }
+): Promise<{ items: AuditGovernancaEvent[] }> {
+  const params = new URLSearchParams();
+  if (opts?.actor_user_id) params.set("actor_user_id", opts.actor_user_id);
+  if (opts?.target_user_id) params.set("target_user_id", opts.target_user_id);
+  if (opts?.action) params.set("action", opts.action);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString() ? "?" + params.toString() : "";
+  return apiFetch<{ items: AuditGovernancaEvent[] }>(
+    `/api/empresas/${empresaId}/audit/governanca${qs}`
+  );
+}
+
+// ============================================================
+
 export async function getMemberStatus(
   userId: string
 ): Promise<{ user_id: string; status: UserStatus }> {

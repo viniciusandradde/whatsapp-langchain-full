@@ -7,7 +7,7 @@ lugar onde a operação acontece.
 """
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
@@ -342,3 +342,281 @@ async def get_status(
     if status is None:
         raise HTTPException(status_code=404, detail="User não encontrado.")
     return {"user_id": member_user_id, "status": status}
+
+
+# ---------------------------------------------------------------------------
+# Atribuição perfil <-> user e departamento <-> user (Sprint Governança RBAC)
+# ---------------------------------------------------------------------------
+
+
+class SyncPerfisInput(BaseModel):
+    perfil_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
+class SyncDepartamentosInput(BaseModel):
+    departamento_ids: list[int] = Field(default_factory=list, max_length=50)
+
+
+async def _list_user_perfil_ids(pool, empresa_id: int, user_id: str) -> list[int]:
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT up.perfil_id
+              FROM usuario_perfil up
+              JOIN perfil_acesso pa ON pa.id = up.perfil_id
+             WHERE up.user_id = %s AND pa.empresa_id = %s
+             ORDER BY pa.nome
+            """,
+            (user_id, empresa_id),
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows]
+
+
+async def _list_user_departamento_ids(
+    pool, empresa_id: int, user_id: str
+) -> list[int]:
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT ud.departamento_id
+              FROM usuario_departamento ud
+              JOIN departamento d ON d.id = ud.departamento_id
+             WHERE ud.user_id = %s AND d.empresa_id = %s
+             ORDER BY d.nome
+            """,
+            (user_id, empresa_id),
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows]
+
+
+@router.get("/{empresa_id}/membros/{member_user_id}/perfis")
+async def get_member_perfis(
+    empresa_id: int,
+    member_user_id: str,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Lista perfis (RBAC) atribuídos ao member na empresa."""
+    pool = await get_pool()
+    from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+    if not await get_empresa_membership(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    ids = await _list_user_perfil_ids(pool, empresa_id, member_user_id)
+    return {"user_id": member_user_id, "perfil_ids": ids}
+
+
+@router.put("/{empresa_id}/membros/{member_user_id}/perfis")
+async def sync_member_perfis(
+    request: Request,
+    empresa_id: int,
+    member_user_id: str,
+    body: SyncPerfisInput,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Substitui o set de perfis do member (UPSERT sync).
+
+    Audit em audit_governanca pra rastreabilidade LGPD.
+    """
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só admin pode mudar perfis de membros."
+        )
+
+    before_ids = await _list_user_perfil_ids(pool, empresa_id, member_user_id)
+
+    desired = set(body.perfil_ids)
+    # Valida que perfis pertencem à empresa
+    if desired:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM perfil_acesso WHERE empresa_id = %s "
+                "AND id = ANY(%s)",
+                (empresa_id, list(desired)),
+            )
+            valid = {r[0] for r in await cur.fetchall()}
+        if valid != desired:
+            invalid = desired - valid
+            raise HTTPException(
+                status_code=400,
+                detail=f"Perfis inválidos pra esta empresa: {sorted(invalid)}",
+            )
+
+    current = set(before_ids)
+    to_add = desired - current
+    to_remove = current - desired
+
+    async with pool.connection() as conn:
+        if to_remove:
+            await conn.execute(
+                "DELETE FROM usuario_perfil WHERE user_id = %s "
+                "AND perfil_id = ANY(%s)",
+                (member_user_id, list(to_remove)),
+            )
+        for pid in to_add:
+            await conn.execute(
+                "INSERT INTO usuario_perfil (user_id, perfil_id) "
+                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (member_user_id, pid),
+            )
+        await conn.commit()
+
+    after_ids = sorted(desired)
+
+    # Audit best-effort
+    try:
+        from whatsapp_langchain.shared.audit_governanca import (
+            record_audit_governanca,
+        )
+
+        await record_audit_governanca(
+            pool,
+            empresa_id=empresa_id,
+            actor_user_id=user_id,
+            target_user_id=member_user_id,
+            action="perfil.sync",
+            entity_type="usuario_perfil",
+            entity_id=member_user_id,
+            payload_before={"perfil_ids": sorted(before_ids)},
+            payload_after={"perfil_ids": after_ids},
+            request=request,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("audit_perfil_sync_failed", error=str(exc))
+
+    return {"user_id": member_user_id, "perfil_ids": after_ids}
+
+
+@router.get("/{empresa_id}/membros/{member_user_id}/departamentos")
+async def get_member_departamentos(
+    empresa_id: int,
+    member_user_id: str,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Lista departamentos vinculados ao member na empresa."""
+    pool = await get_pool()
+    from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+    if not await get_empresa_membership(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    ids = await _list_user_departamento_ids(pool, empresa_id, member_user_id)
+    return {"user_id": member_user_id, "departamento_ids": ids}
+
+
+@router.put("/{empresa_id}/membros/{member_user_id}/departamentos")
+async def sync_member_departamentos(
+    request: Request,
+    empresa_id: int,
+    member_user_id: str,
+    body: SyncDepartamentosInput,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Substitui os departamentos vinculados ao member (UPSERT sync)."""
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só admin pode mudar deptos de membros."
+        )
+
+    before_ids = await _list_user_departamento_ids(pool, empresa_id, member_user_id)
+
+    desired = set(body.departamento_ids)
+    if desired:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM departamento WHERE empresa_id = %s "
+                "AND id = ANY(%s)",
+                (empresa_id, list(desired)),
+            )
+            valid = {r[0] for r in await cur.fetchall()}
+        if valid != desired:
+            invalid = desired - valid
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Departamentos inválidos pra esta empresa: {sorted(invalid)}"
+                ),
+            )
+
+    current = set(before_ids)
+    to_add = desired - current
+    to_remove = current - desired
+
+    async with pool.connection() as conn:
+        if to_remove:
+            await conn.execute(
+                "DELETE FROM usuario_departamento WHERE user_id = %s "
+                "AND departamento_id = ANY(%s)",
+                (member_user_id, list(to_remove)),
+            )
+        for did in to_add:
+            await conn.execute(
+                "INSERT INTO usuario_departamento "
+                "(user_id, departamento_id, empresa_id) "
+                "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                (member_user_id, did, empresa_id),
+            )
+        await conn.commit()
+
+    after_ids = sorted(desired)
+
+    try:
+        from whatsapp_langchain.shared.audit_governanca import (
+            record_audit_governanca,
+        )
+
+        await record_audit_governanca(
+            pool,
+            empresa_id=empresa_id,
+            actor_user_id=user_id,
+            target_user_id=member_user_id,
+            action="depto.sync",
+            entity_type="usuario_departamento",
+            entity_id=member_user_id,
+            payload_before={"departamento_ids": sorted(before_ids)},
+            payload_after={"departamento_ids": after_ids},
+            request=request,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("audit_depto_sync_failed", error=str(exc))
+
+    return {"user_id": member_user_id, "departamento_ids": after_ids}
+
+
+# ---------------------------------------------------------------------------
+# Audit governança — viewer
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{empresa_id}/audit/governanca")
+async def list_audit_governanca_endpoint(
+    empresa_id: int,
+    actor_user_id: str | None = None,
+    target_user_id: str | None = None,
+    action: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Lista eventos de audit_governanca com filtros opcionais."""
+    pool = await get_pool()
+    from whatsapp_langchain.shared.audit_governanca import (
+        list_audit_governanca,
+    )
+    from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+    if not await get_empresa_membership(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+
+    items = await list_audit_governanca(
+        pool,
+        empresa_id=empresa_id,
+        actor_user_id=actor_user_id,
+        target_user_id=target_user_id,
+        action=action,
+        limit=min(max(limit, 1), 200),
+        offset=max(offset, 0),
+    )
+    return {"items": items}

@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { ArrowLeft, Users } from "lucide-react";
 
-import { getEmpresaMembers, getMyEmpresas } from "@/lib/api";
+import {
+  getDepartamentos,
+  getEmpresaMembers,
+  getMyEmpresas,
+  getPerfis,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { MembersList } from "./members-list";
@@ -20,14 +25,22 @@ export default async function MembersPage({ params }: PageProps) {
   let members: Awaited<ReturnType<typeof getEmpresaMembers>> = [];
   let empresaName: string | null = null;
   let error: string | null = null;
+  let perfis: Awaited<ReturnType<typeof getPerfis>>["items"] = [];
+  let departamentos: Awaited<
+    ReturnType<typeof getDepartamentos>
+  >["departamentos"] = [];
 
   try {
-    const [membersList, empresas] = await Promise.all([
+    const [membersList, empresas, perfisResp, deptosResp] = await Promise.all([
       getEmpresaMembers(empresaId),
       getMyEmpresas().then((r) => r.empresas),
+      getPerfis().catch(() => ({ items: [] })),
+      getDepartamentos().catch(() => ({ departamentos: [] })),
     ]);
     members = membersList;
     empresaName = empresas.find((e) => e.id === empresaId)?.nome ?? null;
+    perfis = perfisResp.items;
+    departamentos = deptosResp.departamentos;
   } catch (e) {
     error =
       e instanceof Error ? e.message : "Erro desconhecido ao buscar membros.";
@@ -55,7 +68,14 @@ export default async function MembersPage({ params }: PageProps) {
         </div>
       )}
 
-      {!error && <MembersList empresaId={empresaId} members={members} />}
+      {!error && (
+        <MembersList
+          empresaId={empresaId}
+          members={members}
+          perfis={perfis}
+          departamentos={departamentos}
+        />
+      )}
     </div>
   );
 }

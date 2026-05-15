@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, model_validator
 
 from whatsapp_langchain.server.dependencies import (
@@ -34,8 +34,28 @@ from whatsapp_langchain.shared.empresa import is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
+from whatsapp_langchain.shared.perfil import get_user_permissions
+from whatsapp_langchain.shared.permissoes import (
+    effective_scope,
+    get_user_departamento_ids,
+)
 from whatsapp_langchain.shared.queue import reset_thread_checkpoint
 from whatsapp_langchain.shared.variavel import build_render_context, render_template
+
+
+async def _resolve_perms_cached(
+    request: Request, user_id: str, empresa_id: int
+) -> set[str]:
+    """Cache de permissões por request — evita N queries quando handler
+    chama effective_scope várias vezes."""
+    cached = getattr(request.state, "_user_perms", None)
+    if cached is not None:
+        return cached
+    pool = await get_pool()
+    perms = await get_user_permissions(pool, user_id, empresa_id)
+    request.state._user_perms = perms
+    return perms
+
 
 logger = structlog.get_logger()
 
@@ -62,9 +82,7 @@ class TransferInput(BaseModel):
     @model_validator(mode="after")
     def _exactly_one(self) -> TransferInput:
         if bool(self.user_id) == bool(self.departamento_id):
-            raise ValueError(
-                "Informe exatamente um: user_id OU departamento_id"
-            )
+            raise ValueError("Informe exatamente um: user_id OU departamento_id")
         return self
 
 
@@ -74,6 +92,7 @@ class ResponderInput(BaseModel):
 
 @router.get("")
 async def list_my_atendimentos(
+    request: Request,
     tipo: TipoVisualizacao = Query(default="aguardando"),
     dep_id: int | None = Query(default=None, ge=1),
     prioridade: str | None = Query(default=None),
@@ -86,6 +105,11 @@ async def list_my_atendimentos(
     """Lista atendimentos da empresa filtrados pelo tipo (4 abas) +
     filtros opcionais Sprint F.2: departamento, prioridade, busca em
     cliente.nome/atendimento.protocolo.
+
+    Sprint Governança RBAC (mig 083): aplica filtro record-level baseado
+    em `atendimento.read.own/all`. Operador (perm `.own`) só vê
+    atendimentos do(s) depto(s) vinculado(s) a ele em
+    `usuario_departamento`. Sem nenhuma das duas perms → 403.
     """
     if prioridade is not None and prioridade not in (
         "baixa",
@@ -95,6 +119,20 @@ async def list_my_atendimentos(
     ):
         raise HTTPException(status_code=400, detail="prioridade inválida")
     pool = await get_pool()
+    # Resolve scope record-level ANTES da query
+    perms = await _resolve_perms_cached(request, user_id, empresa_id)
+    scope = effective_scope(perms, "atendimento.read")
+    if scope is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Permissão necessária: atendimento.read[.own|.all]",
+        )
+    scope_dept_ids: set[int] | None = None
+    if scope == "own":
+        dept_ids = await get_user_departamento_ids(pool, user_id, empresa_id)
+        # Set vazio = sem deptos vinculados → list_atendimentos retorna []
+        scope_dept_ids = set(dept_ids)
+
     rows = await list_atendimentos(
         pool,
         empresa_id,
@@ -105,6 +143,7 @@ async def list_my_atendimentos(
         dep_id=dep_id,
         prioridade=prioridade,
         q=q,
+        scope_departamento_ids=scope_dept_ids,
     )
     return {"atendimentos": rows}
 
@@ -408,9 +447,7 @@ async def transfer(
             pool, atendimento_id, body.departamento_id
         )
         if out is None:
-            raise HTTPException(
-                status_code=404, detail="Atendimento não encontrado."
-            )
+            raise HTTPException(status_code=404, detail="Atendimento não encontrado.")
         async with pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT nome FROM departamento WHERE id = %s AND empresa_id = %s",
@@ -418,9 +455,7 @@ async def transfer(
             )
             row = await cur.fetchone()
         if row is None:
-            raise HTTPException(
-                status_code=404, detail="Departamento não encontrado."
-            )
+            raise HTTPException(status_code=404, detail="Departamento não encontrado.")
         departamento_nome = row[0]
 
         # Notifica o cliente via WhatsApp — best-effort. Falha não bloqueia
@@ -448,9 +483,7 @@ async def transfer(
         assert body.user_id is not None  # validator garante
         out = await transfer_atendimento(pool, atendimento_id, body.user_id)
         if out is None:
-            raise HTTPException(
-                status_code=404, detail="Atendimento não encontrado."
-            )
+            raise HTTPException(status_code=404, detail="Atendimento não encontrado.")
 
     logger.info(
         "atendimento_transferred",

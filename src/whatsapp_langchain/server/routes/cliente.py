@@ -8,7 +8,7 @@ fica pra um milestone futuro.
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
@@ -28,6 +28,11 @@ from whatsapp_langchain.shared.cliente import (
 )
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import Cliente, ClienteAnotacao
+from whatsapp_langchain.shared.perfil import get_user_permissions
+from whatsapp_langchain.shared.permissoes import (
+    effective_scope,
+    get_user_departamento_ids,
+)
 from whatsapp_langchain.shared.validators_br import (
     is_valid_cep,
     is_valid_cnpj,
@@ -64,15 +69,43 @@ class ClienteDetail(BaseModel):
 
 @router.get("")
 async def list_my_clientes(
+    request: Request,
     search: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, list[Cliente]]:
-    """Lista clientes da empresa ativa (mais recente primeiro)."""
+    """Lista clientes da empresa ativa (mais recente primeiro).
+
+    Sprint Governança RBAC (mig 083): aplica filtro record-level baseado
+    em `cliente.read.own/all`. Operador (perm `.own`) só vê clientes que
+    têm ao menos 1 atendimento em algum dos deptos vinculados ao user.
+    Sem nenhuma das duas perms → 403.
+    """
     pool = await get_pool()
+    cached = getattr(request.state, "_user_perms", None)
+    if cached is None:
+        cached = await get_user_permissions(pool, user_id, empresa_id)
+        request.state._user_perms = cached
+    scope = effective_scope(cached, "cliente.read")
+    if scope is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Permissão necessária: cliente.read[.own|.all]",
+        )
+    scope_dept_ids: set[int] | None = None
+    if scope == "own":
+        dept_ids = await get_user_departamento_ids(pool, user_id, empresa_id)
+        scope_dept_ids = set(dept_ids)
+
     rows = await list_clientes(
-        pool, empresa_id, search=search, limit=limit, offset=offset
+        pool,
+        empresa_id,
+        search=search,
+        limit=limit,
+        offset=offset,
+        scope_departamento_ids=scope_dept_ids,
     )
     return {"clientes": rows}
 

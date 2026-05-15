@@ -1,7 +1,15 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { CheckCircle2, KeyRound, Trash2, UserPlus, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  KeyRound,
+  Shield,
+  Trash2,
+  UserPlus,
+  XCircle,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +19,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { EmpresaMembro } from "@/lib/api";
+import type {
+  Departamento,
+  EmpresaMembro,
+  PerfilAcesso,
+} from "@/lib/api";
 
 import {
   addMemberAction,
@@ -20,10 +32,13 @@ import {
   removeMemberAction,
   setMemberStatusAction,
 } from "./actions";
+import { EditPermissionsModal } from "./edit-permissions-modal";
 
 interface Props {
   empresaId: number;
   members: EmpresaMembro[];
+  perfis?: PerfilAcesso[];
+  departamentos?: Departamento[];
 }
 
 const SELECT_CLASS =
@@ -34,10 +49,17 @@ const INPUT_CLASS =
   "rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm " +
   "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30";
 
-export function MembersList({ empresaId, members }: Props) {
+export function MembersList({
+  empresaId,
+  members,
+  perfis = [],
+  departamentos = [],
+}: Props) {
+  const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [editingMember, setEditingMember] = useState<EmpresaMembro | null>(null);
 
   function handleAdd(formData: FormData) {
     setError(null);
@@ -237,6 +259,15 @@ export function MembersList({ empresaId, members }: Props) {
                       <Button
                         variant="ghost"
                         size="sm"
+                        title="Editar perfis e departamentos (RBAC granular)"
+                        onClick={() => setEditingMember(m)}
+                        disabled={isPending || isDisabled}
+                      >
+                        <Shield className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         title="Gerar link de reset de senha"
                         onClick={() => handleGenerateResetLink(m.user_id)}
                         disabled={isPending}
@@ -260,6 +291,27 @@ export function MembersList({ empresaId, members }: Props) {
           </tbody>
         </table>
       </div>
+
+      {editingMember && (
+        <EditPermissionsModal
+          empresaId={empresaId}
+          userId={editingMember.user_id}
+          userEmail={editingMember.email}
+          perfis={perfis.map((p) => ({
+            id: p.id,
+            nome: p.nome,
+            descricao: p.descricao,
+            is_system: p.is_system,
+          }))}
+          departamentos={departamentos.map((d) => ({
+            id: d.id,
+            nome: d.nome,
+            ativo: d.ativo,
+          }))}
+          onClose={() => setEditingMember(null)}
+          onSaved={() => router.refresh()}
+        />
+      )}
     </div>
   );
 }

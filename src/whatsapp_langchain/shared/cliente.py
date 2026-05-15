@@ -315,17 +315,36 @@ async def list_clientes(
     search: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    scope_departamento_ids: set[int] | None = None,
 ) -> list[Cliente]:
     """Lista clientes da empresa, ordenados por updated_at DESC.
 
     `search` filtra por substring case-insensitive em nome ou telefone.
+
+    `scope_departamento_ids` (mig 083 record-level):
+    - None ⇒ sem filtro de scope (vê todos da empresa)
+    - set vazio ⇒ user com `.own` mas sem depto vinculado → retorna []
+    - set com IDs ⇒ filtra clientes que TÊM ao menos 1 atendimento em
+      qualquer um dos deptos via EXISTS subquery (clientes sem
+      atendimento atribuído ficam ocultos pra users com scope)
     """
+    if scope_departamento_ids is not None and not scope_departamento_ids:
+        return []
     params: list = [empresa_id]
     where = "WHERE empresa_id = %s"
     if search:
         where += " AND (nome ILIKE %s OR telefone ILIKE %s)"
         like = f"%{search}%"
         params.extend([like, like])
+    if scope_departamento_ids is not None:
+        where += (
+            " AND EXISTS ("
+            "  SELECT 1 FROM atendimento a"
+            "   WHERE a.cliente_id = cliente.id"
+            "     AND a.departamento_id = ANY(%s)"
+            ")"
+        )
+        params.append(list(scope_departamento_ids))
     params.extend([limit, offset])
     async with pool.connection() as conn:
         cur = await conn.execute(
