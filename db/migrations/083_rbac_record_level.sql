@@ -41,53 +41,41 @@ ON CONFLICT (codigo) DO NOTHING;
 -- (ex: tenant antigo só com Admin), o UPDATE vira no-op e o seed
 -- automático rodará no próximo boot via seed_default_perfis().
 
-DO $$
-DECLARE
-    perm_id BIGINT;
-    perfil_record RECORD;
-BEGIN
-    -- Para cada perfil_acesso existente, adiciona as perms novas
-    -- conforme o nome (system perfis: Admin, Gestor, Operador, Leitura).
-    FOR perfil_record IN
-        SELECT id, empresa_id, nome FROM perfil_acesso WHERE is_system = TRUE
-    LOOP
-        IF perfil_record.nome IN ('Admin', 'Gestor') THEN
-            -- Admin/Gestor: vê tudo
-            FOR perm_id IN
-                SELECT id FROM permissao WHERE codigo IN (
-                    'cliente.read.all', 'cliente.write.all',
-                    'atendimento.read.all', 'atendimento.write.all',
-                    'atendimento.transfer.all', 'atendimento.close.all'
-                )
-            LOOP
-                INSERT INTO perfil_permissao (perfil_id, permissao_id)
-                VALUES (perfil_record.id, perm_id)
-                ON CONFLICT DO NOTHING;
-            END LOOP;
-        ELSIF perfil_record.nome = 'Operador' THEN
-            -- Operador: só do próprio depto
-            FOR perm_id IN
-                SELECT id FROM permissao WHERE codigo IN (
-                    'cliente.read.own', 'cliente.write.own',
-                    'atendimento.read.own', 'atendimento.write.own',
-                    'atendimento.transfer.own', 'atendimento.close.own'
-                )
-            LOOP
-                INSERT INTO perfil_permissao (perfil_id, permissao_id)
-                VALUES (perfil_record.id, perm_id)
-                ON CONFLICT DO NOTHING;
-            END LOOP;
-        ELSIF perfil_record.nome = 'Leitura' THEN
-            -- Leitura: read.all (read-only intencional, vê tudo)
-            FOR perm_id IN
-                SELECT id FROM permissao WHERE codigo IN (
-                    'cliente.read.all', 'atendimento.read.all'
-                )
-            LOOP
-                INSERT INTO perfil_permissao (perfil_id, permissao_id)
-                VALUES (perfil_record.id, perm_id)
-                ON CONFLICT DO NOTHING;
-            END LOOP;
-        END IF;
-    END LOOP;
-END $$;
+-- `permissao` usa `codigo` (TEXT) como PRIMARY KEY (não `id`).
+-- `perfil_permissao` referencia via `permissao_codigo`.
+INSERT INTO perfil_permissao (perfil_id, permissao_codigo)
+SELECT pa.id, p.codigo
+  FROM perfil_acesso pa
+ CROSS JOIN permissao p
+ WHERE pa.is_system = TRUE
+   AND pa.nome IN ('Admin', 'Gestor')
+   AND p.codigo IN (
+       'cliente.read.all', 'cliente.write.all',
+       'atendimento.read.all', 'atendimento.write.all',
+       'atendimento.transfer.all', 'atendimento.close.all'
+   )
+ON CONFLICT DO NOTHING;
+
+INSERT INTO perfil_permissao (perfil_id, permissao_codigo)
+SELECT pa.id, p.codigo
+  FROM perfil_acesso pa
+ CROSS JOIN permissao p
+ WHERE pa.is_system = TRUE
+   AND pa.nome = 'Operador'
+   AND p.codigo IN (
+       'cliente.read.own', 'cliente.write.own',
+       'atendimento.read.own', 'atendimento.write.own',
+       'atendimento.transfer.own', 'atendimento.close.own'
+   )
+ON CONFLICT DO NOTHING;
+
+INSERT INTO perfil_permissao (perfil_id, permissao_codigo)
+SELECT pa.id, p.codigo
+  FROM perfil_acesso pa
+ CROSS JOIN permissao p
+ WHERE pa.is_system = TRUE
+   AND pa.nome = 'Leitura'
+   AND p.codigo IN (
+       'cliente.read.all', 'atendimento.read.all'
+   )
+ON CONFLICT DO NOTHING;
