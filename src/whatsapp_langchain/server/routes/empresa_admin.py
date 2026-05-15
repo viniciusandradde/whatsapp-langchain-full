@@ -452,14 +452,15 @@ async def sync_member_perfis(
         if to_remove:
             await conn.execute(
                 "DELETE FROM usuario_perfil WHERE user_id = %s "
-                "AND perfil_id = ANY(%s)",
-                (member_user_id, list(to_remove)),
+                "AND empresa_id = %s AND perfil_id = ANY(%s)",
+                (member_user_id, empresa_id, list(to_remove)),
             )
         for pid in to_add:
             await conn.execute(
-                "INSERT INTO usuario_perfil (user_id, perfil_id) "
-                "VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (member_user_id, pid),
+                "INSERT INTO usuario_perfil "
+                "(user_id, perfil_id, empresa_id, assigned_by_user_id) "
+                "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                (member_user_id, pid, empresa_id, user_id),
             )
         await conn.commit()
 
@@ -548,8 +549,8 @@ async def sync_member_departamentos(
         if to_remove:
             await conn.execute(
                 "DELETE FROM usuario_departamento WHERE user_id = %s "
-                "AND departamento_id = ANY(%s)",
-                (member_user_id, list(to_remove)),
+                "AND empresa_id = %s AND departamento_id = ANY(%s)",
+                (member_user_id, empresa_id, list(to_remove)),
             )
         for did in to_add:
             await conn.execute(
