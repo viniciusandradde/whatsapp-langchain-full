@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import {
   addEmpresaMember,
+  getMemberDepartamentos,
+  getMemberPerfis,
   removeEmpresaMember,
+  setMemberDepartamentos,
+  setMemberPerfis,
   setMemberStatus,
   updateMemberRole,
   type UserStatus,
@@ -154,6 +158,78 @@ export async function generateResetLinkAction(
       ok: false,
       error:
         e instanceof Error ? e.message : "Erro ao gerar link de reset.",
+    };
+  }
+}
+
+
+// ============================================================
+// Sprint Governança RBAC — atribuição perfis/deptos por member
+// ============================================================
+
+export async function getMemberPerfisAction(
+  empresaId: number,
+  userId: string
+): Promise<{ ok: true; perfil_ids: number[] } | { ok: false; error: string }> {
+  try {
+    const r = await getMemberPerfis(empresaId, userId);
+    return { ok: true, perfil_ids: r.perfil_ids };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao carregar perfis.",
+    };
+  }
+}
+
+export async function setMemberPerfisAction(
+  empresaId: number,
+  userId: string,
+  perfilIds: number[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await setMemberPerfis(empresaId, userId, perfilIds);
+    revalidatePath(`/companies/${empresaId}/members`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao salvar perfis.",
+    };
+  }
+}
+
+export async function getMemberDepartamentosAction(
+  empresaId: number,
+  userId: string
+): Promise<
+  | { ok: true; departamento_ids: number[] }
+  | { ok: false; error: string }
+> {
+  try {
+    const r = await getMemberDepartamentos(empresaId, userId);
+    return { ok: true, departamento_ids: r.departamento_ids };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao carregar departamentos.",
+    };
+  }
+}
+
+export async function setMemberDepartamentosAction(
+  empresaId: number,
+  userId: string,
+  departamentoIds: number[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await setMemberDepartamentos(empresaId, userId, departamentoIds);
+    revalidatePath(`/companies/${empresaId}/members`);
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao salvar departamentos.",
     };
   }
 }

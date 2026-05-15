@@ -15,12 +15,13 @@ import { Loader2, Save, Shield, Users, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
 import {
-  getMemberDepartamentos,
-  getMemberPerfis,
-  setMemberDepartamentos,
-  setMemberPerfis,
-} from "@/lib/api";
+  getMemberDepartamentosAction,
+  getMemberPerfisAction,
+  setMemberDepartamentosAction,
+  setMemberPerfisAction,
+} from "./actions";
 
 interface PerfilOption {
   id: number;
@@ -64,13 +65,21 @@ export function EditPermissionsModal({
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      getMemberPerfis(empresaId, userId),
-      getMemberDepartamentos(empresaId, userId),
+      getMemberPerfisAction(empresaId, userId),
+      getMemberDepartamentosAction(empresaId, userId),
     ])
-      .then(([p, d]) => {
+      .then(([pRes, dRes]) => {
         if (cancelled) return;
-        setPerfilIds(new Set(p.perfil_ids));
-        setDeptoIds(new Set(d.departamento_ids));
+        if (!pRes.ok) {
+          setError(pRes.error);
+          return;
+        }
+        if (!dRes.ok) {
+          setError(dRes.error);
+          return;
+        }
+        setPerfilIds(new Set(pRes.perfil_ids));
+        setDeptoIds(new Set(dRes.departamento_ids));
       })
       .catch((e) => {
         if (cancelled) return;
@@ -106,8 +115,24 @@ export function EditPermissionsModal({
     setError(null);
     startSave(async () => {
       try {
-        await setMemberPerfis(empresaId, userId, [...perfilIds]);
-        await setMemberDepartamentos(empresaId, userId, [...deptoIds]);
+        const pRes = await setMemberPerfisAction(
+          empresaId,
+          userId,
+          [...perfilIds]
+        );
+        if (!pRes.ok) {
+          setError(pRes.error);
+          return;
+        }
+        const dRes = await setMemberDepartamentosAction(
+          empresaId,
+          userId,
+          [...deptoIds]
+        );
+        if (!dRes.ok) {
+          setError(dRes.error);
+          return;
+        }
         if (onSaved) onSaved();
         onClose();
       } catch (e) {
