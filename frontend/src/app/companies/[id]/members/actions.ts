@@ -162,6 +162,88 @@ export async function generateResetLinkAction(
   }
 }
 
+/**
+ * Reseta senha do user via servidor: backend gera senha aleatória forte
+ * com CSPRNG, aplica via Better Auth (resetPassword com token consumido
+ * imediatamente), e retorna a senha em texto pro admin compartilhar
+ * pelo canal seguro que preferir.
+ *
+ * Por que NO SERVIDOR (não admin digita): evita exposição da senha em
+ * histórico do navegador, autocomplete, screen-share, gerenciador de
+ * senhas com cache, etc. Senha aparece UMA VEZ na resposta — admin
+ * copia, manda, e fecha. Backend nunca persiste plaintext (só hash
+ * scrypt do Better Auth em auth.account).
+ *
+ * Pra desativar/forçar logout simultâneo: combine com setMemberStatus.
+ */
+export async function resetMemberPasswordAction(
+  userId: string
+): Promise<
+  | { ok: true; password: string; email: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const userRow = await authPool.query<{ email: string }>(
+      `SELECT email FROM auth."user" WHERE id = $1`,
+      [userId]
+    );
+    const email = userRow.rows[0]?.email;
+    if (!email) {
+      return { ok: false, error: "User não encontrado." };
+    }
+
+    // 1. Gera senha aleatória forte no servidor (16 chars, sem ambiguidade)
+    const newPassword = generateSecurePassword(16);
+
+    // 2. Dispara request reset → callback persiste token
+    await auth.api.requestPasswordReset({
+      body: { email, redirectTo: "/reset-password" },
+    });
+
+    // 3. Lê token recém-gerado
+    const tokenRow = await authPool.query<{ token: string }>(
+      `SELECT token FROM auth.password_reset_pending WHERE user_id = $1`,
+      [userId]
+    );
+    const token = tokenRow.rows[0]?.token;
+    if (!token) {
+      return {
+        ok: false,
+        error: "Token não foi gerado. Verifique config Better Auth.",
+      };
+    }
+
+    // 4. Aplica nova senha consumindo o token
+    await auth.api.resetPassword({
+      body: { newPassword, token },
+    });
+
+    // 5. Limpa pending residual
+    await authPool.query(
+      `DELETE FROM auth.password_reset_pending WHERE user_id = $1`,
+      [userId]
+    );
+
+    return { ok: true, password: newPassword, email };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao redefinir senha.",
+    };
+  }
+}
+
+
+function generateSecurePassword(len = 16): string {
+  // Alfabeto sem ambiguidade visual (sem 0/O, 1/l/I) + símbolos seguros
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*";
+  // Node 20+: crypto.getRandomValues disponível globalmente
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => chars[b % chars.length]).join("");
+}
+
 
 // ============================================================
 // Sprint Governança RBAC — atribuição perfis/deptos por member

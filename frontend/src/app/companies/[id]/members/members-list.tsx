@@ -28,11 +28,11 @@ import type {
 import {
   addMemberAction,
   changeMemberRoleAction,
-  generateResetLinkAction,
   removeMemberAction,
   setMemberStatusAction,
 } from "./actions";
 import { EditPermissionsModal } from "./edit-permissions-modal";
+import { SetPasswordModal } from "./set-password-modal";
 
 interface Props {
   empresaId: number;
@@ -60,6 +60,9 @@ export function MembersList({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [editingMember, setEditingMember] = useState<EmpresaMembro | null>(null);
+  const [passwordMember, setPasswordMember] = useState<EmpresaMembro | null>(
+    null
+  );
 
   function handleAdd(formData: FormData) {
     setError(null);
@@ -98,24 +101,7 @@ export function MembersList({
     });
   }
 
-  async function handleGenerateResetLink(userId: string) {
-    if (
-      !confirm(
-        "Gerar link de reset de senha?\n\nO link será mostrado pra você " +
-          "copiar e enviar ao usuário pelo canal que preferir (WhatsApp, etc). " +
-          "Expira em 1 hora.",
-      )
-    )
-      return;
-    setError(null);
-    const result = await generateResetLinkAction(userId);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    // Mostra prompt com o link pra cópia (textarea pra facilitar select all).
-    window.prompt("Link de reset (copie e envie ao usuário):", result.link);
-  }
+  // Pwd reset/change agora vai pelo SetPasswordModal — admin define direto.
 
   return (
     <div className="space-y-4">
@@ -268,8 +254,8 @@ export function MembersList({
                       <Button
                         variant="ghost"
                         size="sm"
-                        title="Gerar link de reset de senha"
-                        onClick={() => handleGenerateResetLink(m.user_id)}
+                        title="Definir nova senha (admin escolhe)"
+                        onClick={() => setPasswordMember(m)}
                         disabled={isPending}
                       >
                         <KeyRound className="size-3.5" />
@@ -310,6 +296,14 @@ export function MembersList({
           }))}
           onClose={() => setEditingMember(null)}
           onSaved={() => router.refresh()}
+        />
+      )}
+
+      {passwordMember && (
+        <SetPasswordModal
+          userId={passwordMember.user_id}
+          userEmail={passwordMember.email}
+          onClose={() => setPasswordMember(null)}
         />
       )}
     </div>
