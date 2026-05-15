@@ -5,12 +5,13 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
 import { EmpresaSwitcher } from "@/components/empresa-switcher";
 import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
+import { PermissionsProvider } from "@/components/permissions-context";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import {
   SidebarProvider,
   SIDEBAR_INIT_SCRIPT,
 } from "@/components/sidebar-context";
-import { getMyEmpresas } from "@/lib/api";
+import { getMyEmpresas, getMyPermissions } from "@/lib/api";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -29,6 +30,19 @@ async function resolveEmpresaSwitcher() {
     return <EmpresaSwitcher empresas={empresas} activeEmpresaId={active} />;
   } catch {
     return null;
+  }
+}
+
+async function resolveInitialPermissions() {
+  // Carrega perms server-side pra o Provider já bootar com state válido.
+  // Em /login (sem session), retorna [] — Client Components com
+  // usePermission vão tratar como "não tem nada", o que é correto pro
+  // contexto não-autenticado.
+  try {
+    const r = await getMyPermissions();
+    return { permissoes: r.permissoes ?? [], perfis: r.perfis ?? [] };
+  } catch {
+    return { permissoes: [], perfis: [] };
   }
 }
 
@@ -72,7 +86,10 @@ export const viewport: Viewport = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const empresaSwitcher = await resolveEmpresaSwitcher();
+  const [empresaSwitcher, initialPerms] = await Promise.all([
+    resolveEmpresaSwitcher(),
+    resolveInitialPermissions(),
+  ]);
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
@@ -101,9 +118,14 @@ export default async function RootLayout({
           aria-hidden
           className="fixed top-[30%] right-[35%] w-[350px] h-[350px] bg-brand-primary/[0.05] blur-[110px] rounded-full pointer-events-none -z-10 animate-pulse-slow"
         />
-        <SidebarProvider>
-          <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
-        </SidebarProvider>
+        <PermissionsProvider
+          initialPerms={initialPerms.permissoes}
+          initialPerfis={initialPerms.perfis}
+        >
+          <SidebarProvider>
+            <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
+          </SidebarProvider>
+        </PermissionsProvider>
         <ServiceWorkerRegister />
         <InstallPwaPrompt />
       </body>

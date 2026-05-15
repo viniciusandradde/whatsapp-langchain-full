@@ -19,6 +19,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { usePermission } from "@/hooks/use-permission";
 import type {
   Departamento,
   EmpresaMembro,
@@ -63,6 +64,11 @@ export function MembersList({
   const [passwordMember, setPasswordMember] = useState<EmpresaMembro | null>(
     null
   );
+  // Permissões pra renderização condicional (sprint Governança RBAC visual)
+  const canAddMember = usePermission("empresa.member.add");
+  const canChangeRole = usePermission("empresa.member.role");
+  const canRemoveMember = usePermission("empresa.member.remove");
+  const canChangeStatus = usePermission("empresa.member.status");
 
   function handleAdd(formData: FormData) {
     setError(null);
@@ -109,7 +115,7 @@ export function MembersList({
         <p className="text-sm text-muted-foreground">
           {members.length} {members.length === 1 ? "membro" : "membros"}
         </p>
-        {!showAdd && (
+        {!showAdd && canAddMember && (
           <Button onClick={() => setShowAdd(true)} disabled={isPending}>
             <UserPlus className="size-4" />
             Adicionar membro
@@ -199,18 +205,24 @@ export function MembersList({
                     </div>
                   </td>
                   <td className="px-3 py-2">
-                    <select
-                      defaultValue={m.role}
-                      onChange={(e) =>
-                        handleChangeRole(m.user_id, e.target.value)
-                      }
-                      className={SELECT_CLASS}
-                      disabled={isPending || isDisabled}
-                    >
-                      <option value="admin">admin</option>
-                      <option value="operator">operator</option>
-                      <option value="viewer">viewer</option>
-                    </select>
+                    {canChangeRole ? (
+                      <select
+                        defaultValue={m.role}
+                        onChange={(e) =>
+                          handleChangeRole(m.user_id, e.target.value)
+                        }
+                        className={SELECT_CLASS}
+                        disabled={isPending || isDisabled}
+                      >
+                        <option value="admin">admin</option>
+                        <option value="operator">operator</option>
+                        <option value="viewer">viewer</option>
+                      </select>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">
+                        {m.role}
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {isDisabled ? (
@@ -227,48 +239,56 @@ export function MembersList({
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title={isDisabled ? "Reativar" : "Desativar"}
-                        onClick={() =>
-                          handleToggleStatus(m.user_id, m.status ?? null)
-                        }
-                        disabled={isPending}
-                      >
-                        {isDisabled ? (
-                          <CheckCircle2 className="size-3.5" />
-                        ) : (
-                          <XCircle className="size-3.5" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Editar perfis e departamentos (RBAC granular)"
-                        onClick={() => setEditingMember(m)}
-                        disabled={isPending || isDisabled}
-                      >
-                        <Shield className="size-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Definir nova senha (admin escolhe)"
-                        onClick={() => setPasswordMember(m)}
-                        disabled={isPending}
-                      >
-                        <KeyRound className="size-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Remover membro"
-                        onClick={() => handleRemove(m.user_id)}
-                        disabled={isPending}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
+                      {canChangeStatus && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title={isDisabled ? "Reativar" : "Desativar"}
+                          onClick={() =>
+                            handleToggleStatus(m.user_id, m.status ?? null)
+                          }
+                          disabled={isPending}
+                        >
+                          {isDisabled ? (
+                            <CheckCircle2 className="size-3.5" />
+                          ) : (
+                            <XCircle className="size-3.5" />
+                          )}
+                        </Button>
+                      )}
+                      {canChangeRole && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Editar perfis e departamentos (RBAC granular)"
+                          onClick={() => setEditingMember(m)}
+                          disabled={isPending || isDisabled}
+                        >
+                          <Shield className="size-3.5" />
+                        </Button>
+                      )}
+                      {canChangeRole && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Definir nova senha (admin escolhe)"
+                          onClick={() => setPasswordMember(m)}
+                          disabled={isPending}
+                        >
+                          <KeyRound className="size-3.5" />
+                        </Button>
+                      )}
+                      {canRemoveMember && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Remover membro"
+                          onClick={() => handleRemove(m.user_id)}
+                          disabled={isPending}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>

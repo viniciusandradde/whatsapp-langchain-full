@@ -15,11 +15,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { usePermissionsContext } from "@/components/permissions-context";
 import { cn } from "@/lib/utils";
 
 export interface NavTab {
   label: string;
   href: string;
+  /** Permissão necessária pra ver essa tab. Undefined = sempre visível. */
+  requires?: string | string[];
 }
 
 /**
@@ -30,49 +33,49 @@ export interface NavTab {
 export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
   visao: [{ label: "Dashboard IA", href: "/dashboard/ia" }],
   operacao: [
-    { label: "Atendimentos", href: "/atendimento" },
-    { label: "Conversas", href: "/chats" },
-    { label: "Clientes", href: "/clientes" },
-    { label: "Agendamentos", href: "/agendamentos" },
-    { label: "Campanhas", href: "/campanhas" },
+    { label: "Atendimentos", href: "/atendimento", requires: "atendimento.read" },
+    { label: "Conversas", href: "/chats", requires: "atendimento.read" },
+    { label: "Clientes", href: "/clientes", requires: "cliente.read" },
+    { label: "Agendamentos", href: "/agendamentos", requires: "agendamento.read" },
+    { label: "Campanhas", href: "/campanhas", requires: "agendamento.read" },
   ],
   ia: [
-    { label: "Agentes", href: "/agents" },
-    { label: "Menu chatbot", href: "/menus" },
-    { label: "Workflows", href: "/workflows" },
-    { label: "Catálogo Modelos", href: "/catalog/models" },
-    { label: "MCP Servers", href: "/catalog/mcp" },
-    { label: "Quick Replies", href: "/modelos" },
-    { label: "Base de Conhecimento", href: "/settings/pastas" },
-    { label: "Variáveis", href: "/settings/variaveis" },
-    { label: "Modelo por agente", href: "/models" },
+    { label: "Agentes", href: "/agents", requires: "agente.config" },
+    { label: "Menu chatbot", href: "/menus", requires: "menu_chatbot.read" },
+    { label: "Workflows", href: "/workflows", requires: "menu_chatbot.read" },
+    { label: "Catálogo Modelos", href: "/catalog/models", requires: "agente.config" },
+    { label: "MCP Servers", href: "/catalog/mcp", requires: "agente.config" },
+    { label: "Quick Replies", href: "/modelos", requires: "modelo_mensagem.read" },
+    { label: "Base de Conhecimento", href: "/settings/pastas", requires: "base_conhecimento.read" },
+    { label: "Variáveis", href: "/settings/variaveis", requires: "variavel.read" },
+    { label: "Modelo por agente", href: "/models", requires: "agente.config" },
   ],
   conectividade: [
-    { label: "Conexões", href: "/connections" },
-    { label: "Integrações Externas", href: "/settings/integracoes" },
-    { label: "Webhooks", href: "/hooks" },
+    { label: "Conexões", href: "/connections", requires: "conexao.read" },
+    { label: "Integrações Externas", href: "/settings/integracoes", requires: "conexao.write" },
+    { label: "Webhooks", href: "/hooks", requires: "hook.read" },
   ],
   governanca: [
-    { label: "Empresas", href: "/companies" },
-    { label: "Atendentes", href: "/atendentes" },
-    { label: "IA Budget", href: "/governanca/ia-budget" },
-    { label: "Perfis (RBAC)", href: "/settings/perfis" },
-    { label: "Departamentos", href: "/settings/departamentos" },
-    { label: "Horário de Atendimento", href: "/settings/horarios" },
-    { label: "Regras de Agendamento", href: "/settings/calendar-rules" },
-    { label: "Segurança", href: "/settings" },
+    { label: "Empresas", href: "/companies", requires: "empresa.update" },
+    { label: "Atendentes", href: "/atendentes", requires: "empresa.member.add" },
+    { label: "IA Budget", href: "/governanca/ia-budget", requires: "empresa.update" },
+    { label: "Perfis (RBAC)", href: "/settings/perfis", requires: "perfil.read" },
+    { label: "Departamentos", href: "/settings/departamentos", requires: "departamento.read" },
+    { label: "Horário de Atendimento", href: "/settings/horarios", requires: "horario.write" },
+    { label: "Regras de Agendamento", href: "/settings/calendar-rules", requires: "agendamento.regras.write" },
+    { label: "Segurança", href: "/settings", requires: "security.audit.read" },
   ],
   observabilidade: [
-    { label: "Traces", href: "/traces" },
-    { label: "Fila", href: "/queue" },
-    { label: "NPS / Qualidade", href: "/dashboard/qualidade" },
-    { label: "Qualidade RAG", href: "/dashboard/rag" },
-    { label: "RAG Sandbox", href: "/dashboard/rag/sandbox" },
-    { label: "Relatórios E2E", href: "/relatorios/allure" },
-    { label: "Histórico de Acesso", href: "/settings/security/login-history" },
-    { label: "Audit log", href: "/settings/security/audit" },
-    { label: "Governança", href: "/settings/security/governanca" },
-    { label: "Feature flags", href: "/settings/feature-flags" },
+    { label: "Traces", href: "/traces", requires: "security.audit.read" },
+    { label: "Fila", href: "/queue", requires: "security.audit.read" },
+    { label: "NPS / Qualidade", href: "/dashboard/qualidade", requires: "atendimento.read" },
+    { label: "Qualidade RAG", href: "/dashboard/rag", requires: "agente.config" },
+    { label: "RAG Sandbox", href: "/dashboard/rag/sandbox", requires: "agente.config" },
+    { label: "Relatórios E2E", href: "/relatorios/allure", requires: "agente.config" },
+    { label: "Histórico de Acesso", href: "/settings/security/login-history", requires: "security.audit.read" },
+    { label: "Audit log", href: "/settings/security/audit", requires: "security.audit.read" },
+    { label: "Governança", href: "/settings/security/governanca", requires: "security.audit.read" },
+    { label: "Feature flags", href: "/settings/feature-flags", requires: "empresa.update" },
   ],
 };
 
@@ -160,12 +163,15 @@ function isTabActive(pathname: string, tabHref: string): boolean {
 
 export function TopNavTabs() {
   const pathname = usePathname();
+  const { hasPerm } = usePermissionsContext();
   if (!pathname) return null;
 
   const grupo = resolveGroup(pathname);
   if (!grupo) return null;
 
-  const tabs = NAV_TABS_BY_GROUP[grupo] ?? [];
+  const allTabs = NAV_TABS_BY_GROUP[grupo] ?? [];
+  // Filtra tabs que o user não tem permissão (Sprint Governança RBAC)
+  const tabs = allTabs.filter((t) => !t.requires || hasPerm(t.requires));
   if (tabs.length === 0) return null;
 
   // Pra grupos com 1 tab só (Visão Geral hoje), não vale a pena renderizar

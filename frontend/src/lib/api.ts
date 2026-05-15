@@ -726,13 +726,34 @@ async function apiFetch<T>(
     try {
       const errBody = await response.clone().json();
       if (errBody && typeof errBody === "object" && "detail" in errBody) {
-        detail = ` — ${(errBody as { detail: string }).detail}`;
+        detail = (errBody as { detail: string }).detail;
       }
     } catch {
       // Resposta não-JSON: ignora
     }
+
+    // Sprint Governança RBAC visual: 403 sempre vira mensagem genérica
+    // pro user. Backend tem variantes técnicas ("Só admin pode mudar
+    // roles.", "Sem acesso à empresa.") que vazariam estrutura interna —
+    // pro user final, mostramos apenas que falta permissão. Detail
+    // técnico continua acessível via logs do servidor (audit_log).
+    if (response.status === 403) {
+      if (process.env.NODE_ENV !== "production" && detail) {
+        // Em dev, mantém detalhe no console pra debug
+        console.warn("[403]", path, "—", detail);
+      }
+      throw new Error("Você não tem permissão para essa ação.");
+    }
+
+    // 401 = sessão inválida/expirada
+    if (response.status === 401) {
+      throw new Error("Sessão expirada. Faça login novamente.");
+    }
+
     throw new Error(
-      `API error: ${response.status} ${response.statusText} (${path})${detail}`
+      `API error: ${response.status} ${response.statusText} (${path})${
+        detail ? ` — ${detail}` : ""
+      }`
     );
   }
 

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MyStatusToggle } from "@/components/my-status-toggle";
+import { usePermissionsContext } from "@/components/permissions-context";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { resolveGroup } from "@/components/top-nav-tabs";
 import { useSidebar } from "@/components/sidebar-context";
@@ -43,15 +44,17 @@ type NavGroup = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
+  /** Permissão necessária pra ver esse grupo. Undefined = sempre visível. */
+  requires?: string | string[];
 };
 
 const NAV_GROUPS: NavGroup[] = [
   { grupo: "visao", href: "/dashboard/ia", label: "Visão Geral", icon: LayoutDashboard },
-  { grupo: "operacao", href: "/atendimento", label: "Operação", icon: Headphones },
-  { grupo: "ia", href: "/agents", label: "IA & Conteúdo", icon: Bot },
-  { grupo: "conectividade", href: "/connections", label: "Conectividade", icon: Smartphone },
-  { grupo: "governanca", href: "/companies", label: "Governança", icon: ShieldCheck },
-  { grupo: "observabilidade", href: "/traces", label: "Observabilidade", icon: Activity },
+  { grupo: "operacao", href: "/atendimento", label: "Operação", icon: Headphones, requires: "atendimento.read" },
+  { grupo: "ia", href: "/agents", label: "IA & Conteúdo", icon: Bot, requires: "agente.config" },
+  { grupo: "conectividade", href: "/connections", label: "Conectividade", icon: Smartphone, requires: "conexao.read" },
+  { grupo: "governanca", href: "/companies", label: "Governança", icon: ShieldCheck, requires: "empresa.update" },
+  { grupo: "observabilidade", href: "/traces", label: "Observabilidade", icon: Activity, requires: "security.audit.read" },
 ];
 
 export function Sidebar({
@@ -64,6 +67,10 @@ export function Sidebar({
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const { collapsed, toggle } = useSidebar();
+  const { hasPerm } = usePermissionsContext();
+  const navGroupsVisiveis = NAV_GROUPS.filter(
+    (g) => !g.requires || hasPerm(g.requires)
+  );
 
   // Active state por GRUPO: destaca o grupo cuja resolveGroup() bate com a
   // URL atual. Isso garante consistência com TopNavTabs (mesma lógica).
@@ -176,7 +183,7 @@ export function Sidebar({
         {/* Navegação — 6 grupos top-level. */}
         <nav className="flex-1 overflow-y-auto py-4">
           <div className={cn("space-y-1", collapsed ? "md:px-2 px-3" : "px-3")}>
-            {NAV_GROUPS.map((g) => (
+            {navGroupsVisiveis.map((g) => (
               <Link
                 key={g.grupo}
                 href={g.href}
