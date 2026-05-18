@@ -15,8 +15,14 @@ import uuid
 import httpx
 import psycopg
 
-DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5432/whatsapp_langchain"
-DEFAULT_API_BASE_URL = "http://localhost:8000"
+# Defaults pra ambientes onde Docker compose roda nas portas padrão.
+# Em servers compartilhados com Dokploy, o docker-compose.override.yml local
+# remapeia pra 5434 (db), 8081 (api), 3081 (frontend) — override via env
+# DATABASE_URL/API_BASE_URL.
+DEFAULT_DB_URL = (
+    "postgresql://postgres:postgres@localhost:5434/whatsapp_langchain"
+)
+DEFAULT_API_BASE_URL = "http://localhost:8081"
 API_BASE_URL = os.getenv("API_BASE_URL", DEFAULT_API_BASE_URL)
 TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
 
