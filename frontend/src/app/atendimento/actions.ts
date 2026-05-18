@@ -3,18 +3,27 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  attachAtendimentoAba,
   claimAtendimento,
   closeAtendimento,
+  createAba,
+  deleteAba,
   getAtendimentoMensagens,
+  getContadoresAtendimento,
   getDepartamentos,
   getEmpresaAtendentes,
   getModelosMensagem,
+  getMyAbas,
+  reorderAbas,
   resetAtendimentoThread,
   responderAtendimento,
   transferAtendimento,
   transferAtendimentoParaDepartamento,
+  updateAba,
+  type Aba,
   type AtendenteStatus,
   type AtendimentoMensagem,
+  type ContadoresAtendimento,
   type Departamento,
   type ModeloMensagem,
 } from "@/lib/api";
@@ -158,6 +167,94 @@ export async function resetThreadAction(
   try {
     const r = await resetAtendimentoThread(atendimentoId);
     return { ok: true, rowsDeleted: r.rows_deleted, threadId: r.thread_id };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Sprint Atendimento UX: abas pessoais + contadores ---
+
+type AbasResult = { ok: true; abas: Aba[] } | { ok: false; error: string };
+type AbaResult = { ok: true; aba: Aba } | { ok: false; error: string };
+type ContadoresResult =
+  | { ok: true; contadores: ContadoresAtendimento }
+  | { ok: false; error: string };
+
+export async function loadAbasAction(): Promise<AbasResult> {
+  try {
+    const r = await getMyAbas();
+    return { ok: true, abas: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function loadContadoresAction(): Promise<ContadoresResult> {
+  try {
+    const r = await getContadoresAtendimento();
+    return { ok: true, contadores: r };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function createAbaAction(payload: {
+  descricao: string;
+  cor?: string | null;
+  icone?: string | null;
+}): Promise<AbaResult> {
+  try {
+    const aba = await createAba(payload);
+    revalidatePath("/atendimento");
+    return { ok: true, aba };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function updateAbaAction(
+  abaId: number,
+  payload: { descricao?: string; cor?: string | null; icone?: string | null }
+): Promise<AbaResult> {
+  try {
+    const aba = await updateAba(abaId, payload);
+    revalidatePath("/atendimento");
+    return { ok: true, aba };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function deleteAbaAction(abaId: number): Promise<Result> {
+  try {
+    await deleteAba(abaId);
+    revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function reorderAbasAction(
+  orderedIds: number[]
+): Promise<Result> {
+  try {
+    await reorderAbas(orderedIds);
+    revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function attachAtendimentoAbaAction(
+  atendimentoId: number,
+  abaId: number | null
+): Promise<Result> {
+  try {
+    await attachAtendimentoAba(atendimentoId, abaId);
+    revalidatePath("/atendimento");
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

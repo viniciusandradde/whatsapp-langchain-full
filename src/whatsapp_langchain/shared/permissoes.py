@@ -135,6 +135,23 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
     ("departamento.read", "Ver departamentos", "departamento"),
     ("departamento.write", "Criar/editar departamentos", "departamento"),
     ("horario.write", "Editar horários de funcionamento", "horario"),
+    # Atendimento UX (Sprint 1.1) — abas pessoais, tags, notas internas
+    (
+        "atendimento.aba.manage",
+        "Criar/editar/deletar próprias abas no painel de atendimento",
+        "atendimento",
+    ),
+    (
+        "atendimento.tag.aplicar",
+        "Aplicar/remover tags em atendimentos visíveis",
+        "atendimento",
+    ),
+    (
+        "atendimento.nota_interna.criar",
+        "Criar notas internas (privadas) na timeline",
+        "atendimento",
+    ),
+    ("tag.manage", "CRUD de tags da empresa (admin/gestor only)", "tag"),
 ]
 
 
@@ -177,6 +194,10 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "departamento.read",
             "departamento.write",
             "horario.write",
+            "atendimento.aba.manage",
+            "atendimento.tag.aplicar",
+            "atendimento.nota_interna.criar",
+            "tag.manage",
             "security.audit.read",
         ],
     ),
@@ -201,6 +222,9 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "modelo_mensagem.read",
             "base_conhecimento.read",
             "departamento.read",
+            "atendimento.aba.manage",
+            "atendimento.tag.aplicar",
+            "atendimento.nota_interna.criar",
         ],
     ),
     (

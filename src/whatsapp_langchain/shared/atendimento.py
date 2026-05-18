@@ -28,7 +28,7 @@ logger = structlog.get_logger()
 
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
 # Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061
-# (triagem) + 2 mig 081/082 (coleta) = 25.
+# (triagem) + 2 mig 081/082 (coleta) + 1 mig 085 (aba_id) = 26.
 _BARE_COLS = (
     "id, empresa_id, cliente_id, conexao_id, agente_atual, "
     "status, assigned_to_user_id, last_message_at, closed_at, "
@@ -40,7 +40,9 @@ _BARE_COLS = (
     "departamento_id, classificacao, prioridade, sentimento, "
     "resumo_ia, triagem_completa, triagem_at, "
     # Mig 081/082 wizard coleta
-    "coleta_estado, coleta_resumo"
+    "coleta_estado, coleta_resumo, "
+    # Mig 085 aba customizável
+    "aba_id"
 )
 # Com alias `a.` — usado em SELECTs com JOIN.
 _BASE_COLS = ", ".join(f"a.{c.strip()}" for c in _BARE_COLS.split(","))
@@ -48,8 +50,9 @@ _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 
 def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
-    # Índices: 0..10 base, 11..15 mig 047, 16..22 mig 061, 23..24 coleta
-    base_len = 25
+    # Índices: 0..10 base, 11..15 mig 047, 16..22 mig 061, 23..24 coleta,
+    # 25 aba_id (mig 085)
+    base_len = 26
     return Atendimento(
         id=row[0],
         empresa_id=row[1],
@@ -79,6 +82,8 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         # Mig 081/082 wizard coleta
         coleta_estado=row[23],
         coleta_resumo=row[24],
+        # Mig 085 aba
+        aba_id=row[25],
         # JOIN extras (apenas quando _JOIN_COLS é usado)
         cliente_nome=row[base_len] if with_cliente and len(row) > base_len else None,
         cliente_telefone=row[base_len + 1]
@@ -160,6 +165,7 @@ async def list_atendimentos(
     dep_id: int | None = None,
     prioridade: str | None = None,
     q: str | None = None,
+    aba_id: int | None = None,
 ) -> list[Atendimento]:
     """Lista atendimentos filtrados por tipo de visualização.
 
@@ -217,6 +223,9 @@ async def list_atendimentos(
         where += " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s)"
         like = f"%{q.strip()}%"
         params.extend([like, like])
+    if aba_id is not None:
+        where += " AND a.aba_id = %s"
+        params.append(aba_id)
 
     params.extend([limit, offset])
     async with pool.connection() as conn:

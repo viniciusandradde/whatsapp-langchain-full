@@ -597,6 +597,11 @@ class Atendimento(BaseModel):
     # {save_as: {label, valor}}, completed_at}). Exibido no drawer.
     coleta_estado: dict | None = None
     coleta_resumo: dict | None = None
+    # Aba customizável do atendente (mig 085). Pinning pessoal.
+    aba_id: int | None = None
+    # Tags aplicadas no atendimento (mig 086). Preenchido pelo loader quando
+    # solicitado via `with_tags=True` — evita N+1 no list.
+    tags: list[dict] | None = None
 
 
 class DocumentoConhecimento(BaseModel):

@@ -28,6 +28,7 @@ from whatsapp_langchain.server.routes.agendamento import (
 from whatsapp_langchain.server.routes.agendamento_regras import (
     router as agendamento_regras_router,
 )
+from whatsapp_langchain.server.routes.aba import router as aba_router
 from whatsapp_langchain.server.routes.agente import router as agente_router
 from whatsapp_langchain.server.routes.atendente import router as atendente_router
 from whatsapp_langchain.server.routes.atendimento import (
@@ -254,6 +255,7 @@ app.include_router(empresa_admin_router)
 app.include_router(conexao_router)
 app.include_router(cliente_router)
 app.include_router(atendimento_router)
+app.include_router(aba_router)
 app.include_router(modelo_mensagem_router)
 app.include_router(hook_router)
 app.include_router(calendar_integration_router)

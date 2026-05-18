@@ -27,9 +27,12 @@ def _row(
     status="aguardando",
     assigned_to_user_id=None,
     closed_at=None,
+    aba_id=None,
 ):
+    """11 cols base + 5 mig 047 + 7 mig 061 + 2 mig 081/082 + 1 mig 085 = 26."""
     now = datetime.now(UTC)
     return (
+        # Base (0..10)
         id_,
         empresa_id,
         cliente_id,
@@ -41,6 +44,25 @@ def _row(
         closed_at,
         now,
         now,
+        # Mig 047 padrão profissional (11..15)
+        None,  # protocolo
+        0,  # qtde_resposta_invalida
+        True,  # iniciado_cliente
+        None,  # finalizado_por_user_id
+        False,  # solicitou_encerramento
+        # Mig 061 triagem (16..22)
+        None,  # departamento_id
+        None,  # classificacao
+        None,  # prioridade
+        None,  # sentimento
+        None,  # resumo_ia
+        False,  # triagem_completa
+        None,  # triagem_at
+        # Mig 081/082 coleta (23..24)
+        None,  # coleta_estado
+        None,  # coleta_resumo
+        # Mig 085 aba (25)
+        aba_id,
     )
 
 

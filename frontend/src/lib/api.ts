@@ -1196,6 +1196,8 @@ export async function getAtendimentos(
     depId?: number;
     prioridade?: "baixa" | "media" | "alta" | "urgente";
     q?: string;
+    // Sprint Atendimento UX (mig 085) — filtra por aba pessoal
+    abaId?: number;
   } = {}
 ): Promise<AtendimentosResponse> {
   const qs = new URLSearchParams();
@@ -1205,9 +1207,84 @@ export async function getAtendimentos(
   if (params.depId) qs.set("dep_id", String(params.depId));
   if (params.prioridade) qs.set("prioridade", params.prioridade);
   if (params.q) qs.set("q", params.q);
+  if (params.abaId) qs.set("aba_id", String(params.abaId));
   const s = qs.toString();
   return apiFetch<AtendimentosResponse>(
     `/api/atendimentos${s ? `?${s}` : ""}`
+  );
+}
+
+// --- Sprint Atendimento UX: Abas pessoais + contadores ---
+
+export interface Aba {
+  id: number;
+  descricao: string;
+  cor: string | null;
+  icone: string | null;
+  ordem: number;
+  ativo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ContadoresAtendimento {
+  sistema: { aguardando: number; meus: number; outros: number };
+  abas: Record<string, number>;
+  sem_aba: number;
+}
+
+export async function getMyAbas(): Promise<{ items: Aba[] }> {
+  return apiFetch<{ items: Aba[] }>("/api/abas/me");
+}
+
+export async function createAba(payload: {
+  descricao: string;
+  cor?: string | null;
+  icone?: string | null;
+}): Promise<Aba> {
+  return apiFetch<Aba>("/api/abas", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateAba(
+  abaId: number,
+  payload: { descricao?: string; cor?: string | null; icone?: string | null }
+): Promise<Aba> {
+  return apiFetch<Aba>(`/api/abas/${abaId}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function deleteAba(abaId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/abas/${abaId}`, { method: "DELETE" });
+}
+
+export async function reorderAbas(
+  orderedIds: number[]
+): Promise<{ updated: number }> {
+  return apiFetch<{ updated: number }>("/api/abas/reorder", {
+    method: "POST",
+    body: { ordered_ids: orderedIds },
+  });
+}
+
+export async function getContadoresAtendimento(): Promise<ContadoresAtendimento> {
+  return apiFetch<ContadoresAtendimento>("/api/atendimentos/contadores");
+}
+
+export async function attachAtendimentoAba(
+  atendimentoId: number,
+  abaId: number | null
+): Promise<{ ok: boolean; aba_id: number | null }> {
+  return apiFetch<{ ok: boolean; aba_id: number | null }>(
+    `/api/atendimentos/${atendimentoId}/aba`,
+    {
+      method: "POST",
+      body: { aba_id: abaId },
+    }
   );
 }
 

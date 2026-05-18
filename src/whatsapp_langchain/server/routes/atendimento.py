@@ -19,6 +19,10 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.shared.aba import (
+    attach_atendimento_to_aba,
+    count_atendimentos_por_aba,
+)
 from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
     close_atendimento,
@@ -90,6 +94,12 @@ class ResponderInput(BaseModel):
     conteudo: str
 
 
+class AttachAbaInput(BaseModel):
+    """Atribuir/desatribuir aba (None desatribui)."""
+
+    aba_id: int | None = None
+
+
 @router.get("")
 async def list_my_atendimentos(
     request: Request,
@@ -97,6 +107,7 @@ async def list_my_atendimentos(
     dep_id: int | None = Query(default=None, ge=1),
     prioridade: str | None = Query(default=None),
     q: str | None = Query(default=None, max_length=120),
+    aba_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
@@ -143,9 +154,95 @@ async def list_my_atendimentos(
         dep_id=dep_id,
         prioridade=prioridade,
         q=q,
+        aba_id=aba_id,
         scope_departamento_ids=scope_dept_ids,
     )
     return {"atendimentos": rows}
+
+
+@router.get("/contadores")
+async def list_contadores(
+    request: Request,
+    user_id: str = Depends(get_user_id_from_request),
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Contadores pra badges da sidebar (sistema + abas do user).
+
+    Usa as mesmas semânticas de scope record-level que `list_atendimentos`.
+    Sem cache — query é leve (COUNT com index). Frontend chama a cada
+    SSE event `aba_count_changed` (também a cada 30s como fallback).
+    """
+    pool = await get_pool()
+    perms = await _resolve_perms_cached(request, user_id, empresa_id)
+    scope = effective_scope(perms, "atendimento.read")
+    if scope is None:
+        # Sem perm: zero pra todos (sidebar fica vazia, não 403)
+        return {
+            "sistema": {
+                "aguardando": 0,
+                "meus": 0,
+                "outros": 0,
+            },
+            "abas": {},
+            "sem_aba": 0,
+        }
+    dept_filter_sql = ""
+    dept_filter_args: list = []
+    if scope == "own":
+        dept_ids = await get_user_departamento_ids(pool, user_id, empresa_id)
+        if not dept_ids:
+            return {
+                "sistema": {"aguardando": 0, "meus": 0, "outros": 0},
+                "abas": {},
+                "sem_aba": 0,
+            }
+        dept_filter_sql = " AND departamento_id = ANY(%s)"
+        dept_filter_args = [list(dept_ids)]
+
+    async with pool.connection() as conn:
+        # Sistema (aguardando / meus / outros)
+        cur = await conn.execute(
+            f"""
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'aguardando'),
+                COUNT(*) FILTER (WHERE status = 'em_andamento'
+                                  AND assigned_to_user_id = %s),
+                COUNT(*) FILTER (WHERE status IN ('aguardando', 'em_andamento')
+                                  AND (assigned_to_user_id IS NULL
+                                       OR assigned_to_user_id <> %s))
+              FROM atendimento
+             WHERE empresa_id = %s{dept_filter_sql}
+            """,
+            (user_id, user_id, empresa_id, *dept_filter_args),
+        )
+        sys_row = await cur.fetchone() or (0, 0, 0)
+
+        # Sem aba (pra "Não classificados" na sidebar)
+        cur = await conn.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM atendimento
+             WHERE empresa_id = %s
+               AND status IN ('aguardando', 'em_andamento')
+               AND aba_id IS NULL{dept_filter_sql}
+            """,
+            (empresa_id, *dept_filter_args),
+        )
+        sem_aba = (await cur.fetchone() or (0,))[0]
+
+    # Contadores por aba (sempre do próprio user — abas são pessoais)
+    por_aba = await count_atendimentos_por_aba(
+        pool, user_id=user_id, empresa_id=empresa_id
+    )
+    return {
+        "sistema": {
+            "aguardando": sys_row[0],
+            "meus": sys_row[1],
+            "outros": sys_row[2],
+        },
+        "abas": {str(k): v for k, v in por_aba.items()},
+        "sem_aba": sem_aba,
+    }
 
 
 async def _load_atendimento_in_empresa(
@@ -572,3 +669,45 @@ async def reset_thread(
         "rows_deleted": rows_deleted,
         "thread_id": f"{cliente.telefone}:{atd.agente_atual}",
     }
+
+
+@router.post("/{atendimento_id}/aba")
+async def attach_aba(
+    atendimento_id: int,
+    payload: AttachAbaInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Atribui/desatribui aba pessoal a um atendimento (pinning).
+
+    Aba é sempre do user logado — `attach_atendimento_to_aba` valida
+    que `aba_id` pertence ao user. `aba_id=null` desatribui.
+
+    Não exige `atendimento.write` — atribuir aba é organização pessoal,
+    não mexe no conteúdo da conversa. Atendimento precisa estar visível
+    pro user (RBAC.read aplicado via `_load_atendimento_in_empresa`).
+    """
+    # Garante que atendimento existe e é da empresa.
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    ok = await attach_atendimento_to_aba(
+        pool,
+        atendimento_id=atendimento_id,
+        aba_id=payload.aba_id,
+        user_id=user_id,
+        empresa_id=empresa_id,
+    )
+    if not ok:
+        # aba_id != None e não é do user — 404 pra não vazar existência
+        raise HTTPException(
+            status_code=404,
+            detail="Aba não encontrada ou não pertence ao usuário.",
+        )
+    logger.info(
+        "atendimento_aba_attached",
+        empresa_id=empresa_id,
+        atendimento_id=atendimento_id,
+        aba_id=payload.aba_id,
+        user_id=user_id,
+    )
+    return {"ok": True, "aba_id": payload.aba_id}
