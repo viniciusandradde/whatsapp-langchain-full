@@ -65,3 +65,14 @@ tests/reports/jornadas-*.md
 docs/FASE_1_APOIO_VISUAL.excalidraw
 docs/FASE_1_APOIO_VISUAL.md
 tests/reports/runs/
+
+# Dumps de dados de cliente (PII / LGPD — saúde Mackenzie)
+docs/dump_*.json
+docs/dump_*.csv
+
+# Screenshots de painel admin (podem expor PII)
+docs/agente/chrome_*.png
+docs/agente/explorer_*.png
+
+# Scraping local
+webscap/
