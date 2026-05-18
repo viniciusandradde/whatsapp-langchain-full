@@ -34,6 +34,13 @@ Tests:
 - `make test-flows` — realistic flow tests (`tests/integration/test_realistic_flows.py`); needs Docker stack
 - pytest is configured `asyncio_mode = "auto"` — async tests don't need `@pytest.mark.asyncio`
 
+**E2E pós-feature obrigatório** — toda feature nova (sprint/endpoint/fluxo BE+FE) ganha suite no modelo `tests/integration/test_aba_endpoints.py` (canônico, commit `4aebe36`):
+- **TestSmoke** (TestClient, sem DB): 1 test por endpoint validando que existe + exige auth (401 sem service token). Roda em CI.
+- **TestE2E** (`@pytest.mark.docker_demo`, httpx + psycopg real): cobre happy path em N passos numerados criar→listar→atualizar→deletar com assert `r.text` pra erro legível. Fixtures `scope="module"` criam empresa/user/dados isolados com `_RUN = uuid.uuid4().hex[:8]`, CASCADE no teardown.
+- **TestE2EIsolamento** (quando RBAC envolvido): 2º user mesma empresa NÃO vê dados do 1º; PATCH/DELETE cross-user → 404.
+- Headers E2E: `get_admin_api_headers()` + `X-User-Id` + `X-Empresa-Id`. Rodar com `DATABASE_URL=postgresql://postgres:postgres@localhost:5434/whatsapp_langchain INTERNAL_SERVICE_TOKEN=dev-token-change-in-production uv run pytest ...`.
+- Suite verde é pré-condição pra marcar sprint como SHIPPED.
+
 Frontend (run from `frontend/`):
 - `npm run dev` / `npm run build` / `npm run start` / `npm run lint`
 - Frontend needs its own `frontend/.env.local` for `npm run dev` (separate from root `.env`); Docker uses compose env vars instead.

@@ -39,6 +39,13 @@ progresso:
 
 Memória [[feedback_foco_um_modulo]]: terminar 100% (backend + UI + tests + deploy + validar) antes de passar pra próximo módulo. Não deixar UIs órfãs ou endpoints sem consumer.
 
+**E2E suite é obrigatória** pra fechar sprint. Modelo canônico em `tests/integration/test_aba_endpoints.py` (commit `4aebe36`):
+- `TestSmoke` (TestClient, sem DB): valida rotas + auth
+- `TestE2E` (`@pytest.mark.docker_demo`, httpx + psycopg real): happy path completo numerado
+- `TestE2EIsolamento` quando RBAC: cross-user → 404
+
+Ver memória [[feedback_e2e_pos_feature]] pro template completo.
+
 ## Memórias de processo relevantes
 
 - [[feedback_foco_um_modulo]] — não fragmentar atenção
