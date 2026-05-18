@@ -37,6 +37,7 @@ import {
   transferAction,
   transferDepartamentoAction,
 } from "./actions";
+import { TagPopover } from "./tag-popover";
 
 interface Props {
   atendimento: Atendimento;
@@ -367,6 +368,9 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                 Ver ficha do cliente
               </Link>
             )}
+            <div className="mt-2">
+              <TagPopover atendimentoId={atendimento.id} />
+            </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
             <X className="size-4" />

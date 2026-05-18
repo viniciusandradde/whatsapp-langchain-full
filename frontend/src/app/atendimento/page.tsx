@@ -27,6 +27,8 @@ interface PageProps {
     prioridade?: string;
     q?: string;
     aba_id?: string;
+    // Multi-valor — Next entrega como string[] ou string
+    tag_id?: string | string[];
   }>;
 }
 
@@ -64,6 +66,11 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
   const depId = sp.dep_id ? Number(sp.dep_id) : undefined;
   const prioridade = isValidPrioridade(sp.prioridade) ? sp.prioridade : undefined;
   const q = sp.q?.trim() || undefined;
+  const tagIds = (
+    Array.isArray(sp.tag_id) ? sp.tag_id : sp.tag_id ? [sp.tag_id] : []
+  )
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0);
 
   let atendimentos: Awaited<
     ReturnType<typeof getAtendimentos>
@@ -75,7 +82,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
 
   try {
     const [data, deps, myAbas, conts] = await Promise.all([
-      getAtendimentos({ tipo, depId, prioridade, q, abaId }),
+      getAtendimentos({ tipo, depId, prioridade, q, abaId, tagIds }),
       getDepartamentos().catch(() => ({ departamentos: [] })),
       getMyAbas().catch(() => ({ items: [] })),
       getContadoresAtendimento().catch(() => null),
@@ -122,6 +129,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           depId={depId}
           prioridade={prioridade}
           q={q}
+          tagIds={tagIds}
         />
 
         {error && (

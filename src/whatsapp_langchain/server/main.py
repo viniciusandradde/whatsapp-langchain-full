@@ -21,6 +21,7 @@ from whatsapp_langchain.server.middlewares import (
     install_correlation_id,
     install_security_headers,
 )
+from whatsapp_langchain.server.routes.aba import router as aba_router
 from whatsapp_langchain.server.routes.admin import router as admin_router
 from whatsapp_langchain.server.routes.agendamento import (
     router as agendamento_router,
@@ -28,7 +29,6 @@ from whatsapp_langchain.server.routes.agendamento import (
 from whatsapp_langchain.server.routes.agendamento_regras import (
     router as agendamento_regras_router,
 )
-from whatsapp_langchain.server.routes.aba import router as aba_router
 from whatsapp_langchain.server.routes.agente import router as agente_router
 from whatsapp_langchain.server.routes.atendente import router as atendente_router
 from whatsapp_langchain.server.routes.atendimento import (
@@ -95,6 +95,7 @@ from whatsapp_langchain.server.routes.relatorios_nps import (
     router as relatorios_nps_router,
 )
 from whatsapp_langchain.server.routes.security import router as security_router
+from whatsapp_langchain.server.routes.tag import router as tag_router
 from whatsapp_langchain.server.routes.test_runner import (
     router as test_runner_router,
 )
@@ -256,6 +257,7 @@ app.include_router(conexao_router)
 app.include_router(cliente_router)
 app.include_router(atendimento_router)
 app.include_router(aba_router)
+app.include_router(tag_router)
 app.include_router(modelo_mensagem_router)
 app.include_router(hook_router)
 app.include_router(calendar_integration_router)

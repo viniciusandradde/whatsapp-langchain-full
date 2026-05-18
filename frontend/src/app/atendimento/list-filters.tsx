@@ -1,11 +1,14 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
-import { Search, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, Tag as TagIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Departamento, TipoVisualizacao } from "@/lib/api";
+import type { Departamento, Tag, TipoVisualizacao } from "@/lib/api";
+
+import { loadTagsAction } from "./actions";
+import { TagChip } from "./tag-chip";
 
 const PRIORIDADES = [
   { v: "urgente", l: "Urgente" },
@@ -23,12 +26,28 @@ interface Props {
   depId?: number;
   prioridade?: "baixa" | "media" | "alta" | "urgente";
   q?: string;
+  tagIds?: number[];
 }
 
-export function ListFilters({ tipo, departamentos, depId, prioridade, q }: Props) {
+export function ListFilters({
+  tipo,
+  departamentos,
+  depId,
+  prioridade,
+  q,
+  tagIds = [],
+}: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const [busca, setBusca] = useState(q ?? "");
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [tagOpen, setTagOpen] = useState(false);
+
+  useEffect(() => {
+    loadTagsAction(true).then((r) => {
+      if (r.ok) setTags(r.tags);
+    });
+  }, []);
 
   const setParam = (key: string, value: string | undefined) => {
     const params = new URLSearchParams(sp.toString());
@@ -46,7 +65,19 @@ export function ListFilters({ tipo, departamentos, depId, prioridade, q }: Props
     setParam("q", busca.trim() || undefined);
   };
 
-  const hasFiltros = depId || prioridade || q;
+  const toggleTag = (id: number) => {
+    const params = new URLSearchParams(sp.toString());
+    const current = params.getAll("tag_id").map(Number);
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id];
+    params.delete("tag_id");
+    for (const n of next) params.append("tag_id", String(n));
+    if (!params.get("tipo")) params.set("tipo", tipo);
+    router.push(`/atendimento?${params.toString()}`);
+  };
+
+  const hasFiltros = depId || prioridade || q || tagIds.length > 0;
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 p-3">
@@ -95,6 +126,53 @@ export function ListFilters({ tipo, departamentos, depId, prioridade, q }: Props
           Buscar
         </Button>
       </form>
+
+      {tags.length > 0 && (
+        <div className="relative">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-9 gap-1"
+            onClick={() => setTagOpen((v) => !v)}
+          >
+            <TagIcon className="h-3.5 w-3.5" />
+            Tags
+            {tagIds.length > 0 && (
+              <span className="ml-1 rounded-full bg-brand-primary/15 px-1.5 text-xs">
+                {tagIds.length}
+              </span>
+            )}
+          </Button>
+          {tagOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setTagOpen(false)}
+              />
+              <div className="absolute right-0 z-50 mt-1 w-60 rounded-lg border bg-popover p-2 shadow-lg">
+                <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+                  {tags.map((t) => {
+                    const on = tagIds.includes(t.id);
+                    return (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          onClick={() => toggleTag(t.id)}
+                          className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                        >
+                          <TagChip nome={t.nome} cor={t.cor} size="sm" />
+                          {on && <span className="text-brand-primary">✓</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {hasFiltros && (
         <Button

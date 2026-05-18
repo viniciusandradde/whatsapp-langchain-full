@@ -19,6 +19,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.aba import (
     attach_atendimento_to_aba,
     count_atendimentos_por_aba,
@@ -31,6 +32,11 @@ from whatsapp_langchain.shared.atendimento import (
     list_atendimentos,
     transfer_atendimento,
     transfer_atendimento_to_departamento,
+)
+from whatsapp_langchain.shared.atendimento_tag import (
+    apply_tags_to_atendimento,
+    list_atendimento_ids_com_tags,
+    list_tags_de_atendimento,
 )
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.db import get_pool
@@ -100,6 +106,13 @@ class AttachAbaInput(BaseModel):
     aba_id: int | None = None
 
 
+class ApplyTagsInput(BaseModel):
+    """Delta de tags em um atendimento."""
+
+    add: list[int] = []
+    remove: list[int] = []
+
+
 @router.get("")
 async def list_my_atendimentos(
     request: Request,
@@ -108,6 +121,9 @@ async def list_my_atendimentos(
     prioridade: str | None = Query(default=None),
     q: str | None = Query(default=None, max_length=120),
     aba_id: int | None = Query(default=None, ge=1),
+    tag_id: list[int] | None = Query(
+        default=None, description="Filter por tag(s) OR — multi-valor"
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
@@ -144,6 +160,13 @@ async def list_my_atendimentos(
         # Set vazio = sem deptos vinculados → list_atendimentos retorna []
         scope_dept_ids = set(dept_ids)
 
+    # Filtro por tag (OR): resolve IDs de atendimentos que têm qualquer tag
+    only_ids: list[int] | None = None
+    if tag_id:
+        only_ids = await list_atendimento_ids_com_tags(
+            pool, empresa_id=empresa_id, tag_ids=tag_id
+        )
+
     rows = await list_atendimentos(
         pool,
         empresa_id,
@@ -155,6 +178,7 @@ async def list_my_atendimentos(
         prioridade=prioridade,
         q=q,
         aba_id=aba_id,
+        only_ids=only_ids,
         scope_departamento_ids=scope_dept_ids,
     )
     return {"atendimentos": rows}
@@ -669,6 +693,48 @@ async def reset_thread(
         "rows_deleted": rows_deleted,
         "thread_id": f"{cliente.telefone}:{atd.agente_atual}",
     }
+
+
+@router.get("/{atendimento_id}/tags")
+async def list_tags_endpoint(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Lista tags aplicadas no atendimento + quem aplicou (humano/IA)."""
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    items = await list_tags_de_atendimento(
+        pool, atendimento_id=atendimento_id, empresa_id=empresa_id
+    )
+    return {"items": items}
+
+
+@router.post("/{atendimento_id}/tags")
+async def apply_tags(
+    atendimento_id: int,
+    payload: ApplyTagsInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.tag.aplicar")),
+) -> dict:
+    """Aplica delta de tags (add/remove) num atendimento.
+
+    Idempotente. Cada linha inserida em `atendimento_tag` registra
+    `aplicado_por_user_id` pra audit. Tags de outras empresas são
+    silenciosamente filtradas no INSERT (JOIN com `tag.empresa_id`).
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    result = await apply_tags_to_atendimento(
+        pool,
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        add_tag_ids=payload.add,
+        remove_tag_ids=payload.remove,
+        aplicado_por_user_id=user_id,
+        aplicado_por_ia=False,
+    )
+    return result
 
 
 @router.post("/{atendimento_id}/aba")

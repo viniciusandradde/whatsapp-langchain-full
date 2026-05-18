@@ -166,6 +166,7 @@ async def list_atendimentos(
     prioridade: str | None = None,
     q: str | None = None,
     aba_id: int | None = None,
+    only_ids: list[int] | None = None,
 ) -> list[Atendimento]:
     """Lista atendimentos filtrados por tipo de visualização.
 
@@ -226,6 +227,12 @@ async def list_atendimentos(
     if aba_id is not None:
         where += " AND a.aba_id = %s"
         params.append(aba_id)
+    if only_ids is not None:
+        if not only_ids:
+            # Filtro por tag não bateu nenhum atendimento
+            return []
+        where += " AND a.id = ANY(%s)"
+        params.append(list(only_ids))
 
     params.extend([limit, offset])
     async with pool.connection() as conn:

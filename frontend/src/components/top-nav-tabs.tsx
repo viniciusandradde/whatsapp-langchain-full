@@ -38,6 +38,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
     { label: "Clientes", href: "/clientes", requires: "cliente.read" },
     { label: "Agendamentos", href: "/agendamentos", requires: "agendamento.read" },
     { label: "Campanhas", href: "/campanhas", requires: "agendamento.read" },
+    { label: "Tags", href: "/tags", requires: "tag.manage" },
   ],
   ia: [
     { label: "Agentes", href: "/agents", requires: "agente.config" },
@@ -90,7 +91,14 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
   { grupo: "visao", prefixos: ["/dashboard"] },
   {
     grupo: "operacao",
-    prefixos: ["/atendimento", "/chats", "/clientes", "/agendamentos", "/campanhas"],
+    prefixos: [
+      "/atendimento",
+      "/chats",
+      "/clientes",
+      "/agendamentos",
+      "/campanhas",
+      "/tags",
+    ],
   },
   {
     grupo: "ia",

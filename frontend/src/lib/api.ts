@@ -1198,6 +1198,8 @@ export async function getAtendimentos(
     q?: string;
     // Sprint Atendimento UX (mig 085) — filtra por aba pessoal
     abaId?: number;
+    // Sprint Atendimento UX 1.2 (mig 086) — filtra por tag(s) OR
+    tagIds?: number[];
   } = {}
 ): Promise<AtendimentosResponse> {
   const qs = new URLSearchParams();
@@ -1208,6 +1210,9 @@ export async function getAtendimentos(
   if (params.prioridade) qs.set("prioridade", params.prioridade);
   if (params.q) qs.set("q", params.q);
   if (params.abaId) qs.set("aba_id", String(params.abaId));
+  if (params.tagIds && params.tagIds.length > 0) {
+    for (const id of params.tagIds) qs.append("tag_id", String(id));
+  }
   const s = qs.toString();
   return apiFetch<AtendimentosResponse>(
     `/api/atendimentos${s ? `?${s}` : ""}`
@@ -1285,6 +1290,80 @@ export async function attachAtendimentoAba(
       method: "POST",
       body: { aba_id: abaId },
     }
+  );
+}
+
+// --- Sprint Atendimento UX 1.2: Tags ---
+
+export interface Tag {
+  id: number;
+  nome: string;
+  cor: string | null;
+  descricao: string | null;
+  ativo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AtendimentoTag {
+  id: number;
+  nome: string;
+  cor: string | null;
+  descricao: string | null;
+  aplicado_por_user_id: string | null;
+  aplicado_por_ia: boolean;
+  aplicado_at: string | null;
+}
+
+export async function getTags(
+  onlyAtivos: boolean = true
+): Promise<{ items: Tag[] }> {
+  const qs = onlyAtivos ? "" : "?only_ativos=false";
+  return apiFetch<{ items: Tag[] }>(`/api/tags${qs}`);
+}
+
+export async function createTag(payload: {
+  nome: string;
+  cor?: string | null;
+  descricao?: string | null;
+}): Promise<Tag> {
+  return apiFetch<Tag>("/api/tags", { method: "POST", body: payload });
+}
+
+export async function updateTag(
+  tagId: number,
+  payload: {
+    nome?: string;
+    cor?: string | null;
+    descricao?: string | null;
+    ativo?: boolean;
+  }
+): Promise<Tag> {
+  return apiFetch<Tag>(`/api/tags/${tagId}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function deleteTag(tagId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/tags/${tagId}`, { method: "DELETE" });
+}
+
+export async function getTagsAtendimento(
+  atendimentoId: number
+): Promise<{ items: AtendimentoTag[] }> {
+  return apiFetch<{ items: AtendimentoTag[] }>(
+    `/api/atendimentos/${atendimentoId}/tags`
+  );
+}
+
+export async function applyTagsAtendimento(
+  atendimentoId: number,
+  delta: { add: number[]; remove: number[] }
+): Promise<{ added: number; removed: number; ok: boolean }> {
+  return apiFetch<{ added: number; removed: number; ok: boolean }>(
+    `/api/atendimentos/${atendimentoId}/tags`,
+    { method: "POST", body: delta }
   );
 }
 

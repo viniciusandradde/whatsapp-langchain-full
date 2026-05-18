@@ -3,29 +3,37 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  applyTagsAtendimento,
   attachAtendimentoAba,
   claimAtendimento,
   closeAtendimento,
   createAba,
+  createTag,
   deleteAba,
+  deleteTag,
   getAtendimentoMensagens,
   getContadoresAtendimento,
   getDepartamentos,
   getEmpresaAtendentes,
   getModelosMensagem,
   getMyAbas,
+  getTags,
+  getTagsAtendimento,
   reorderAbas,
   resetAtendimentoThread,
   responderAtendimento,
   transferAtendimento,
   transferAtendimentoParaDepartamento,
   updateAba,
+  updateTag,
   type Aba,
   type AtendenteStatus,
   type AtendimentoMensagem,
+  type AtendimentoTag,
   type ContadoresAtendimento,
   type Departamento,
   type ModeloMensagem,
+  type Tag,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -253,6 +261,94 @@ export async function attachAtendimentoAbaAction(
 ): Promise<Result> {
   try {
     await attachAtendimentoAba(atendimentoId, abaId);
+    revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Sprint Atendimento UX 1.2: Tags ---
+
+type TagsResult = { ok: true; tags: Tag[] } | { ok: false; error: string };
+type TagResult = { ok: true; tag: Tag } | { ok: false; error: string };
+type AtendimentoTagsResult =
+  | { ok: true; tags: AtendimentoTag[] }
+  | { ok: false; error: string };
+
+export async function loadTagsAction(
+  onlyAtivos: boolean = true
+): Promise<TagsResult> {
+  try {
+    const r = await getTags(onlyAtivos);
+    return { ok: true, tags: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function createTagAction(payload: {
+  nome: string;
+  cor?: string | null;
+  descricao?: string | null;
+}): Promise<TagResult> {
+  try {
+    const tag = await createTag(payload);
+    revalidatePath("/atendimento");
+    revalidatePath("/tags");
+    return { ok: true, tag };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function updateTagAction(
+  tagId: number,
+  payload: {
+    nome?: string;
+    cor?: string | null;
+    descricao?: string | null;
+    ativo?: boolean;
+  }
+): Promise<TagResult> {
+  try {
+    const tag = await updateTag(tagId, payload);
+    revalidatePath("/atendimento");
+    revalidatePath("/tags");
+    return { ok: true, tag };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function deleteTagAction(tagId: number): Promise<Result> {
+  try {
+    await deleteTag(tagId);
+    revalidatePath("/atendimento");
+    revalidatePath("/tags");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function loadTagsAtendimentoAction(
+  atendimentoId: number
+): Promise<AtendimentoTagsResult> {
+  try {
+    const r = await getTagsAtendimento(atendimentoId);
+    return { ok: true, tags: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function applyTagsAtendimentoAction(
+  atendimentoId: number,
+  delta: { add: number[]; remove: number[] }
+): Promise<Result> {
+  try {
+    await applyTagsAtendimento(atendimentoId, delta);
     revalidatePath("/atendimento");
     return { ok: true };
   } catch (e) {
