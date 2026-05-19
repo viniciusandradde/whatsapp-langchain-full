@@ -91,11 +91,14 @@ class Settings(BaseSettings):
 
     # Rate limit pra endpoints admin (/api/*) por user_id.
     # Generoso pra UX normal, bloqueia scraping/abuso por sessão comprometida.
-    # Default subido pra 180 (3 req/s sliding) porque pages do painel
-    # disparam múltiplas chamadas em paralelo por load (Promise.all com
-    # 4-5 fetches) e reload do admin estourava facilmente o antigo 60.
+    # Histórico:
+    #  - 60: inicial. Estourava reload comum.
+    #  - 180 (3 req/s): pages com Promise.all de 4-5 fetches caíam.
+    #  - 600 (10 req/s): sprint Atendimento UX adicionou sidebar com
+    #    contadores 30s + drawer com SSE fallback polling 5s + tag-popover
+    #    + painel-cliente lazy. Burst típico abrir atendimento ~12 reqs.
     # Migration 022_rate_limit_generic.sql precisa estar aplicada.
-    admin_rate_limit_per_minute: int = 180
+    admin_rate_limit_per_minute: int = 600
 
     # --- Sprint L — Test Runner UI ---
     # Quando True, expõe `/api/admin/tests/*` endpoints + UI `/relatorios/allure`.

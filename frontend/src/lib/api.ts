@@ -753,6 +753,21 @@ async function apiFetch<T>(
       throw new Error("Sessão expirada. Faça login novamente.");
     }
 
+    // 429 = rate limit excedido. Mensagem amigável (não mostra detalhe
+    // técnico do middleware) + sugestão do que fazer.
+    if (response.status === 429) {
+      if (process.env.NODE_ENV !== "production" && detail) {
+        console.warn("[429]", path, "—", detail);
+      }
+      const retryAfter = response.headers.get("Retry-After");
+      const waitMsg = retryAfter
+        ? ` Tente novamente em ${retryAfter}s.`
+        : " Aguarde alguns segundos.";
+      throw new Error(
+        `Muitas ações em pouco tempo.${waitMsg}`
+      );
+    }
+
     throw new Error(
       `API error: ${response.status} ${response.statusText} (${path})${
         detail ? ` — ${detail}` : ""
