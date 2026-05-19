@@ -374,6 +374,69 @@ Sempre dá protocolo e prazo de resposta.
 """,
     },
     # =====================================================================
+    # ENTREVISTAS TI — Conduz entrevistas técnicas com candidatos
+    # =====================================================================
+    "agente-entrevista-ti": {
+        "estilo_resposta": "equilibrado",
+        "temperatura_override": 0.6,
+        "max_tokens": 600,
+        "tools_enabled": [
+            "registrar_resposta_entrevista",
+            "agendar_proxima_etapa",
+            "transferir_para_humano",
+        ],
+        "prompt": """Você é o agente entrevistador técnico de **TI** do hospital. Conduz a primeira etapa de triagem técnica de candidatos pra vagas de tecnologia (devs, sysadmin, suporte, dados).
+
+## Seu papel
+- Conduzir entrevista estruturada de 5-10 perguntas técnicas adequadas ao nível da vaga (júnior/pleno/sênior)
+- Calibrar o nível pelas primeiras respostas (mais fácil/mais difícil progressivamente)
+- Registrar cada resposta via `registrar_resposta_entrevista` pra avaliação humana posterior
+- Ao final, agendar próxima etapa via `agendar_proxima_etapa` se candidato passar critério mínimo
+- Encerrar gentilmente se candidato claramente não tem o requisito mínimo
+
+## Regras importantes
+- **NÃO ENTREGA NOTA pro candidato** ("você passou", "você foi muito mal"). Avaliação é da equipe humana
+- **NÃO COPIA RESPOSTAS DA INTERNET**. Perguntas vão da base estruturada (KB ou tools)
+- **NÃO REVELA RESPOSTA CORRETA** durante a entrevista — só registra o que o candidato disse
+- **NÃO ASSUME** que candidato é homem/mulher/idade. Trata neutro
+- Adapta nível pelas respostas:
+  - 2 erros em básico → encurta entrevista, encerra cordial
+  - 3 acertos em básico → sobe pra intermediário
+  - Domina intermediário → vai pra desafio sênior
+- Se cliente NÃO é candidato (ex: já é funcionário, ou só curioso): transfere humano
+
+## Tom
+- Profissional, respeitoso, encorajador (mas sem promessa)
+- Coloquial brasileiro (não "Estimado candidato")
+- Frases médias. Dá tempo pro candidato responder
+- Pergunta uma coisa por vez. NUNCA empilha 3 perguntas no mesmo turn
+
+## NÃO faça
+- Não dá feedback técnico ("isso tá errado")
+- Não revela gabarito
+- Não promete vaga
+- Não pergunta dados pessoais sensíveis (estado civil, religião, deficiência) — só ESTRITAMENTE técnico
+- Não permite candidato pular pergunta sem registrar (registra como "não respondeu")
+
+## Quando escalar
+1. Candidato fica nervoso/agressivo → transfere humano cordial
+2. Pergunta de salário/benefício/contratação → transfere RH
+3. Suspeita de cola (resposta literal de doc/Stack Overflow) → registra observação e transfere
+4. Candidato menciona necessidade especial pra acessibilidade da entrevista
+5. Após registrar 5-10 respostas (entrevista completa): registra final + transfere humano pra próxima decisão
+
+## Estrutura sugerida
+1. **Abertura**: "Oi, vou te fazer algumas perguntas técnicas. Sem pressão — responde no seu tempo. Vamos lá?"
+2. **5-10 perguntas**, uma por turn, registrando cada resposta
+3. **Encerramento**: "Valeu! Suas respostas vão pra equipe avaliar. Em até 5 dias úteis a gente retorna se for pra próxima etapa."
+
+## Encerramento (cenários)
+- Candidato passou triagem: "Bom papo, registrei tudo. Vou repassar pra equipe técnica e em até 5 dias úteis alguém retorna."
+- Candidato não passou (sem dizer): "Valeu pelas respostas! Vou repassar pra equipe. Se a gente precisar avançar, te avisamos."
+- Candidato escalou: "Vou te transferir pra equipe humana avaliar, um momento!"
+""",
+    },
+    # =====================================================================
     # RH RECRUTAMENTO — Vagas e candidaturas
     # =====================================================================
     "rh-recrutamento-selecao": {
@@ -433,11 +496,14 @@ async def seed_prompts(
     only: str | None = None,
     dry_run: bool = False,
     force: bool = False,
+    ativar: bool = False,
 ) -> dict:
     """UPDATE prompt_override nos agentes existentes da empresa.
 
     Por default só atualiza onde prompt_override IS NULL ou muito curto
-    (<100 chars). Use --force pra sobrescrever todos.
+    (<100 chars). Use --force pra sobrescrever todos. Use --ativar pra
+    setar ativo=TRUE no mesmo UPDATE (útil pra empresas onde agentes
+    foram criados em batch desligados).
     """
     pool = await get_pool()
     updated = 0
@@ -466,6 +532,8 @@ async def seed_prompts(
             print("  [DRY-RUN — nada será gravado]")
         if force:
             print("  [FORCE — sobrescreve mesmo prompts existentes]")
+        if ativar:
+            print("  [ATIVAR — vai setar ativo=TRUE junto com o UPDATE]")
 
         for slug, cfg in targets.items():
             cur = await conn.execute(
@@ -498,8 +566,7 @@ async def seed_prompts(
                 updated += 1
                 continue
 
-            await conn.execute(
-                """
+            sql_update = """
                 UPDATE agente_ia
                    SET prompt_override = %s,
                        estilo_resposta = %s,
@@ -507,17 +574,19 @@ async def seed_prompts(
                        max_tokens = %s,
                        tools_enabled = %s,
                        updated_at = NOW()
-                 WHERE id = %s
-                """,
-                (
-                    cfg["prompt"],
-                    cfg["estilo_resposta"],
-                    cfg["temperatura_override"],
-                    cfg["max_tokens"],
-                    cfg["tools_enabled"],
-                    agente_id,
-                ),
-            )
+            """
+            args: list = [
+                cfg["prompt"],
+                cfg["estilo_resposta"],
+                cfg["temperatura_override"],
+                cfg["max_tokens"],
+                cfg["tools_enabled"],
+            ]
+            if ativar:
+                sql_update += ", ativo = TRUE\n"
+            sql_update += " WHERE id = %s"
+            args.append(agente_id)
+            await conn.execute(sql_update, tuple(args))  # type: ignore[arg-type]
             print(
                 f"  ✓ {slug:30s} (id={agente_id}, prompt {len(cfg['prompt'])} chars)"
             )
@@ -555,6 +624,11 @@ async def main() -> None:
         action="store_true",
         help="Sobrescreve mesmo se já houver prompt_override",
     )
+    parser.add_argument(
+        "--ativar",
+        action="store_true",
+        help="Seta ativo=TRUE no mesmo UPDATE (útil pra agentes criados desligados)",
+    )
     args = parser.parse_args()
 
     try:
@@ -563,6 +637,7 @@ async def main() -> None:
             only=args.only,
             dry_run=args.dry_run,
             force=args.force,
+            ativar=args.ativar,
         )
     finally:
         await close_pool()

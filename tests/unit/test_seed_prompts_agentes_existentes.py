@@ -33,10 +33,11 @@ EXPECTED_SLUGS = {
     "ouvidoria",
     "tesouraria",
     "rh-recrutamento-selecao",
+    "agente-entrevista-ti",
 }
 
 
-def test_catalogo_tem_8_slugs() -> None:
+def test_catalogo_tem_9_slugs() -> None:
     assert set(PROMPTS_POR_SLUG.keys()) == EXPECTED_SLUGS
 
 
