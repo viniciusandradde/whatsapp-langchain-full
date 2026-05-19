@@ -78,13 +78,16 @@ export function PainelCliente({
   const [historico, setHistorico] = useState<Atendimento[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Carrega histórico só quando expandir pela 1a vez (lazy)
+  // Carrega só o último atendimento anterior — quem precisa ver
+  // histórico completo abre a ficha do cliente via "Ver ficha completa".
+  // Trade-off: 1 req leve no abrir vs N reqs ao listar 10 (que ainda
+  // ninguém olha caso a fila esteja cheia).
   useEffect(() => {
     if (!open || !clienteId || historico.length > 0 || loading) return;
     setLoading(true);
     void loadClienteHistoricoAction(clienteId, {
       excludeId: atendimentoId,
-      limit: 10,
+      limit: 1,
     }).then((r) => {
       setLoading(false);
       if (r.ok) setHistorico(r.atendimentos);
@@ -136,12 +139,20 @@ export function PainelCliente({
             </Link>
           </div>
 
-          {/* Histórico */}
+          {/* Último atendimento anterior — histórico completo via ficha */}
           <div>
-            <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <History className="h-3 w-3" />
-              Atendimentos anteriores
-            </h3>
+            <div className="mb-1.5 flex items-center justify-between">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <History className="h-3 w-3" />
+                Último atendimento
+              </h3>
+              <Link
+                href={`/clientes/${clienteId}`}
+                className="text-[10px] text-brand-primary hover:underline"
+              >
+                ver todos
+              </Link>
+            </div>
 
             {loading && (
               <p className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
