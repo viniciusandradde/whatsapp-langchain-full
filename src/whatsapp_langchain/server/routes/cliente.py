@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.shared.atendimento import list_atendimentos_by_cliente
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
 from whatsapp_langchain.shared.cliente import (
     add_anotacao,
@@ -360,3 +361,33 @@ async def delete_tag(
         cliente_id=cliente_id,
         tag=tag,
     )
+
+
+@router.get("/{cliente_id}/atendimentos-anteriores")
+async def list_atendimentos_anteriores(
+    cliente_id: int,
+    limit: int = Query(default=10, ge=1, le=100),
+    exclude_id: int | None = Query(default=None, ge=1),
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Histórico de atendimentos do cliente (mais recente primeiro).
+
+    Sprint 1.4 — painel cliente persistente no drawer. `exclude_id`
+    omite o atendimento atual (UX: lista anteriores, não inclui o que
+    o atendente já está vendo).
+
+    Sem auth scope `.own/.all` aqui: o ato de poder ver o cliente
+    (via _load_cliente_in_empresa) já implica direito a ver seu
+    histórico no contexto do painel. Filtros por departamento ficam
+    naturalmente aplicados via página de atendimento (`?dep_id=`).
+    """
+    await _load_cliente_in_empresa(cliente_id, empresa_id)
+    pool = await get_pool()
+    items = await list_atendimentos_by_cliente(
+        pool,
+        empresa_id,
+        cliente_id,
+        limit=limit,
+        exclude_id=exclude_id,
+    )
+    return {"items": items}

@@ -1396,6 +1396,21 @@ export async function marcarAtendimentoLido(
   });
 }
 
+// --- Sprint 1.4: histórico do cliente no painel ---
+
+export async function getClienteAtendimentosAnteriores(
+  clienteId: number,
+  options: { excludeId?: number; limit?: number } = {}
+): Promise<{ items: Atendimento[] }> {
+  const qs = new URLSearchParams();
+  if (options.excludeId) qs.set("exclude_id", String(options.excludeId));
+  if (options.limit) qs.set("limit", String(options.limit));
+  const s = qs.toString();
+  return apiFetch<{ items: Atendimento[] }>(
+    `/api/clientes/${clienteId}/atendimentos-anteriores${s ? `?${s}` : ""}`
+  );
+}
+
 export async function getAtendimento(id: number): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}`);
 }

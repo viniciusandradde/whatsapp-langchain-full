@@ -13,6 +13,7 @@ import {
   deleteAba,
   deleteTag,
   getAtendimentoMensagens,
+  getClienteAtendimentosAnteriores,
   getContadoresAtendimento,
   getDepartamentos,
   getEmpresaAtendentes,
@@ -30,6 +31,7 @@ import {
   updateTag,
   type Aba,
   type AtendenteStatus,
+  type Atendimento,
   type AtendimentoMensagem,
   type AtendimentoTag,
   type ContadoresAtendimento,
@@ -403,6 +405,24 @@ export async function marcarAtendimentoLidoAction(
   try {
     await marcarAtendimentoLido(atendimentoId);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Sprint 1.4: histórico do cliente no painel ---
+
+type HistoricoResult =
+  | { ok: true; atendimentos: Atendimento[] }
+  | { ok: false; error: string };
+
+export async function loadClienteHistoricoAction(
+  clienteId: number,
+  options: { excludeId?: number; limit?: number } = {}
+): Promise<HistoricoResult> {
+  try {
+    const r = await getClienteAtendimentosAnteriores(clienteId, options);
+    return { ok: true, atendimentos: r.items };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

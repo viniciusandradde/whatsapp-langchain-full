@@ -39,6 +39,7 @@ import {
   transferAction,
   transferDepartamentoAction,
 } from "./actions";
+import { PainelCliente } from "./painel-cliente";
 import { TagPopover } from "./tag-popover";
 
 interface Props {
@@ -390,6 +391,12 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 
         <TriagemCard atendimento={atendimento} />
         <ColetaPreviaCard atendimento={atendimento} />
+        <PainelCliente
+          atendimentoId={atendimento.id}
+          clienteId={atendimento.cliente_id}
+          clienteNome={atendimento.cliente_nome ?? null}
+          clienteTelefone={atendimento.cliente_telefone ?? null}
+        />
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b px-5 py-2">
