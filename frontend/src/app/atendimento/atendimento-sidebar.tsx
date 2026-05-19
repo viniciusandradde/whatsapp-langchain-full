@@ -14,6 +14,7 @@ import {
   Trash2,
   User,
   Users,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import {
   loadAbasAction,
   loadContadoresAction,
 } from "./actions";
+import { useAtendimentoShell } from "./atendimento-shell";
 
 type SystemTab = {
   tipo: "aguardando" | "meus" | "outros";
@@ -116,12 +118,25 @@ export function AtendimentoSidebar({
   const abaCount = (id: number): number =>
     contadores?.abas[String(id)] ?? 0;
 
-  return (
-    <aside className="flex h-full w-64 shrink-0 flex-col gap-4 border-r bg-muted/30 p-4">
+  const { state, mobileOpen, closeMobile, isMobile } = useAtendimentoShell();
+  const collapsed = !isMobile && state === "collapsed";
+
+  // Em mobile, sidebar inline não aparece — usa overlay
+  const showInline = !isMobile;
+
+  const handleNav = () => {
+    // Em mobile, fecha overlay ao clicar num item
+    if (isMobile) closeMobile();
+  };
+
+  const sidebarBody = (
+    <>
       <section>
-        <h2 className="mb-2 px-2 text-xs font-semibold uppercase text-muted-foreground">
-          Sistema
-        </h2>
+        {!collapsed && (
+          <h2 className="mb-2 px-2 text-xs font-semibold uppercase text-muted-foreground">
+            Sistema
+          </h2>
+        )}
         <ul className="space-y-1">
           {SYSTEM_TABS.map((tab) => {
             const Icon = tab.icon;
@@ -131,18 +146,26 @@ export function AtendimentoSidebar({
               <li key={tab.tipo}>
                 <Link
                   href={`/atendimento?tipo=${tab.tipo}`}
+                  onClick={handleNav}
+                  title={collapsed ? `${tab.label}${count > 0 ? ` (${count})` : ""}` : undefined}
                   className={cn(
-                    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    collapsed ? "justify-center" : "justify-between",
                     active
                       ? "bg-brand-primary/10 font-medium text-foreground"
                       : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   )}
                 >
-                  <span className="flex items-center gap-2">
+                  <span className={cn("flex items-center gap-2", collapsed && "relative")}>
                     <Icon className="h-4 w-4" />
-                    {tab.label}
+                    {!collapsed && tab.label}
+                    {collapsed && count > 0 && (
+                      <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-semibold text-white">
+                        {count > 99 ? "99+" : count}
+                      </span>
+                    )}
                   </span>
-                  {count > 0 && (
+                  {!collapsed && count > 0 && (
                     <Badge variant="secondary" className="h-5 px-1.5 text-xs">
                       {count}
                     </Badge>
@@ -155,10 +178,17 @@ export function AtendimentoSidebar({
       </section>
 
       <section>
-        <div className="mb-2 flex items-center justify-between px-2">
-          <h2 className="text-xs font-semibold uppercase text-muted-foreground">
-            Minhas Abas
-          </h2>
+        <div
+          className={cn(
+            "mb-2 flex items-center px-2",
+            collapsed ? "justify-center" : "justify-between"
+          )}
+        >
+          {!collapsed && (
+            <h2 className="text-xs font-semibold uppercase text-muted-foreground">
+              Minhas Abas
+            </h2>
+          )}
           {canManageAbas && (
             <Button
               size="sm"
@@ -172,7 +202,7 @@ export function AtendimentoSidebar({
           )}
         </div>
         <ul className="space-y-1">
-          {abas.length === 0 && (
+          {abas.length === 0 && !collapsed && (
             <li className="px-2 py-1.5 text-xs text-muted-foreground">
               Nenhuma aba criada ainda.
             </li>
@@ -180,42 +210,49 @@ export function AtendimentoSidebar({
           {abas.map((aba) => {
             const active = abaAtual === String(aba.id);
             const count = abaCount(aba.id);
+            const IconCmp = active ? FolderOpen : Folder;
             return (
               <li key={aba.id} className="group flex items-center gap-1">
                 <Link
                   href={`/atendimento?aba_id=${aba.id}`}
+                  onClick={handleNav}
+                  title={
+                    collapsed
+                      ? `${aba.descricao}${count > 0 ? ` (${count})` : ""}`
+                      : undefined
+                  }
                   className={cn(
-                    "flex flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    "flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    collapsed ? "justify-center" : "justify-between",
                     active
                       ? "bg-brand-primary/10 font-medium text-foreground"
                       : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   )}
                 >
-                  <span className="flex items-center gap-2 truncate">
-                    {active ? (
-                      <FolderOpen
-                        className="h-4 w-4 shrink-0"
-                        style={
-                          aba.cor ? { color: aba.cor } : undefined
-                        }
-                      />
-                    ) : (
-                      <Folder
-                        className="h-4 w-4 shrink-0"
-                        style={
-                          aba.cor ? { color: aba.cor } : undefined
-                        }
-                      />
+                  <span
+                    className={cn(
+                      "flex items-center gap-2 truncate",
+                      collapsed && "relative"
                     )}
-                    <span className="truncate">{aba.descricao}</span>
+                  >
+                    <IconCmp
+                      className="h-4 w-4 shrink-0"
+                      style={aba.cor ? { color: aba.cor } : undefined}
+                    />
+                    {!collapsed && <span className="truncate">{aba.descricao}</span>}
+                    {collapsed && count > 0 && (
+                      <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-primary px-1 text-[10px] font-semibold text-white">
+                        {count > 99 ? "99+" : count}
+                      </span>
+                    )}
                   </span>
-                  {count > 0 && (
+                  {!collapsed && count > 0 && (
                     <Badge variant="secondary" className="h-5 px-1.5 text-xs">
                       {count}
                     </Badge>
                   )}
                 </Link>
-                {canManageAbas && (
+                {canManageAbas && !collapsed && (
                   <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button
                       size="sm"
@@ -246,7 +283,7 @@ export function AtendimentoSidebar({
             );
           })}
         </ul>
-        {contadores && contadores.sem_aba > 0 && (
+        {!collapsed && contadores && contadores.sem_aba > 0 && (
           <p className="mt-2 px-2 text-xs text-muted-foreground">
             <MoreHorizontal className="mr-1 inline h-3 w-3" />
             {contadores.sem_aba} sem aba
@@ -263,6 +300,53 @@ export function AtendimentoSidebar({
           }}
         />
       )}
-    </aside>
+    </>
+  );
+
+  // Desktop: sidebar inline na flex (w-64 ou w-14 quando collapsed)
+  if (showInline) {
+    return (
+      <aside
+        className={cn(
+          "flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-r bg-muted/30 p-3 transition-[width] duration-200",
+          collapsed ? "w-14" : "w-64"
+        )}
+      >
+        {sidebarBody}
+      </aside>
+    );
+  }
+
+  // Mobile: off-canvas (fixed) + backdrop. Não renderiza nada quando fechado.
+  return (
+    <>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={closeMobile}
+          aria-hidden
+        />
+      )}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-y-auto border-r bg-card p-4 shadow-xl transition-transform duration-200 md:hidden",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-base font-semibold">Atendimentos</h2>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={closeMobile}
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {sidebarBody}
+      </aside>
+    </>
   );
 }

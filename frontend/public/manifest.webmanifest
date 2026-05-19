@@ -1,10 +1,12 @@
 {
+  "id": "/",
   "name": "Nexus Chat AI",
   "short_name": "Nexus Chat",
   "description": "Painel administrativo Nexus Chat AI — VSA Tech. Atendimento via WhatsApp com agentes de IA.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#0d0d10",
   "theme_color": "#0d0d10",

@@ -13,6 +13,7 @@ import {
 import { requireSession } from "@/lib/session";
 
 import { AtendimentoList } from "./atendimento-list";
+import { AtendimentoShell, ShellToggleButton } from "./atendimento-shell";
 import { AtendimentoSidebar } from "./atendimento-sidebar";
 import { ListFilters } from "./list-filters";
 
@@ -112,15 +113,18 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] gap-0 -m-6">
+    <AtendimentoShell>
       <AtendimentoSidebar
         initialAbas={abas}
         initialContadores={contadores}
       />
-      <main className="flex flex-1 flex-col overflow-y-auto p-6">
-        <div className="mb-6 flex items-center gap-2">
-          <Headphones className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">{contextoLabel}</h1>
+      <main className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
+        <div className="mb-4 flex items-center gap-2 md:mb-6">
+          <ShellToggleButton className="shrink-0" />
+          <Headphones className="hidden h-6 w-6 md:block" />
+          <h1 className="truncate text-lg font-semibold md:text-2xl">
+            {contextoLabel}
+          </h1>
         </div>
 
         <ListFilters
@@ -145,6 +149,6 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           </div>
         )}
       </main>
-    </div>
+    </AtendimentoShell>
   );
 }
