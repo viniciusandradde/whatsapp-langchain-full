@@ -224,6 +224,9 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
             now,
             None,
             None,
+            # Sprint 1.3: interna + criado_por_user_id
+            False,
+            None,
         )
     ]
     pool, conn = _mock_pool(rows)

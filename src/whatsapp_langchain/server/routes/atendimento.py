@@ -12,7 +12,7 @@ from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
@@ -38,11 +38,13 @@ from whatsapp_langchain.shared.atendimento_tag import (
     list_atendimento_ids_com_tags,
     list_tags_de_atendimento,
 )
+from whatsapp_langchain.shared.atendimento_visualizacao import marcar_lido
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
+from whatsapp_langchain.shared.nota_interna import create_nota_interna
 from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
 from whatsapp_langchain.shared.perfil import get_user_permissions
 from whatsapp_langchain.shared.permissoes import (
@@ -111,6 +113,12 @@ class ApplyTagsInput(BaseModel):
 
     add: list[int] = []
     remove: list[int] = []
+
+
+class NotaInternaInput(BaseModel):
+    """Texto de nota interna (msg privada na timeline da equipe)."""
+
+    texto: str = Field(min_length=1, max_length=4000)
 
 
 @router.get("")
@@ -735,6 +743,48 @@ async def apply_tags(
         aplicado_por_ia=False,
     )
     return result
+
+
+@router.post("/{atendimento_id}/nota")
+async def criar_nota_interna_endpoint(
+    atendimento_id: int,
+    payload: NotaInternaInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.nota_interna.criar")),
+) -> dict:
+    """Cria nota interna na timeline do atendimento.
+
+    A nota fica em message_queue com `interna=true` — aparece em
+    GET /mensagens normalmente, mas worker NUNCA envia outbound
+    (gate em shared/outbound.py + nunca enfileirada como queued).
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    return await create_nota_interna(
+        pool,
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        texto=payload.texto.strip(),
+    )
+
+
+@router.post("/{atendimento_id}/marcar-lido")
+async def marcar_lido_endpoint(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """UPSERT em atendimento_visualizacao (mig 052) — zera badge "nova".
+
+    Sem perm explícita: qualquer user que pode ver o atendimento pode
+    marcar como lido pra si próprio.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    await marcar_lido(pool, atendimento_id=atendimento_id, user_id=user_id)
+    return {"ok": True}
 
 
 @router.post("/{atendimento_id}/aba")

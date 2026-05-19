@@ -361,7 +361,8 @@ async def list_atendimento_mensagens(
             SELECT id, agent_id, incoming_message, media_url, media_type,
                    normalized_input, media_processing_status,
                    response, status, created_at, processed_at,
-                   media_processing_error, error
+                   media_processing_error, error,
+                   interna, criado_por_user_id
               FROM message_queue
              WHERE empresa_id = %s
                AND atendimento_id = %s
@@ -386,6 +387,9 @@ async def list_atendimento_mensagens(
             "processed_at": r[10].isoformat() if r[10] else None,
             "media_processing_error": r[11],
             "error": r[12],
+            # Sprint 1.3 — notas internas (msg só pra equipe, não enviada)
+            "interna": r[13] or False,
+            "criado_por_user_id": r[14],
         }
         for r in rows
     ]

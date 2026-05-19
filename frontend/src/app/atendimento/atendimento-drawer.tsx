@@ -28,10 +28,12 @@ import { cn } from "@/lib/utils";
 import {
   claimAction,
   closeAction,
+  criarNotaInternaAction,
   loadAtendentesOnlineAction,
   loadDepartamentosAction,
   loadMensagensAction,
   loadModelosAction,
+  marcarAtendimentoLidoAction,
   resetThreadAction,
   responderAction,
   transferAction,
@@ -70,6 +72,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
+  const [composerInterna, setComposerInterna] = useState(false);
   const [sending, setSending] = useState(false);
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
   const [modelosOpen, setModelosOpen] = useState(false);
@@ -116,6 +119,12 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 
   useEffect(() => {
     void reload();
+    // Marca como lido após 1s (debounce) — evita race quando user só
+    // tangencia o item (esc rápido). Fire-and-forget; ignore erro.
+    const t = window.setTimeout(() => {
+      void marcarAtendimentoLidoAction(atendimento.id);
+    }, 1000);
+    return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atendimento.id]);
 
@@ -297,7 +306,9 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     if (!text || sending) return;
     setSending(true);
     setError(null);
-    const r = await responderAction(atendimento.id, text);
+    const r = composerInterna
+      ? await criarNotaInternaAction(atendimento.id, text)
+      : await responderAction(atendimento.id, text);
     if (!r.ok) {
       setError(r.error);
       setSending(false);
@@ -305,7 +316,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     }
     setComposer("");
     setSending(false);
-    // Recarrega timeline para incluir a outbound recém-enviada.
+    // Recarrega timeline para incluir a msg recém-criada.
     await reload();
   }
 
@@ -507,6 +518,19 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                 </div>
               )}
             </div>
+            <div className="mb-2 flex items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={composerInterna}
+                  onChange={(e) => setComposerInterna(e.target.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                <span className={composerInterna ? "font-medium text-amber-600 dark:text-amber-400" : ""}>
+                  🔒 Nota interna (não envia pro cliente)
+                </span>
+              </label>
+            </div>
             <div className="flex items-end gap-2">
               <textarea
                 value={composer}
@@ -517,10 +541,18 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                     void handleSend();
                   }
                 }}
-                placeholder="Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
+                placeholder={
+                  composerInterna
+                    ? "Anotação privada da equipe… (não aparece pro cliente)"
+                    : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
+                }
                 rows={2}
                 disabled={sending}
-                className="flex w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+                className={`flex w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60 ${
+                  composerInterna
+                    ? "border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/20"
+                    : "border-input bg-background"
+                }`}
               />
               <Button
                 onClick={() => void handleSend()}
@@ -868,6 +900,24 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
       text: "⚠ Falha ao processar essa mensagem. Tente reenviar ou entre em contato com suporte.",
       meta: `erro · ${m.error.slice(0, 80)}`,
     });
+  }
+
+  // Sprint 1.3 — nota interna fica visualmente distinta (fundo amarelo,
+  // ocupa largura cheia centrada, label "🔒 Nota interna · <autor>")
+  if (m.interna && m.response) {
+    return (
+      <div className="flex justify-center">
+        <div className="w-full max-w-[90%] rounded-lg border border-amber-400/40 bg-amber-50/70 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-950/30">
+          <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            🔒 Nota interna · {m.criado_por_user_id ?? "—"}
+          </p>
+          <p className="whitespace-pre-wrap text-foreground">{m.response}</p>
+          <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+            {formatTime(m.created_at)}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

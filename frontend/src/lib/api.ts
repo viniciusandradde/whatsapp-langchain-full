@@ -382,6 +382,9 @@ export interface AtendimentoMensagem {
   processed_at: string | null;
   media_processing_error: string | null;
   error: string | null;
+  // Sprint 1.3 — nota interna (msg só pra equipe, não enviada pro cliente)
+  interna?: boolean;
+  criado_por_user_id?: string | null;
 }
 
 export interface AtendimentoMensagensResponse {
@@ -1365,6 +1368,32 @@ export async function applyTagsAtendimento(
     `/api/atendimentos/${atendimentoId}/tags`,
     { method: "POST", body: delta }
   );
+}
+
+// --- Sprint 1.3: notas internas + read receipts ---
+
+export async function criarNotaInterna(
+  atendimentoId: number,
+  texto: string
+): Promise<{
+  id: number;
+  interna: boolean;
+  criado_por_user_id: string;
+  response: string;
+  created_at: string | null;
+}> {
+  return apiFetch(`/api/atendimentos/${atendimentoId}/nota`, {
+    method: "POST",
+    body: { texto },
+  });
+}
+
+export async function marcarAtendimentoLido(
+  atendimentoId: number
+): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/atendimentos/${atendimentoId}/marcar-lido`, {
+    method: "POST",
+  });
 }
 
 export async function getAtendimento(id: number): Promise<Atendimento> {

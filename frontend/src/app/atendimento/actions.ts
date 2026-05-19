@@ -9,6 +9,7 @@ import {
   closeAtendimento,
   createAba,
   createTag,
+  criarNotaInterna,
   deleteAba,
   deleteTag,
   getAtendimentoMensagens,
@@ -19,6 +20,7 @@ import {
   getMyAbas,
   getTags,
   getTagsAtendimento,
+  marcarAtendimentoLido,
   reorderAbas,
   resetAtendimentoThread,
   responderAtendimento,
@@ -350,6 +352,56 @@ export async function applyTagsAtendimentoAction(
   try {
     await applyTagsAtendimento(atendimentoId, delta);
     revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Sprint 1.3: notas internas + read receipts ---
+
+type NotaResult =
+  | { ok: true; mensagem: AtendimentoMensagem }
+  | { ok: false; error: string };
+
+export async function criarNotaInternaAction(
+  atendimentoId: number,
+  texto: string
+): Promise<NotaResult> {
+  const t = texto.trim();
+  if (!t) return { ok: false, error: "Nota vazia." };
+  try {
+    const r = await criarNotaInterna(atendimentoId, t);
+    revalidatePath("/atendimento");
+    // Backend retorna shape parcial — adapta pro tipo da timeline
+    const mensagem: AtendimentoMensagem = {
+      id: r.id,
+      agent_id: "manual",
+      incoming_message: "",
+      media_url: null,
+      media_type: null,
+      normalized_input: null,
+      media_processing_status: null,
+      response: r.response,
+      status: "done",
+      created_at: r.created_at,
+      processed_at: r.created_at,
+      media_processing_error: null,
+      error: null,
+      interna: true,
+      criado_por_user_id: r.criado_por_user_id,
+    };
+    return { ok: true, mensagem };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function marcarAtendimentoLidoAction(
+  atendimentoId: number
+): Promise<Result> {
+  try {
+    await marcarAtendimentoLido(atendimentoId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };
