@@ -113,6 +113,13 @@ class Settings(BaseSettings):
     # Default False: feature opt-in, evita regressão em prod.
     enable_workflow_engine: bool = False
 
+    # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
+    # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
+    # Wareline (password + client_secret) na tabela `wareline_credentials`.
+    # Gerar: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Sem essa chave, integração Wareline fica desabilitada (rotas retornam 503).
+    wareline_encryption_key: SecretStr | None = None
+
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
 

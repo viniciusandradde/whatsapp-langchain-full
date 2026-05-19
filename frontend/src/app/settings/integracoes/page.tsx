@@ -1,31 +1,40 @@
 import { Plug } from "lucide-react";
 
-import { getGoogleCalendarConfig } from "@/lib/api";
+import { getGoogleCalendarConfig, getWarelineConfig } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { GoogleCalendarCard } from "./google-calendar-card";
+import { WarelineCard } from "./wareline-card";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: Promise<{ google_calendar?: string; google_calendar_error?: string }>;
+  searchParams: Promise<{
+    google_calendar?: string;
+    google_calendar_error?: string;
+  }>;
 }
 
 /**
  * Página /settings/integracoes — integrações externas da empresa ativa.
  *
- * Hoje só tem Google Calendar (M5.a). Hooks ficam em /hooks por serem
- * gerenciamento mais frequente; integrações são auth single-shot.
+ * - Google Calendar (M5.a): OAuth pra agendamento via Google
+ * - Wareline ConecteHub (Sprint Wareline): consulta agenda + criar
+ *   marcação no sistema do hospital
  */
 export default async function IntegracoesPage({ searchParams }: PageProps) {
   await requireSession();
   const sp = await searchParams;
 
-  let config: Awaited<ReturnType<typeof getGoogleCalendarConfig>> = null;
+  let googleConfig: Awaited<ReturnType<typeof getGoogleCalendarConfig>> = null;
+  let warelineConfig: Awaited<ReturnType<typeof getWarelineConfig>> = null;
   let loadError: string | null = null;
 
   try {
-    config = await getGoogleCalendarConfig();
+    [googleConfig, warelineConfig] = await Promise.all([
+      getGoogleCalendarConfig().catch(() => null),
+      getWarelineConfig().catch(() => null),
+    ]);
   } catch (e) {
     loadError =
       e instanceof Error ? e.message : "Erro desconhecido ao carregar config.";
@@ -55,7 +64,8 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
         </div>
       )}
 
-      <GoogleCalendarCard config={config} />
+      <GoogleCalendarCard config={googleConfig} />
+      <WarelineCard initialConfig={warelineConfig} />
     </div>
   );
 }

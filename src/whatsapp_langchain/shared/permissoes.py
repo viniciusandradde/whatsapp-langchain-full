@@ -152,6 +152,12 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "atendimento",
     ),
     ("tag.manage", "CRUD de tags da empresa (admin/gestor only)", "tag"),
+    # Integrações externas (Sprint Wareline)
+    (
+        "integracao.wareline.manage",
+        "Gerenciar credenciais da integração Wareline ConecteHub",
+        "integracao",
+    ),
 ]
 
 
@@ -198,6 +204,7 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "atendimento.tag.aplicar",
             "atendimento.nota_interna.criar",
             "tag.manage",
+            "integracao.wareline.manage",
             "security.audit.read",
         ],
     ),

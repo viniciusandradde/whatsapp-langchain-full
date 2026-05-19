@@ -1411,6 +1411,69 @@ export async function marcarAtendimentoLido(
   });
 }
 
+// --- Sprint Wareline: integração ConecteHub ---
+
+export interface WarelineConfig {
+  empresa_id: number;
+  base_url: string;
+  pacientes_base_url: string;
+  username: string;
+  client_id: string;
+  ativo: boolean;
+  ultimo_teste_at: string | null;
+  ultimo_teste_ok: boolean | null;
+  ultimo_teste_erro: string | null;
+  updated_at: string | null;
+  password_set: boolean;
+  client_secret_set: boolean;
+}
+
+export async function getWarelineConfig(): Promise<WarelineConfig | null> {
+  try {
+    return await apiFetch<WarelineConfig>("/api/integracoes/wareline");
+  } catch (e) {
+    // 404 = não configurado ainda → não é erro real
+    if (
+      e instanceof Error &&
+      /404|n[aã]o configurada|n[aã]o encontrad/i.test(e.message)
+    ) {
+      return null;
+    }
+    throw e;
+  }
+}
+
+export async function saveWarelineConfig(payload: {
+  username?: string;
+  password?: string;
+  client_id?: string;
+  client_secret?: string;
+  base_url?: string;
+  pacientes_base_url?: string;
+  ativo?: boolean;
+}): Promise<WarelineConfig> {
+  return apiFetch<WarelineConfig>("/api/integracoes/wareline", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function testWarelineConnection(): Promise<{
+  ok: boolean;
+  mensagem: string;
+}> {
+  return apiFetch<{ ok: boolean; mensagem: string }>(
+    "/api/integracoes/wareline/testar",
+    { method: "POST" }
+  );
+}
+
+export async function deleteWarelineConfig(): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>("/api/integracoes/wareline", {
+    method: "DELETE",
+  });
+}
+
 // --- Sprint 1.4: histórico do cliente no painel ---
 
 export async function getClienteAtendimentosAnteriores(
