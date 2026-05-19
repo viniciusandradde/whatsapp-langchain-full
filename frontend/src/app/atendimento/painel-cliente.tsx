@@ -181,10 +181,10 @@ export function PainelCliente({
                   const Icon = meta?.Icon ?? Clock;
                   return (
                     <li key={atd.id}>
-                      <Link
-                        href={`/atendimento?focus=${atd.id}`}
-                        className="flex items-start gap-2 rounded-md border border-transparent bg-muted/30 px-2 py-1.5 text-xs hover:border-border hover:bg-muted/50"
-                      >
+                      {/* Não-clicável: re-abrir atendimento via ?focus= ainda
+                          não é suportado em page.tsx. Quem quiser detalhe vai
+                          pela ficha do cliente (link "ver todos" acima). */}
+                      <div className="flex items-start gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
                         <Icon
                           className={cn(
                             "mt-0.5 h-3.5 w-3.5 shrink-0",
@@ -218,7 +218,7 @@ export function PainelCliente({
                               : "—"}
                           </p>
                         </div>
-                      </Link>
+                      </div>
                     </li>
                   );
                 })}
