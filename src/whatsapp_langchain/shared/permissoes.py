@@ -158,6 +158,12 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "Gerenciar credenciais da integração Wareline ConecteHub",
         "integracao",
     ),
+    # Conector genérico de APIs (Sprint Conector API)
+    (
+        "integracao.manage",
+        "Gerenciar conexões de API (qualquer provider do catálogo)",
+        "integracao",
+    ),
 ]
 
 
@@ -205,6 +211,7 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "atendimento.nota_interna.criar",
             "tag.manage",
             "integracao.wareline.manage",
+            "integracao.manage",
             "security.audit.read",
         ],
     ),

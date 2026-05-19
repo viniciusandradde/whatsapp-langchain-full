@@ -1474,6 +1474,116 @@ export async function deleteWarelineConfig(): Promise<{ ok: boolean }> {
   });
 }
 
+// --- Sprint Conector API genérico (api_connection) ---
+
+export interface ProviderFieldSpec {
+  name: string;
+  label: string;
+  type: "text" | "password" | "url" | "select" | "textarea" | "number";
+  required: boolean;
+  placeholder?: string | null;
+  default?: string | null;
+  help_text?: string | null;
+  options?: string[] | null;
+  sensitive: boolean;
+}
+
+export interface ProviderSpec {
+  slug: string;
+  nome: string;
+  descricao: string;
+  icone: string;
+  auth_type: string;
+  campos: ProviderFieldSpec[];
+  base_url_default?: string | null;
+  docs_url?: string | null;
+  legacy_storage?: string | null;
+}
+
+export interface ApiConnection {
+  id: number;
+  provider_slug: string;
+  provider_nome: string;
+  provider_icone?: string;
+  label: string;
+  base_url: string | null;
+  auth_type: string;
+  extra_config: Record<string, unknown>;
+  ativo: boolean;
+  ultimo_teste_at: string | null;
+  ultimo_teste_ok: boolean | null;
+  ultimo_teste_erro: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  credentials?: Record<string, unknown>; // só no /{id} (mascarado)
+}
+
+export async function getApiConnectionProviders(
+  includeLegacy = true
+): Promise<{ items: ProviderSpec[] }> {
+  const qs = includeLegacy ? "" : "?include_legacy=false";
+  return apiFetch<{ items: ProviderSpec[] }>(
+    `/api/integracoes/providers${qs}`
+  );
+}
+
+export async function listApiConnections(): Promise<{
+  items: ApiConnection[];
+}> {
+  return apiFetch<{ items: ApiConnection[] }>("/api/integracoes");
+}
+
+export async function getApiConnection(id: number): Promise<ApiConnection> {
+  return apiFetch<ApiConnection>(`/api/integracoes/${id}`);
+}
+
+export async function createApiConnection(payload: {
+  provider_slug: string;
+  label: string;
+  credentials: Record<string, unknown>;
+  base_url?: string;
+  extra_config?: Record<string, unknown>;
+  ativo?: boolean;
+}): Promise<ApiConnection> {
+  return apiFetch<ApiConnection>("/api/integracoes", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateApiConnection(
+  id: number,
+  payload: {
+    label?: string;
+    base_url?: string;
+    credentials_patch?: Record<string, unknown>;
+    extra_config?: Record<string, unknown>;
+    ativo?: boolean;
+  }
+): Promise<ApiConnection> {
+  return apiFetch<ApiConnection>(`/api/integracoes/${id}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function testApiConnection(
+  id: number
+): Promise<{ ok: boolean; mensagem: string }> {
+  return apiFetch<{ ok: boolean; mensagem: string }>(
+    `/api/integracoes/${id}/testar`,
+    { method: "POST" }
+  );
+}
+
+export async function deleteApiConnection(
+  id: number
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/integracoes/${id}`, {
+    method: "DELETE",
+  });
+}
+
 // --- Sprint 1.4: histórico do cliente no painel ---
 
 export async function getClienteAtendimentosAnteriores(

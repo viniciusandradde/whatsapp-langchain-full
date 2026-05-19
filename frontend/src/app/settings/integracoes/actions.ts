@@ -3,12 +3,20 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  type ApiConnection,
+  createApiConnection,
+  deleteApiConnection,
   deleteWarelineConfig,
   disconnectGoogleCalendar,
+  getApiConnectionProviders,
   getGoogleCalendarOAuthUrl,
   getWarelineConfig,
+  listApiConnections,
+  type ProviderSpec,
   saveWarelineConfig,
+  testApiConnection,
   testWarelineConnection,
+  updateApiConnection,
   updateGoogleCalendarConfig,
   type WarelineConfig,
 } from "@/lib/api";
@@ -21,6 +29,16 @@ type WarelineResult =
 type WarelineTestResult =
   | { ok: boolean; mensagem: string }
   | { ok: false; mensagem: string; error: string };
+type ConnectionsResult =
+  | { ok: true; connections: ApiConnection[] }
+  | { ok: false; error: string };
+type ConnectionResult =
+  | { ok: true; connection: ApiConnection }
+  | { ok: false; error: string };
+type ProvidersResult =
+  | { ok: true; providers: ProviderSpec[] }
+  | { ok: false; error: string };
+type TestResult = { ok: boolean; mensagem: string };
 
 function toError(e: unknown): string {
   return e instanceof Error ? e.message : "Erro desconhecido.";
@@ -98,6 +116,86 @@ export async function testWarelineAction(): Promise<WarelineTestResult> {
 export async function deleteWarelineConfigAction(): Promise<Result> {
   try {
     await deleteWarelineConfig();
+    revalidatePath("/settings/integracoes");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Conector API genérico ---
+
+export async function loadApiProvidersAction(
+  includeLegacy = false
+): Promise<ProvidersResult> {
+  try {
+    const r = await getApiConnectionProviders(includeLegacy);
+    return { ok: true, providers: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function loadApiConnectionsAction(): Promise<ConnectionsResult> {
+  try {
+    const r = await listApiConnections();
+    return { ok: true, connections: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function createApiConnectionAction(payload: {
+  provider_slug: string;
+  label: string;
+  credentials: Record<string, unknown>;
+  base_url?: string;
+  extra_config?: Record<string, unknown>;
+  ativo?: boolean;
+}): Promise<ConnectionResult> {
+  try {
+    const conn = await createApiConnection(payload);
+    revalidatePath("/settings/integracoes");
+    return { ok: true, connection: conn };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function updateApiConnectionAction(
+  id: number,
+  payload: {
+    label?: string;
+    base_url?: string;
+    credentials_patch?: Record<string, unknown>;
+    extra_config?: Record<string, unknown>;
+    ativo?: boolean;
+  }
+): Promise<ConnectionResult> {
+  try {
+    const conn = await updateApiConnection(id, payload);
+    revalidatePath("/settings/integracoes");
+    return { ok: true, connection: conn };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function testApiConnectionAction(
+  id: number
+): Promise<TestResult> {
+  try {
+    return await testApiConnection(id);
+  } catch (e) {
+    return { ok: false, mensagem: toError(e) };
+  }
+}
+
+export async function deleteApiConnectionAction(
+  id: number
+): Promise<Result> {
+  try {
+    await deleteApiConnection(id);
     revalidatePath("/settings/integracoes");
     return { ok: true };
   } catch (e) {

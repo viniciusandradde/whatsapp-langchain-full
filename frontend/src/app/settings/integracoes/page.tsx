@@ -1,8 +1,14 @@
 import { Plug } from "lucide-react";
 
-import { getGoogleCalendarConfig, getWarelineConfig } from "@/lib/api";
+import {
+  type ApiConnection,
+  getGoogleCalendarConfig,
+  getWarelineConfig,
+  listApiConnections,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
+import { ApiConnectionsSection } from "./api-connections-section";
 import { GoogleCalendarCard } from "./google-calendar-card";
 import { WarelineCard } from "./wareline-card";
 
@@ -21,6 +27,8 @@ interface PageProps {
  * - Google Calendar (M5.a): OAuth pra agendamento via Google
  * - Wareline ConecteHub (Sprint Wareline): consulta agenda + criar
  *   marcação no sistema do hospital
+ * - Conexões de API genéricas (Sprint Conector API): catálogo com Asaas
+ *   + provider custom (Bearer/Basic/API Key) cadastrável via UI
  */
 export default async function IntegracoesPage({ searchParams }: PageProps) {
   await requireSession();
@@ -28,13 +36,18 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
 
   let googleConfig: Awaited<ReturnType<typeof getGoogleCalendarConfig>> = null;
   let warelineConfig: Awaited<ReturnType<typeof getWarelineConfig>> = null;
+  let apiConnections: ApiConnection[] = [];
   let loadError: string | null = null;
 
   try {
-    [googleConfig, warelineConfig] = await Promise.all([
+    const [g, w, api] = await Promise.all([
       getGoogleCalendarConfig().catch(() => null),
       getWarelineConfig().catch(() => null),
+      listApiConnections().catch(() => ({ items: [] })),
     ]);
+    googleConfig = g;
+    warelineConfig = w;
+    apiConnections = api.items;
   } catch (e) {
     loadError =
       e instanceof Error ? e.message : "Erro desconhecido ao carregar config.";
@@ -66,6 +79,7 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
 
       <GoogleCalendarCard config={googleConfig} />
       <WarelineCard initialConfig={warelineConfig} />
+      <ApiConnectionsSection initialConnections={apiConnections} />
     </div>
   );
 }
