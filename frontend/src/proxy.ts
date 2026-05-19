@@ -21,9 +21,15 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Protege todas as rotas do painel exceto login, API e arquivos estáticos
+// Protege todas as rotas do painel exceto login, API, assets estáticos
+// e arquivos especiais do PWA.
+//
+// Cuidado: SW (`/sw.js`) e Manifest (`/manifest.webmanifest`) PRECISAM
+// ser servidos com Content-Type correto sem redirect. Se caírem no
+// middleware sem auth → redirect 307 pra /login → SW nunca registra,
+// PWA NÃO fica installable. Esses paths são excluídos por nome.
 export const config = {
   matcher: [
-    "/((?!login|api|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico)$).*)",
+    "/((?!login|api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|webmanifest)$).*)",
   ],
 };
