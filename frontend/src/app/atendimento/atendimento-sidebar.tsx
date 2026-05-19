@@ -303,12 +303,14 @@ export function AtendimentoSidebar({
     </>
   );
 
-  // Desktop: sidebar inline na flex (w-64 ou w-14 quando collapsed)
+  // Desktop: sidebar inline na flex (w-64 ou w-14 quando collapsed).
+  // Cor sólida (não bg-card que é quase transparente no tema dark) +
+  // backdrop-blur leve pra dar profundidade contra a área principal.
   if (showInline) {
     return (
       <aside
         className={cn(
-          "flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-r bg-muted/30 p-3 transition-[width] duration-200",
+          "flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-r bg-background/95 p-3 backdrop-blur transition-[width] duration-200",
           collapsed ? "w-14" : "w-64"
         )}
       >
@@ -318,18 +320,19 @@ export function AtendimentoSidebar({
   }
 
   // Mobile: off-canvas (fixed) + backdrop. Não renderiza nada quando fechado.
+  // Cor 100% opaca pra não vazar conteúdo da página por trás.
   return (
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
           onClick={closeMobile}
           aria-hidden
         />
       )}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-y-auto border-r bg-card p-4 shadow-xl transition-transform duration-200 md:hidden",
+          "fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-y-auto border-r bg-background p-4 shadow-2xl transition-transform duration-200 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
