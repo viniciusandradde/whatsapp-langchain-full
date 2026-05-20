@@ -49,7 +49,7 @@ type NavGroup = {
 };
 
 const NAV_GROUPS: NavGroup[] = [
-  { grupo: "visao", href: "/dashboard/ia", label: "Visão Geral", icon: LayoutDashboard },
+  { grupo: "visao", href: "/dashboard/atendimento", label: "Visão Geral", icon: LayoutDashboard },
   { grupo: "operacao", href: "/atendimento", label: "Operação", icon: Headphones, requires: "atendimento.read" },
   { grupo: "ia", href: "/agents", label: "IA & Conteúdo", icon: Bot, requires: "agente.config" },
   { grupo: "conectividade", href: "/connections", label: "Conectividade", icon: Smartphone, requires: "conexao.read" },

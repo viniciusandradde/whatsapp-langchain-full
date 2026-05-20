@@ -5,12 +5,12 @@ import { requireSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * Página raiz — redireciona pra Visão Geral (Dashboard IA).
+ * Página raiz — redireciona pra Dashboard de Atendimento operacional.
  *
- * O sidebar "Visão Geral" aponta pra /dashboard/ia, então a raiz cai lá pra
- * manter consistência (independente de bookmarks/última URL no browser).
+ * Operador entra direto na visão do dia (KPIs + filas + gráficos).
+ * Dashboard IA continua acessível via menu "IA & Conteúdo" → 1ª aba.
  */
 export default async function RootPage() {
   await requireSession();
-  redirect("/dashboard/ia");
+  redirect("/dashboard/atendimento");
 }

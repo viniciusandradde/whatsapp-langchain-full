@@ -807,7 +807,7 @@ interface ApiFetchOptions {
   body?: unknown;
 }
 
-async function apiFetch<T>(
+export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<T> {

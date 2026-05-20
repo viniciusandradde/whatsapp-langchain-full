@@ -31,7 +31,7 @@ export interface NavTab {
  * pertencimento usamos os prefixos dentro de cada grupo (ver GRUPO_PREFIXOS).
  */
 export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
-  visao: [{ label: "Dashboard IA", href: "/dashboard/ia" }],
+  visao: [{ label: "Atendimentos", href: "/dashboard/atendimento" }],
   operacao: [
     { label: "Atendimentos", href: "/atendimento", requires: "atendimento.read" },
     { label: "Conversas", href: "/chats", requires: "atendimento.read" },
@@ -41,6 +41,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
     { label: "Tags", href: "/tags", requires: "tag.manage" },
   ],
   ia: [
+    { label: "Dashboard IA", href: "/dashboard/ia", requires: "agente.config" },
     { label: "Agentes", href: "/agents", requires: "agente.config" },
     { label: "Menu chatbot", href: "/menus", requires: "menu_chatbot.read" },
     { label: "Workflows", href: "/workflows", requires: "menu_chatbot.read" },

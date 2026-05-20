@@ -53,6 +53,9 @@ from whatsapp_langchain.server.routes.conexao import router as conexao_router
 from whatsapp_langchain.server.routes.dashboard_ia import (
     router as dashboard_ia_router,
 )
+from whatsapp_langchain.server.routes.dashboard_atendimento import (
+    router as dashboard_atendimento_router,
+)
 from whatsapp_langchain.server.routes.dashboard_ia import (
     router_budget as ia_budget_router,
 )
@@ -296,6 +299,7 @@ app.include_router(menu_chatbot_router)
 app.include_router(modelo_llm_router)
 app.include_router(mcp_router)
 app.include_router(dashboard_ia_router)
+app.include_router(dashboard_atendimento_router)
 app.include_router(ia_budget_router)
 app.include_router(atendente_router)
 app.include_router(test_runner_router)
