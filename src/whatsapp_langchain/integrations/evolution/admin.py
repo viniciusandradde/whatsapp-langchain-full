@@ -37,12 +37,12 @@ def _headers() -> dict[str, str]:
     if not settings.evolution_admin_enabled:
         raise EvolutionAdminError(
             503,
-            "EVOLUTION_ADMIN_URL ou EVOLUTION_GLOBAL_API_KEY não configurados",
+            "EVOLUTION_API_URL/EVOLUTION_API_KEY (ou _ADMIN_URL/_GLOBAL_API_KEY) "
+            "não configurados.",
         )
+    key = settings.resolved_evolution_global_api_key
     return {
-        "apikey": settings.evolution_global_api_key.get_secret_value()  # type: ignore[union-attr]
-        if settings.evolution_global_api_key
-        else "",
+        "apikey": key.get_secret_value() if key else "",
         "Content-Type": "application/json",
     }
 

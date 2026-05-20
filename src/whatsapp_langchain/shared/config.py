@@ -252,9 +252,21 @@ class Settings(BaseSettings):
         )
 
     @property
+    def resolved_evolution_global_api_key(self) -> SecretStr | None:
+        """Fallback: usa EVOLUTION_API_KEY se EVOLUTION_GLOBAL_API_KEY não setada.
+
+        Em deploys single-instance comuns o user só tem uma key — a mesma serve
+        pra outbound de mensagens e pra ops admin (create/delete instance).
+        """
+        return self.evolution_global_api_key or self.evolution_api_key
+
+    @property
     def evolution_admin_enabled(self) -> bool:
-        """True quando as 2 env vars mínimas pra Evolution admin estão setadas."""
-        return bool(self.resolved_evolution_admin_url and self.evolution_global_api_key)
+        """True quando há URL admin + alguma api-key (global ou normal)."""
+        return bool(
+            self.resolved_evolution_admin_url
+            and self.resolved_evolution_global_api_key
+        )
 
     @property
     def resolved_twilio_outbound_mode(self) -> str:

@@ -506,15 +506,15 @@ async def evolution_provision(
                 status_code=502, detail=f"Evolution server: {exc.detail[:200]}"
             )
 
-    # Cifra credentials (instance_name + api_key global compartilhada por enquanto)
+    # Cifra credentials (instance_name + api_key — usa global se setada,
+    # senão cai pra EVOLUTION_API_KEY)
+    _key = settings.resolved_evolution_global_api_key
     await save_credentials(
         pool,
         conexao.id,
         {
             "instance_name": instance_name,
-            "api_key": settings.evolution_global_api_key.get_secret_value()  # type: ignore[union-attr]
-            if settings.evolution_global_api_key
-            else "",
+            "api_key": _key.get_secret_value() if _key else "",
             "api_url": settings.resolved_evolution_admin_url,
         },
     )
