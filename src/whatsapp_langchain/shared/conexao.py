@@ -68,12 +68,16 @@ def _row_to_conexao(row) -> Conexao:
 
 
 async def list_conexoes(pool: AsyncConnectionPool, empresa_id: int) -> list[Conexao]:
-    """Lista as conexões de uma empresa, default primeiro depois alfabética."""
+    """Lista as conexões ATIVAS de uma empresa (esconde soft-deleted).
+
+    `status='disabled'` é soft-delete — não aparece pro user. Pra ver
+    todas, use `list_conexoes_all`.
+    """
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
             SELECT {_SELECT_COLS} FROM conexao
-             WHERE empresa_id = %s
+             WHERE empresa_id = %s AND status != 'disabled'
              ORDER BY is_default DESC, display_name NULLS LAST, id ASC
             """,
             (empresa_id,),

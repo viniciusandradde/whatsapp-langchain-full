@@ -472,7 +472,32 @@ async def evolution_provision(
     )
 
     pool = await get_pool()
-    # Cria row Conexao primeiro (placeholder from_number temporário até user conectar)
+
+    webhook_url = (
+        (settings.public_base_url.rstrip("/") + "/webhook/evolution")
+        if settings.public_base_url
+        else None
+    )
+
+    # Provision PRIMEIRO — se Evolution rejeita (401/4xx grave), aborta SEM
+    # criar row no DB pra não deixar órfã. 409/403 = "já existe", segue.
+    try:
+        await evo_admin.provision_instance(instance_name, webhook_url=webhook_url)
+    except evo_admin.EvolutionAdminError as exc:
+        if exc.status_code not in (200, 201, 409, 403):
+            raise HTTPException(
+                status_code=502, detail=f"Evolution server: {exc.detail[:200]}"
+            )
+
+    # Pega QR (também antes da row — falha => sem órfã)
+    try:
+        qr_data = await evo_admin.connect_instance(instance_name)
+    except evo_admin.EvolutionAdminError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Evolution connect: {exc.detail[:200]}"
+        )
+
+    # Provision + connect OK → AGORA cria a row Conexao
     placeholder_number = f"evolution:{instance_name}"
     conexao = await upsert_conexao(
         pool,
@@ -488,24 +513,6 @@ async def evolution_provision(
         ),
     )
 
-    webhook_url = (
-        (settings.public_base_url.rstrip("/") + "/webhook/evolution")
-        if settings.public_base_url
-        else None
-    )
-
-    try:
-        await evo_admin.provision_instance(instance_name, webhook_url=webhook_url)
-    except evo_admin.EvolutionAdminError as exc:
-        # Se instance já existe (409), tudo bem — segue pra connect
-        if exc.status_code not in (200, 201, 409, 403):
-            await set_connection_state(
-                pool, conexao.id, state="error", message=str(exc.detail)[:200]
-            )
-            raise HTTPException(
-                status_code=502, detail=f"Evolution server: {exc.detail[:200]}"
-            )
-
     # Cifra credentials (instance_name + api_key — usa global se setada,
     # senão cai pra EVOLUTION_API_KEY)
     _key = settings.resolved_evolution_global_api_key
@@ -518,17 +525,6 @@ async def evolution_provision(
             "api_url": settings.resolved_evolution_admin_url,
         },
     )
-
-    # Pega QR
-    try:
-        qr_data = await evo_admin.connect_instance(instance_name)
-    except evo_admin.EvolutionAdminError as exc:
-        await set_connection_state(
-            pool, conexao.id, state="error", message=str(exc.detail)[:200]
-        )
-        raise HTTPException(
-            status_code=502, detail=f"Evolution connect: {exc.detail[:200]}"
-        )
 
     qr_base64 = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64")
     expires_at = datetime.now(UTC) + timedelta(seconds=45)
@@ -662,6 +658,11 @@ async def test_conexao(
                 state = evo_admin.normalize_state(raw_state)
                 ok = state == "open"
                 message = f"Evolution state: {state}"
+                # Sincroniza connection_state com state real (test atua também
+                # como manual refresh — útil pra rows criadas via "Importar
+                # instance existente" que entram com state=pending)
+                if state != conexao.connection_state:
+                    await set_connection_state(pool, conexao_id, state=state)
 
         else:  # twilio_*
             ok = bool(settings.twilio_account_sid and settings.twilio_api_key_sid)
