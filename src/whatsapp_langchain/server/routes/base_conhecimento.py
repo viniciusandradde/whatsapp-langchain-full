@@ -46,7 +46,7 @@ async def list_documentos(
     raiz: bool = False,
     incluir_subpastas: bool = False,
 ) -> dict[str, list[DocumentoConhecimento]]:
-    """Lista docs da empresa (E2.C).
+    """Lista documentos da empresa.
 
     Filtros opcionais:
     - `raiz=true` ⇒ só docs sem pasta (pasta_id IS NULL).
@@ -208,7 +208,7 @@ async def upload_documento(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict:
-    """Cria documento(s) a partir de upload de PDF/DOCX/MD/TXT (M5.c.2 + S.2).
+    """Cria documento(s) a partir de upload de PDF/DOCX/MD/TXT.
 
     Multipart fields:
     - `arquivo` (file): obrigatório.

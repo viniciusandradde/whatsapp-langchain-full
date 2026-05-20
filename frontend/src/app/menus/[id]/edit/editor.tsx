@@ -264,7 +264,7 @@ export function MenuEditor({
             [
               { id: "arvore", label: "Árvore", icon: ListTree },
               { id: "identidade", label: "Identidade", icon: Settings },
-              { id: "config", label: "Avançado (B+)", icon: Settings },
+              { id: "config", label: "Avançado", icon: Settings },
               { id: "preview", label: "Preview", icon: Eye },
             ] as const
           ).map((t) => (
@@ -389,12 +389,12 @@ export function MenuEditor({
         </Card>
       )}
 
-      {/* Config B+ (padrão profissional) */}
+      {/* Configurações avançadas */}
       {tab === "config" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Avançado — Sub-fase B+ (padrão profissional)
+              Avançado
             </CardTitle>
           </CardHeader>
           <CardContent>

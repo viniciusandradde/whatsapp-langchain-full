@@ -26,7 +26,7 @@ const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: "endereco", label: "Endereço", icon: MapPin },
   { id: "comercial", label: "Comercial", icon: TrendingUp },
   { id: "social", label: "Social/Outros", icon: Globe },
-  { id: "avancado", label: "Avançado (B+)", icon: User },
+  { id: "avancado", label: "Avançado", icon: User },
 ];
 
 const LIFECYCLE_OPTIONS = [
@@ -158,7 +158,7 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base">Ficha enriquecida (F1.A)</CardTitle>
+          <CardTitle className="text-base">Cadastro do cliente</CardTitle>
           {c.lifecycle_stage && (
             <Badge variant="outline">{c.lifecycle_stage}</Badge>
           )}

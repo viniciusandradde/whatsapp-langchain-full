@@ -244,10 +244,10 @@ export function CampanhasPageClient({
                 </p>
               </div>
 
-              {/* Sub-fase B+ (padrão profissional) (mig 051) */}
+              {/* Configurações avançadas */}
               <div className="rounded-md border border-border/40 bg-muted/20 p-3 space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wide">
-                  Avançado (padrão profissional)
+                  Avançado
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>

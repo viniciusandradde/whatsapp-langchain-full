@@ -207,7 +207,7 @@ async def update_cliente_endpoint(
     user_id: str = Depends(get_user_id_from_request),
     request: __import__("fastapi").Request = None,  # type: ignore[assignment]
 ) -> Cliente:
-    """Atualiza ficha do cliente (Fase 1.A enriquecida).
+    """Atualiza dados do cliente (nome, email, endereço, etc.).
 
     Valida CPF/CNPJ/CEP/UF — campos inválidos retornam 422.
     Audit log automático: grava `cliente.update` com payload_diff.

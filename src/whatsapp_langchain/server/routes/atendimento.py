@@ -308,7 +308,7 @@ async def sse_events(
     atendimento_id: int,
     empresa_id: int = Depends(get_empresa_context),
 ):
-    """Stream de eventos do atendimento via SSE (E2.E).
+    """Stream de eventos do atendimento via SSE.
 
     Substitui o polling 3s do AtendimentoDrawer. Backend ouve canal
     Postgres `atendimento_event` (alimentado por triggers da mig 035) e
@@ -527,7 +527,7 @@ async def responder(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict:
-    """Envia mensagem manual do operador via Twilio (M4.a).
+    """Envia mensagem manual do operador.
 
     O atendimento precisa estar `aguardando` ou `em_andamento`. A mensagem
     é persistida em message_queue como row outbound-only — aparece na

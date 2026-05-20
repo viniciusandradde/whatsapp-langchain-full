@@ -99,7 +99,7 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
     ("conexao.write", "Adicionar/editar/desabilitar conexão", "conexao"),
     # Agente IA
     ("agente.config", "Editar prompt/temperatura/modelo do agente", "agente"),
-    ("agente.template.use", "Aplicar template de agente novo (Etapa 3)", "agente"),
+    ("agente.template.use", "Aplicar template de agente novo", "agente"),
     # Menu chatbot árvore (Sub-fase B)
     ("menu_chatbot.read", "Ver menus chatbot configurados", "menu_chatbot"),
     ("menu_chatbot.write", "Criar/editar menus + items + reordenar", "menu_chatbot"),
