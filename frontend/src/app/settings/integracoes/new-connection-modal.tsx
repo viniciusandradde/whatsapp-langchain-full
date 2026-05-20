@@ -11,14 +11,22 @@ import { createApiConnectionAction } from "./actions";
 interface Props {
   providers: ProviderSpec[];
   onClose: (refreshed: boolean) => void;
+  /** Callback especial pro provider google_calendar (dispara OAuth Web). */
+  onGoogleConnect?: () => void;
 }
 
 /**
  * Modal 2 steps:
  * 1) Pick provider (lista cards)
  * 2) Form dinâmico baseado em provider.campos
+ *
+ * Provider especial google_calendar: pulamos o form e disparamos OAuth Web.
  */
-export function NewConnectionModal({ providers, onClose }: Props) {
+export function NewConnectionModal({
+  providers,
+  onClose,
+  onGoogleConnect,
+}: Props) {
   const [step, setStep] = useState<"pick" | "form">("pick");
   const [selected, setSelected] = useState<ProviderSpec | null>(null);
   const [label, setLabel] = useState("");
@@ -29,6 +37,11 @@ export function NewConnectionModal({ providers, onClose }: Props) {
   const [, startTransition] = useTransition();
 
   const pickProvider = (p: ProviderSpec) => {
+    // Google Calendar: OAuth Web flow especial — não tem form
+    if (p.slug === "google_calendar" && onGoogleConnect) {
+      onGoogleConnect();
+      return;
+    }
     setSelected(p);
     setLabel(p.nome);
     setBaseUrl(p.base_url_default ?? "");
@@ -101,13 +114,19 @@ export function NewConnectionModal({ providers, onClose }: Props) {
 
         {step === "pick" ? (
           <div className="max-h-[60vh] overflow-y-auto p-4">
-            {providers.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                Nenhum provider disponível.
-              </p>
-            ) : (
-              <ul className="grid gap-2 sm:grid-cols-2">
-                {providers.map((p) => (
+            {(() => {
+              // Wareline tem card próprio acima — esconde do picker
+              const visible = providers.filter((p) => p.slug !== "wareline");
+              if (visible.length === 0) {
+                return (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    Nenhum provider disponível.
+                  </p>
+                );
+              }
+              return (
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {visible.map((p) => (
                   <li key={p.slug}>
                     <button
                       type="button"
@@ -133,8 +152,9 @@ export function NewConnectionModal({ providers, onClose }: Props) {
                     </button>
                   </li>
                 ))}
-              </ul>
-            )}
+                </ul>
+              );
+            })()}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto">

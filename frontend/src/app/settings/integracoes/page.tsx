@@ -9,7 +9,6 @@ import {
 import { requireSession } from "@/lib/session";
 
 import { ApiConnectionsSection } from "./api-connections-section";
-import { GoogleCalendarCard } from "./google-calendar-card";
 import { WarelineCard } from "./wareline-card";
 
 export const dynamic = "force-dynamic";
@@ -77,9 +76,11 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
         </div>
       )}
 
-      <GoogleCalendarCard config={googleConfig} />
       <WarelineCard initialConfig={warelineConfig} />
-      <ApiConnectionsSection initialConnections={apiConnections} />
+      <ApiConnectionsSection
+        initialConnections={apiConnections}
+        googleCalendarConfig={googleConfig}
+      />
     </div>
   );
 }
