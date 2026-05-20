@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   Eraser,
   Hand,
   RefreshCw,
@@ -724,6 +725,10 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 // gerou resumo. Aparece logo abaixo do header do drawer pra o atendente
 // pegar contexto rápido sem ler conversa toda.
 function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
+  const [collapsed, setCollapsed] = useCollapseState(
+    `triagem-${atendimento.id}`,
+    false,
+  );
   const has =
     atendimento.resumo_ia ||
     atendimento.classificacao ||
@@ -746,44 +751,61 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
 
   return (
     <div className="border-b bg-muted/30 px-5 py-3">
-      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-        <span>🧠 Triagem IA</span>
-        {atendimento.triagem_completa && (
-          <Badge variant="outline" className="text-[10px]">
-            completa
-          </Badge>
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="mb-2 flex w-full items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expandir triagem" : "Recolher triagem"}
+      >
+        <span className="flex items-center gap-2">
+          <span>🧠 Triagem IA</span>
+          {atendimento.triagem_completa && (
+            <Badge variant="outline" className="text-[10px]">
+              completa
+            </Badge>
+          )}
+        </span>
+        {collapsed ? (
+          <ChevronDown className="size-3.5" />
+        ) : (
+          <ChevronUp className="size-3.5" />
         )}
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {atendimento.prioridade && (
-          <span
-            className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${prioColor[atendimento.prioridade] || ""}`}
-          >
-            prioridade: {atendimento.prioridade}
-          </span>
-        )}
-        {atendimento.sentimento && (
-          <span
-            className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${sentColor[atendimento.sentimento] || ""}`}
-          >
-            sentimento: {atendimento.sentimento}
-          </span>
-        )}
-        {atendimento.classificacao && (
-          <Badge variant="outline" className="text-[10px] font-mono">
-            {atendimento.classificacao}
-          </Badge>
-        )}
-      </div>
-      {atendimento.resumo_ia && (
-        <div className="mt-2 rounded-md bg-background/60 p-2 text-xs">
-          <div className="mb-1 font-semibold uppercase text-muted-foreground tracking-wide text-[10px]">
-            Resumo do agente
+      </button>
+      {!collapsed && (
+        <>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {atendimento.prioridade && (
+              <span
+                className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${prioColor[atendimento.prioridade] || ""}`}
+              >
+                prioridade: {atendimento.prioridade}
+              </span>
+            )}
+            {atendimento.sentimento && (
+              <span
+                className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${sentColor[atendimento.sentimento] || ""}`}
+              >
+                sentimento: {atendimento.sentimento}
+              </span>
+            )}
+            {atendimento.classificacao && (
+              <Badge variant="outline" className="text-[10px] font-mono">
+                {atendimento.classificacao}
+              </Badge>
+            )}
           </div>
-          <pre className="whitespace-pre-wrap font-sans leading-relaxed">
-            {atendimento.resumo_ia}
-          </pre>
-        </div>
+          {atendimento.resumo_ia && (
+            <div className="mt-2 rounded-md bg-background/60 p-2 text-xs">
+              <div className="mb-1 font-semibold uppercase text-muted-foreground tracking-wide text-[10px]">
+                Resumo do agente
+              </div>
+              <pre className="whitespace-pre-wrap font-sans leading-relaxed">
+                {atendimento.resumo_ia}
+              </pre>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -793,6 +815,10 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
 // rodou antes de chegar no atendente. Inclui label da pergunta e valor
 // pra contexto. Renderiza só quando `coleta_resumo` está populado.
 function ColetaPreviaCard({ atendimento }: { atendimento: Atendimento }) {
+  const [collapsed, setCollapsed] = useCollapseState(
+    `coleta-${atendimento.id}`,
+    false,
+  );
   const resumo = atendimento.coleta_resumo;
   if (!resumo || !resumo.respostas) return null;
   const entries = Object.entries(resumo.respostas);
@@ -800,32 +826,86 @@ function ColetaPreviaCard({ atendimento }: { atendimento: Atendimento }) {
 
   return (
     <div className="border-b bg-blue-500/5 px-5 py-3">
-      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-        <span>🗂 Coleta prévia</span>
-        {resumo.item_label && (
-          <Badge variant="outline" className="text-[10px]">
-            via &ldquo;{resumo.item_label}&rdquo;
-          </Badge>
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="mb-2 flex w-full items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expandir coleta prévia" : "Recolher coleta prévia"}
+      >
+        <span className="flex items-center gap-2">
+          <span>🗂 Coleta prévia</span>
+          {resumo.item_label && (
+            <Badge variant="outline" className="text-[10px]">
+              via &ldquo;{resumo.item_label}&rdquo;
+            </Badge>
+          )}
+          {collapsed && (
+            <span className="normal-case text-[10px] text-muted-foreground/70">
+              ({entries.length} {entries.length === 1 ? "campo" : "campos"})
+            </span>
+          )}
+        </span>
+        {collapsed ? (
+          <ChevronDown className="size-3.5" />
+        ) : (
+          <ChevronUp className="size-3.5" />
         )}
-      </div>
-      <dl className="space-y-1.5 text-xs">
-        {entries.map(([key, val]) => (
-          <div key={key} className="flex flex-col gap-0.5">
-            <dt className="text-[11px] font-medium text-muted-foreground">
-              {val.label}
-            </dt>
-            <dd className="rounded-md bg-background/70 px-2 py-1 font-mono text-foreground">
-              {val.valor || (
-                <span className="text-muted-foreground italic">
-                  (sem resposta)
-                </span>
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      </button>
+      {!collapsed && (
+        <dl className="space-y-1.5 text-xs">
+          {entries.map(([key, val]) => (
+            <div key={key} className="flex flex-col gap-0.5">
+              <dt className="text-[11px] font-medium text-muted-foreground">
+                {val.label}
+              </dt>
+              <dd className="rounded-md bg-background/70 px-2 py-1 font-mono text-foreground">
+                {val.valor || (
+                  <span className="text-muted-foreground italic">
+                    (sem resposta)
+                  </span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
+}
+
+// Hook simples: estado de collapse persistido em localStorage por chave
+// (preferência por atendimento). Default `initialCollapsed` na primeira
+// montagem; depois carrega valor do storage.
+function useCollapseState(
+  key: string,
+  initialCollapsed: boolean,
+): [boolean, (next: boolean) => void] {
+  const storageKey = `atendimento-card-collapsed:${key}`;
+  const [collapsed, setCollapsedState] = useState(initialCollapsed);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved !== null) setCollapsedState(saved === "1");
+    } catch {
+      // localStorage indisponível (privacy mode) — ignora
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+
+  const setCollapsed = (next: boolean) => {
+    setCollapsedState(next);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, next ? "1" : "0");
+    } catch {
+      // ignora
+    }
+  };
+
+  return [collapsed, setCollapsed];
 }
 
 // Aba "Arquivos" — agrega todas as mídias do atendimento (imagens,
