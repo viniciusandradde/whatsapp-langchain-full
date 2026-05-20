@@ -1195,8 +1195,18 @@ async def _try_handle_menu(
     # mudar_manual antes). Próxima msg dele vai pro agente — NÃO trata como
     # navegação. Sem esse check, "Olá" depois de "3 → Vou te conectar com
     # Agendamentos…" caía em "Opção inválida" em vez de seguir pro agente.
-    if posicao_atual is None and await cliente_ja_saiu_do_menu(
-        pool, message.atendimento_id
+    #
+    # EXCEÇÃO: wizard de coleta acabou de terminar — `_try_handle_coleta_em_curso`
+    # gravou `coleta_resumo` e re-entra aqui com texto sintético = ordem do
+    # item escolhido. O histórico contém o item de coleta (com acao_tipo já
+    # registrada em _ACOES_SAIDA_MENU), que faria `cliente_ja_saiu_do_menu`
+    # retornar True. Pulamos pra despachar a ação original.
+    coleta_resumo = getattr(atendimento, "coleta_resumo", None) or {}
+    coleta_em_reentry = bool(coleta_resumo.get("item_id"))
+    if (
+        posicao_atual is None
+        and not coleta_em_reentry
+        and await cliente_ja_saiu_do_menu(pool, message.atendimento_id)
     ):
         logger.info(
             "menu_cliente_fora_segue_pro_agente",
