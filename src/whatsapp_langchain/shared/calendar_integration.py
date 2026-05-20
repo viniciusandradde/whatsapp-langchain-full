@@ -1,25 +1,22 @@
 """Google Calendar — OAuth flow + helpers de leitura/escrita (M5.a).
 
-Cada empresa tem 1 row em `empresa_calendar_config`. O fluxo é:
+**Storage migrado** (Sprint Conector API): credenciais OAuth agora
+ficam em `api_connection` (provider_slug='google_calendar') com cripto
+Fernet. `empresa_calendar_config` é mantida via dual-write como
+backward-compat pra `horario.py` e `agendamento.py` (que SELECT direto
+da tabela legacy).
 
+Fluxo OAuth Web:
 1. Admin clica "Conectar Google Calendar" no painel.
-2. Frontend redireciona pro endpoint `/api/google-calendar/oauth/init`,
-   que devolve a URL de autorização do Google.
-3. User autoriza no Google e é redirecionado pra
-   `/api/google-calendar/oauth/callback?code=...`.
-4. Trocamos o `code` por `Credentials` (token + refresh_token), persistimos
-   o JSON em `empresa_calendar_config.oauth_credentials_json`.
-5. Tools do agente carregam o JSON, montam `Credentials`, fazem refresh
-   on-demand quando o `access_token` expira, e chamam Calendar API.
-
-Multi-tenant: cada empresa pode ter sua própria conta Google. Quando a
-empresa não tem config (ou `ativo=false`), as tools não são injetadas
-no agente — o agente nem sabe que existe agendamento disponível.
+2. Frontend → `/api/google-calendar/oauth/init` → URL de autorização.
+3. User autoriza → callback `/api/google-calendar/oauth/callback?code=`.
+4. Troca `code` por `Credentials`. Persistimos via dual-write em
+   `api_connection` (cripto) + `empresa_calendar_config` (legacy).
+5. Tools do agente carregam o JSON via helper unificado.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -31,6 +28,13 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.integrations.google_calendar_storage import (
+    delete_dual,
+    read_unified,
+    refresh_credentials_dual,
+    update_setting_dual,
+    upsert_credentials_dual,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.models import (
     CalendarConfigPublic,
@@ -184,69 +188,38 @@ async def upsert_calendar_config(
     google_email: str | None,
     user_id: str | None = None,
 ) -> EmpresaCalendarConfig:
-    """Cria/atualiza a config (1 row por empresa). Reativa se estava `ativo=false`."""
-    payload = json.dumps(credentials_to_json(creds))
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            INSERT INTO empresa_calendar_config
-                (empresa_id, oauth_credentials_json, google_email,
-                 created_by_user_id, ativo)
-            VALUES (%s, %s::jsonb, %s, %s, TRUE)
-            ON CONFLICT (empresa_id) DO UPDATE SET
-                oauth_credentials_json = EXCLUDED.oauth_credentials_json,
-                google_email = EXCLUDED.google_email,
-                ativo = TRUE,
-                updated_at = NOW()
-            RETURNING empresa_id, oauth_credentials_json, google_email,
-                      calendar_id, timezone, ativo, created_by_user_id,
-                      created_at, updated_at
-            """,
-            (empresa_id, payload, google_email, user_id),
-        )
-        row = await cur.fetchone()
-    assert row is not None
-    return EmpresaCalendarConfig(
-        empresa_id=row[0],
-        oauth_credentials_json=row[1],
-        google_email=row[2],
-        calendar_id=row[3],
-        timezone=row[4],
-        ativo=row[5],
-        created_by_user_id=row[6],
-        created_at=row[7],
-        updated_at=row[8],
+    """Cria/atualiza config — dual-write em api_connection + legacy."""
+    oauth_json = credentials_to_json(creds)
+    await upsert_credentials_dual(
+        pool,
+        empresa_id,
+        oauth_credentials_json=oauth_json,
+        google_email=google_email,
+        created_by_user_id=user_id,
     )
+    config = await get_calendar_config(pool, empresa_id)
+    assert config is not None
+    return config
 
 
 async def get_calendar_config(
     pool: AsyncConnectionPool, empresa_id: int
 ) -> EmpresaCalendarConfig | None:
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT empresa_id, oauth_credentials_json, google_email,
-                   calendar_id, timezone, ativo, created_by_user_id,
-                   created_at, updated_at, aprovador_telefone
-              FROM empresa_calendar_config
-             WHERE empresa_id = %s
-            """,
-            (empresa_id,),
-        )
-        row = await cur.fetchone()
-    if not row:
+    """Lê config — api_connection primeiro, fallback legacy."""
+    data = await read_unified(pool, empresa_id)
+    if data is None:
         return None
     return EmpresaCalendarConfig(
-        empresa_id=row[0],
-        oauth_credentials_json=row[1],
-        google_email=row[2],
-        calendar_id=row[3],
-        timezone=row[4],
-        ativo=row[5],
-        created_by_user_id=row[6],
-        created_at=row[7],
-        updated_at=row[8],
-        aprovador_telefone=row[9],
+        empresa_id=empresa_id,
+        oauth_credentials_json=data["oauth_credentials_json"],
+        google_email=data["google_email"],
+        calendar_id=data["calendar_id"],
+        timezone=data["timezone"],
+        ativo=data["ativo"],
+        created_by_user_id=None,  # não exposto pelo helper unified
+        created_at=data["created_at"],
+        updated_at=data["updated_at"],
+        aprovador_telefone=data["aprovador_telefone"],
     )
 
 
@@ -269,35 +242,19 @@ async def update_aprovador_telefone(
     empresa_id: int,
     aprovador_telefone: str | None,
 ) -> bool:
-    """Atualiza coluna aprovador_telefone (S4 fluxo de aprovação WhatsApp).
-
-    `None` ou string vazia limpam o telefone (desativa fluxo). Retorna
-    True se afetou row.
-    """
+    """Atualiza aprovador (S4 fluxo de aprovação WhatsApp) — dual-write."""
     value = aprovador_telefone.strip() if aprovador_telefone else None
     if value == "":
         value = None
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            UPDATE empresa_calendar_config
-               SET aprovador_telefone = %s, updated_at = NOW()
-             WHERE empresa_id = %s
-            """,
-            (value, empresa_id),
-        )
-        await conn.commit()
-        return cur.rowcount > 0
+    # Passa string vazia explicitamente quando remove (helper interpreta)
+    return await update_setting_dual(
+        pool, empresa_id, aprovador_telefone=value or ""
+    )
 
 
 async def disconnect_calendar(pool: AsyncConnectionPool, empresa_id: int) -> bool:
-    """Remove a config (não só inativa) — força nova autorização."""
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            "DELETE FROM empresa_calendar_config WHERE empresa_id = %s",
-            (empresa_id,),
-        )
-    return (cur.rowcount or 0) > 0
+    """DELETE em AMBOS storages — força nova autorização."""
+    return await delete_dual(pool, empresa_id)
 
 
 # --- Calendar API helpers (consumidos pelas tools do agente) ---
@@ -320,17 +277,10 @@ async def _resolve_credentials(
             creds.refresh(GoogleAuthRequest())
         except Exception as e:  # noqa: BLE001
             raise CalendarIntegrationError(f"Falha ao renovar credenciais: {e}") from e
-        # persiste o token novo (refresh atualiza `token` + `expiry`)
-        new_payload = json.dumps(credentials_to_json(creds))
-        async with pool.connection() as conn:
-            await conn.execute(
-                """
-                UPDATE empresa_calendar_config
-                   SET oauth_credentials_json = %s::jsonb, updated_at = NOW()
-                 WHERE empresa_id = %s
-                """,
-                (new_payload, empresa_id),
-            )
+        # Persiste o token novo via dual-write (refresh atualiza token + expiry)
+        await refresh_credentials_dual(
+            pool, empresa_id, credentials_to_json(creds)
+        )
     return config, creds
 
 
@@ -1040,16 +990,8 @@ async def set_active_calendar(
             ) from e
         raise CalendarIntegrationError(f"calendarList.get falhou: {e}") from e
 
-    async with pool.connection() as conn:
-        await conn.execute(
-            """
-            UPDATE empresa_calendar_config
-               SET calendar_id = %s, updated_at = NOW()
-             WHERE empresa_id = %s
-            """,
-            (cid, empresa_id),
-        )
-        await conn.commit()
+    # Dual-write via helper
+    await update_setting_dual(pool, empresa_id, calendar_id=cid)
 
     logger.info(
         "calendar_active_changed",
