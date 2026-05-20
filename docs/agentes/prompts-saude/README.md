@@ -5,10 +5,27 @@ ZigChat 3 meses, 2026-02-08 a 2026-05-08) de um hospital. Os prompts
 estão calibrados pro tom coloquial brasileiro respeitoso típico de
 atendimento de saúde via WhatsApp.
 
-## Os 5 prompts
+## 📚 Metodologia e Template
+
+- 📖 [**METODOLOGIA.md**](METODOLOGIA.md) — Técnicas de prompt engineering
+  aplicadas (estrutura XML, few-shot, ReAct, constitutional AI / guardrails,
+  RAG-aware)
+- 📋 [**TEMPLATE_CANONICO.md**](TEMPLATE_CANONICO.md) — System prompt
+  base no padrão Claude 4.6/4.7 — VSA Nexus AI. **Todo agente hospitalar
+  novo segue esse template.**
+
+**Regras obrigatórias em todos os prompts:**
+- ✅ Tool `verify_patient_identity` obrigatória ANTES de qualquer dado sensível
+- ✅ Tool `log_lgpd_event` chamada em TODO acesso a dado sensível
+- ✅ Estrutura XML com `<role>`, `<core_principles>`, `<scope>`, `<identity_verification>`, `<tool_use_policy>`, `<examples>`, `<refusal_templates>`, `<persistent_identity_reminder>`
+- ✅ Contexto dinâmico (`<context>`) vai na **primeira user message**, não no system prompt
+
+## Os prompts
 
 | Arquivo | Departamento de referência | Volume no dump | Slug sugerido |
 |---|---|---|---|
+| [`atendimento-cliente.md`](atendimento-cliente.md) v1.0 | **Recepção virtual (Menu 1)** — Mackenzie (XML + verify_identity + LGPD log) | — (novo) | `saude_atendimento_cliente` |
+| [`exames.md`](exames.md) v1.0 | **Central de Exames (Menu 3)** — Mackenzie (XML + triagem financeira + LGPD log) | — (novo) | `saude_exames` |
 | [`agendamentos.md`](agendamentos.md) | Dept 83 (37% volume) | 3.613 atend | `saude_agendamentos` |
 | [`ouvidoria.md`](ouvidoria.md) | Dept 88 (15%) | 1.421 atend | `saude_ouvidoria` |
 | [`suporte-exames.md`](suporte-exames.md) | Dept 87 (9%) | 920 atend | `saude_suporte_exames` |
