@@ -7,7 +7,9 @@ import {
   ChevronDown,
   ChevronUp,
   Eraser,
+  FileText,
   Hand,
+  MoreVertical,
   RefreshCw,
   Send,
   UserPlus,
@@ -328,12 +330,12 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
       onClick={onClose}
     >
       <aside
-        className="flex h-full w-full max-w-2xl flex-col bg-card shadow-2xl"
+        className="flex h-full w-full max-w-3xl flex-col bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-card p-3 md:p-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-card p-3 md:px-5 md:py-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <h2 className="truncate text-lg font-semibold">
                 {atendimento.cliente_nome ?? atendimento.cliente_telefone ?? "Cliente"}
               </h2>
@@ -345,21 +347,21 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                   #{atendimento.protocolo}
                 </Badge>
               )}
+              <span className="font-mono text-[11px] text-muted-foreground">
+                #{atendimento.id}
+              </span>
+              <TagPopover atendimentoId={atendimento.id} />
               {atendimento.qtde_resposta_invalida > 0 && (
                 <Badge
                   variant="outline"
                   className="text-[10px]"
                   title={`Cliente errou ${atendimento.qtde_resposta_invalida}× no menu/CSAT`}
                 >
-                  ⚠ {atendimento.qtde_resposta_invalida} inválidas
+                  ⚠ {atendimento.qtde_resposta_invalida}
                 </Badge>
               )}
               {!atendimento.iniciado_cliente && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px]"
-                  title="Atendimento aberto via outbound (operador/campanha)"
-                >
+                <Badge variant="outline" className="text-[10px]" title="outbound">
                   outbound
                 </Badge>
               )}
@@ -369,25 +371,30 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                 </Badge>
               )}
             </div>
-            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-              {atendimento.cliente_telefone ?? "—"} · atendimento #{atendimento.id} ·{" "}
-              {atendimento.agente_atual}
+            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground truncate">
+              {atendimento.cliente_telefone ?? "—"} · {atendimento.agente_atual}
+              {atendimento.cliente_id && (
+                <>
+                  {" · "}
+                  <Link
+                    href={`/clientes/${atendimento.cliente_id}`}
+                    className="underline hover:text-foreground"
+                  >
+                    ver ficha
+                  </Link>
+                </>
+              )}
             </p>
-            {atendimento.cliente_id && (
-              <Link
-                href={`/clientes/${atendimento.cliente_id}`}
-                className="mt-1 inline-block text-xs text-muted-foreground underline hover:text-foreground"
-              >
-                Ver ficha do cliente
-              </Link>
-            )}
-            <div className="mt-2">
-              <TagPopover atendimentoId={atendimento.id} />
-            </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
-            <X className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            <MoreActionsMenu
+              onLoadModelos={() => void openModelosDropdown()}
+              onResetThread={() => void handleResetThread()}
+            />
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
+              <X className="size-4" />
+            </Button>
+          </div>
         </header>
 
         <TriagemCard atendimento={atendimento} />
@@ -435,16 +442,6 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => void handleResetThread()}
-                disabled={loading || isPending}
-                title="Resetar histórico do agente (admin only)"
-              >
-                <Eraser className="size-3.5" />
-                Resetar
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
                 onClick={() => void reload()}
                 disabled={loading}
               >
@@ -482,50 +479,37 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
           </div>
         </div>
 
+        {isOpen && modelosOpen && (
+          <div className="fixed right-6 top-20 z-30 max-h-72 w-80 overflow-y-auto rounded-md border bg-popover shadow-lg">
+            {modelos === null ? (
+              <p className="p-3 text-xs text-muted-foreground">Carregando…</p>
+            ) : modelos.length === 0 ? (
+              <p className="p-3 text-xs text-muted-foreground">
+                Nenhum modelo cadastrado. Crie em <strong>/modelos</strong>.
+              </p>
+            ) : (
+              <ul className="py-1">
+                {modelos.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => insertModelo(m)}
+                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <span className="font-medium">{m.titulo}</span>
+                      <span className="line-clamp-2 text-xs text-muted-foreground">
+                        {m.conteudo}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {isOpen && (
           <div className="relative border-t bg-background/40 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => void openModelosDropdown()}
-                disabled={sending}
-              >
-                <ChevronDown className="size-3.5" />
-                Modelos
-              </Button>
-              {modelosOpen && (
-                <div className="absolute bottom-full left-3 z-10 mb-1 max-h-72 w-80 overflow-y-auto rounded-md border bg-popover shadow-lg">
-                  {modelos === null ? (
-                    <p className="p-3 text-xs text-muted-foreground">
-                      Carregando…
-                    </p>
-                  ) : modelos.length === 0 ? (
-                    <p className="p-3 text-xs text-muted-foreground">
-                      Nenhum modelo cadastrado. Crie em <strong>/modelos</strong>.
-                    </p>
-                  ) : (
-                    <ul className="py-1">
-                      {modelos.map((m) => (
-                        <li key={m.id}>
-                          <button
-                            type="button"
-                            onClick={() => insertModelo(m)}
-                            className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent"
-                          >
-                            <span className="font-medium">{m.titulo}</span>
-                            <span className="line-clamp-2 text-xs text-muted-foreground">
-                              {m.conteudo}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
             <div className="mb-2 flex items-center gap-2">
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
                 <input
@@ -574,9 +558,10 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
         )}
 
         {isOpen && (
-          <footer className="flex flex-wrap items-center justify-end gap-2 border-t p-4">
+          <footer className="flex flex-wrap items-center justify-end gap-1 border-t px-3 py-2">
             {atendimento.status === "aguardando" && (
               <Button
+                size="sm"
                 onClick={() => runAction(() => claimAction(atendimento.id))}
                 disabled={isPending}
               >
@@ -587,6 +572,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
             <div className="relative">
               <Button
                 variant="ghost"
+                size="sm"
                 onClick={() => setTransferOpen((v) => !v)}
                 disabled={isPending}
               >
@@ -700,6 +686,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
             </div>
             <Button
               variant="ghost"
+              size="sm"
               onClick={() => handleClose("resolvido")}
               disabled={isPending}
             >
@@ -708,6 +695,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
             </Button>
             <Button
               variant="ghost"
+              size="sm"
               onClick={() => handleClose("abandonado")}
               disabled={isPending}
             >
@@ -723,6 +711,67 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 
 // Card "Triagem IA" — renderiza só quando o agente classificou ou
 // gerou resumo. Aparece logo abaixo do header do drawer pra o atendente
+// Menu kebab (⋮) no header com ações secundárias do atendimento.
+// "Inserir modelo" dispara o dropdown de modelos absoluto perto do header.
+// "Resetar conversa" é admin-only — limpa thread do agente (LangGraph checkpointer).
+function MoreActionsMenu({
+  onLoadModelos,
+  onResetThread,
+}: {
+  onLoadModelos: () => void;
+  onResetThread: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Mais ações"
+        title="Mais ações"
+      >
+        <MoreVertical className="size-4" />
+      </Button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Fechar menu"
+            className="fixed inset-0 z-10"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] overflow-hidden rounded-md border bg-popover shadow-lg">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onLoadModelos();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+            >
+              <FileText className="size-3.5" />
+              Inserir modelo de mensagem
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onResetThread();
+              }}
+              className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-sm text-amber-600 hover:bg-accent dark:text-amber-400"
+            >
+              <Eraser className="size-3.5" />
+              Resetar conversa do agente
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // pegar contexto rápido sem ler conversa toda.
 function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
   const [collapsed, setCollapsed] = useCollapseState(
