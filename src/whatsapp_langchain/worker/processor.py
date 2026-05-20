@@ -1198,11 +1198,18 @@ async def _try_handle_menu(
     #
     # EXCEÇÃO: wizard de coleta acabou de terminar — `_try_handle_coleta_em_curso`
     # gravou `coleta_resumo` e re-entra aqui com texto sintético = ordem do
-    # item escolhido. O histórico contém o item de coleta (com acao_tipo já
-    # registrada em _ACOES_SAIDA_MENU), que faria `cliente_ja_saiu_do_menu`
-    # retornar True. Pulamos pra despachar a ação original.
+    # item escolhido (sempre numérico). O histórico contém o item de coleta
+    # (com acao_tipo já registrada em _ACOES_SAIDA_MENU), que faria
+    # `cliente_ja_saiu_do_menu` retornar True. Pulamos pra despachar a ação.
+    #
+    # Mas SÓ pulamos se o text é um número — pra não cobrir mensagens sintéticas
+    # tipo `[NOVO_ATENDIMENTO_TRIAGEM]` que o `chamar_agente` enfileira após
+    # transferir (essas precisam ir pro agente IA, não pro menu).
     coleta_resumo = getattr(atendimento, "coleta_resumo", None) or {}
-    coleta_em_reentry = bool(coleta_resumo.get("item_id"))
+    coleta_em_reentry = (
+        bool(coleta_resumo.get("item_id"))
+        and parse_numero_opcao(text) is not None
+    )
     if (
         posicao_atual is None
         and not coleta_em_reentry
