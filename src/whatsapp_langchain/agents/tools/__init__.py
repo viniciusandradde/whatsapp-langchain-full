@@ -26,6 +26,10 @@ from whatsapp_langchain.agents.tools.cliente_memoria import (
     save_cliente_fato,
 )
 from whatsapp_langchain.agents.tools.knowledge import search_knowledge_base
+from whatsapp_langchain.agents.tools.lgpd import (
+    log_lgpd_event,
+    verify_patient_identity,
+)
 from whatsapp_langchain.agents.tools.memory import read_memory, save_memory
 from whatsapp_langchain.agents.tools.midia import (
     analyze_image,
@@ -57,6 +61,7 @@ __all__ = [
     "get_cliente_anotacoes",
     "get_cliente_history",
     "get_cliente_profile",
+    "log_lgpd_event",
     "read_cliente_memoria",
     "read_memory",
     "save_cliente_fato",
@@ -66,6 +71,7 @@ __all__ = [
     "transcribe_audio",
     "transfer_to_human",
     "update_cliente",
+    "verify_patient_identity",
     "wareline_buscar_paciente",
     "wareline_consultar_agenda",
     "wareline_criar_agendamento",
