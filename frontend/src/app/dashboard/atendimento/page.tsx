@@ -1,8 +1,8 @@
 import { Activity } from "lucide-react";
 
 import { requireSession } from "@/lib/session";
-import { getDashboardAtendimento } from "@/lib/dashboard-atendimento-api";
 
+import { fetchDashboardAtendimentoAction } from "./actions";
 import { DashboardClient } from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export default async function DashboardAtendimentoPage() {
   let initialData = null;
   let error: string | null = null;
   try {
-    initialData = await getDashboardAtendimento("hoje");
+    initialData = await fetchDashboardAtendimentoAction("hoje");
   } catch (e) {
     error = e instanceof Error ? e.message : "Erro ao carregar dashboard.";
   }

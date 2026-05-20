@@ -4,11 +4,12 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  getDashboardAtendimento,
-  type DashboardPayload,
-  type Periodo,
+import type {
+  DashboardPayload,
+  Periodo,
 } from "@/lib/dashboard-atendimento-api";
+
+import { fetchDashboardAtendimentoAction } from "./actions";
 
 import { AtendentesSidebar } from "./atendentes-sidebar";
 import { ChartCriadosFinalizados } from "./chart-criados-finalizados";
@@ -36,7 +37,7 @@ export function DashboardClient({ initial }: { initial: DashboardPayload }) {
 
   async function load(p: Periodo) {
     try {
-      const fresh = await getDashboardAtendimento(p);
+      const fresh = await fetchDashboardAtendimentoAction(p);
       setData(fresh);
       setLastError(null);
     } catch (e) {
