@@ -67,7 +67,11 @@ class UpdateAgenteInput(BaseModel):
     nome: str | None = Field(default=None, min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
     template_catalog: str | None = Field(default=None, max_length=60)
-    prompt_override: str | None = Field(default=None, max_length=20_000)
+    # Limite 50k pra acomodar prompts XML hospitalares com few-shots +
+    # refusal templates + ReAct reasoning (atendimento-cliente.md v1.0
+    # passa de 20k; exames.md passa de 25k). Claude/Gemini têm 200k+
+    # context — 50k de prompt é seguro com folga.
+    prompt_override: str | None = Field(default=None, max_length=50_000)
     modelo: str | None = Field(default=None, max_length=120)
     estilo_resposta: str | None = None
     temperatura_override: float | None = Field(default=None, ge=0, le=2)
