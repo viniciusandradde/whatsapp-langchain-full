@@ -143,6 +143,15 @@ export type ConexaoProvider =
   | "evolution";
 export type ConexaoStatus = "active" | "disabled" | "error";
 
+export type ConnectionState =
+  | "pending"
+  | "qr_pending"
+  | "open"
+  | "connecting"
+  | "disconnected"
+  | "error"
+  | "ready";
+
 export interface Conexao {
   id: number;
   empresa_id: number;
@@ -156,6 +165,19 @@ export interface Conexao {
   payload_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  tipo_atendimento?: string;
+  whatsapp_state?: string | null;
+  waba_account_id?: string | null;
+  waba_phone_id?: string | null;
+  waba_app_id?: string | null;
+  waba_account_description?: string | null;
+  connection_state?: ConnectionState;
+  state_message?: string | null;
+  qr_code?: string | null;
+  qr_expires_at?: string | null;
+  ultimo_health_check_at?: string | null;
+  ultimo_health_check_ok?: boolean | null;
+  webhook_verify_token?: string | null;
 }
 
 export interface ConexoesResponse {
@@ -171,6 +193,115 @@ export interface ConexaoInput {
   status?: ConexaoStatus;
   is_default?: boolean;
   payload_json?: Record<string, unknown>;
+  tipo_atendimento?: string;
+}
+
+export interface ConexaoPatchInput {
+  display_name?: string | null;
+  default_agent_id?: string;
+  is_default?: boolean;
+  tipo_atendimento?: string;
+  status?: ConexaoStatus;
+}
+
+export interface WabaOAuthStartResponse {
+  redirect_url: string;
+  state: string;
+}
+
+export interface WabaOAuthPhone {
+  id: string;
+  display_phone_number: string;
+  verified_name?: string | null;
+  quality_rating?: string | null;
+}
+
+export interface WabaOAuthAccount {
+  id: string;
+  name: string;
+  phone_numbers: WabaOAuthPhone[];
+}
+
+export interface WabaOAuthResult {
+  accounts: WabaOAuthAccount[];
+  display_name: string | null;
+}
+
+export interface WabaFinalizeInput {
+  state: string;
+  waba_account_id: string;
+  phone_id: string;
+  display_name?: string;
+  register_phone?: boolean;
+  pin?: string;
+}
+
+export interface EvolutionProvisionInput {
+  display_name: string;
+  instance_name?: string;
+}
+
+export interface EvolutionProvisionResponse {
+  conexao_id: number;
+  qr_base64: string | null;
+  state: ConnectionState;
+  expires_in: number;
+}
+
+export interface QRResponse {
+  qr_base64: string | null;
+  expires_in: number;
+  state: ConnectionState;
+}
+
+export interface StatusResponse {
+  state: ConnectionState;
+  message: string | null;
+  is_active: boolean;
+}
+
+export type WabaTemplateStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "disabled"
+  | "paused";
+
+export type WabaTemplateCategoria = "UTILITY" | "AUTHENTICATION" | "MARKETING";
+
+export interface WabaTemplateComponent {
+  type: string;
+  format?: string;
+  text?: string;
+  example?: Record<string, unknown>;
+  buttons?: Record<string, unknown>[];
+}
+
+export interface WabaTemplate {
+  id: number;
+  empresa_id: number;
+  conexao_id: number;
+  nome: string;
+  categoria: WabaTemplateCategoria;
+  idioma: string;
+  componentes_json: WabaTemplateComponent[];
+  status: WabaTemplateStatus;
+  meta_template_id: string | null;
+  meta_quality_score: string | null;
+  motivo_rejeicao: string | null;
+  ultimo_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by_user_id: string | null;
+}
+
+export interface WabaTemplateInput {
+  nome: string;
+  categoria: WabaTemplateCategoria;
+  idioma?: string;
+  componentes_json: WabaTemplateComponent[];
+  submit?: boolean;
 }
 
 // --- Painel de modelos LLM por agente ---
@@ -1081,19 +1212,156 @@ export async function getConexoes(): Promise<ConexoesResponse> {
   return apiFetch<ConexoesResponse>("/api/conexoes");
 }
 
+export async function getConexao(id: number): Promise<Conexao> {
+  return apiFetch<Conexao>(`/api/conexoes/${id}`);
+}
+
 export async function createConexao(body: ConexaoInput): Promise<Conexao> {
   return apiFetch<Conexao>("/api/conexoes", { method: "POST", body });
 }
 
+export async function patchConexao(
+  id: number,
+  body: ConexaoPatchInput
+): Promise<Conexao> {
+  return apiFetch<Conexao>(`/api/conexoes/${id}`, { method: "PATCH", body });
+}
+
+/**
+ * @deprecated Use patchConexao em vez de updateConexao.
+ * Mantido pra compat de chamadores legados (PUT é o endpoint antigo;
+ * backend novo aceita só PATCH). Internamente delega.
+ */
 export async function updateConexao(
   id: number,
   body: ConexaoInput
 ): Promise<Conexao> {
-  return apiFetch<Conexao>(`/api/conexoes/${id}`, { method: "PUT", body });
+  // Converte ConexaoInput → ConexaoPatchInput (subset)
+  return patchConexao(id, {
+    display_name: body.display_name,
+    default_agent_id: body.default_agent_id,
+    is_default: body.is_default,
+    status: body.status,
+  });
 }
 
 export async function disableConexao(id: number): Promise<void> {
   await apiFetch<void>(`/api/conexoes/${id}`, { method: "DELETE" });
+}
+
+// --- Sprint Conexões WABA OAuth + Evolution auto-provision ---
+
+export async function wabaOAuthStart(
+  displayName?: string
+): Promise<WabaOAuthStartResponse> {
+  return apiFetch<WabaOAuthStartResponse>("/api/conexoes/waba/oauth/start", {
+    method: "POST",
+    body: { display_name: displayName || null },
+  });
+}
+
+export async function wabaOAuthResult(state: string): Promise<WabaOAuthResult> {
+  return apiFetch<WabaOAuthResult>(
+    `/api/conexoes/waba/oauth/result?state=${encodeURIComponent(state)}`
+  );
+}
+
+export async function wabaFinalize(body: WabaFinalizeInput): Promise<Conexao> {
+  return apiFetch<Conexao>("/api/conexoes/waba/finalize", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function evolutionProvision(
+  body: EvolutionProvisionInput
+): Promise<EvolutionProvisionResponse> {
+  return apiFetch<EvolutionProvisionResponse>(
+    "/api/conexoes/evolution/provision",
+    { method: "POST", body }
+  );
+}
+
+export async function getConexaoQR(id: number): Promise<QRResponse> {
+  return apiFetch<QRResponse>(`/api/conexoes/${id}/qr`);
+}
+
+export async function getConexaoStatus(id: number): Promise<StatusResponse> {
+  return apiFetch<StatusResponse>(`/api/conexoes/${id}/status`);
+}
+
+export async function testConexao(
+  id: number
+): Promise<{ ok: boolean; message: string | null }> {
+  return apiFetch(`/api/conexoes/${id}/test`, { method: "POST" });
+}
+
+export async function disconnectConexao(
+  id: number
+): Promise<{ ok: boolean; state: string }> {
+  return apiFetch(`/api/conexoes/${id}/disconnect`, { method: "POST" });
+}
+
+// --- Templates HSM ---
+
+export async function listTemplates(
+  conexaoId: number
+): Promise<{ templates: WabaTemplate[] }> {
+  return apiFetch(`/api/conexoes/${conexaoId}/templates`);
+}
+
+export async function createTemplate(
+  conexaoId: number,
+  body: WabaTemplateInput
+): Promise<WabaTemplate> {
+  return apiFetch(`/api/conexoes/${conexaoId}/templates`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function getTemplate(
+  conexaoId: number,
+  templateId: number
+): Promise<WabaTemplate> {
+  return apiFetch(`/api/conexoes/${conexaoId}/templates/${templateId}`);
+}
+
+export async function syncTemplate(
+  conexaoId: number,
+  templateId: number
+): Promise<WabaTemplate> {
+  return apiFetch(`/api/conexoes/${conexaoId}/templates/${templateId}/sync`, {
+    method: "POST",
+  });
+}
+
+export async function testSendTemplate(
+  conexaoId: number,
+  templateId: number,
+  body: { to_number: string; variables: Record<string, string> }
+): Promise<{ ok: boolean; message_id: string }> {
+  return apiFetch(
+    `/api/conexoes/${conexaoId}/templates/${templateId}/test-send`,
+    { method: "POST", body }
+  );
+}
+
+export async function deleteTemplate(
+  conexaoId: number,
+  templateId: number
+): Promise<void> {
+  await apiFetch(`/api/conexoes/${conexaoId}/templates/${templateId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function importTemplatesFromMeta(
+  conexaoId: number
+): Promise<{ imported: number; skipped: number; total_remote: number }> {
+  return apiFetch(`/api/conexoes/${conexaoId}/templates/import`, {
+    method: "POST",
+  });
 }
 
 export interface TestEvolutionResult {

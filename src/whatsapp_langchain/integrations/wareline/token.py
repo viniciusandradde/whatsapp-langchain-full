@@ -62,23 +62,17 @@ async def _request_new_token(creds: WarelineCredentials) -> TokenResponse:
             empresa_id=creds.empresa_id,
             error=str(exc),
         )
-        raise WarelineUnavailableError(
-            f"OAuth Wareline indisponível: {exc!s}"
-        ) from exc
+        raise WarelineUnavailableError(f"OAuth Wareline indisponível: {exc!s}") from exc
 
     if resp.status_code == 401:
-        raise WarelineAuthError(
-            "Credenciais Wareline inválidas (HTTP 401 no OAuth)."
-        )
+        raise WarelineAuthError("Credenciais Wareline inválidas (HTTP 401 no OAuth).")
     if resp.status_code >= 500:
         raise WarelineUnavailableError(
-            f"OAuth Wareline retornou {resp.status_code}: "
-            f"{resp.text[:200]}"
+            f"OAuth Wareline retornou {resp.status_code}: {resp.text[:200]}"
         )
     if resp.status_code >= 400:
         raise WarelineAuthError(
-            f"OAuth Wareline rejeitou request ({resp.status_code}): "
-            f"{resp.text[:200]}"
+            f"OAuth Wareline rejeitou request ({resp.status_code}): {resp.text[:200]}"
         )
 
     return TokenResponse.model_validate(resp.json())

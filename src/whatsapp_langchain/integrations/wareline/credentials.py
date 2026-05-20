@@ -148,9 +148,7 @@ async def save_credentials(
 ) -> dict:
     """UPSERT — cria ou atualiza credenciais da empresa."""
     base_url = base_url or "https://modulos.conectew.com.br"
-    pacientes_base_url = (
-        pacientes_base_url or "https://services.conectew.com.br"
-    )
+    pacientes_base_url = pacientes_base_url or "https://services.conectew.com.br"
     password_enc = encrypt(password)
     client_secret_enc = encrypt(client_secret)
     async with pool.connection() as conn:
@@ -239,7 +237,7 @@ async def update_credentials_partial(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            UPDATE wareline_credentials SET {', '.join(sets)}
+            UPDATE wareline_credentials SET {", ".join(sets)}
              WHERE empresa_id = %s
              RETURNING empresa_id
             """,  # type: ignore[arg-type]
@@ -257,9 +255,7 @@ async def update_credentials_partial(
     return await get_credentials_safe_view(pool, empresa_id)
 
 
-async def delete_credentials(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> bool:
+async def delete_credentials(pool: AsyncConnectionPool, empresa_id: int) -> bool:
     """Hard delete (cascade limpa token_cache via FK)."""
     async with pool.connection() as conn:
         cur = await conn.execute(

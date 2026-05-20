@@ -109,7 +109,13 @@ from whatsapp_langchain.server.routes.traces import router as traces_router
 from whatsapp_langchain.server.routes.variavel import (
     router as variavel_router,
 )
+from whatsapp_langchain.server.routes.waba_templates import (
+    router as waba_templates_router,
+)
 from whatsapp_langchain.server.routes.webhook import router as webhook_router
+from whatsapp_langchain.server.routes.webhook_waba import (
+    router as webhook_waba_router,
+)
 from whatsapp_langchain.server.routes.workflows import router as workflows_router
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import (
@@ -199,7 +205,7 @@ install_correlation_id(app)
 # Fase 0 enterprise — instrumentação OTel pro app inteiro. Cria span
 # por request automaticamente. Excluí /health e /metrics pra não poluir
 # traces com health-checks de monitoring.
-from whatsapp_langchain.shared.telemetry import instrument_fastapi
+from whatsapp_langchain.shared.telemetry import instrument_fastapi  # noqa: E402
 
 instrument_fastapi(app)
 
@@ -234,9 +240,7 @@ async def prometheus_middleware(request, call_next):  # type: ignore[no-untyped-
     finally:
         elapsed = _time.perf_counter() - start
         http_requests_total.labels(method=method, path=path, status=status).inc()
-        http_request_duration_seconds.labels(method=method, path=path).observe(
-            elapsed
-        )
+        http_request_duration_seconds.labels(method=method, path=path).observe(elapsed)
     return response
 
 
@@ -257,6 +261,8 @@ async def agent_not_found_handler(
 app.include_router(health_router)
 app.include_router(webhook_router)
 app.include_router(evolution_webhook_router)
+app.include_router(webhook_waba_router)
+app.include_router(waba_templates_router)
 app.include_router(admin_router)
 app.include_router(empresa_admin_router)
 app.include_router(conexao_router)

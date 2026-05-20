@@ -30,9 +30,7 @@ PROVIDER_SLUG = "google_calendar"
 DEFAULT_LABEL = "Google Calendar"
 
 
-async def read_unified(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> dict | None:
+async def read_unified(pool: AsyncConnectionPool, empresa_id: int) -> dict | None:
     """Lê config Google Calendar — api_connection primeiro, fallback legacy.
 
     Retorna dict com chaves: oauth_credentials_json (dict descriptografado),
@@ -295,7 +293,7 @@ async def update_setting_dual(
             legacy_args.append(empresa_id)
             await conn.execute(
                 f"""
-                UPDATE empresa_calendar_config SET {', '.join(legacy_sets)}
+                UPDATE empresa_calendar_config SET {", ".join(legacy_sets)}
                  WHERE empresa_id = %s
                 """,  # type: ignore[arg-type]
                 tuple(legacy_args),
@@ -304,9 +302,7 @@ async def update_setting_dual(
     return True
 
 
-async def delete_dual(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> bool:
+async def delete_dual(pool: AsyncConnectionPool, empresa_id: int) -> bool:
     """DELETE em AMBOS storages (cascade no token_cache via FK).
 
     Retorna True se ao menos um deletou.
@@ -320,13 +316,13 @@ async def delete_dual(
             """,
             (empresa_id, PROVIDER_SLUG),
         )
-        n1 = (await cur1.fetchall())
+        n1 = await cur1.fetchall()
         cur2 = await conn.execute(
             "DELETE FROM empresa_calendar_config WHERE empresa_id = %s "
             "RETURNING empresa_id",
             (empresa_id,),
         )
-        n2 = (await cur2.fetchall())
+        n2 = await cur2.fetchall()
         await conn.commit()
     return bool(n1) or bool(n2)
 
@@ -375,9 +371,7 @@ async def migrate_legacy_to_api_connection(
             try:
                 oauth_json = json.loads(oauth_json)
             except Exception:
-                logger.warning(
-                    "migration_skip_invalid_json", empresa_id=empresa_id
-                )
+                logger.warning("migration_skip_invalid_json", empresa_id=empresa_id)
                 skipped += 1
                 continue
         creds_enc = encrypt_dict(oauth_json)

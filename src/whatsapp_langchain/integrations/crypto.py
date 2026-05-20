@@ -30,9 +30,7 @@ def _get_fernet() -> Fernet:
             "`python -c 'from cryptography.fernet import Fernet; "
             "print(Fernet.generate_key().decode())'`"
         )
-    raw = (
-        key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
-    )
+    raw = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
     return Fernet(raw.encode() if isinstance(raw, str) else raw)
 
 

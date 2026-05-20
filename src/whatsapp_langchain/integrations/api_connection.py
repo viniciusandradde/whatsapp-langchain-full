@@ -38,9 +38,7 @@ def _mask_sensitive(creds: dict, provider_slug: str) -> dict:
     return masked
 
 
-async def list_conexoes(
-    pool: AsyncConnectionPool, *, empresa_id: int
-) -> list[dict]:
+async def list_conexoes(pool: AsyncConnectionPool, *, empresa_id: int) -> list[dict]:
     """Lista conexões da empresa com info enriquecida do provider catalog."""
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -148,9 +146,7 @@ async def create_conexao(
     """Cria conexão. Valida credentials contra schema do provider."""
     provider = get_provider(provider_slug)
     if provider is None:
-        raise IntegracaoConfigError(
-            f"Provider '{provider_slug}' desconhecido."
-        )
+        raise IntegracaoConfigError(f"Provider '{provider_slug}' desconhecido.")
     if provider.legacy_storage is not None:
         raise IntegracaoConfigError(
             f"Provider '{provider_slug}' usa storage legacy "
@@ -167,9 +163,12 @@ async def create_conexao(
     if auth_type == "dynamic":
         auth_method = credentials.get("auth_method") or "none"
         auth_type = (
-            "bearer" if auth_method == "bearer"
-            else "basic" if auth_method == "basic"
-            else "api_key" if auth_method == "api_key_header"
+            "bearer"
+            if auth_method == "bearer"
+            else "basic"
+            if auth_method == "basic"
+            else "api_key"
+            if auth_method == "api_key_header"
             else "none"
         )
 
@@ -286,7 +285,7 @@ async def update_conexao(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            UPDATE api_connection SET {', '.join(sets)}
+            UPDATE api_connection SET {", ".join(sets)}
              WHERE id = %s AND empresa_id = %s
              RETURNING id
             """,  # type: ignore[arg-type]
@@ -296,8 +295,7 @@ async def update_conexao(
         if row2 and credentials_patch:
             # Cripto mudou → limpa token cache
             await conn.execute(
-                "DELETE FROM api_connection_token_cache "
-                "WHERE connection_id = %s",
+                "DELETE FROM api_connection_token_cache WHERE connection_id = %s",
                 (connection_id,),
             )
         await conn.commit()
@@ -314,8 +312,7 @@ async def delete_conexao(
     """Hard delete. CASCADE limpa token cache."""
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "DELETE FROM api_connection WHERE id = %s AND empresa_id = %s "
-            "RETURNING id",
+            "DELETE FROM api_connection WHERE id = %s AND empresa_id = %s RETURNING id",
             (connection_id, empresa_id),
         )
         row = await cur.fetchone()

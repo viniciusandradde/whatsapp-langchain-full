@@ -21,10 +21,15 @@ from __future__ import annotations
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.integrations.waba.client import WabaClient
 from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
-from whatsapp_langchain.shared.conexao import get_conexao_by_id
+from whatsapp_langchain.shared.conexao import (
+    get_conexao_by_id,
+    get_credentials_decrypted,
+)
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.models import Conexao
 from whatsapp_langchain.worker.evolution_client import EvolutionClient
 from whatsapp_langchain.worker.outbound_client import OutboundClient
 from whatsapp_langchain.worker.twilio_client import TwilioClient
@@ -36,8 +41,13 @@ class OutboundError(Exception):
     """Erro lógico ao tentar enviar mensagem manual."""
 
 
-def _build_client(provider: str, from_number: str) -> tuple[OutboundClient, str]:
+async def _build_client(
+    pool: AsyncConnectionPool, conexao: Conexao
+) -> tuple[OutboundClient, str]:
     """Instancia o cliente outbound certo pro provider da conexão.
+
+    Lê credenciais cifradas (WABA / Evolution multi-instância) quando
+    disponíveis, senão cai em env vars (compat com conexões legadas).
 
     Returns:
         (client, delivery_mode) — `delivery_mode` ("real" / "mock") fica
@@ -46,31 +56,59 @@ def _build_client(provider: str, from_number: str) -> tuple[OutboundClient, str]
     Raises:
         OutboundError: provider desconhecido ou config faltando.
     """
+    provider = conexao.provider
+
+    # --- WABA real (Meta Cloud API) ---
+    if provider == "waba" and conexao.waba_phone_id:
+        credentials = await get_credentials_decrypted(pool, conexao.id) or {}
+        access_token = credentials.get("access_token")
+        if not access_token:
+            raise OutboundError(
+                "Conexão WABA sem access_token cifrado — refaça o OAuth."
+            )
+        mode = "real" if settings.is_production else "real"  # WABA não tem 'mock' útil
+        client = WabaClient(
+            access_token=access_token,
+            phone_id=conexao.waba_phone_id,
+            delivery_mode=mode,
+        )
+        return client, mode
+
+    # --- Twilio (sandbox/prod) + legacy 'waba' (sem phone_id, usa Twilio API) ---
     if provider in ("twilio_sandbox", "twilio_prod", "waba"):
         mode = settings.resolved_twilio_outbound_mode
         client = TwilioClient(
             account_sid=settings.twilio_account_sid,
             api_key_sid=settings.twilio_api_key_sid,
             api_key_secret=settings.twilio_api_key_secret,
-            from_number=f"whatsapp:{from_number}",
+            from_number=f"whatsapp:{conexao.from_number}",
             delivery_mode=mode,
         )
         return client, mode
 
+    # --- Evolution (com credentials cifradas multi-instance OU env vars fallback) ---
     if provider == "evolution":
-        if not (
-            settings.evolution_api_url
-            and settings.evolution_api_key
-            and settings.evolution_instance_name
-        ):
+        credentials = await get_credentials_decrypted(pool, conexao.id) or {}
+        api_url = credentials.get("api_url") or settings.evolution_api_url
+        api_key = credentials.get("api_key") or (
+            settings.evolution_api_key.get_secret_value()
+            if settings.evolution_api_key
+            else ""
+        )
+        instance_name = (
+            credentials.get("instance_name")
+            or conexao.payload_json.get("instance_name")
+            or settings.evolution_instance_name
+        )
+        if not (api_url and api_key and instance_name):
             raise OutboundError(
                 "Evolution não configurada (API URL / key / instance ausentes)."
             )
         mode = settings.evolution_outbound_mode or "mock"
         client = EvolutionClient(
-            api_url=settings.evolution_api_url,
-            api_key=settings.evolution_api_key.get_secret_value(),
-            instance_name=settings.evolution_instance_name,
+            api_url=api_url,
+            api_key=api_key,
+            instance_name=instance_name,
             delivery_mode=mode,
         )
         return client, mode
@@ -179,7 +217,7 @@ async def send_outbound_manual(
     if conexao is None or conexao.empresa_id != empresa_id:
         raise OutboundError("Conexão do atendimento não encontrada.")
 
-    client, outbound_mode = _build_client(conexao.provider, conexao.from_number)
+    client, outbound_mode = await _build_client(pool, conexao)
 
     try:
         provider_message_id = await client.send_message(cliente.telefone, text)
@@ -260,7 +298,7 @@ async def send_system_outbound(
         return {}
 
     try:
-        client, outbound_mode = _build_client(conexao.provider, conexao.from_number)
+        client, outbound_mode = await _build_client(pool, conexao)
         provider_message_id = await client.send_message(cliente.telefone, text)
     except Exception as e:  # noqa: BLE001
         logger.warning(

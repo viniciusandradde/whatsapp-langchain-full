@@ -40,7 +40,7 @@ class MessageQueue(BaseModel):
     )
     atendimento_id: int | None = Field(
         default=None,
-        description="Atendimento (M3 CRM); None em rows legacy.",
+        description="ID do atendimento associado (None se não houver vinculação).",
     )
     message_id: str | None = None
     phone_number: str = Field(description="Formato E.164, ex: +5511999999999")
@@ -259,6 +259,14 @@ class Conexao(BaseModel):
     waba_phone_id: str | None = None
     waba_app_id: str | None = None
     waba_account_description: str | None = None
+    # Sprint Conexões WABA/Evolution (mig 092)
+    connection_state: str = "pending"  # pending|qr_pending|open|connecting|disconnected|error|ready
+    state_message: str | None = None
+    qr_code: str | None = None  # base64 PNG (Evolution)
+    qr_expires_at: datetime | None = None
+    ultimo_health_check_at: datetime | None = None
+    ultimo_health_check_ok: bool | None = None
+    webhook_verify_token: str | None = None  # WABA inbound
 
 
 class ConexaoInput(BaseModel):
@@ -272,6 +280,17 @@ class ConexaoInput(BaseModel):
     status: str = "active"
     is_default: bool = False
     payload_json: dict = Field(default_factory=dict)
+    tipo_atendimento: str | None = None
+
+
+class ConexaoPatchInput(BaseModel):
+    """Payload do PATCH /api/conexoes/{id} — campos editáveis após criação."""
+
+    display_name: str | None = None
+    default_agent_id: str | None = None
+    is_default: bool | None = None
+    tipo_atendimento: str | None = None
+    status: str | None = None  # active|disabled (não permite 'error')
 
 
 # --- M3 CRM Light: Cliente + Atendimento ---

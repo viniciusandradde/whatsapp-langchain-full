@@ -117,8 +117,38 @@ class Settings(BaseSettings):
     # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
     # Wareline (password + client_secret) na tabela `wareline_credentials`.
     # Gerar: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-    # Sem essa chave, integração Wareline fica desabilitada (rotas retornam 503).
+    # Sem essa chave, integração Wareline (e qualquer outra integração que use
+    # `integrations.crypto`) fica desabilitada (rotas retornam 503).
     wareline_encryption_key: SecretStr | None = None
+
+    # --- Sprint Conexões — WhatsApp Cloud API (Meta WABA Embedded Signup) ---
+    # App registrado em developers.facebook.com com produto "WhatsApp Business Platform"
+    # e Embedded Signup habilitado. configuration_id é gerado lá.
+    # Sem essas vars, rotas /api/conexoes/waba/* respondem 503 e card WABA em UI
+    # mostra mensagem "Meta App não configurado".
+    meta_app_id: str = ""
+    meta_app_secret: SecretStr | None = None
+    meta_config_id: str = ""
+    # Default vazio → calculado em runtime baseado no public_base_url (se setado).
+    meta_oauth_redirect_uri: str = ""
+    # Token único pra validar handshake GET /webhook/waba (hub.verify_token).
+    # Gerar uuid4 e setar UMA VEZ. Reutilizado por todas as conexões WABA.
+    waba_webhook_verify_token: SecretStr | None = None
+    # Versão Graph API (atualizar periodicamente — Meta deprecia ~1x/ano).
+    waba_graph_api_version: str = "v21.0"
+
+    # --- Sprint Conexões — Evolution admin (auto-provision de instances) ---
+    # URL do Evolution server pra ops admin (create/connect/disconnect instance).
+    # Por default usa evolution_api_url se vazio.
+    evolution_admin_url: str = ""
+    # api-key GLOBAL do Evolution (header `apikey` requerido pra rotas /instance/*).
+    # Diferente de evolution_api_key (que é per-instance).
+    evolution_global_api_key: SecretStr | None = None
+
+    # Base URL pública do app (usado pra montar redirect URIs de OAuth + webhook URLs
+    # nas integrações WABA/Evolution quando user não setou explicitamente).
+    # Ex: https://chat.vsanexus.com (sem barra final).
+    public_base_url: str = ""
 
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
@@ -194,6 +224,37 @@ class Settings(BaseSettings):
     def frontend_origins_list(self) -> list[str]:
         """Retorna a lista de origens CORS a partir do CSV em FRONTEND_ORIGINS."""
         return [o.strip() for o in self.frontend_origins.split(",") if o.strip()]
+
+    @property
+    def resolved_meta_oauth_redirect_uri(self) -> str:
+        """Redirect URI do OAuth Meta — usa override se setado, senão public_base_url."""
+        explicit = self.meta_oauth_redirect_uri.strip()
+        if explicit:
+            return explicit
+        base = self.public_base_url.strip().rstrip("/")
+        if base:
+            return f"{base}/api/conexoes/waba/oauth/callback"
+        return "http://localhost:8000/api/conexoes/waba/oauth/callback"
+
+    @property
+    def resolved_evolution_admin_url(self) -> str:
+        """URL admin do Evolution — fallback pra evolution_api_url se vazio."""
+        return (self.evolution_admin_url or self.evolution_api_url).strip()
+
+    @property
+    def waba_enabled(self) -> bool:
+        """True quando as 4 env vars mínimas pra WABA estão setadas."""
+        return bool(
+            self.meta_app_id
+            and self.meta_app_secret
+            and self.meta_config_id
+            and self.waba_webhook_verify_token
+        )
+
+    @property
+    def evolution_admin_enabled(self) -> bool:
+        """True quando as 2 env vars mínimas pra Evolution admin estão setadas."""
+        return bool(self.resolved_evolution_admin_url and self.evolution_global_api_key)
 
     @property
     def resolved_twilio_outbound_mode(self) -> str:

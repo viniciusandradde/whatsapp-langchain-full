@@ -109,17 +109,14 @@ class WarelineClient:
                 continue
 
             if resp.status_code == 401:
-                raise WarelineAuthError(
-                    "Token Wareline rejeitado mesmo após refresh"
-                )
+                raise WarelineAuthError("Token Wareline rejeitado mesmo após refresh")
             if resp.status_code == 404:
                 raise WarelineNotFoundError(
                     f"Recurso não encontrado: {url} {params or json_body or ''}"
                 )
             if resp.status_code >= 500:
                 last_exc = WarelineUnavailableError(
-                    f"Wareline retornou {resp.status_code}: "
-                    f"{resp.text[:200]}"
+                    f"Wareline retornou {resp.status_code}: {resp.text[:200]}"
                 )
                 logger.warning(
                     "wareline_5xx",
