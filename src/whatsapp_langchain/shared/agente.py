@@ -263,22 +263,27 @@ async def update_agente(
     **fields: Any,
 ) -> AgenteIA | None:
     """Atualiza qualquer subset de campos. Bloqueia colunas read-only
-    (id, slug, empresa_id, created_at, etc)."""
+    (id, slug, empresa_id, created_at, etc).
+
+    Convenção PATCH (docs/dev/PATCH_PATTERN.md): None = "limpar" o
+    campo (vira NULL no DB). Caller deve passar SÓ os campos explícitos
+    (use `body.model_dump(exclude_unset=True)` na route).
+    """
     READONLY = {"id", "empresa_id", "slug", "created_at", "updated_at",
                 "created_by_user_id", "temperatura_efetiva", "top_p_efetivo"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
-        if k in READONLY or v is None:
+        if k in READONLY:
             continue
         # Listas + JSON precisam cast explícito em alguns drivers
         if k in ("tools_enabled", "base_conhecimento_ids", "variavel_ids", "mcp_server_ids"):
             sets.append(f"{k} = %s::text[]" if k == "tools_enabled" else f"{k} = %s::bigint[]")
-            params.append(list(v))
+            params.append(list(v) if v is not None else None)
         elif k == "tools_config":
             import json
             sets.append("tools_config = %s::jsonb")
-            params.append(json.dumps(v))
+            params.append(json.dumps(v) if v is not None else None)
         else:
             sets.append(f"{k} = %s")
             params.append(v)

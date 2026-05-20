@@ -211,13 +211,14 @@ async def update_endpoint(
     if before is None:
         raise HTTPException(status_code=404, detail="Agente não encontrado.")
 
-    # Filtra campos não-None do body
-    fields: dict[str, Any] = {
-        k: v for k, v in body.model_dump().items() if v is not None
-    }
+    # PATCH parcial — exclude_unset envia só campos explicitamente setados
+    # pelo user (permite enviar null pra limpar). Ver docs/dev/PATCH_PATTERN.md.
+    fields: dict[str, Any] = body.model_dump(exclude_unset=True)
     updated = await update_agente(pool, empresa_id, slug, **fields)
     if updated is None:
-        raise HTTPException(status_code=404, detail="Agente não encontrado após update.")
+        raise HTTPException(
+            status_code=404, detail="Agente não encontrado após update."
+        )
 
     await record_audit(
         pool,

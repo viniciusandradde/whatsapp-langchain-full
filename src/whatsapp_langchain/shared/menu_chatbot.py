@@ -280,16 +280,17 @@ async def update_menu(
     menu_id: int,
     **fields: Any,
 ) -> MenuChatbot | None:
+    # Ver docs/dev/PATCH_PATTERN.md — None = limpar, ausente = não tocar.
     READONLY = {"id", "empresa_id", "created_at", "updated_at",
                 "created_by_user_id"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
-        if k in READONLY or v is None:
+        if k in READONLY:
             continue
         if k == "trigger_keywords":
             sets.append("trigger_keywords = %s::text[]")
-            params.append(list(v))
+            params.append(list(v) if v is not None else None)
         else:
             sets.append(f"{k} = %s")
             params.append(v)
@@ -443,17 +444,24 @@ async def create_item(
 async def update_item(
     pool: AsyncConnectionPool, item_id: int, **fields: Any
 ) -> MenuItem | None:
+    """PATCH parcial de menu_item.
+
+    Convenção do projeto (docs/dev/PATCH_PATTERN.md): apenas campos
+    presentes em `fields` são tocados. Caller (route) deve usar
+    `body.model_dump(exclude_unset=True)` pra mandar SÓ os campos
+    explícitos. Aqui `None` = "limpar" o campo (vira NULL no DB).
+    """
     READONLY = {"id", "menu_id", "parent_id", "created_at", "updated_at"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
-        if k in READONLY or v is None:
+        if k in READONLY:
             continue
-        if k == "acao_tipo" and v not in ACAO_TIPOS:
+        if k == "acao_tipo" and v is not None and v not in ACAO_TIPOS:
             raise ValueError(f"acao_tipo '{v}' inválido")
         if k == "acao_payload":
             sets.append("acao_payload = %s::jsonb")
-            params.append(json.dumps(v))
+            params.append(json.dumps(v) if v is not None else None)
         elif k == "coleta_perguntas":
             sets.append("coleta_perguntas = %s::jsonb")
             params.append(json.dumps(v, ensure_ascii=False) if v else None)

@@ -141,7 +141,8 @@ async def update_modelo_endpoint(
         raise HTTPException(
             status_code=403, detail="Modelos globais não podem ser editados."
         )
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    # PATCH parcial — ver docs/dev/PATCH_PATTERN.md
+    fields = body.model_dump(exclude_unset=True)
     out = await update_modelo_llm(pool, modelo_id, **fields)
     if out is None:
         raise HTTPException(status_code=404, detail="Modelo não encontrado.")
@@ -284,7 +285,8 @@ async def update_mcp_endpoint(
     before = await get_mcp_server(pool, empresa_id, mcp_id)
     if before is None:
         raise HTTPException(status_code=404, detail="MCP server não encontrado.")
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    # PATCH parcial — ver docs/dev/PATCH_PATTERN.md
+    fields = body.model_dump(exclude_unset=True)
     out = await update_mcp_server(pool, empresa_id, mcp_id, **fields)
     if out is None:
         raise HTTPException(status_code=404, detail="MCP server não encontrado.")

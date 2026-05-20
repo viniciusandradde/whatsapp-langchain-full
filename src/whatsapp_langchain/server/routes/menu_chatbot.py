@@ -266,7 +266,8 @@ async def update_menu_endpoint(
     if before is None:
         raise HTTPException(status_code=404, detail="Menu não encontrado.")
 
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    # PATCH parcial — ver docs/dev/PATCH_PATTERN.md
+    fields = body.model_dump(exclude_unset=True)
     updated = await update_menu(pool, empresa_id, menu_id, **fields)
     if updated is None:
         raise HTTPException(status_code=404, detail="Menu não encontrado.")
@@ -505,7 +506,9 @@ async def update_item_endpoint(
         raise HTTPException(status_code=404, detail="Item não encontrado.")
     _ensure_menu_owns_item(menu_id, before)
 
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    # PATCH parcial — exclude_unset envia SÓ campos explícitos (permite
+    # apagar mandando null). Ver docs/dev/PATCH_PATTERN.md.
+    fields = body.model_dump(exclude_unset=True)
     updated = await update_item(pool, item_id, **fields)
     if updated is None:
         raise HTTPException(status_code=404, detail="Item não encontrado.")

@@ -137,11 +137,12 @@ async def create_modelo_llm(
 async def update_modelo_llm(
     pool: AsyncConnectionPool, modelo_id: int, **fields: Any
 ) -> ModeloLLM | None:
+    # PATCH parcial — None = limpar. Ver docs/dev/PATCH_PATTERN.md.
     READONLY = {"id", "empresa_id", "created_at", "updated_at"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
-        if k in READONLY or v is None:
+        if k in READONLY:
             continue
         sets.append(f"{k} = %s")
         params.append(v)
@@ -295,16 +296,17 @@ async def update_mcp_server(
     mcp_id: int,
     **fields: Any,
 ) -> McpServer | None:
+    # PATCH parcial — None = limpar. Ver docs/dev/PATCH_PATTERN.md.
     READONLY = {"id", "empresa_id", "created_at", "updated_at",
                 "created_by_user_id"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
-        if k in READONLY or v is None:
+        if k in READONLY:
             continue
         if k == "headers":
             sets.append("headers = %s::jsonb")
-            params.append(json.dumps(v))
+            params.append(json.dumps(v) if v is not None else None)
         else:
             sets.append(f"{k} = %s")
             params.append(v)
