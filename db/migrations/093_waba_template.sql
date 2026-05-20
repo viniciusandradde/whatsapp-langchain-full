@@ -14,6 +14,12 @@
 --
 -- meta_template_id é o ID retornado pelo POST /{waba_account_id}/message_templates.
 -- Usado depois pra sync de status (GET /{id}) e delete.
+--
+-- Mig 034 criou stub `waba_template` antigo (sem conexao_id, componentes_json,
+-- categoria). Stub nunca foi usado em produção (campanhas continuaram com
+-- texto livre). Drop + recreate é seguro — qualquer dado lá foi de teste.
+
+DROP TABLE IF EXISTS waba_template CASCADE;
 
 CREATE TABLE IF NOT EXISTS waba_template (
     id BIGSERIAL PRIMARY KEY,
