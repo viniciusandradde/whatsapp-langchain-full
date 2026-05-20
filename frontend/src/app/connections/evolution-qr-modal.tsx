@@ -9,21 +9,26 @@ const inputCls =
   "flex h-9 w-full rounded-md border border-border/40 bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 import {
+  createConexaoAction,
   evolutionProvisionAction,
   pollStatusAction,
   refreshQRAction,
+  testEvolutionAction,
 } from "./actions";
 
 interface Props {
   onClose: (refresh: boolean) => void;
 }
 
-type Phase = "form" | "qr" | "connected" | "error";
+type Phase = "mode" | "form" | "manual" | "qr" | "connected" | "error";
 
 export function EvolutionQRModal({ onClose }: Props) {
-  const [phase, setPhase] = useState<Phase>("form");
+  const [phase, setPhase] = useState<Phase>("mode");
   const [displayName, setDisplayName] = useState("");
   const [instanceName, setInstanceName] = useState("");
+  const [apiUrl, setApiUrl] = useState("https://evolutionapi.vsatecnologia.com.br");
+  const [apiKey, setApiKey] = useState("");
+  const [fromNumber, setFromNumber] = useState("");
   const [conexaoId, setConexaoId] = useState<number | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [expiresIn, setExpiresIn] = useState(45);
@@ -85,6 +90,46 @@ export function EvolutionQRModal({ onClose }: Props) {
     }, 1000);
   }
 
+  async function handleManualImport() {
+    if (!displayName.trim() || !apiUrl.trim() || !apiKey.trim() || !instanceName.trim()) {
+      setError("Preencha nome, URL, api key e instance name.");
+      return;
+    }
+    if (!fromNumber.trim()) {
+      setError("Número da conexão (E.164) é obrigatório.");
+      return;
+    }
+    setError(null);
+    setPhase("qr"); // reusa loading state
+    // 1. testa
+    const t = await testEvolutionAction({
+      api_url: apiUrl.trim(),
+      api_key: apiKey.trim(),
+      instance_name: instanceName.trim(),
+    });
+    if (!t.ok) {
+      setPhase("manual");
+      setError(t.error || "Credenciais inválidas.");
+      return;
+    }
+    // 2. cria Conexao apontando pra instance existente
+    const r = await createConexaoAction({
+      provider: "evolution",
+      from_number: fromNumber.trim(),
+      display_name: displayName.trim(),
+      default_agent_id: "vsa_tech",
+      status: "active",
+      is_default: false,
+      payload_json: { instance_name: instanceName.trim() },
+    });
+    if (!r.ok) {
+      setPhase("manual");
+      setError(r.error);
+      return;
+    }
+    setPhase("connected");
+  }
+
   async function handleManualRefresh() {
     if (!conexaoId) return;
     const r = await refreshQRAction(conexaoId);
@@ -105,7 +150,9 @@ export function EvolutionQRModal({ onClose }: Props) {
       >
         <div className="flex items-center justify-between border-b border-border/40 p-4">
           <h2 className="text-lg font-semibold">
-            {phase === "form" && "Conectar Evolution"}
+            {phase === "mode" && "Conectar Evolution"}
+            {phase === "form" && "Provisionar nova instance"}
+            {phase === "manual" && "Importar instance existente"}
             {phase === "qr" && "Escanear QR Code"}
             {phase === "connected" && "Conectado!"}
             {phase === "error" && "Erro na conexão"}
@@ -121,6 +168,128 @@ export function EvolutionQRModal({ onClose }: Props) {
         </div>
 
         <div className="space-y-4 p-4">
+          {phase === "mode" && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Você quer provisionar uma instance Evolution nova ou
+                conectar uma instance que já existe no seu servidor?
+              </p>
+              <button
+                onClick={() => setPhase("manual")}
+                className="flex w-full items-start gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 text-left hover:bg-emerald-500/10"
+              >
+                <div className="flex-1">
+                  <div className="font-medium">Conectar instance existente</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Cole URL + api-key + instance name de uma instance
+                    já rodando. Recomendado se você já tem Evolution server
+                    configurado.
+                  </p>
+                </div>
+              </button>
+              <button
+                onClick={() => setPhase("form")}
+                className="flex w-full items-start gap-3 rounded-lg border border-border/40 p-4 text-left hover:bg-muted/20"
+              >
+                <div className="flex-1">
+                  <div className="font-medium">Provisionar nova instance</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Cria nova instance no Evolution server via API admin.
+                    Exige <code>EVOLUTION_GLOBAL_API_KEY</code> setada no env
+                    do Nexus (com permissão de admin do server Evolution).
+                  </p>
+                </div>
+              </button>
+            </>
+          )}
+
+          {phase === "manual" && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Nome da conexão *
+                </label>
+                <input
+                  className={inputCls}
+                  value={displayName}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setDisplayName(e.target.value)
+                  }
+                  placeholder="Ex: VSA Tecnologia"
+                  maxLength={80}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Número (E.164) *
+                </label>
+                <input
+                  className={inputCls}
+                  value={fromNumber}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setFromNumber(e.target.value)
+                  }
+                  placeholder="+5567984249725"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  API URL *
+                </label>
+                <input
+                  className={inputCls}
+                  value={apiUrl}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setApiUrl(e.target.value)
+                  }
+                  placeholder="https://evolutionapi.vsatecnologia.com.br"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  API Key *
+                </label>
+                <input
+                  type="password"
+                  className={inputCls}
+                  value={apiKey}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setApiKey(e.target.value)
+                  }
+                  placeholder="Chave da instance (apikey)"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Instance name *
+                </label>
+                <input
+                  className={inputCls}
+                  value={instanceName}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setInstanceName(e.target.value)
+                  }
+                  placeholder="vsa-tecnologia"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Antes de salvar, o backend chama o Evolution server pra
+                validar que a instance existe e está conectada (state ∈ open/connecting).
+              </p>
+              {error && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
+                  {error}
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setPhase("mode")}>
+                  Voltar
+                </Button>
+                <Button onClick={handleManualImport}>Testar e salvar</Button>
+              </div>
+            </>
+          )}
+
           {phase === "form" && (
             <>
               <div>
