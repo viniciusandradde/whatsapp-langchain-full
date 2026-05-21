@@ -8,6 +8,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
+  Hourglass,
+  Gauge,
+  Activity,
+  TrendingUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,12 +39,25 @@ interface QueueMessage {
   incoming_message: string;
   status: string;
   created_at: string | null;
+  processed_at: string | null;
   attempts: number;
   error: string | null;
+  age_seconds: number | null;
+  latency_seconds: number | null;
+}
+
+interface QueueMetrics {
+  oldest_queued_age_seconds: number;
+  throughput_last_hour_per_min: number;
+  throughput_last_hour_total: number;
+  failure_rate_pct_24h: number;
+  avg_latency_seconds_24h: number | null;
+  p95_latency_seconds_24h: number | null;
 }
 
 interface QueueData {
   counters: QueueCounters;
+  metrics: QueueMetrics;
   messages: QueueMessage[];
 }
 
@@ -87,6 +104,55 @@ function formatDate(isoDate: string | null): string {
 
 function secondsAgo(timestamp: number): number {
   return Math.floor((Date.now() - timestamp) / 1000);
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 1) return "<1s";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return s > 0 ? `${m}m${s}s` : `${m}m`;
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return m > 0 ? `${h}h${m}m` : `${h}h`;
+}
+
+function ageColorClass(seconds: number | null, status: string): string {
+  // Só destaca quando está esperando (queued/processing). Done/failed = neutro.
+  if (status !== "queued" && status !== "processing") {
+    return "text-muted-foreground";
+  }
+  if (seconds === null) return "text-muted-foreground";
+  if (seconds > 300) return "text-red-600 font-medium";
+  if (seconds > 60) return "text-amber-600 font-medium";
+  return "text-muted-foreground";
+}
+
+function metricCardColor(
+  kind: "oldest" | "throughput" | "failure" | "latency",
+  value: number | null
+): string {
+  if (value === null) return "text-muted-foreground";
+  if (kind === "oldest") {
+    if (value > 300) return "text-red-600";
+    if (value > 60) return "text-amber-600";
+    return "text-emerald-600";
+  }
+  if (kind === "failure") {
+    if (value > 5) return "text-red-600";
+    if (value > 2) return "text-amber-600";
+    return "text-emerald-600";
+  }
+  if (kind === "latency") {
+    if (value > 15) return "text-red-600";
+    if (value > 8) return "text-amber-600";
+    return "text-emerald-600";
+  }
+  // throughput — neutro (mais é melhor mas depende do tier do projeto)
+  return "text-blue-600";
 }
 
 export function QueuePageClient() {
@@ -161,7 +227,12 @@ export function QueuePageClient() {
 
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {/* Contadores (hoje) */}
+          <div>
+            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Contadores de hoje
+            </h2>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -237,6 +308,147 @@ export function QueuePageClient() {
                 </p>
               </CardContent>
             </Card>
+            </div>
+          </div>
+
+          {/* Métricas operacionais — visão de saúde da fila */}
+          <div>
+            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Saúde da fila
+            </h2>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle
+                      className="text-sm text-muted-foreground"
+                      title="Idade da mensagem mais antiga ainda em 'queued'. Esperado <30s; >5min indica saturação."
+                    >
+                      Msg mais antiga (queued)
+                    </CardTitle>
+                    <Hourglass
+                      className={
+                        "h-4 w-4 " +
+                        metricCardColor(
+                          "oldest",
+                          data.metrics.oldest_queued_age_seconds
+                        )
+                      }
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p
+                    className={
+                      "text-3xl font-bold " +
+                      metricCardColor(
+                        "oldest",
+                        data.metrics.oldest_queued_age_seconds
+                      )
+                    }
+                  >
+                    {data.counters.queued === 0
+                      ? "—"
+                      : formatDuration(data.metrics.oldest_queued_age_seconds)}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle
+                      className="text-sm text-muted-foreground"
+                      title="Taxa de processamento — msgs concluídas por minuto nos últimos 60 minutos. Capacidade ~12 msg/min por worker; com 4 workers ~48 msg/min."
+                    >
+                      Throughput (1h)
+                    </CardTitle>
+                    <TrendingUp className="h-4 w-4 text-blue-500" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {data.metrics.throughput_last_hour_per_min.toFixed(1)}
+                    <span className="ml-1 text-sm font-normal text-muted-foreground">
+                      /min
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {data.metrics.throughput_last_hour_total} msgs na última hora
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle
+                      className="text-sm text-muted-foreground"
+                      title="Percentual de mensagens que falharam nas últimas 24h (após esgotar retries). Alerta se >2%; investigar se >5%."
+                    >
+                      Taxa de falha (24h)
+                    </CardTitle>
+                    <Gauge
+                      className={
+                        "h-4 w-4 " +
+                        metricCardColor("failure", data.metrics.failure_rate_pct_24h)
+                      }
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p
+                    className={
+                      "text-3xl font-bold " +
+                      metricCardColor("failure", data.metrics.failure_rate_pct_24h)
+                    }
+                  >
+                    {data.metrics.failure_rate_pct_24h.toFixed(1)}%
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle
+                      className="text-sm text-muted-foreground"
+                      title="Latência: tempo entre msg entrar na fila e ser concluída. P95 mostra a cauda lenta (95% das msgs ficam abaixo desse valor)."
+                    >
+                      Latência (24h)
+                    </CardTitle>
+                    <Activity
+                      className={
+                        "h-4 w-4 " +
+                        metricCardColor(
+                          "latency",
+                          data.metrics.p95_latency_seconds_24h
+                        )
+                      }
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p
+                    className={
+                      "text-3xl font-bold " +
+                      metricCardColor(
+                        "latency",
+                        data.metrics.p95_latency_seconds_24h
+                      )
+                    }
+                  >
+                    {formatDuration(data.metrics.p95_latency_seconds_24h)}
+                    <span className="ml-1 text-sm font-normal text-muted-foreground">
+                      p95
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    avg {formatDuration(data.metrics.avg_latency_seconds_24h)}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
           </div>
 
           <div className="rounded-xl border">
@@ -253,14 +465,26 @@ export function QueuePageClient() {
                   <TableHead className="hidden sm:table-cell">
                     Criado em
                   </TableHead>
-                  <TableHead>Tentativas</TableHead>
+                  <TableHead
+                    className="text-right"
+                    title="Tempo desde que entrou na fila"
+                  >
+                    Idade
+                  </TableHead>
+                  <TableHead
+                    className="hidden text-right md:table-cell"
+                    title="Tempo entre created_at e processed_at (apenas msgs concluídas/falhas)"
+                  >
+                    Latência
+                  </TableHead>
+                  <TableHead className="text-center">Tentativas</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.messages.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={9}
                       className="py-8 text-center text-muted-foreground"
                     >
                       Nenhuma mensagem na fila
@@ -297,6 +521,17 @@ export function QueuePageClient() {
                         </TableCell>
                         <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                           {formatDate(message.created_at)}
+                        </TableCell>
+                        <TableCell
+                          className={
+                            "text-right text-xs " +
+                            ageColorClass(message.age_seconds, message.status)
+                          }
+                        >
+                          {formatDuration(message.age_seconds)}
+                        </TableCell>
+                        <TableCell className="hidden text-right text-xs text-muted-foreground md:table-cell">
+                          {formatDuration(message.latency_seconds)}
                         </TableCell>
                         <TableCell className="text-center">
                           {message.attempts}

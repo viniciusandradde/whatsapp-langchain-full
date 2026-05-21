@@ -393,7 +393,20 @@ async def get_metrics(
 async def get_queue(
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
-    """Visão da fila — contadores e últimas 50 mensagens da empresa ativa."""
+    """Visão da fila — contadores, métricas operacionais e últimas 50 mensagens.
+
+    Métricas (`metrics`):
+    - `oldest_queued_age_seconds`: idade em segundos da msg `queued` mais antiga
+      (None se fila vazia). Sinal direto de saturação — esperado <30s; >5min é
+      problema.
+    - `throughput_last_hour_per_min`: msgs `done` nos últimos 60min ÷ 60. Pico
+      sustentável depende de #workers × ~12 msg/min/worker.
+    - `failure_rate_pct_24h`: % de `failed` sobre `done+failed` últimas 24h.
+      Alerta >2%.
+    - `avg_latency_seconds_24h`, `p95_latency_seconds_24h`: tempo entre
+      `created_at` e `processed_at` últimas 24h. P95 é o que importa pra SLA;
+      avg pode esconder spikes.
+    """
     pool = await get_pool()
 
     async with pool.connection() as conn:
@@ -412,11 +425,87 @@ async def get_queue(
         for row in status_rows:
             counters[row[0]] = row[1]
 
+        # Métricas operacionais — uma query consolidada (1 round-trip).
+        cursor = await conn.execute(
+            """
+            SELECT
+                -- idade da msg na fila mais antiga (segundos)
+                COALESCE(
+                    EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (
+                        WHERE status = 'queued'
+                    ))),
+                    0
+                )::float AS oldest_queued_age_seconds,
+                -- throughput: msgs done nos últimos 60min
+                COUNT(*) FILTER (
+                    WHERE status = 'done'
+                      AND processed_at >= NOW() - INTERVAL '1 hour'
+                )::int AS done_last_hour,
+                -- contadores 24h pra failure_rate
+                COUNT(*) FILTER (
+                    WHERE status = 'done'
+                      AND created_at >= NOW() - INTERVAL '24 hours'
+                )::int AS done_24h,
+                COUNT(*) FILTER (
+                    WHERE status = 'failed'
+                      AND created_at >= NOW() - INTERVAL '24 hours'
+                )::int AS failed_24h,
+                -- latência (segundos): avg + p95
+                AVG(EXTRACT(EPOCH FROM (processed_at - created_at))) FILTER (
+                    WHERE status = 'done'
+                      AND processed_at IS NOT NULL
+                      AND created_at >= NOW() - INTERVAL '24 hours'
+                )::float AS avg_latency,
+                PERCENTILE_CONT(0.95) WITHIN GROUP (
+                    ORDER BY EXTRACT(EPOCH FROM (processed_at - created_at))
+                ) FILTER (
+                    WHERE status = 'done'
+                      AND processed_at IS NOT NULL
+                      AND created_at >= NOW() - INTERVAL '24 hours'
+                )::float AS p95_latency
+            FROM message_queue
+            WHERE empresa_id = %s
+            """,
+            (empresa_id,),
+        )
+        m = await cursor.fetchone()
+
+        oldest = float(m[0]) if m and m[0] else 0.0
+        done_last_hour = int(m[1]) if m and m[1] else 0
+        done_24h = int(m[2]) if m and m[2] else 0
+        failed_24h = int(m[3]) if m and m[3] else 0
+        avg_lat = float(m[4]) if m and m[4] else None
+        p95_lat = float(m[5]) if m and m[5] else None
+
+        total_24h = done_24h + failed_24h
+        failure_rate = (
+            round(failed_24h * 100.0 / total_24h, 2) if total_24h > 0 else 0.0
+        )
+
+        metrics = {
+            "oldest_queued_age_seconds": round(oldest, 1),
+            "throughput_last_hour_per_min": round(done_last_hour / 60.0, 2),
+            "throughput_last_hour_total": done_last_hour,
+            "failure_rate_pct_24h": failure_rate,
+            "avg_latency_seconds_24h": (
+                round(avg_lat, 2) if avg_lat is not None else None
+            ),
+            "p95_latency_seconds_24h": (
+                round(p95_lat, 2) if p95_lat is not None else None
+            ),
+        }
+
         cursor = await conn.execute(
             """
             SELECT id, phone_number, agent_id,
                    LEFT(incoming_message, 100) as incoming_message,
-                   status, created_at, attempts, error
+                   status, created_at, processed_at, attempts, error,
+                   EXTRACT(EPOCH FROM (NOW() - created_at))::float AS age_seconds,
+                   CASE
+                       WHEN processed_at IS NOT NULL
+                       THEN EXTRACT(EPOCH FROM (processed_at - created_at))::float
+                       ELSE NULL
+                   END AS latency_seconds
               FROM message_queue
              WHERE empresa_id = %s
              ORDER BY created_at DESC
@@ -434,8 +523,13 @@ async def get_queue(
             "incoming_message": row[3],
             "status": row[4],
             "created_at": row[5].isoformat() if row[5] else None,
-            "attempts": row[6],
-            "error": row[7],
+            "processed_at": row[6].isoformat() if row[6] else None,
+            "attempts": row[7],
+            "error": row[8],
+            "age_seconds": round(float(row[9]), 1) if row[9] is not None else None,
+            "latency_seconds": (
+                round(float(row[10]), 2) if row[10] is not None else None
+            ),
         }
         for row in message_rows
     ]
@@ -444,4 +538,4 @@ async def get_queue(
         "queue_status_fetched", counters=counters, messages_count=len(messages)
     )
 
-    return {"counters": counters, "messages": messages}
+    return {"counters": counters, "metrics": metrics, "messages": messages}
