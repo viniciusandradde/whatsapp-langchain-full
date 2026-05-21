@@ -15,6 +15,7 @@ import { AtendentesSidebar } from "./atendentes-sidebar";
 import { ChartCriadosFinalizados } from "./chart-criados-finalizados";
 import { ChartPorDepartamento } from "./chart-por-departamento";
 import { ChartPorHora } from "./chart-por-hora";
+import { CleanupZumbisCard } from "./cleanup-zumbis-card";
 import { KPICards } from "./kpi-cards";
 import { TabelaAguardando } from "./tabela-aguardando";
 import { TabelaSemResposta } from "./tabela-sem-resposta";
@@ -132,6 +133,9 @@ export function DashboardClient({ initial }: { initial: DashboardPayload }) {
       {/* Layout principal: grid 4 colunas (3 conteúdo + 1 sidebar atendentes) */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_280px]">
         <div className="space-y-4">
+          {/* Row 0: Cleanup alert (só aparece se há zumbis) */}
+          <CleanupZumbisCard />
+
           {/* Row 1: KPIs */}
           <KPICards kpis={data.kpis} />
 

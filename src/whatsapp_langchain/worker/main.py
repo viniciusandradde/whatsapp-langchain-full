@@ -137,6 +137,10 @@ async def main() -> None:
     # Evita user esquecer painel aberto e ficar "online" indefinidamente.
     idle_task = asyncio.create_task(_atendente_idle_loop(pool))
 
+    # Sprint cleanup: fecha atendimentos zumbis (>48h aguardando / >24h
+    # sem resposta) a cada 6h. Override por empresa via empresa.config.
+    cleanup_task = asyncio.create_task(_cleanup_zumbis_loop(pool))
+
     try:
         while True:
             message = await claim_next_message(pool, settings.lease_seconds)
@@ -158,7 +162,8 @@ async def main() -> None:
     finally:
         sync_task.cancel()
         idle_task.cancel()
-        for t in (sync_task, idle_task):
+        cleanup_task.cancel()
+        for t in (sync_task, idle_task, cleanup_task):
             try:
                 await t
             except asyncio.CancelledError:
@@ -255,6 +260,31 @@ async def _atendente_idle_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("atendente_idle_loop_error", error=str(e))
         await asyncio.sleep(ATENDENTE_IDLE_INTERVAL_SECONDS)
+
+
+CLEANUP_INTERVAL_SECONDS = 6 * 3600  # 6h
+
+
+async def _cleanup_zumbis_loop(pool) -> None:
+    """Roda cleanup de atendimentos zumbis a cada 6h em todas as empresas.
+
+    Thresholds defaults (override por empresa via empresa.config):
+    - aguardando >48h → abandonado
+    - em_andamento >24h sem msg do cliente → abandonado
+    """
+    from whatsapp_langchain.shared.atendimento_cleanup import (
+        cleanup_zumbis_all_empresas,
+    )
+
+    # Aguarda 5min após startup pra não competir com migrations/bootstrap
+    await asyncio.sleep(300)
+
+    while True:
+        try:
+            await cleanup_zumbis_all_empresas(pool, motivo="cleanup_auto")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("cleanup_zumbis_loop_error", error=str(e))
+        await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

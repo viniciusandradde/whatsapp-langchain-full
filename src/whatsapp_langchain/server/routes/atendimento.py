@@ -33,6 +33,10 @@ from whatsapp_langchain.shared.atendimento import (
     transfer_atendimento,
     transfer_atendimento_to_departamento,
 )
+from whatsapp_langchain.shared.atendimento_cleanup import (
+    cleanup_zumbis,
+    preview_zumbis,
+)
 from whatsapp_langchain.shared.atendimento_tag import (
     apply_tags_to_atendimento,
     list_atendimento_ids_com_tags,
@@ -827,3 +831,40 @@ async def attach_aba(
         user_id=user_id,
     )
     return {"ok": True, "aba_id": payload.aba_id}
+
+
+# ---- Cleanup de atendimentos zumbis (manual via UI) ----
+
+
+@router.get("/cleanup-zumbis/preview")
+async def cleanup_zumbis_preview_endpoint(
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("atendimento.read")),
+) -> dict:
+    """Conta atendimentos zumbis (preview, não modifica)."""
+    pool = await get_pool()
+    return await preview_zumbis(pool, empresa_id)
+
+
+@router.post("/cleanup-zumbis")
+async def cleanup_zumbis_endpoint(
+    dry_run: bool = Query(default=False),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.write")),
+) -> dict:
+    """Executa cleanup manual de atendimentos zumbis.
+
+    Fecha como `abandonado` atendimentos:
+    - `aguardando` > N dias (config empresa, default 2)
+    - `em_andamento` sem msg há > M dias (config empresa, default 1)
+
+    `dry_run=true` retorna preview sem modificar.
+    """
+    pool = await get_pool()
+    return await cleanup_zumbis(
+        pool,
+        empresa_id,
+        dry_run=dry_run,
+        motivo=f"cleanup_manual:{user_id}",
+    )
