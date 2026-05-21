@@ -296,7 +296,14 @@ async def get_chart_por_departamento(
 async def get_atendentes_online(
     pool: AsyncConnectionPool, empresa_id: int
 ) -> dict[str, Any]:
-    """Atendentes da empresa: status + count de atendimentos abertos."""
+    """Atendentes da empresa: status + count de atendimentos abertos.
+
+    Schema notes:
+    - `empresa_membro` NÃO tem `is_active` — usa `auth."user".status`
+      (mig 024) pra filtrar users desabilitados.
+    - `atendente_status` + `atendente_status_at` estão em `auth."user"`
+      (mig 062), NÃO em empresa_membro.
+    """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -304,9 +311,9 @@ async def get_atendentes_online(
                 em.user_id,
                 u.name AS nome,
                 u.email,
-                em.atendente_status,
-                em.atendente_status_at,
-                em.is_active,
+                u.atendente_status,
+                u.atendente_status_at,
+                COALESCE(u.status, 'active') AS user_status,
                 (
                     SELECT COUNT(*) FROM atendimento a
                      WHERE a.empresa_id = %s
@@ -316,9 +323,9 @@ async def get_atendentes_online(
               FROM empresa_membro em
               JOIN auth."user" u ON u.id = em.user_id
              WHERE em.empresa_id = %s
-               AND em.is_active = TRUE
+               AND COALESCE(u.status, 'active') = 'active'
              ORDER BY
-                CASE em.atendente_status WHEN 'online' THEN 0 ELSE 1 END,
+                CASE u.atendente_status WHEN 'online' THEN 0 ELSE 1 END,
                 u.name ASC
             """,
             (empresa_id, empresa_id),
@@ -332,7 +339,7 @@ async def get_atendentes_online(
             "email": r[2],
             "status": r[3] or "offline",
             "status_at": r[4].isoformat() if r[4] else None,
-            "is_active": r[5],
+            "is_active": (r[5] or "active") == "active",
             "atendimentos_abertos": int(r[6] or 0),
         }
         for r in rows
