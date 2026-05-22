@@ -26,6 +26,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.shared.calendar_integration import (
     CalendarIntegrationError,
     build_authorization_url,
@@ -81,8 +82,13 @@ def _verify_state(state: str) -> dict:
 async def oauth_init(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _feature: None = Depends(require_plano_feature("calendar")),
 ) -> dict:
-    """Frontend chama → recebe a URL pra abrir num popup/tab."""
+    """Frontend chama → recebe a URL pra abrir num popup/tab.
+
+    Sprint Q.3: bloqueado com 402 se plano não tem feature calendar
+    (Free não tem; Pro/Enterprise sim).
+    """
     if not is_oauth_configured():
         raise HTTPException(
             status_code=503,
@@ -202,7 +208,7 @@ async def delete_config(
     response_model=CalendarConfigPublic,
 )
 async def update_config(
-    body: "CalendarConfigInput",
+    body: CalendarConfigInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> CalendarConfigPublic:

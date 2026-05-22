@@ -24,6 +24,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_limit
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     get_credentials_decrypted,
@@ -82,8 +83,12 @@ async def read_conexao(
 async def create_conexao(
     body: ConexaoInput,
     empresa_id: int = Depends(get_empresa_context),
+    _quota: None = Depends(require_plano_limit("conexoes")),
 ) -> Conexao:
     """Cria conexão Twilio (provider twilio_sandbox/twilio_prod).
+
+    Sprint Q.3: bloqueado com HTTP 402 se atingiu limite de conexões do
+    plano (Free=1, Pro=3, Enterprise=∞).
 
     WABA usa /waba/finalize (após OAuth) e Evolution usa /evolution/provision.
     Twilio é o único path que mantém form simples.
@@ -324,8 +329,12 @@ async def waba_finalize(
     body: WabaFinalizeInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _quota: None = Depends(require_plano_limit("conexoes")),
 ) -> Conexao:
-    """User escolheu account+phone — cria Conexao + cifra token + subscribe webhook."""
+    """User escolheu account+phone — cria Conexao + cifra token + subscribe webhook.
+
+    Sprint Q.3: bloqueado com 402 se limite de conexões do plano atingido.
+    """
     import json as _json
     import secrets
 
@@ -452,8 +461,12 @@ class EvolutionProvisionResponse(BaseModel):
 async def evolution_provision(
     body: EvolutionProvisionInput,
     empresa_id: int = Depends(get_empresa_context),
+    _quota: None = Depends(require_plano_limit("conexoes")),
 ) -> EvolutionProvisionResponse:
-    """Cria instance no Evolution server + retorna QR base64 pra escanear."""
+    """Cria instance no Evolution server + retorna QR base64 pra escanear.
+
+    Sprint Q.3: bloqueado com 402 se atingiu limite de conexões.
+    """
     if not settings.evolution_admin_enabled:
         raise HTTPException(
             status_code=503,

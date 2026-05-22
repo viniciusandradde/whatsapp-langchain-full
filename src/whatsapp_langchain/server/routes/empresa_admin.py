@@ -661,3 +661,28 @@ async def list_audit_governanca_endpoint(
         offset=max(offset, 0),
     )
     return {"items": items}
+
+
+
+# Sprint Q.4 — endpoint quota (uso/limites/features do plano)
+@router.get("/{empresa_id}/quota")
+async def get_quota_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Retorna snapshot quota da empresa: plano + limites + uso + percentual.
+
+    Usado por dashboard pra mostrar barra de progresso + upgrade prompt.
+    Qualquer membro da empresa pode ler (não é dado sensível).
+    """
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+
+    from whatsapp_langchain.shared.plano_limits import get_quota_snapshot
+
+    snap = await get_quota_snapshot(pool, empresa_id)
+    return snap.to_dict()
