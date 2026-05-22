@@ -131,29 +131,54 @@ async def update_empresa_endpoint(
     body: UpdateEmpresaInput,
     user_id: str = Depends(get_user_id_from_request),
 ):
-    """Atualiza campos da empresa. Só admin local ou superadmin."""
+    """Atualiza campos da empresa. Só admin local ou superadmin.
+
+    Guard: se body.slug == slug atual da empresa, NÃO inclui no UPDATE
+    (evita UniqueViolation falso quando user só queria mudar status).
+    Captura UniqueViolation no slug e retorna 409 com mensagem clara.
+    """
     pool = await get_pool()
     if not await is_admin_of(pool, empresa_id, user_id):
         raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
 
-    out = await update_empresa(
-        pool,
-        empresa_id,
-        nome=body.nome,
-        slug=body.slug,
-        plano=body.plano,
-        doc=body.doc,
-        status=body.status,
-        razao_social=body.razao_social,
-        inscricao_estadual=body.inscricao_estadual,
-        endereco_fiscal_cep=body.endereco_fiscal_cep,
-        endereco_fiscal_logradouro=body.endereco_fiscal_logradouro,
-        endereco_fiscal_numero=body.endereco_fiscal_numero,
-        endereco_fiscal_complemento=body.endereco_fiscal_complemento,
-        endereco_fiscal_bairro=body.endereco_fiscal_bairro,
-        endereco_fiscal_cidade=body.endereco_fiscal_cidade,
-        endereco_fiscal_uf=body.endereco_fiscal_uf,
-    )
+    # Se slug enviado == slug atual, skipa pra não disparar UNIQUE check.
+    if body.slug:
+        from whatsapp_langchain.shared.empresa import get_empresa_by_id
+
+        current = await get_empresa_by_id(pool, empresa_id)
+        if current and current.slug == body.slug:
+            body.slug = None
+
+    try:
+        out = await update_empresa(
+            pool,
+            empresa_id,
+            nome=body.nome,
+            slug=body.slug,
+            plano=body.plano,
+            doc=body.doc,
+            status=body.status,
+            razao_social=body.razao_social,
+            inscricao_estadual=body.inscricao_estadual,
+            endereco_fiscal_cep=body.endereco_fiscal_cep,
+            endereco_fiscal_logradouro=body.endereco_fiscal_logradouro,
+            endereco_fiscal_numero=body.endereco_fiscal_numero,
+            endereco_fiscal_complemento=body.endereco_fiscal_complemento,
+            endereco_fiscal_bairro=body.endereco_fiscal_bairro,
+            endereco_fiscal_cidade=body.endereco_fiscal_cidade,
+            endereco_fiscal_uf=body.endereco_fiscal_uf,
+        )
+    except Exception as e:
+        msg = str(e).lower()
+        if "empresa_slug_key" in msg or ("duplicate key" in msg and "slug" in msg):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Slug '{body.slug}' já está em uso por outra empresa. "
+                    "Escolha outro identificador."
+                ),
+            ) from e
+        raise
     if out is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     return out

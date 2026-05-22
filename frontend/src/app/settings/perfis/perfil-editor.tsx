@@ -1,10 +1,53 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Save, X } from "lucide-react";
+import { Save, Search, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { PermissaoCatalogo } from "@/lib/api";
+
+// Sprint UX — labels user-friendly por módulo (esconde códigos técnicos)
+const MODULO_TITULO: Record<string, string> = {
+  agente: "Agentes IA",
+  agendamento: "Agendamentos",
+  atendimento: "Atendimentos",
+  base_conhecimento: "Base de Conhecimento",
+  cliente: "Clientes",
+  conexao: "Conexões WhatsApp",
+  departamento: "Departamentos",
+  empresa: "Empresa",
+  horario: "Horários",
+  hook: "Webhooks",
+  lgpd: "LGPD / Compliance",
+  menu_chatbot: "Menu Chatbot",
+  modelo_mensagem: "Quick Replies (templates)",
+  perfil: "Perfis de Acesso",
+  security: "Segurança / Audit",
+  tag: "Tags",
+  variavel: "Variáveis",
+  waba_template: "Templates WhatsApp HSM",
+};
+
+// Verbo CRUD inferido do sufixo do código
+function _acaoLabel(codigo: string): string {
+  const partes = codigo.split(".");
+  const ultima = partes[partes.length - 1];
+  if (ultima === "read") return "Ler";
+  if (ultima === "write") return "Criar / Editar";
+  if (ultima === "delete") return "Excluir";
+  if (ultima === "config") return "Configurar";
+  if (ultima === "manage") return "Gerenciar (CRUD)";
+  if (ultima === "audit") return "Auditar";
+  if (codigo.endsWith(".own")) return "Próprios";
+  if (codigo.endsWith(".all")) return "Todos";
+  if (ultima === "add") return "Adicionar";
+  if (ultima === "remove") return "Remover";
+  return ultima;
+}
+
+function _moduloTitulo(modulo: string): string {
+  return MODULO_TITULO[modulo] || modulo.charAt(0).toUpperCase() + modulo.slice(1);
+}
 
 import {
   createPerfilAction,
@@ -27,6 +70,8 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
   const [loading, setLoading] = useState(mode === "edit");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Sprint UX — campo de busca de permissão
+  const [search, setSearch] = useState("");
 
   // Carrega perfil existente quando abre em modo edit
   useEffect(() => {
@@ -51,16 +96,42 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
     };
   }, [mode, perfilId]);
 
-  // Agrupa catálogo por módulo pro checkbox tree
+  // Agrupa catálogo por módulo pro checkbox tree, com filtro de busca.
+  // Busca é case-insensitive + remove acentos, casa em módulo, descrição
+  // ou código (mesmo escondido na UI, dev quer buscar pelo nome técnico).
   const grouped = useMemo(() => {
+    const q = search
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .trim();
+
+    const match = (p: PermissaoCatalogo): boolean => {
+      if (!q) return true;
+      const haystack = [
+        p.codigo,
+        p.descricao || "",
+        _moduloTitulo(p.modulo),
+        _acaoLabel(p.codigo),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "");
+      return haystack.includes(q);
+    };
+
     const map = new Map<string, PermissaoCatalogo[]>();
     for (const p of catalogo) {
+      if (!match(p)) continue;
       const arr = map.get(p.modulo) ?? [];
       arr.push(p);
       map.set(p.modulo, arr);
     }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [catalogo]);
+    return Array.from(map.entries()).sort((a, b) =>
+      _moduloTitulo(a[0]).localeCompare(_moduloTitulo(b[0]))
+    );
+  }, [catalogo, search]);
 
   function togglePerm(codigo: string) {
     if (isSystem) return;
@@ -131,7 +202,7 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
             {mode === "new"
               ? "Novo perfil"
               : isSystem
-                ? `Perfil "${nome}" (system, read-only)`
+                ? `Perfil "${nome}" (padrão do sistema — somente leitura)`
                 : `Editar perfil "${nome}"`}
           </h2>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
@@ -178,9 +249,27 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
               </div>
 
               <div>
-                <p className="text-sm font-medium">
-                  Permissões ({perms.size}/{catalogo.length})
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Permissões ({perms.size}/{catalogo.length})
+                  </p>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Buscar permissão…"
+                      disabled={isPending}
+                      className="w-56 rounded-md border border-white/10 bg-obsidian-800 py-1.5 pl-8 pr-3 text-xs"
+                    />
+                  </div>
+                </div>
+                {search && grouped.length === 0 && (
+                  <p className="mt-3 rounded-md border border-white/10 bg-white/5 p-3 text-xs text-muted-foreground italic">
+                    Nenhuma permissão encontrada pra &ldquo;{search}&rdquo;.
+                  </p>
+                )}
                 <div className="mt-3 space-y-3">
                   {grouped.map(([modulo, perms_modulo]) => {
                     const allSelected = perms_modulo.every((p) => perms.has(p.codigo));
@@ -201,7 +290,7 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                             disabled={isSystem || isPending}
                             className="size-4"
                           />
-                          <span className="capitalize">{modulo}</span>
+                          <span>{_moduloTitulo(modulo)}</span>
                           <span className="text-xs text-muted-foreground">
                             ({perms_modulo.filter((p) => perms.has(p.codigo)).length}/{perms_modulo.length})
                           </span>
@@ -209,7 +298,10 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                         <ul className="ml-6 space-y-1">
                           {perms_modulo.map((p) => (
                             <li key={p.codigo}>
-                              <label className="flex items-start gap-2 text-xs">
+                              <label
+                                className="flex items-start gap-2 text-xs"
+                                title={p.codigo}
+                              >
                                 <input
                                   type="checkbox"
                                   checked={perms.has(p.codigo)}
@@ -218,8 +310,14 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                                   className="mt-0.5 size-3.5"
                                 />
                                 <div>
-                                  <span className="font-mono text-[11px]">{p.codigo}</span>
-                                  <span className="ml-2 text-muted-foreground">{p.descricao}</span>
+                                  <span className="font-medium">
+                                    {_acaoLabel(p.codigo)}
+                                  </span>
+                                  {p.descricao && (
+                                    <span className="ml-2 text-muted-foreground">
+                                      — {p.descricao}
+                                    </span>
+                                  )}
                                 </div>
                               </label>
                             </li>

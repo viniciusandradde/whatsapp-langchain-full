@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowUpCircle, BarChart3, CheckCircle2, Crown } from "lucide-react";
 
+import { usePermissionsContext } from "@/components/permissions-context";
 import type { QuotaSnapshot } from "@/lib/api";
 
 import { fetchCurrentEmpresaIdAction, fetchQuotaAction } from "./actions";
@@ -25,12 +26,26 @@ const RECURSO_LABEL: Record<string, string> = {
   documentos_kb: "Documentos KB",
 };
 
+const FEATURE_LABEL: Record<string, string> = {
+  calendar: "Google Calendar",
+  rbac: "Permissões granulares (RBAC)",
+  menu_moderno: "Menu chatbot moderno",
+  mcp: "MCP custom",
+  white_label: "White label",
+};
+
 export function QuotaCard({ empresaId }: Props) {
+  const { hasPerm } = usePermissionsContext();
   const [quota, setQuota] = useState<QuotaSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Só admin (empresa.update) vê uso do plano e recursos avançados.
+  // Outros perfis (atendente, viewer) não precisam dessa info — esconde.
+  const isAdmin = hasPerm("empresa.update");
+
   useEffect(() => {
+    if (!isAdmin) return;
     let active = true;
     setLoading(true);
     (async () => {
@@ -51,7 +66,12 @@ export function QuotaCard({ empresaId }: Props) {
     return () => {
       active = false;
     };
-  }, [empresaId]);
+  }, [empresaId, isAdmin]);
+
+  // Não-admin: card escondido (uso/plano é info de governança)
+  if (!isAdmin) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -126,11 +146,11 @@ export function QuotaCard({ empresaId }: Props) {
         )}
       </div>
 
-      {/* Features habilitadas (badges) */}
+      {/* Recursos avançados habilitados (badges) */}
       {Object.keys(quota.features).length > 0 && (
         <div className="space-y-1.5 border-t border-white/5 pt-3">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Features
+            Recursos avançados
           </p>
           <div className="flex flex-wrap gap-1">
             {Object.entries(quota.features).map(([feat, enabled]) => (
@@ -144,7 +164,7 @@ export function QuotaCard({ empresaId }: Props) {
                 }
               >
                 {enabled && <CheckCircle2 className="h-3 w-3" />}
-                {feat}
+                {FEATURE_LABEL[feat] || feat}
               </span>
             ))}
           </div>
