@@ -105,18 +105,25 @@ async def get_conexao_by_from_number(
     Pode retornar None ou primeira match. Após mig 092, UNIQUE é
     (empresa_id, from_number) — então pode haver N rows com mesmo número
     em empresas diferentes. Webhook do Twilio resolve pela primeira ativa.
+
+    Sprint A.2.3: bypass RLS porque webhook ainda não sabe a empresa
+    (descobre via este lookup). Após resolver, caller usa o empresa_id
+    da conexão pra setar context nas queries subsequentes.
     """
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            f"""
-            SELECT {_SELECT_COLS} FROM conexao
-             WHERE from_number = %s AND status = 'active'
-             ORDER BY is_default DESC, id ASC
-             LIMIT 1
-            """,
-            (from_number,),
-        )
-        row = await cur.fetchone()
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                SELECT {_SELECT_COLS} FROM conexao
+                 WHERE from_number = %s AND status = 'active'
+                 ORDER BY is_default DESC, id ASC
+                 LIMIT 1
+                """,
+                (from_number,),
+            )
+            row = await cur.fetchone()
     return _row_to_conexao(row) if row else None
 
 
@@ -128,55 +135,66 @@ async def get_conexao_by_evolution_instance(
     Após mig 092, instance_name pode estar em credentials_encrypted ou
     payload_json (compat). Procura nos dois — payload_json primeiro
     pra rows legadas, depois credentials decryptadas.
-    """
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            f"""
-            SELECT {_SELECT_COLS} FROM conexao
-             WHERE provider = 'evolution'
-               AND payload_json->>'instance_name' = %s
-             LIMIT 1
-            """,
-            (instance_name,),
-        )
-        row = await cur.fetchone()
-    if row:
-        return _row_to_conexao(row)
 
-    # Fallback: percorre conexões evolution com credentials_encrypted
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            f"""
-            SELECT {_SELECT_COLS} FROM conexao
-             WHERE provider = 'evolution' AND credentials_encrypted IS NOT NULL
-            """,
-            (),
-        )
-        rows = await cur.fetchall()
-    for r in rows:
-        try:
-            cred = decrypt_dict(r[len(_SELECT_COLS.split(", ")) - 1 - 24 + 0])  # type: ignore
-        except Exception:
-            continue
-        if cred.get("instance_name") == instance_name:
-            return _row_to_conexao(r)
+    Sprint A.2.3: bypass RLS (webhook descobre empresa via este lookup).
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                SELECT {_SELECT_COLS} FROM conexao
+                 WHERE provider = 'evolution'
+                   AND payload_json->>'instance_name' = %s
+                 LIMIT 1
+                """,
+                (instance_name,),
+            )
+            row = await cur.fetchone()
+        if row:
+            return _row_to_conexao(row)
+
+        # Fallback: percorre conexões evolution com credentials_encrypted
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                SELECT {_SELECT_COLS} FROM conexao
+                 WHERE provider = 'evolution' AND credentials_encrypted IS NOT NULL
+                """,
+                (),
+            )
+            rows = await cur.fetchall()
+        for r in rows:
+            try:
+                cred = decrypt_dict(r[len(_SELECT_COLS.split(", ")) - 1 - 24 + 0])  # type: ignore
+            except Exception:
+                continue
+            if cred.get("instance_name") == instance_name:
+                return _row_to_conexao(r)
     return None
 
 
 async def get_conexao_by_waba_phone_id(
     pool: AsyncConnectionPool, phone_id: str
 ) -> Conexao | None:
-    """Resolve conexão WABA pelo phone_number_id (do webhook Meta)."""
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            f"""
-            SELECT {_SELECT_COLS} FROM conexao
-             WHERE waba_phone_id = %s AND status = 'active'
-             LIMIT 1
-            """,
-            (phone_id,),
-        )
-        row = await cur.fetchone()
+    """Resolve conexão WABA pelo phone_number_id (do webhook Meta).
+
+    Sprint A.2.3: bypass RLS (webhook descobre empresa via este lookup).
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                SELECT {_SELECT_COLS} FROM conexao
+                 WHERE waba_phone_id = %s AND status = 'active'
+                 LIMIT 1
+                """,
+                (phone_id,),
+            )
+            row = await cur.fetchone()
     return _row_to_conexao(row) if row else None
 
 

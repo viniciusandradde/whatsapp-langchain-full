@@ -79,6 +79,15 @@ async def enqueue_or_buffer(
     )
 
     async with pool.connection() as conn:
+        # Sprint A.2.3 — seta RLS context da empresa antes de qualquer
+        # query. Webhook handlers nem sempre passam pelo middleware
+        # (X-Empresa-Id ausente em webhooks externos), então a função
+        # seta o context na conexão diretamente — `false` = session-level
+        # (vale até a conn voltar pro pool, que limpa via wrapper).
+        await conn.execute(
+            "SELECT set_config('app.empresa_id', %s, false)",
+            (str(empresa_id),),
+        )
         # Lock transacional: serializa debounce para o mesmo phone+agent.
         # Liberado automaticamente no commit/rollback da transação.
         await conn.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
