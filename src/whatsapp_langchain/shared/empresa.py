@@ -229,28 +229,37 @@ async def create_empresa(
 
     Usa 1 transação: se a inserção da membership falhar, a empresa
     também é desfeita.
-    """
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            f"""
-            INSERT INTO empresa (nome, slug, plano, doc)
-            VALUES (%s, %s, %s, %s)
-            RETURNING {_EMPRESA_COLS}
-            """,
-            (nome, slug, plano, doc),
-        )
-        row = await cur.fetchone()
-        assert row is not None
-        empresa = _row_to_empresa(row)
 
-        await conn.execute(
-            """
-            INSERT INTO empresa_membro (empresa_id, user_id, role, is_default)
-            VALUES (%s, %s, 'admin', FALSE)
-            ON CONFLICT (empresa_id, user_id) DO NOTHING
-            """,
-            (empresa.id, criador_user_id),
-        )
+    Sprint A.2 — operação cross-tenant: user está logado numa empresa A,
+    quer criar empresa B. RLS strict bloquearia INSERT em empresa_membro
+    porque o context atual é da empresa A (empresa_id=A WITH CHECK
+    rejeita row com empresa_id=B). Usa bypass — criação de empresa é
+    operação especial que cruza tenants por design.
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                INSERT INTO empresa (nome, slug, plano, doc)
+                VALUES (%s, %s, %s, %s)
+                RETURNING {_EMPRESA_COLS}
+                """,
+                (nome, slug, plano, doc),
+            )
+            row = await cur.fetchone()
+            assert row is not None
+            empresa = _row_to_empresa(row)
+
+            await conn.execute(
+                """
+                INSERT INTO empresa_membro (empresa_id, user_id, role, is_default)
+                VALUES (%s, %s, 'admin', FALSE)
+                ON CONFLICT (empresa_id, user_id) DO NOTHING
+                """,
+                (empresa.id, criador_user_id),
+            )
     return empresa
 
 
