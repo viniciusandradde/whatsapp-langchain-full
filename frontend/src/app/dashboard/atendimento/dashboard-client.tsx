@@ -17,6 +17,7 @@ import { ChartPorDepartamento } from "./chart-por-departamento";
 import { ChartPorHora } from "./chart-por-hora";
 import { CleanupZumbisCard } from "./cleanup-zumbis-card";
 import { KPICards } from "./kpi-cards";
+import { QuotaCard } from "./quota-card";
 import { TabelaAguardando } from "./tabela-aguardando";
 import { TabelaSemResposta } from "./tabela-sem-resposta";
 
@@ -135,6 +136,9 @@ export function DashboardClient({ initial }: { initial: DashboardPayload }) {
         <div className="space-y-4">
           {/* Row 0: Cleanup alert (só aparece se há zumbis) */}
           <CleanupZumbisCard />
+
+          {/* Row 0.5: Quota card — uso do plano + features */}
+          <QuotaCard />
 
           {/* Row 1: KPIs */}
           <KPICards kpis={data.kpis} />

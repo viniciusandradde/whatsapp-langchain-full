@@ -147,6 +147,38 @@ export interface EmpresaUpdateInput {
 
 export type UserStatus = "active" | "disabled";
 
+// Sprint Q.4 — quota snapshot
+export interface QuotaSnapshot {
+  plano: {
+    id: number | null;
+    slug: string;
+    nome: string;
+    preco_mensal_brl: number;
+  };
+  limites: {
+    usuarios: number | null;
+    conexoes: number | null;
+    atendimentos_mes: number | null;
+    documentos_kb: number | null;
+    orcamento_ia_usd: number | null;
+  };
+  usado: {
+    usuarios: number;
+    conexoes: number;
+    agentes: number;
+    atendimentos_mes: number;
+    documentos_kb: number;
+  };
+  percentual: {
+    usuarios: number | null;
+    conexoes: number | null;
+    atendimentos_mes: number | null;
+    documentos_kb: number | null;
+  };
+  features: Record<string, boolean>;
+  upgrade_sugerido: string | null;
+}
+
 export interface EmpresaMembro {
   empresa_id: number;
   user_id: string;
@@ -3695,6 +3727,11 @@ export async function getEmpresaCsat(
   empresaId: number
 ): Promise<EmpresaCsatConfig> {
   return apiFetch<EmpresaCsatConfig>(`/api/empresas/${empresaId}/csat`);
+}
+
+// Sprint Q.4 — quota snapshot do plano
+export async function getEmpresaQuota(empresaId: number): Promise<QuotaSnapshot> {
+  return apiFetch<QuotaSnapshot>(`/api/empresas/${empresaId}/quota`);
 }
 
 export async function updateEmpresaCsat(
