@@ -37,6 +37,17 @@ class Settings(BaseSettings):
         "postgresql://postgres:postgres@localhost:5432/whatsapp_langchain"
     )
 
+    # Sprint A.2.6 — URL para conectar como chat_nexus_app (NOBYPASSRLS).
+    # Quando setado, get_pool() retorna pool com essa URL em vez de
+    # `database_url` (que continua usado por run_migrations + bootstrap
+    # que precisam de superuser / bypass natural).
+    # Em prod, idealmente:
+    #   DATABASE_URL=postgres (superuser, só pra migs)
+    #   DATABASE_URL_APP=chat_nexus_app (NOBYPASSRLS, runtime)
+    # Quando vazio (default), app continua usando database_url (modo
+    # legacy — RLS inerte pois superuser bypassa).
+    database_url_app: str = ""
+
     # --- Environment ---
     # "development" (default) ou "production" — controla comportamentos como
     # exposicao do webhook sincrono (desabilitado em production)

@@ -648,12 +648,20 @@ async def reschedule_local(
 async def list_active_calendar_empresas(
     pool: AsyncConnectionPool,
 ) -> list[int]:
-    """Lista empresa_ids com Google Calendar conectado e ativo (S5 sync)."""
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            "SELECT empresa_id FROM empresa_calendar_config WHERE ativo = TRUE"
-        )
-        rows = await cur.fetchall()
+    """Lista empresa_ids com Google Calendar conectado e ativo (S5 sync).
+
+    Sprint A.2.6: cross-tenant (cron precisa ver TODAS as empresas com
+    calendar ativo). Bypass RLS — chamador faz `empresa_scope(eid)` por
+    empresa antes do `sync_calendar_for_empresa`.
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT empresa_id FROM empresa_calendar_config WHERE ativo = TRUE"
+            )
+            rows = await cur.fetchall()
     return [r[0] for r in rows]
 
 

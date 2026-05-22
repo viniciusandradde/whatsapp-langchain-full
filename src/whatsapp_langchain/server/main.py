@@ -126,6 +126,7 @@ from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import (
     bootstrap_langgraph_schema,
     close_pool,
+    get_migrator_pool,
     get_pool,
     run_migrations,
 )
@@ -160,21 +161,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     logger.info("server_starting", port=settings.port)
 
-    pool = await get_pool()
-    await run_migrations(pool)
+    # Sprint A.2.6: migrations + bootstrap usam migrator pool (postgres
+    # superuser). Pool da app (chat_nexus_app) é criado depois pra runtime.
+    migrator_pool = await get_migrator_pool()
+    await run_migrations(migrator_pool)
     await bootstrap_langgraph_schema()
     # E2.A: sincroniza catálogo de permissões + seed perfis system
-    # pra empresa default (id=1). Idempotente em ambos.
+    # pra empresa default (id=1). Idempotente em ambos. Usa migrator
+    # pool (sem RLS) — sync_catalogo escreve em permissao (sem empresa_id).
     from whatsapp_langchain.shared.permissoes import (
         seed_default_perfis,
         sync_catalogo,
     )
 
-    await sync_catalogo(pool)
+    await sync_catalogo(migrator_pool)
     try:
-        await seed_default_perfis(pool, 1)
+        await seed_default_perfis(migrator_pool, 1)
     except Exception as exc:
         logger.warning("rbac_seed_default_failed", error=str(exc))
+
+    # Aquece o pool da app (chat_nexus_app ou postgres fallback)
+    await get_pool()
     logger.info("server_ready")
 
     yield

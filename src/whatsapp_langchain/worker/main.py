@@ -15,6 +15,7 @@ from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import (
     bootstrap_langgraph_schema,
     close_pool,
+    get_migrator_pool,
     get_pool,
     open_checkpointer,
     open_store,
@@ -41,9 +42,12 @@ async def main() -> None:
     setup_logging(log_level=settings.log_level, json_output=settings.log_json)
     logger.info("worker_starting")
 
-    pool = await get_pool()
-    await run_migrations(pool)
+    # Sprint A.2.6: migrations rodam como migrator (superuser).
+    # Pool de runtime (chat_nexus_app) é aberto depois.
+    migrator_pool = await get_migrator_pool()
+    await run_migrations(migrator_pool)
     await bootstrap_langgraph_schema()
+    pool = await get_pool()
 
     checkpointer_stack, checkpointer = await open_checkpointer()
 

@@ -240,6 +240,12 @@ async def claim_next(
     Só retorna mensagens com process_after <= NOW() (debounce concluído) e
     dentro do limite de tentativas.
 
+    Sprint A.2.6: cross-tenant por design (worker precisa ver fila de TODAS
+    as empresas). Caller (`worker/consumer.py::claim_next_message`) deve
+    envolver em `empresa_scope(None, bypass=True)`. Mantemos essa função
+    sem bypass embutido pra que tests com mock de pool não precisem mexer
+    em contextvars globais.
+
     Args:
         pool: Pool de conexões do psycopg.
         lease_seconds: Segundos de lock para o worker processar.

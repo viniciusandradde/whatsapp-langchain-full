@@ -147,41 +147,88 @@ class _RlsAwarePool:
 
 
 async def get_pool() -> AsyncConnectionPool:
-    """Retorna o pool de conexões, criando se necessário.
+    """Retorna o pool de conexões da APLICAÇÃO (runtime), criando se necessário.
 
     O pool é singleton — chamadas subsequentes retornam a mesma instância.
     Desde Sprint A.2.4, retorna um `_RlsAwarePool` wrapper que injeta
-    automaticamente `SET app.empresa_id` em cada conexão entregue. Código
-    legado (`async with pool.connection() as conn`) continua igual.
+    automaticamente `SET app.empresa_id` em cada conexão entregue.
+
+    Sprint A.2.6: usa `settings.database_url_app` se setado (role
+    `chat_nexus_app` NOBYPASSRLS), senão fallback `settings.database_url`
+    (legacy — postgres superuser, RLS efetivamente inerte). Migrations
+    e bootstrap (auth) usam `get_migrator_pool()` que SEMPRE usa
+    `database_url` (superuser).
 
     Returns:
         Pool de conexões assíncronas (RlsAwarePool wrapper).
     """
     global pool
     if pool is None:
+        url = settings.database_url_app or settings.database_url
+        role_label = "chat_nexus_app" if settings.database_url_app else "postgres"
         inner_pool = AsyncConnectionPool(
-            conninfo=settings.database_url,
+            conninfo=url,
             min_size=2,
             max_size=10,
             open=False,
         )
         await inner_pool.open()
         pool = _RlsAwarePool(inner_pool)  # type: ignore[assignment]
-        db_host = settings.database_url.split("@")[-1]
-        logger.info("db_pool_created", database_url=db_host, rls_wrapped=True)
+        db_host = url.split("@")[-1]
+        logger.info(
+            "db_pool_created",
+            database_url=db_host,
+            rls_wrapped=True,
+            role=role_label,
+            rls_enforced=role_label != "postgres",
+        )
     return pool  # type: ignore[return-value]
 
 
+# Migrator pool (singleton separado, usa superuser sempre)
+_migrator_pool: AsyncConnectionPool | None = None
+
+
+async def get_migrator_pool() -> AsyncConnectionPool:
+    """Pool específico pra migrations + bootstrap (sempre superuser).
+
+    Sprint A.2.6: migrations precisam DDL + bypass de RLS pra rodar
+    `INSERT INTO _migrations` em qualquer momento. Mantém `database_url`
+    (postgres) e NÃO usa o wrapper RLS (queries de migration são global).
+
+    Singleton min/max=1 — só usado no startup, evita pool ocioso.
+    """
+    global _migrator_pool
+    if _migrator_pool is None:
+        _migrator_pool = AsyncConnectionPool(
+            conninfo=settings.database_url,
+            min_size=1,
+            max_size=2,
+            open=False,
+        )
+        await _migrator_pool.open()
+        logger.info(
+            "db_migrator_pool_created",
+            database_url=settings.database_url.split("@")[-1],
+        )
+    return _migrator_pool
+
+
 async def close_pool() -> None:
-    """Fecha o pool de conexões.
+    """Fecha o(s) pool(s) de conexões.
 
     Chamado no shutdown da aplicação para liberar recursos.
+    Fecha tanto o pool da app quanto o migrator pool (se criado).
     """
-    global pool
+    global pool, _migrator_pool
     if pool is not None:
         await pool.close()
         pool = None
         logger.info("db_pool_closed")
+    if _migrator_pool is not None:
+        await _migrator_pool.close()
+        _migrator_pool = None
+        logger.info("db_migrator_pool_closed")
 
 
 @asynccontextmanager

@@ -260,12 +260,20 @@ async def cleanup_zumbis_all_empresas(
     """Roda cleanup pra TODAS as empresas ativas. Usado pelo cron.
 
     Pula empresas com `cleanup_atendimento.enabled = false` na config.
+
+    Sprint A.2.6: SELECT inicial em `empresa` é cross-tenant. A tabela
+    `empresa` NÃO tem RLS (é a tabela raiz tenant), então tecnicamente
+    nem precisaria de bypass — mas adicionamos pra ficar consistente
+    com pattern dos outros loops cron.
     """
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            "SELECT id FROM empresa WHERE status = 'active' ORDER BY id",
-        )
-        rows = await cur.fetchall()
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM empresa WHERE status = 'active' ORDER BY id",
+            )
+            rows = await cur.fetchall()
 
     empresa_ids = [int(r[0]) for r in rows]
     results: list[dict[str, Any]] = []
