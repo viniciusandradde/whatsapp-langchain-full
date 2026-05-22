@@ -129,7 +129,20 @@ class _RlsAwarePool:
                 # Limpa context antes de conn voltar pro pool. Sem isso,
                 # próxima request pode pegar essa conn com app.empresa_id
                 # da request anterior — vazamento cross-tenant silencioso.
+                #
+                # Cuidado: se a transação foi abortada (ex: query falhou
+                # com erro de constraint), qualquer comando subsequente
+                # daria 'current transaction is aborted'. Detectamos via
+                # `conn.info.transaction_status` (psycopg expõe estado
+                # do backend) e fazemos ROLLBACK antes do SET.
                 try:
+                    from psycopg.pq import TransactionStatus
+
+                    tx_status = conn.info.transaction_status
+                    if tx_status == TransactionStatus.INERROR:
+                        await conn.rollback()
+                    # Em autocommit (IDLE) ou transação ativa válida
+                    # (INTRANS), SET vai funcionar.
                     await conn.execute(
                         "SELECT set_config('app.empresa_id', '', false)"
                     )
@@ -137,9 +150,19 @@ class _RlsAwarePool:
                         "SELECT set_config('app.bypass_rls', '', false)"
                     )
                 except Exception as exc:
+                    # Último recurso: marca conn como inválida pro pool
+                    # descartar. Sem isso, conn fica com context vazado.
                     logger.warning(
-                        "rls_context_cleanup_failed", error=str(exc)
+                        "rls_context_cleanup_failed",
+                        error=str(exc),
+                        tx_status=str(getattr(
+                            conn.info, "transaction_status", "?"
+                        )),
                     )
+                    try:
+                        await conn.close()  # pool reabre uma nova
+                    except Exception:
+                        pass
 
     def __getattr__(self, name: str) -> Any:
         """Proxy não-interceptado pro pool original (open/close/etc)."""
