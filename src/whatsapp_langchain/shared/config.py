@@ -283,7 +283,18 @@ class Settings(BaseSettings):
         return self.environment.strip().lower() == "production"
 
     def validate_runtime_settings(self) -> None:
-        """Valida configuração mínima e hardening por ambiente."""
+        """Valida configuração mínima e hardening por ambiente.
+
+        Em produção, aplica hardening de Sprint D (2026-05-22):
+        - Twilio: se `TWILIO_OUTBOUND_MODE=real`, signature validation
+          OBRIGATÓRIA (raise). Webhook sem HMAC = forgery trivial.
+        - Evolution: se `EVOLUTION_OUTBOUND_MODE=real`, apikey validation
+          OBRIGATÓRIA (raise). Webhook sem apikey = forgery trivial.
+        - WABA: se `META_APP_SECRET` configurado, fica documentado que
+          signature é enforced em runtime (`webhook_waba.py`).
+
+        Não-prod (dev/test): apenas warnings, sem bloquear.
+        """
         token = self.internal_service_token.strip()
         if not token:
             raise ValueError(
@@ -296,21 +307,35 @@ class Settings(BaseSettings):
                 "Atualize as env vars antes do deploy."
             )
 
-        if self.is_production and not self.validate_twilio_signature:
-            # Warning, não raise: user pode estar rodando 100% Evolution
-            # (sem Twilio) ou precisa desativar pra testes E2E. A invariante
-            # de segurança fica documentada mas não bloqueia o startup.
-            import logging
-            logging.getLogger(__name__).warning(
-                "VALIDATE_TWILIO_SIGNATURE=false em produção. "
-                "Endpoint /webhook/twilio aceita payloads não autenticados. "
-                "Habilite (=true) se este servidor recebe webhooks reais do Twilio."
-            )
-
         if self.is_production and not self.frontend_origins_list:
             raise ValueError(
                 "Production requer FRONTEND_ORIGINS configurado com pelo menos uma "
-                "origem. Ex: FRONTEND_ORIGINS=https://chat.nexus.com"
+                "origem. Ex: FRONTEND_ORIGINS=https://chat.vsanexus.com"
+            )
+
+        # Sprint D hardening — webhook signature obrigatória se provider real
+        twilio_mode = self.resolved_twilio_outbound_mode
+        if (
+            self.is_production
+            and twilio_mode == "real"
+            and not self.validate_twilio_signature
+        ):
+            raise ValueError(
+                "Production com TWILIO_OUTBOUND_MODE=real exige "
+                "VALIDATE_TWILIO_SIGNATURE=true. Endpoint /webhook/twilio sem "
+                "HMAC aceita qualquer payload forjado — risco de account "
+                "takeover via mensagens falsas."
+            )
+
+        if (
+            self.is_production
+            and self.evolution_outbound_mode.strip().lower() == "real"
+            and not self.evolution_validate_apikey
+        ):
+            raise ValueError(
+                "Production com EVOLUTION_OUTBOUND_MODE=real exige "
+                "EVOLUTION_VALIDATE_APIKEY=true. Endpoint /webhook/evolution "
+                "sem validação de apikey aceita qualquer payload forjado."
             )
 
 

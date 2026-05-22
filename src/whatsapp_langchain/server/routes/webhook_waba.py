@@ -76,8 +76,22 @@ async def waba_webhook_post(
     app_secret = (
         settings.meta_app_secret.get_secret_value() if settings.meta_app_secret else ""
     )
-    if app_secret and x_hub_signature_256:
-        if not verify_signature(body, x_hub_signature_256, app_secret):
+    # Sprint D hardening: em produção com META_APP_SECRET configurado,
+    # signature é OBRIGATÓRIA. Sem header ou inválida → reject. Webhook
+    # sem HMAC = forgery trivial (Meta dispara payloads não autenticados
+    # rejeitados pelo próprio Meta após N tentativas, mas atacante pode
+    # forjar diretamente). Pré-Sprint D só rejeitava quando assinatura
+    # inválida; ausência de header passava silenciosamente.
+    if app_secret:
+        if not x_hub_signature_256:
+            logger.warning(
+                "waba_webhook_signature_missing",
+                body_size=len(body),
+                production=settings.is_production,
+            )
+            if settings.is_production:
+                return {"status": "rejected_no_signature"}
+        elif not verify_signature(body, x_hub_signature_256, app_secret):
             logger.warning("waba_webhook_signature_invalid", body_size=len(body))
             return {"status": "rejected"}
 
