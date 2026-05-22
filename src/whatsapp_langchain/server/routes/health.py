@@ -77,10 +77,17 @@ async def health_db() -> JSONResponse:
 
 @router.get("/api/health/queue")
 async def health_queue() -> JSONResponse:
-    """Queue health: counts por status + oldest queued (idade em segundos)."""
+    """Queue health: counts por status + oldest queued (idade em segundos).
+
+    Sprint A.2.3: cross-tenant deliberado (health/ops visa todos os
+    tenants). Bypass RLS via set_config inline antes das queries.
+    """
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
+            await conn.execute(
+                "SELECT set_config('app.bypass_rls', 'true', false)"
+            )
             cur = await conn.execute(
                 """
                 SELECT status, COUNT(*)
@@ -129,10 +136,16 @@ async def health_queue() -> JSONResponse:
 
 @router.get("/api/health/agent")
 async def health_agent() -> JSONResponse:
-    """Agent health: última msg processada com sucesso (recência)."""
+    """Agent health: última msg processada com sucesso (recência).
+
+    Sprint A.2.3: bypass RLS (cross-tenant ops).
+    """
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
+            await conn.execute(
+                "SELECT set_config('app.bypass_rls', 'true', false)"
+            )
             cur = await conn.execute(
                 """
                 SELECT EXTRACT(EPOCH FROM NOW() - MAX(processed_at))
@@ -184,10 +197,15 @@ async def health_workers() -> JSONResponse:
     Sem tabela `worker_heartbeat` ainda — heurística: se há rows em
     `processing` com `lease_until` futuro, há worker vivo. Workers em
     crash/idle aparecem como zero.
+
+    Sprint A.2.3: bypass RLS (cross-tenant ops).
     """
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
+            await conn.execute(
+                "SELECT set_config('app.bypass_rls', 'true', false)"
+            )
             cur = await conn.execute(
                 """
                 SELECT COUNT(DISTINCT id)

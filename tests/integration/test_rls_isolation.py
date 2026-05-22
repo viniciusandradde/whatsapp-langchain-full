@@ -133,10 +133,28 @@ async def empresas(pool: AsyncConnectionPool) -> dict[str, int]:
 
 
 class TestRlsIsolation:
-    async def test_sem_context_ve_tudo_compat(
+    async def test_sem_context_app_role_ve_zero_strict(
+        self, pool_app: AsyncConnectionPool, empresas: dict[str, int]
+    ):
+        """Sprint A.2.3 STRICT: app role sem context = 0 rows (deny default)."""
+        async with pool_app.connection() as conn:
+            # Limpa context que o wrapper pode ter setado de runs anteriores
+            await conn.execute("SELECT set_config('app.empresa_id', '', false)")
+            await conn.execute("SELECT set_config('app.bypass_rls', '', false)")
+            cur = await conn.execute(
+                "SELECT empresa_id FROM hook WHERE empresa_id IN (%s, %s)",
+                (empresas["a"], empresas["b"]),
+            )
+            rows = await cur.fetchall()
+        assert len(rows) == 0, (
+            f"STRICT broken: sem context, app role viu {len(rows)} rows. "
+            "Esperado 0 (deny default)."
+        )
+
+    async def test_sem_context_superuser_ve_tudo(
         self, pool: AsyncConnectionPool, empresas: dict[str, int]
     ):
-        """Modo permissive: sem app.empresa_id setado, vê hooks das duas empresas."""
+        """Sanidade: superuser (postgres) sempre vê tudo (BYPASSRLS implícito)."""
         async with pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT empresa_id FROM hook WHERE empresa_id IN (%s, %s)",
