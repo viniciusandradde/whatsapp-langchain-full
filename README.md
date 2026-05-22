@@ -117,6 +117,18 @@ Originalmente um harness educacional para agentes de WhatsApp com LangGraph, evo
 - ✅ **Templates HSM**: form completo (BODY/HEADER/FOOTER/BUTTONS) + submissão Meta + sync status + envio com variáveis substituídas
 - ✅ Twilio mantido 100% funcional como 3ª opção
 
+### Sprint A.2 — RLS Postgres real 10/10 (2026-05-22)
+
+- ✅ **4 roles app least-privilege**: `chat_nexus_app` (NOSUPERUSER, NOBYPASSRLS, runtime API+Worker), `chat_nexus_migrator` (DDL), `chat_nexus_readonly` (BI), `chat_nexus_audit` (BYPASSRLS pra compliance)
+- ✅ **58 tabelas com RLS + FORCE** — policy `_rls_tenant_match` estrita (`app.empresa_id` vazio = deny)
+- ✅ **Middleware FastAPI** seta `app.empresa_id` por request via header `X-Empresa-Id`
+- ✅ **Worker** envolve `process_message` em `empresa_scope(message.empresa_id)`
+- ✅ **`DATABASE_URL_APP`** em prod aponta pra `chat_nexus_app` — RLS REALMENTE enforcing
+- ✅ **Bypass cirúrgico** apenas em cross-tenant legítimos (claim queue, calendar sync, cleanup, webhook lookup, health)
+- ✅ **Tests E2E** (`tests/integration/test_rls_isolation.py`) 10/10 PASSED com role app
+- ✅ **Hardening DB**: `postgres CONNECTION LIMIT 10`, `chat_nexus_app log_statement=ddl`, event trigger audit em `_ddl_role_audit`
+- Runbook completo em [docs/RLS_OPERATIONS.md](docs/RLS_OPERATIONS.md)
+
 ### Prompts hospitalares + LGPD (2026-05-21)
 
 - ✅ Metodologia canônica em `docs/agentes/prompts-saude/METODOLOGIA.md` (XML tags, few-shot, ReAct, Constitutional AI, RAG-aware)
@@ -312,6 +324,7 @@ Cabeçalhos de segurança automáticos: `X-Content-Type-Options: nosniff`, `X-Fr
 - [Stress testing](docs/STRESS_TESTING.md)
 - [Prompts saúde — metodologia canônica](docs/agentes/prompts-saude/METODOLOGIA.md)
 - [Padrão PATCH parcial](docs/dev/PATCH_PATTERN.md)
+- [RLS Operations Runbook](docs/RLS_OPERATIONS.md) — roles, troubleshooting, rotação de senha, emergency bypass, incident response LGPD
 
 ---
 
