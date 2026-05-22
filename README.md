@@ -1,142 +1,257 @@
-# WhatsApp LangChain
+# Chat Nexus
 
-Harness educacional e production-ready para agentes de WhatsApp com LangGraph.
+**Versão:** `v0.b1` (Beta 1 — 2026-05-22) · **Stack em produção:** [chat.vsanexus.com](https://chat.vsanexus.com)
 
-## O que é?
+Plataforma de WhatsApp + IA multi-tenant, multi-conexão e multi-agente. Operação completa de atendimento humano + agentes LangGraph com governança, NPS, calendar, RBAC, dashboards operacionais e observabilidade — tudo num único stack `FastAPI + Next.js + PostgreSQL` sem dependência de Redis/RabbitMQ.
 
-Um harness completo e production-ready que conecta agentes de IA ao WhatsApp. Você define o comportamento do agente com LangChain/LangGraph, e a infraestrutura do projeto cuida do resto: recebimento de mensagens, processamento assíncrono, memória e operação.
+Originalmente um harness educacional para agentes de WhatsApp com LangGraph, evoluiu para um produto completo de atendimento — preservando o caráter pedagógico do código (cada decisão de arquitetura é explícita e documentada).
 
-O objetivo deste repositório é ensinar arquitetura de harness em volta do agente:
-- entrada confiável de mensagens
-- processamento assíncrono
-- persistência de contexto e memória
-- observabilidade, retries e limites
+---
 
-## O que o projeto inclui
+## Status do projeto
 
-- API FastAPI com webhook Twilio assíncrono (`/webhook/twilio`)
-- fila em PostgreSQL com debounce e retry
-- worker assíncrono para processamento LangGraph
-- bootstrap de schema LangGraph no startup (sem criação lazy no primeiro request)
-- ciclo de vida explícito no worker para `checkpointer`/`store` (abertos no boot e reutilizados)
-- checkpointer PostgreSQL (`thread_id`) para contexto por conversa
-- memória semântica com `AsyncPostgresStore` + embeddings (`user_id`)
-- middleware de contexto (`trim`, `summarize`, `none`)
-- tools de memória semântica (`save_memory` e `read_memory`)
-- processamento de mídia (imagem e áudio) via OpenRouter multimodal
-- rate limit por telefone (in-memory)
-- rotas administrativas (`/api/agents`, `/api/chats`, `/api/metrics`)
-- endpoint síncrono educacional (`/webhook/sync`)
-- validação criptográfica de `X-Twilio-Signature`
-- envio real de resposta via Twilio Messages API
-- typing indicator via Twilio antes do processamento
-- documentação de sandbox/webhook/túnel com cloudflared
-- frontend/admin panel integrado neste repositório
-- autenticação via Better Auth no mesmo PostgreSQL
-- proteção das rotas administrativas com `INTERNAL_SERVICE_TOKEN`
-- deploy documentado para Railway
-- documentação e artefatos de stress testing
-- documentação de integração Twilio reescrita (sandbox vs produção separados)
-- checklist de cutover sandbox → produção
-- rollback documentado (deploy e Twilio)
-- branding mínimo da VSA Tech no painel (favicon, cores, metadados)
-- **CORS estrito** via `FRONTEND_ORIGINS` (lista CSV de origens permitidas)
-- **cabeçalhos de segurança** automáticos: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` + `Strict-Transport-Security` em produção
-- **fail-fast no startup em produção**: levanta `ValueError` se faltar token forte (≥32 chars), `VALIDATE_TWILIO_SIGNATURE=true` ou `FRONTEND_ORIGINS` não-vazio
-- **rate limit distribuído opcional** via Postgres (sliding window por hora) — habilite com `RATE_LIMIT_DISTRIBUTED=true` para multi-instância
-- **suporte a múltiplas mídias** num único webhook (`NumMedia > 1`) — N rows independentes com mesmo `message_id`, processadas em ordem como turns separados pelo agente
-- **smoke test e2e com Twilio real** (opt-in, custa crédito): `make test-twilio-smoke` valida webhook → worker → outbound REAL → `mark_done`
-- **multi-provider WhatsApp** (M2.b): além de Twilio sandbox/prod/WABA, suporta [Evolution API](docs/EVOLUTION.md) (não-oficial, baseada em Baileys) — webhook `/webhook/evolution`, cliente outbound dedicado, multi-instância via `payload_json.instance_name`. Worker resolve cliente por `conexao.provider` via `OutboundClient` Protocol; suporta WhatsApp LID (Linked Identity) automaticamente
-- **rate limit em endpoints admin** (60 req/min/user) e login Better Auth (5 tentativas/15 min por IP) — sliding window distribuído via tabela `rate_limit_bucket` (migration 022)
-- **hooks com retry exponencial + DLQ**: backoff 1s/5s/25s, 3 tentativas; falhas finais persistidas em `hook_dead_letter` (migration 023) com endpoints `GET/POST /api/hooks/dead-letter` pra retry manual
-- **gestão de usuários**: coluna `auth.user.status` (active/disabled) bloqueia login e mata sessões em <30s; reset de senha sem SMTP via "link manual" (`auth.password_reset_pending`); botões UI em `/companies/[id]/members`; histórico de acesso com IP/User-Agent em `/settings/security/login-history` (migration 026)
-- **SSO Google** (opcional): reusa o mesmo OAuth Client do Calendar — basta adicionar redirect URI `https://<domínio>/api/auth/callback/google` no Google Cloud Console. Veja [docs/AUTH.md](docs/AUTH.md)
-- **correlation ID** propagado API↔worker via header `X-Request-Id` + bind no structlog contextvars (todos logs do request ganham `request_id=X`)
-- **outbound manual roteado por provider**: composer no painel envia via Twilio OU Evolution conforme `Conexao.provider`, não mais hardcoded
-- **Calendar Agent v2** (S1+S2 entregues, plano de 5 sprints):
-  - 7 tools no agente: `calendar_get_current_time`, `calendar_list_calendars`, `calendar_set_active_calendar`, `calendar_list_events`, `calendar_find_free_slots`, `calendar_create_event`, `calendar_cancel_event`
-  - Source-of-truth interno em tabela `agendamento` (migration 027): INSERT local antes de chamar Google, drift compensation se Google falha
-  - Hooks `agendamento.criado` e `agendamento.cancelado` em `EVENTOS_VALIDOS`
-  - Endpoint `GET /api/agendamentos?inicio&fim&status&cliente_id` pra UI/integração externa
-  - Pendentes (próximos sprints): regras de negócio configuráveis (S3), aprovação via WhatsApp ao gestor (S4), sync periódico Google→DB + reschedule + audit (S5)
-- **stress test com Locust** (Evolution + Twilio): `make stress-evolution`, `make stress-twilio`, `make stress-both` com defaults `-u 10 -r 2 -t 60s` (sobrescrevíveis via `USERS=`, `RATE=`, `TIME=`, `HOST=`); fallback Docker pra ambientes sem `uv`
-- **deploy Dokploy** documentado em [docs/DOKPLOY.md](docs/DOKPLOY.md): compose dedicado (`docker-compose.dokploy.yml`), passo a passo de Project + Compose service + Domains + envs
-- **transferência de atendimento por departamento** (Sprint V/W): drawer `/atendimento` tem popover com 2 modos — "Para departamento" (dropdown lista deptos ativos via `getDepartamentos`) e "Para atendente" (lista atendentes online filtrados por `atendente_status='online'` + count de abertos). Modo departamento volta o atendimento pra `aguardando` e limpa o atribuído (entra na fila do depto). Cliente recebe mensagem WhatsApp "Você foi transferido para o setor *X*. Em breve um atendente entrará em contato." automaticamente. Mobile responsivo (popover vira bottom-sheet em <640px com backdrop tap-to-close)
-- **módulo NPS / pesquisa de satisfação** (Sprint X/Y) — captura automática 0-10 ao fechar atendimento (clique "Resolver" no painel ou keyword "encerrar atendimento" via WhatsApp), comentário textual como follow-up opcional (60s), dashboard executivo `/dashboard/qualidade` com 4 cards (NPS Score, Total, %Promotores, %Detratores) + tabela por departamento + ranking de operadores + lista paginada de comentários filtrando por categoria. Config 100% no cadastro da empresa (toggle `csat_ativo` + pergunta customizável + msg agradecimento + checkbox solicita comentário). Tabela `atendimento_avaliacao` (UNIQUE 1:1 com atendimento), captura via flags `aguardando_avaliacao_at` (24h) + `aguardando_comentario_at` (60s) — veja [docs/NPS.md](docs/NPS.md)
+| Métrica | Valor |
+|---|---|
+| Versão | `v0.b1` (Beta 1) |
+| Migrações aplicadas | 71 arquivos (`db/migrations/001` → `074`) |
+| Endpoints REST | ~180 |
+| Tabelas no schema da app | ~75 |
+| Tabelas no schema `auth` (Better Auth) | 12 |
+| Agentes catalogados (Python) | 8 templates |
+| Frontend | Next.js 16 + React 19 + Tailwind 4 |
+| Backend | FastAPI + psycopg async + LangGraph 0.6 |
+| Em produção | ✅ 24/7 desde 2026-04-29, 4 réplicas worker |
+| Cobertura de testes | ~50% (gate CI) |
 
-O harness foi desenhado para funcionar tanto em desenvolvimento local
-(`sandbox`/`mock`) quanto em ambiente publicado com Twilio real. Para o fluxo
-de cutover para número real, veja [Integração Twilio](docs/TWILIO.md) e
-[Deploy](docs/DEPLOY.md). Para integrar Evolution API, veja
-[Integração Evolution](docs/EVOLUTION.md).
+---
+
+## Andamento — milestones entregues
+
+### Fundação (Abril 2026)
+
+- ✅ **Webhook Twilio assíncrono** + fila PostgreSQL com `FOR UPDATE SKIP LOCKED`, debounce 2s, retries com backoff exponencial
+- ✅ **Worker LangGraph** com ciclo de vida explícito (`AsyncPostgresSaver` + `AsyncPostgresStore` abertos no boot, reutilizados)
+- ✅ **Painel admin** Next.js + Better Auth no mesmo PostgreSQL (schema `auth`)
+- ✅ **Hardening de produção**: CORS estrito, security headers, fail-fast em invariantes (token ≥32, signature Twilio, FRONTEND_ORIGINS)
+- ✅ **Rate limit distribuído** via Postgres (sliding window) — opt-in para multi-instância
+- ✅ **Multi-provider WhatsApp**: Twilio sandbox/prod, Evolution API (Baileys), WABA oficial (Embedded Signup OAuth Meta)
+
+### Multi-tenant (M1 — 2026-04-29)
+
+- ✅ Empresa como tenant raiz: `empresa_membro` (FK em todas as tabelas), `is_default`, `role`
+- ✅ Bootstrap admin no primeiro `/login` com triple-insert (`auth.user` + `empresa_membro` + `is_superadmin`)
+- ✅ Switcher de empresa no sidebar para superadmin/multi-empresa
+- ✅ Empresa CRUD em `/companies/[id]` (status, branding, csat config)
+
+### Multi-conexão WhatsApp (M2 — 2026-04-29)
+
+- ✅ Tabela `conexao` com provider (twilio/evolution/waba), credenciais cifradas (Fernet), `connection_state`
+- ✅ Worker resolve cliente outbound por `Conexao.provider` via `OutboundClient` Protocol (mesmo contrato para os 3)
+- ✅ Webhook por provider: `/webhook/twilio`, `/webhook/evolution`, `/webhook/waba` (HMAC-SHA256)
+- ✅ UI `/connections` padrão ZigChat: tabela com badges de estado + modal "+ Nova" com 3 cards (WABA/Evolution/Twilio)
+
+### CRM Light (M3 — 2026-05-02)
+
+- ✅ Tabela `cliente` com nome, telefone, e-mail, endereço, VIP flag, tags, notas internas, dados enriquecidos (Wareline)
+- ✅ Form `/clientes/[id]` com 4 abas (Geral / Avançado / Integrações / Histórico)
+- ✅ Importação CSV + busca full-text
+
+### Multi-agente IA (Sub-fase A — 2026-05-06)
+
+- ✅ Tabela `agente_ia` com `template_catalog`, `modelo_llm`, `temperatura_override`, `prompt_override` (50k chars), tools opt-in
+- ✅ `AgenteRuntime` no worker carrega config da DB sobre o template Python
+- ✅ UI `/agents/[slug]` com 5 tabs (Identidade / Prompt / Modelo / Tools / Métricas)
+
+### Menu Chatbot (Sub-fase B+ — 2026-05-06)
+
+- ✅ Paridade ZigChat completa: **12 ações** suportadas (`enviar_mensagem`, `enviar_link`, `chamar_agente`, `transferir_dep`, `pesquisa_csat`, `enviar_template`, `coletar_dados`, etc.)
+- ✅ Wizard de coleta multi-pergunta por `menu_item` (validators BR: CPF, CNPJ, telefone, e-mail, data)
+- ✅ Templates render: `{{cliente.nome}}`, `{{coleta.X}}`, `{{atendimento.menu_path}}`
+
+### Calendar Agent v2 (S1+S2 — 2026-05-04)
+
+- ✅ Source-of-truth interno em tabela `agendamento` (INSERT local → POST Google → UPDATE com `evento_id_externo`)
+- ✅ 7 tools no agente: `get_current_time`, `list_calendars`, `set_active_calendar`, `list_events`, `find_free_slots`, `create_event`, `cancel_event`
+- ✅ Hooks `agendamento.criado` / `agendamento.cancelado`
+- 🟡 Pendente: regras de negócio (S3), aprovação via WhatsApp (S4), sync periódico + audit (S5)
+
+### Etapa 2 — RBAC + Departamentos + KB + Campanhas (2026-05-05)
+
+- ✅ **RBAC catalogado**: 80+ permissões em `permissao` + perfis system (`Admin`, `Gestor`, `Atendente`) + `perfil_permissao` + `perfil_user`
+- ✅ **Departamentos hierárquicos** com herança de regras de roteamento
+- ✅ **Base de conhecimento** com pastas + RAG (embeddings via OpenRouter)
+- ✅ **Campanhas** (broadcast com templates HSM aprovados)
+- ✅ **SSE** (server-sent events) no painel para notificação em tempo real de novos atendimentos
+
+### Sprint Mackenzie Hospital (2026-05-09)
+
+- ✅ Sandbox empresa 999 isolada com dump 3m do ZigChat real
+- ✅ 8 agentes hospitalares configurados (Triagem, Atendimento, Exames, Agendamentos, Financeiro, Ouvidoria, NPS, Suporte)
+- ✅ 9055 fewshots classificados + 40 sugestões de melhorias com UI de aprovação
+
+### Workflows LangGraph (2026-05-12)
+
+- ✅ 9 workflows ativos em produção (123 nodes total)
+- ✅ Fluxo Mackenzie completo: LGPD → nome → menu 8 setores → sub-workflows
+
+### Governança RBAC (Sprint 1+2 — 2026-05-15/17)
+
+- ✅ **Record-level permissions** (`.own` vs `.all`) — atendente vê só os próprios atendimentos
+- ✅ **Audit governança** em `audit_governanca` (toda mudança de perfil/depto logada)
+- ✅ **Permissions context** no frontend: sidebar/topnav filtram entradas por permissão, 403 sanitiza response
+
+### UX Atendimento (Fase 1.1→1.4 — 2026-05-19)
+
+- ✅ **Abas pessoais** (favoritos / aguardando minha resposta / em andamento)
+- ✅ **Tags multi-cor** com edição inline
+- ✅ **Notas internas** com menções (@usuário dispara hook)
+- ✅ **Painel cliente** lateral mostrando histórico cross-conexão
+- ✅ **PWA** com push notification e ícones por status
+- ✅ **Transferência por depto** com mensagem WhatsApp automática ao cliente
+
+### Sprint Conexões WABA/Evolution (2026-05-20)
+
+- ✅ **WABA Embedded Signup OAuth Meta** (1-clique) — replicando padrão ZigChat
+- ✅ **Evolution auto-provision** com QR no painel + polling até `READY`
+- ✅ **Importar instance existente** (modo alternativo) com fallback de API key global
+- ✅ **Templates HSM**: form completo (BODY/HEADER/FOOTER/BUTTONS) + submissão Meta + sync status + envio com variáveis substituídas
+- ✅ Twilio mantido 100% funcional como 3ª opção
+
+### Prompts hospitalares + LGPD (2026-05-21)
+
+- ✅ Metodologia canônica em `docs/agentes/prompts-saude/METODOLOGIA.md` (XML tags, few-shot, ReAct, Constitutional AI, RAG-aware)
+- ✅ Template canônico VSA Nexus AI (padrão Claude 4.6/4.7)
+- ✅ **Tools LGPD**: `verify_patient_identity` (gate obrigatório antes de dado sensível) + `log_lgpd_event` (auditoria Art. 37)
+- ✅ Tabela `lgpd_event_log` com 10 event_types + endpoint admin `/api/lgpd/eventos`
+- ✅ Tratamento de sentinel `[NOVO_ATENDIMENTO_TRIAGEM]` (continuidade fluida sem re-saudação)
+
+### Dashboard Operacional + Observabilidade (2026-05-21/22)
+
+- ✅ **Dashboard `/dashboard/atendimento`** como página inicial: 6 KPIs + 3 charts (criados/finalizados, por hora, por depto) + 2 tabelas (aguardando, sem resposta) + sidebar atendentes online
+- ✅ **NPS / Pesquisa de satisfação** com captura automática 0-10 ao fechar + comentário follow-up, dashboard `/dashboard/qualidade` com tabela por depto + ranking operadores
+- ✅ **Cleanup zumbis automático** a cada 6h no worker (aguardando >48h / sem resposta >24h → `abandonado`)
+- ✅ **Métricas operacionais** em `/queue`: idade msg mais antiga, throughput/min, % falhas 24h, latência avg/p95
+- ✅ **PATCH parcial** padronizado em todos endpoints (`body.model_dump(exclude_unset=True)`) — permite limpar campos via `null`
+
+---
+
+## Roadmap — próximas sprints
+
+### 🟡 Curto prazo (Beta 2)
+
+- Calendar Agent v2 S3-S5 (regras de negócio, aprovação WhatsApp, sync periódico Google→DB)
+- Métricas Prometheus do worker (histograms por etapa: preprocess, LLM, outbound)
+- LISTEN/NOTIFY no Postgres para reduzir latência de claim de 1s → ~10ms
+- Dashboard IA: custo por agente + breakdown por modelo
+
+### 🔵 Médio prazo (1.0)
+
+- Concorrência intra-worker (`WORKER_CONCURRENCY=N` + lock por `thread_id`)
+- Library de templates HSM pré-prontos por vertical (saúde / e-commerce / educação)
+- Multi-app Meta (1 Meta App por empresa em vez de 1 global)
+- Webhook reverso para hooks `conexao.*`
+- Auto-fallback multi-provider (se WABA cair, rotear pra Evolution backup)
+
+### 🟣 Longo prazo
+
+- Suporte oficial Telegram + Instagram (Meta Business Suite)
+- Workflows IDE visual drag-and-drop (hoje é JSON)
+- Sync periódico template status (cron 1h)
+- Dashboard executivo por vertical com KPIs customizados
+
+### ❌ Decisões arquiteturais firmes
+
+- **Sem RabbitMQ** — Postgres queue com `FOR UPDATE SKIP LOCKED` aguenta 10k+ msg/s. Trocar só faria sentido a partir de 500 msg/s sustained. Estamos em ~0.16 msg/s.
+- **Sem Redis** — rate limit + cache via tabelas dedicadas (`rate_limit_bucket`). Atomicidade transacional > velocidade que não precisamos.
+- **Postgres como queue + checkpointer + store + auth + audit** — 1 backup, 1 monitoramento, 1 cluster.
+
+---
+
+## Stack técnica
+
+| Camada | Tecnologia |
+|---|---|
+| Frontend | Next.js 16, React 19, Tailwind 4, Better Auth, lucide-react |
+| Backend | FastAPI, psycopg 3 async, LangGraph 0.6, LangChain 0.3, structlog |
+| LLM | OpenRouter (Claude 4.7, GPT-5, Gemini 2.5) via factory `shared/llm.py` |
+| Persistência | PostgreSQL 16 (queue + checkpointer + store + auth + audit) |
+| Crypto | Fernet (credenciais de conexão), bcrypt (Better Auth) |
+| Mídia | OpenRouter multimodal (imagem/áudio → texto) |
+| Observabilidade | OpenTelemetry + Prometheus + structlog JSON |
+| Deploy | Dokploy (Docker Compose), também Railway documentado |
+| Testes | pytest async-mode, TestClient + httpx + psycopg real, Locust (stress) |
+
+---
 
 ## Arquitetura
 
 ![Arquitetura](docs/diagrams/harness_whatsapp.jpg)
 
-Fluxo principal:
-
 ```text
-WhatsApp/Twilio -> API (/webhook/twilio) -> PostgreSQL (message_queue)
-                                              -> Worker -> LangGraph Agent
-                                              -> PostgreSQL (response, conversation)
+WhatsApp/Twilio/Evolution/WABA
+        ↓
+API (/webhook/*) — valida HMAC + rate limit + debounce + lock advisory
+        ↓
+PostgreSQL message_queue (queued)
+        ↓
+Worker × 4 réplicas (FOR UPDATE SKIP LOCKED + lease)
+        ↓
+Preprocess media → LangGraph Agent → checkpointer + store
+        ↓
+Outbound (Twilio/Evolution/WABA) → mark_done
+        ↓
+Hooks → DLQ se falhar 3×
 ```
 
-Separar API e Worker evita bloqueio na borda HTTP e melhora confiabilidade sob carga.
+Separar API e Worker evita bloqueio na borda HTTP. `mark_done` só roda após outbound bem-sucedido — garantia at-least-once.
+
+---
 
 ## Quick Start
 
 ### 1. Setup
 
 ```bash
-git clone <repo-url>
-cd whatsapp-langchain
+git clone https://github.com/viniciusandradde/whatsapp-langchain-full.git chat-nexus
+cd chat-nexus
 make setup
 cp .env.example .env
 ```
 
-Edite o `.env` e configure pelo menos:
+Edite `.env`:
 
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
-INTERNAL_SERVICE_TOKEN=seu-token-local
+INTERNAL_SERVICE_TOKEN=seu-token-local-32chars-no-min
 BETTER_AUTH_SECRET=seu-secret-local
+ADMIN_EMAIL=admin@suaempresa.com
+ADMIN_PASSWORD=trocar-no-primeiro-login
 TWILIO_OUTBOUND_MODE=mock
+WARELINE_ENCRYPTION_KEY=  # gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-`INTERNAL_SERVICE_TOKEN` e `BETTER_AUTH_SECRET` precisam estar preenchidos
-mesmo em desenvolvimento local para o painel administrativo funcionar.
+`INTERNAL_SERVICE_TOKEN`, `BETTER_AUTH_SECRET` e `WARELINE_ENCRYPTION_KEY` precisam estar preenchidos mesmo localmente.
 
-### 2. Suba o stack local
+### 2. Suba o stack
 
 ```bash
 make up
-# sobe: db + api + worker + frontend
+# db + api + worker + frontend
 ```
 
-Para validar envio real pelo Twilio, mude `TWILIO_OUTBOUND_MODE=real` e
-configure `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`,
-`TWILIO_API_KEY_SECRET` e `TWILIO_FROM_NUMBER`. Nesse modo o worker faz
-fail-fast se alguma credencial outbound estiver ausente. Para assinatura
-de webhook público, veja [Integração Twilio](docs/TWILIO.md).
+Acesse:
+- Painel: http://localhost:3000
+- API: http://localhost:8000
+- Health: http://localhost:8000/health
 
-### Acesso ao banco (DBeaver)
+### 3. Primeiro login
 
-Use estes dados de conexão PostgreSQL:
+Abra http://localhost:3000/login e use `ADMIN_EMAIL` / `ADMIN_PASSWORD`. O bootstrap cria automaticamente:
+- Linha em `auth.user` com `is_superadmin=true`
+- Linha em `empresa_membro` (empresa_id=1, role=admin)
+- Token Better Auth válido
 
-- Host: `localhost`
-- Port: `5432`
-- Database: `whatsapp_langchain`
-- User: `postgres`
-- Password: `postgres`
-
-Valide saúde da API:
-
-```bash
-curl http://localhost:8000/health
-```
-
-### 3. Teste rápido (endpoint síncrono)
+### 4. Teste rápido
 
 ```bash
 curl -X POST "http://localhost:8000/webhook/sync?agent=vsa_tech" \
@@ -144,176 +259,66 @@ curl -X POST "http://localhost:8000/webhook/sync?agent=vsa_tech" \
   -d '{"phone":"+5511999999999","message":"Olá!"}'
 ```
 
-### 4. Teste assíncrono (simulando Twilio)
+---
+
+## Comandos úteis
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
-  -d "MessageSid=SM123" \
-  -d "From=whatsapp:+5511999999999" \
-  -d "To=whatsapp:+14155238886" \
-  -d "Body=Quero aprender harness para agentes" \
-  -d "NumMedia=0"
+make help              # lista todos os targets
+make api               # API local (uvicorn --reload)
+make worker            # Worker local
+make frontend          # Next.js dev server
+make migrate           # aplica migrations pendentes
+make check             # ruff + pyright (sem alterar arquivos)
+make test              # suite normal (exclui docker_demo)
+make test-live         # testes live OpenRouter (OPENROUTER_LIVE_TESTS=1)
+make test-demo         # testes Docker realísticos (docker_demo)
+make ci                # check + suite normal (o que CI roda)
+make stress-evolution  # Locust contra /webhook/evolution
+make stress-twilio     # Locust contra /webhook/twilio
+make logs              # docker compose logs -f
+make reset             # rebuild Docker do zero
 ```
 
-Acompanhe métricas:
-
-```bash
-curl http://localhost:8000/api/metrics
-curl http://localhost:8000/api/chats
-```
-
-### 5. Múltiplas mídias num único webhook (`NumMedia > 1`)
-
-```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
-  -d "MessageSid=SM_MULTI_001" \
-  -d "From=whatsapp:+5511999999999" \
-  -d "To=whatsapp:+14155238886" \
-  -d "Body=olha as fotos" \
-  -d "NumMedia=2" \
-  -d "MediaUrl0=https://demo.twilio.com/owl.png" \
-  -d "MediaContentType0=image/png" \
-  -d "MediaUrl1=https://demo.twilio.com/owl.png" \
-  -d "MediaContentType1=image/png"
-```
-
-A API enfileira 1 row de texto + 2 rows de mídia, todas com o mesmo `message_id`.
-O worker processa cada uma como turn separado do agente; o checkpointer LangGraph
-agrega o histórico por `thread_id`. Twilio limita a 10 mídias por webhook — o
-parser respeita esse cap.
+---
 
 ## Hardening de produção
 
-Em `ENVIRONMENT=production` o startup faz **fail-fast** se qualquer destes
-invariantes falhar:
+Em `ENVIRONMENT=production`, o startup faz **fail-fast** se qualquer destes invariantes falhar:
 
 | Invariante | Variável | Critério |
-|------------|----------|----------|
+|---|---|---|
 | Token interno presente | `INTERNAL_SERVICE_TOKEN` | não-vazio |
 | Token forte em prod | `INTERNAL_SERVICE_TOKEN` | ≥ 32 caracteres |
 | Signature obrigatória | `VALIDATE_TWILIO_SIGNATURE` | `true` |
 | CORS configurado | `FRONTEND_ORIGINS` | pelo menos 1 origem |
 
-Cabeçalhos de segurança aplicados automaticamente em toda resposta:
+Cabeçalhos de segurança automáticos: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Strict-Transport-Security` (1 ano em prod).
 
-| Header | Dev | Prod |
-|--------|-----|------|
-| `X-Content-Type-Options: nosniff` | ✓ | ✓ |
-| `X-Frame-Options: DENY` | ✓ | ✓ |
-| `Referrer-Policy: no-referrer` | ✓ | ✓ |
-| `Strict-Transport-Security` (1 ano) | — | ✓ |
+---
 
-`FRONTEND_ORIGINS` aceita CSV (ex: `https://chat.nexus.com,https://admin.chat.nexus.com`)
-e o middleware CORS restringe `allow_methods` a verbos HTTP padrão e
-`allow_headers` a `Authorization, Content-Type, X-Twilio-Signature`. Veja
-[Deploy](docs/DEPLOY.md) para o checklist completo.
+## Documentação
 
-## Rate limit distribuído (multi-instância)
-
-Por padrão, o rate limit por telefone é in-memory por processo
-(`RATE_LIMIT_DISTRIBUTED=false`). Em deploys multi-instância isso permite que
-um mesmo número estoure `N × RATE_LIMIT_PER_HOUR` requisições/hora.
-
-Para ativar o sliding window distribuído em Postgres:
-
-```bash
-# 1. Configurar
-RATE_LIMIT_DISTRIBUTED=true
-
-# 2. Aplicar a migration nova
-make migrate
-# aplica db/migrations/005_rate_limit_buckets.sql
-```
-
-A função `_check_rate_limit_db` faz `INSERT ... ON CONFLICT DO UPDATE` atômico
-contra a tabela `rate_limit_buckets` (PK `(phone_number, hour_start)`). O
-cleanup de buckets > 24h roda inline com 1% de probabilidade — sem cron, sem
-Redis. Mensagem de erro 429 e log `rate_limit_exceeded` são consistentes
-entre os dois backends.
-
-## Smoke test e2e com Twilio real
-
-Antes do cutover sandbox→produção, rode o smoke test que valida o ciclo
-completo (webhook simulado → worker → outbound REAL via Twilio Messages API
-→ `mark_done`):
-
-```bash
-# 1. Stack rodando com TWILIO_OUTBOUND_MODE=real e credenciais válidas
-make up
-
-# 2. Configurar número de teste descartável
-export TWILIO_LIVE_TESTS=1
-export TWILIO_TEST_TO_NUMBER="+5511999999999"
-
-# 3. Rodar smoke
-make test-twilio-smoke
-```
-
-Características:
-
-- **Opt-in duplo**: `TWILIO_LIVE_TESTS` precisa ser truthy E `TWILIO_TEST_TO_NUMBER` precisa começar com `+` (E.164)
-- **Health check**: a fixture confirma que API e DB respondem antes de tentar enviar
-- **Excluído de CI**: o marker `twilio_real` é filtrado em `make ci` e `make test`
-- **Custos**: ~USD 0.005–0.05 por execução (1 mensagem real). Não rode em loop.
-
-Veja [Integração Twilio](docs/TWILIO.md) para o checklist completo de cutover.
-
-## Estrutura do Projeto
-
-```text
-whatsapp-langchain/
-├── src/whatsapp_langchain/
-│   ├── agents/        # Catálogo de agentes, middleware e tools
-│   ├── server/        # API FastAPI (webhooks + admin APIs)
-│   ├── worker/        # Loop consumidor da fila e execução dos agentes
-│   └── shared/        # Config, DB, fila, modelos, logging, factory LLM
-├── db/migrations/     # Schema SQL (fila + conversas + vector)
-├── docs/              # Documentação técnica e onboarding
-└── tests/             # Unit e integração
-```
-
-## Aprendizado (foco em harness)
-
-Este projeto é para aprender decisões de engenharia reais:
-- fronteiras entre serviços (`server`, `worker`, `shared`)
-- contratos de dados (`MessageQueue`, `Conversation`, webhook payload)
-- estados e transições (`queued -> processing -> done/failed`)
-- consistência operacional (retry com backoff, debounce, lease)
-- limites e custo (rate limit HTTP e rate limit de LLM)
-
-Para detalhes técnicos:
-- [Arquitetura](docs/ARCHITECTURE.md)
+- [Arquitetura](docs/ARCHITECTURE.md) — fluxo de dados + endpoints
 - [Primeiros Passos](docs/GETTING_STARTED.md)
-- [Criando Agentes](docs/ADDING_AGENTS.md)
-- [Banco de Dados](docs/DATABASE.md)
+- [Banco de Dados](docs/DATABASE.md) — schema + queries de inspeção
+- [Criando Agentes](docs/ADDING_AGENTS.md) — contrato + exemplos
 - [Integração Twilio](docs/TWILIO.md)
-- [Integração Evolution API](docs/EVOLUTION.md) — provider WhatsApp não-oficial (Baileys)
-- [NPS / Pesquisa de Satisfação](docs/NPS.md) — captura automática + dashboard executivo
-- [LangSmith](docs/LANGSMITH.md) — datasets + LLM-as-judge eval
-- [Autenticação](docs/AUTH.md)
-- [Deploy](docs/DEPLOY.md) · [Dokploy](docs/DOKPLOY.md) · [Railway](docs/RAILWAY.md)
+- [Integração Evolution API](docs/EVOLUTION.md)
+- [Autenticação](docs/AUTH.md) — Better Auth + user status + reset sem SMTP + SSO Google
+- [NPS / Pesquisa de Satisfação](docs/NPS.md)
+- [LangSmith](docs/LANGSMITH.md) — datasets + LLM-as-judge
+- [Deploy Dokploy](docs/DOKPLOY.md) · [Deploy genérico](docs/DEPLOY.md) · [Railway](docs/RAILWAY.md)
 - [Stress testing](docs/STRESS_TESTING.md)
-- [Diagramas](docs/diagrams/)
+- [Prompts saúde — metodologia canônica](docs/agentes/prompts-saude/METODOLOGIA.md)
+- [Padrão PATCH parcial](docs/dev/PATCH_PATTERN.md)
 
-
-
-## Comandos úteis
-
-```bash
-make help                 # lista todos os targets
-make api                  # roda API local (uvicorn)
-make worker               # roda Worker local
-make migrate              # aplica migrações pendentes
-make test                 # suite normal (exclui docker_demo e twilio_real)
-make test-live            # testes live com OpenRouter real (gating OPENROUTER_LIVE_TESTS=1)
-make test-demo            # testes Docker realísticos (marker docker_demo)
-make test-twilio-smoke    # smoke e2e com Twilio real (gating TWILIO_LIVE_TESTS=1, custa $$)
-make check                # ruff + pyright (sem alterar arquivos)
-make ci                   # check + suite normal (o que CI roda)
-make logs                 # docker compose logs -f
-make reset                # rebuild Docker do zero (down -v + up --build)
-```
+---
 
 ## Licença
 
-[VSA Tech Community License](LICENSE) - uso restrito a membros da comunidade [VSA Tech](https://chat.nexus.com).
+[VSA Tech Community License](LICENSE) — uso restrito a membros da comunidade [VSA Tech](https://chat.vsanexus.com).
+
+---
+
+**Mantido por** [VSA Tecnologia](https://chat.vsanexus.com) · Produção 24/7 em [chat.vsanexus.com](https://chat.vsanexus.com) · Issues e PRs no [GitHub](https://github.com/viniciusandradde/whatsapp-langchain-full)
