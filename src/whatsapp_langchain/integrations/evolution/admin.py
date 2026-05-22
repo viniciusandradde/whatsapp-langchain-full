@@ -71,7 +71,7 @@ async def provision_instance(
         "integration": integration,
     }
     if webhook_url:
-        payload["webhook"] = {
+        webhook_cfg: dict[str, Any] = {
             "url": webhook_url,
             "byEvents": True,
             "base64": True,
@@ -82,6 +82,20 @@ async def provision_instance(
                 "QRCODE_UPDATED",
             ],
         }
+        # Fix #448 — Evolution Server NÃO injeta apikey nos webhooks por
+        # default. Sem headers.apikey aqui, quando EVOLUTION_VALIDATE_APIKEY=true
+        # nosso /webhook/evolution rejeita com 401 e mensagens nunca entram
+        # na fila (bug observado prod 2026-05-22). Bug fixado manualmente via
+        # PATCH /webhook/set/{instance} pra instances existentes; novas
+        # instances precisam do header desde a criação.
+        apikey = (
+            settings.resolved_evolution_global_api_key.get_secret_value()
+            if settings.resolved_evolution_global_api_key
+            else ""
+        )
+        if apikey:
+            webhook_cfg["headers"] = {"apikey": apikey}
+        payload["webhook"] = webhook_cfg
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, headers=_headers(), json=payload)
