@@ -28,21 +28,30 @@ async def list_empresas_of_user(
 
     Inclui `my_role` (role do user na empresa) pra a UI poder decidir
     o que mostrar (botão "Editar" só pra admin etc).
+
+    Sprint A.2 — cross-tenant por design (user pode pertencer a N empresas
+    e precisa ver todas). Bypass RLS pra que JOIN em empresa_membro não
+    filtre pelo app.empresa_id atual. Segurança não compromete: filtra
+    explicitamente por `m.user_id = %s` no WHERE — só vê próprias
+    memberships.
     """
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
-                   e.config, e.created_at, e.updated_at, m.role
-              FROM empresa e
-              JOIN empresa_membro m ON m.empresa_id = e.id
-             WHERE m.user_id = %s
-               AND e.status = 'active'
-             ORDER BY m.is_default DESC, e.nome ASC
-            """,
-            (user_id,),
-        )
-        rows = await cur.fetchall()
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
+                       e.config, e.created_at, e.updated_at, m.role
+                  FROM empresa e
+                  JOIN empresa_membro m ON m.empresa_id = e.id
+                 WHERE m.user_id = %s
+                   AND e.status = 'active'
+                 ORDER BY m.is_default DESC, e.nome ASC
+                """,
+                (user_id,),
+            )
+            rows = await cur.fetchall()
 
     return [
         Empresa(
@@ -64,35 +73,50 @@ async def list_empresas_of_user(
 async def get_default_empresa_id(
     pool: AsyncConnectionPool, user_id: str
 ) -> int | None:
-    """Retorna o empresa_id marcado como default pro user (None se não tem)."""
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT empresa_id FROM empresa_membro
-             WHERE user_id = %s
-             ORDER BY is_default DESC, joined_at ASC
-             LIMIT 1
-            """,
-            (user_id,),
-        )
-        row = await cur.fetchone()
+    """Retorna o empresa_id marcado como default pro user (None se não tem).
+
+    Sprint A.2: chamada pelo middleware `get_empresa_context` ANTES de
+    qualquer context ser setado — precisa bypass pra não retornar None
+    em todo request. Seguro: filtra por user_id no WHERE.
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT empresa_id FROM empresa_membro
+                 WHERE user_id = %s
+                 ORDER BY is_default DESC, joined_at ASC
+                 LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = await cur.fetchone()
     return row[0] if row else None
 
 
 async def get_empresa_membership(
     pool: AsyncConnectionPool, empresa_id: int, user_id: str
 ) -> EmpresaMembro | None:
-    """Retorna a membership do user numa empresa específica (None se não é membro)."""
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT empresa_id, user_id, role, is_default, joined_at
-              FROM empresa_membro
-             WHERE empresa_id = %s AND user_id = %s
-            """,
-            (empresa_id, user_id),
-        )
-        row = await cur.fetchone()
+    """Retorna a membership do user numa empresa específica (None se não é membro).
+
+    Sprint A.2: chamada pelo middleware ANTES de setar context — precisa
+    bypass. Seguro: WHERE explícito em (empresa_id, user_id).
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT empresa_id, user_id, role, is_default, joined_at
+                  FROM empresa_membro
+                 WHERE empresa_id = %s AND user_id = %s
+                """,
+                (empresa_id, user_id),
+            )
+            row = await cur.fetchone()
 
     if not row:
         return None
