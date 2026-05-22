@@ -224,6 +224,16 @@ async def create_empresa(
     plano: str,
     doc: str | None,
     criador_user_id: str,
+    *,
+    razao_social: str | None = None,
+    inscricao_estadual: str | None = None,
+    endereco_fiscal_cep: str | None = None,
+    endereco_fiscal_logradouro: str | None = None,
+    endereco_fiscal_numero: str | None = None,
+    endereco_fiscal_complemento: str | None = None,
+    endereco_fiscal_bairro: str | None = None,
+    endereco_fiscal_cidade: str | None = None,
+    endereco_fiscal_uf: str | None = None,
 ) -> Empresa:
     """Cria empresa e adiciona o criador como admin (is_default=False).
 
@@ -242,11 +252,25 @@ async def create_empresa(
         async with pool.connection() as conn:
             cur = await conn.execute(
                 f"""
-                INSERT INTO empresa (nome, slug, plano, doc)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO empresa (
+                    nome, slug, plano, doc,
+                    razao_social, inscricao_estadual,
+                    endereco_fiscal_cep, endereco_fiscal_logradouro,
+                    endereco_fiscal_numero, endereco_fiscal_complemento,
+                    endereco_fiscal_bairro, endereco_fiscal_cidade,
+                    endereco_fiscal_uf
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_EMPRESA_COLS}
                 """,
-                (nome, slug, plano, doc),
+                (
+                    nome, slug, plano, doc,
+                    razao_social, inscricao_estadual,
+                    endereco_fiscal_cep, endereco_fiscal_logradouro,
+                    endereco_fiscal_numero, endereco_fiscal_complemento,
+                    endereco_fiscal_bairro, endereco_fiscal_cidade,
+                    endereco_fiscal_uf,
+                ),
             )
             row = await cur.fetchone()
             assert row is not None
@@ -272,6 +296,15 @@ async def update_empresa(
     plano: str | None = None,
     doc: str | None = None,
     status: str | None = None,
+    razao_social: str | None = None,
+    inscricao_estadual: str | None = None,
+    endereco_fiscal_cep: str | None = None,
+    endereco_fiscal_logradouro: str | None = None,
+    endereco_fiscal_numero: str | None = None,
+    endereco_fiscal_complemento: str | None = None,
+    endereco_fiscal_bairro: str | None = None,
+    endereco_fiscal_cidade: str | None = None,
+    endereco_fiscal_uf: str | None = None,
 ) -> Empresa | None:
     """Atualiza campos não-None. Retorna None se a empresa não existe."""
     fields: list[str] = []
@@ -282,6 +315,15 @@ async def update_empresa(
         ("plano", plano),
         ("doc", doc),
         ("status", status),
+        ("razao_social", razao_social),
+        ("inscricao_estadual", inscricao_estadual),
+        ("endereco_fiscal_cep", endereco_fiscal_cep),
+        ("endereco_fiscal_logradouro", endereco_fiscal_logradouro),
+        ("endereco_fiscal_numero", endereco_fiscal_numero),
+        ("endereco_fiscal_complemento", endereco_fiscal_complemento),
+        ("endereco_fiscal_bairro", endereco_fiscal_bairro),
+        ("endereco_fiscal_cidade", endereco_fiscal_cidade),
+        ("endereco_fiscal_uf", endereco_fiscal_uf),
     ):
         if value is not None:
             fields.append(f"{name} = %s")

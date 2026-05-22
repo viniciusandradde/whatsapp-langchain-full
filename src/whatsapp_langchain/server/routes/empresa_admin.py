@@ -40,19 +40,41 @@ router = APIRouter(
 )
 
 
+_SLUG_PATTERN = r"^[a-z0-9][a-z0-9\-]*[a-z0-9]$"
+
+
 class CreateEmpresaInput(BaseModel):
-    nome: str = Field(min_length=1)
-    slug: str = Field(min_length=2)
+    nome: str = Field(min_length=1, max_length=200)
+    slug: str = Field(min_length=2, max_length=100, pattern=_SLUG_PATTERN)
     plano: str = "free"
     doc: str | None = None
+    # Fiscal (opcional na criação — UI pede só básico)
+    razao_social: str | None = None
+    inscricao_estadual: str | None = None
+    endereco_fiscal_cep: str | None = None
+    endereco_fiscal_logradouro: str | None = None
+    endereco_fiscal_numero: str | None = None
+    endereco_fiscal_complemento: str | None = None
+    endereco_fiscal_bairro: str | None = None
+    endereco_fiscal_cidade: str | None = None
+    endereco_fiscal_uf: str | None = Field(default=None, max_length=2)
 
 
 class UpdateEmpresaInput(BaseModel):
     nome: str | None = None
-    slug: str | None = None
+    slug: str | None = Field(default=None, pattern=_SLUG_PATTERN)
     plano: str | None = None
     doc: str | None = None
     status: str | None = None
+    razao_social: str | None = None
+    inscricao_estadual: str | None = None
+    endereco_fiscal_cep: str | None = None
+    endereco_fiscal_logradouro: str | None = None
+    endereco_fiscal_numero: str | None = None
+    endereco_fiscal_complemento: str | None = None
+    endereco_fiscal_bairro: str | None = None
+    endereco_fiscal_cidade: str | None = None
+    endereco_fiscal_uf: str | None = Field(default=None, max_length=2)
 
 
 class AddMemberInput(BaseModel):
@@ -84,7 +106,16 @@ async def create_empresa_endpoint(
     pool = await get_pool()
     try:
         empresa = await create_empresa(
-            pool, body.nome, body.slug, body.plano, body.doc, user_id
+            pool, body.nome, body.slug, body.plano, body.doc, user_id,
+            razao_social=body.razao_social,
+            inscricao_estadual=body.inscricao_estadual,
+            endereco_fiscal_cep=body.endereco_fiscal_cep,
+            endereco_fiscal_logradouro=body.endereco_fiscal_logradouro,
+            endereco_fiscal_numero=body.endereco_fiscal_numero,
+            endereco_fiscal_complemento=body.endereco_fiscal_complemento,
+            endereco_fiscal_bairro=body.endereco_fiscal_bairro,
+            endereco_fiscal_cidade=body.endereco_fiscal_cidade,
+            endereco_fiscal_uf=body.endereco_fiscal_uf,
         )
     except Exception as e:
         if "duplicate key" in str(e).lower() or "unique" in str(e).lower():
@@ -113,6 +144,15 @@ async def update_empresa_endpoint(
         plano=body.plano,
         doc=body.doc,
         status=body.status,
+        razao_social=body.razao_social,
+        inscricao_estadual=body.inscricao_estadual,
+        endereco_fiscal_cep=body.endereco_fiscal_cep,
+        endereco_fiscal_logradouro=body.endereco_fiscal_logradouro,
+        endereco_fiscal_numero=body.endereco_fiscal_numero,
+        endereco_fiscal_complemento=body.endereco_fiscal_complemento,
+        endereco_fiscal_bairro=body.endereco_fiscal_bairro,
+        endereco_fiscal_cidade=body.endereco_fiscal_cidade,
+        endereco_fiscal_uf=body.endereco_fiscal_uf,
     )
     if out is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")

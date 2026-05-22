@@ -100,6 +100,16 @@ export interface Empresa {
   updated_at: string;
   /** Role do user logado nessa empresa (vindo do GET /api/empresas). */
   my_role?: "admin" | "operator" | "viewer" | null;
+  // Sprint 8 fiscal — mig 060
+  razao_social?: string | null;
+  inscricao_estadual?: string | null;
+  endereco_fiscal_cep?: string | null;
+  endereco_fiscal_logradouro?: string | null;
+  endereco_fiscal_numero?: string | null;
+  endereco_fiscal_complemento?: string | null;
+  endereco_fiscal_bairro?: string | null;
+  endereco_fiscal_cidade?: string | null;
+  endereco_fiscal_uf?: string | null;
 }
 
 export interface EmpresaInput {
@@ -107,6 +117,15 @@ export interface EmpresaInput {
   slug: string;
   plano?: string;
   doc?: string | null;
+  razao_social?: string | null;
+  inscricao_estadual?: string | null;
+  endereco_fiscal_cep?: string | null;
+  endereco_fiscal_logradouro?: string | null;
+  endereco_fiscal_numero?: string | null;
+  endereco_fiscal_complemento?: string | null;
+  endereco_fiscal_bairro?: string | null;
+  endereco_fiscal_cidade?: string | null;
+  endereco_fiscal_uf?: string | null;
 }
 
 export interface EmpresaUpdateInput {
@@ -115,6 +134,15 @@ export interface EmpresaUpdateInput {
   plano?: string;
   doc?: string | null;
   status?: string;
+  razao_social?: string | null;
+  inscricao_estadual?: string | null;
+  endereco_fiscal_cep?: string | null;
+  endereco_fiscal_logradouro?: string | null;
+  endereco_fiscal_numero?: string | null;
+  endereco_fiscal_complemento?: string | null;
+  endereco_fiscal_bairro?: string | null;
+  endereco_fiscal_cidade?: string | null;
+  endereco_fiscal_uf?: string | null;
 }
 
 export type UserStatus = "active" | "disabled";
