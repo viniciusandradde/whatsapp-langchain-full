@@ -42,7 +42,7 @@ interface Props {
  * Section unificada "Integrações de API":
  * - Google Calendar (storage legacy, OAuth Web flow)
  * - Wareline (card próprio acima — storage legacy também)
- * - Conexões cadastradas via api_connection (Asaas, Custom, ...)
+ * - Conexões cadastradas via api_connection (Custom REST, ...)
  *
  * Tudo na mesma lista visual. Quando user clica "+ Nova conexão" e
  * pickar Google Calendar, dispara OAuth Web flow do Google. Outros
@@ -163,9 +163,16 @@ export function ApiConnectionsSection({
             <div>
               <h2 className="text-lg font-semibold">Integrações de API</h2>
               <p className="text-sm text-muted-foreground">
-                Conecte o painel com APIs externas. Suporta Google Calendar
-                (OAuth), Asaas (cobrança), Wareline e qualquer API REST
-                customizada (Bearer/Basic/API Key).
+                Conecte sua empresa com APIs externas. Suporta Google Calendar
+                (OAuth), Wareline e qualquer API REST customizada
+                (Bearer/Basic/API Key).
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                💳 Para cobrança da sua assinatura Chat Nexus, use{" "}
+                <a href="/billing" className="text-brand-primary hover:underline">
+                  Plano &amp; Cobrança
+                </a>{" "}
+                (gerenciado pelo Chat Nexus via Asaas).
               </p>
             </div>
             <Button onClick={openModal} disabled={loading} size="sm">
@@ -347,7 +354,7 @@ export function ApiConnectionsSection({
         {connections.length === 0 && (
           <li className="rounded-md border border-dashed bg-muted/30 p-4 text-center text-xs text-muted-foreground">
             Nenhuma outra conexão cadastrada. Use &ldquo;+ Nova conexão&rdquo;
-            pra integrar Asaas, custom REST, etc.
+            pra integrar Google Calendar, Wareline, custom REST, etc.
           </li>
         )}
       </ul>

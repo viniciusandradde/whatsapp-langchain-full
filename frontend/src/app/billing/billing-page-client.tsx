@@ -97,7 +97,18 @@ export function BillingPageClient() {
           await loadAll();
         }
       } else {
-        setFeedback({ kind: "err", message: r.error });
+        // Detecta erro 503 ASAAS não configurado e mostra mensagem clara
+        const msg = r.error.toLowerCase();
+        if (msg.includes("503") || msg.includes("asaas_api_key") || msg.includes("não configurad")) {
+          setFeedback({
+            kind: "err",
+            message:
+              "Cobrança via Asaas ainda não foi habilitada neste servidor. " +
+              "Admin precisa configurar ASAAS_API_KEY + ASAAS_WEBHOOK_TOKEN nas env vars do Dokploy.",
+          });
+        } else {
+          setFeedback({ kind: "err", message: r.error });
+        }
       }
     });
   }

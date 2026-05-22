@@ -99,37 +99,12 @@ PROVIDERS: dict[str, ProviderSpec] = {
         campos=[],  # OAuth Web é via redirect, sem campos manuais
         legacy_storage="empresa_calendar_config",
     ),
-    "asaas": ProviderSpec(
-        slug="asaas",
-        nome="Asaas",
-        descricao="Cobrança via boleto, PIX e cartão (API key no header).",
-        icone="Receipt",
-        auth_type="api_key",
-        campos=[
-            FieldSpec(
-                name="access_token",
-                label="Access Token",
-                type="password",
-                required=True,
-                sensitive=True,
-                placeholder="$aact_prod_xxx",
-                help_text=(
-                    "Pegue em https://www.asaas.com/customerApiAccessTokenInfo "
-                    "(Sandbox: $aact_hmlg_)"
-                ),
-            ),
-            FieldSpec(
-                name="ambiente",
-                label="Ambiente",
-                type="select",
-                required=True,
-                options=["producao", "sandbox"],
-                default="sandbox",
-            ),
-        ],
-        base_url_default="https://api.asaas.com/v3",
-        docs_url="https://docs.asaas.com",
-    ),
+    # Asaas REMOVIDO do catálogo Wareline (2026-05-22).
+    # Asaas é integração GLOBAL do SaaS (Chat Nexus → conta Asaas única
+    # pra faturar empresas-clientes), não integração POR-EMPRESA. UI
+    # dedicada em /billing (Sprint B), config via env vars ASAAS_API_KEY
+    # + ASAAS_WEBHOOK_TOKEN. Não faz sentido cada empresa cadastrar API
+    # key Asaas própria — quem paga é a empresa pro Chat Nexus.
     "custom": ProviderSpec(
         slug="custom",
         nome="API customizada",

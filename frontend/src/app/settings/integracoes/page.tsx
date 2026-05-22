@@ -26,8 +26,10 @@ interface PageProps {
  * - Google Calendar (M5.a): OAuth pra agendamento via Google
  * - Wareline ConecteHub (Sprint Wareline): consulta agenda + criar
  *   marcação no sistema do hospital
- * - Conexões de API genéricas (Sprint Conector API): catálogo com Asaas
- *   + provider custom (Bearer/Basic/API Key) cadastrável via UI
+ * - Conexões de API genéricas (Sprint Conector API): provider custom
+ *   (Bearer/Basic/API Key) cadastrável via UI
+ *
+ * NÃO inclui: Asaas (gerenciado em /billing — integração GLOBAL do SaaS).
  */
 export default async function IntegracoesPage({ searchParams }: PageProps) {
   await requireSession();
