@@ -14,7 +14,8 @@ Uso:
 """
 
 import asyncio
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 import structlog
@@ -115,6 +116,61 @@ async def close_pool() -> None:
         await pool.close()
         pool = None
         logger.info("db_pool_closed")
+
+
+@asynccontextmanager
+async def with_empresa_context(
+    db_pool: AsyncConnectionPool,
+    empresa_id: int | None,
+    *,
+    bypass_rls: bool = False,
+) -> AsyncIterator[AsyncConnection]:
+    """Sprint A — abre conexão do pool com RLS context setado.
+
+    Uso:
+        async with with_empresa_context(pool, empresa_id=1) as conn:
+            await conn.execute("SELECT * FROM cliente")  # auto-scoped
+
+    Como funciona:
+        - `SET LOCAL app.empresa_id = X` no início da transação.
+        - Policies em mig 096 (`_rls_tenant_match`) filtram rows automaticamente.
+        - `LOCAL` significa: vale até COMMIT/ROLLBACK; conexão devolvida ao
+          pool sem o context (próximo uso começa limpo).
+
+    Bypass (superadmin):
+        async with with_empresa_context(pool, None, bypass_rls=True) as conn:
+            ...
+
+    Args:
+        db_pool: pool do psycopg.
+        empresa_id: tenant ID ou None pra bypass.
+        bypass_rls: se True, `app.bypass_rls = 'true'` (ignora policies).
+
+    Yields:
+        AsyncConnection com transaction aberta + context setado.
+
+    Raises:
+        ValueError: se empresa_id None E bypass_rls=False.
+    """
+    if empresa_id is None and not bypass_rls:
+        raise ValueError(
+            "with_empresa_context requer empresa_id ou bypass_rls=True."
+        )
+
+    async with db_pool.connection() as conn:
+        async with conn.transaction():
+            # SET LOCAL não aceita parameter binding em psycopg; usa
+            # set_config(name, value, is_local) que aceita.
+            if bypass_rls:
+                await conn.execute(
+                    "SELECT set_config('app.bypass_rls', 'true', true)"
+                )
+            else:
+                await conn.execute(
+                    "SELECT set_config('app.empresa_id', %s, true)",
+                    (str(empresa_id),),
+                )
+            yield conn
 
 
 async def run_migrations(db_pool: AsyncConnectionPool) -> None:
