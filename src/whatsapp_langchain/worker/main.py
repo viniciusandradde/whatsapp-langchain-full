@@ -141,21 +141,35 @@ async def main() -> None:
     # sem resposta) a cada 6h. Override por empresa via empresa.config.
     cleanup_task = asyncio.create_task(_cleanup_zumbis_loop(pool))
 
+    # Sprint A.2.5 — importa context manager pra RLS
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
     try:
         while True:
+            # Claim roda SEM context (precisa ver toda a fila, multi-tenant).
+            # Quando A.2.6 trocar DATABASE_URL pra chat_nexus_app
+            # (NOBYPASSRLS), claim vai precisar de bypass: ver A.2.6.
             message = await claim_next_message(pool, settings.lease_seconds)
 
             if message is None:
                 await asyncio.sleep(settings.poll_interval_seconds)
                 continue
 
-            await process_message(
-                message,
-                pool,
-                checkpointer=checkpointer,
-                store=store,
-                clients=clients_by_provider,
-            )
+            # Sprint A.2.5: seta RLS context da empresa da msg antes
+            # de processar. Qualquer pool.connection() dentro de
+            # process_message (helpers shared/*.py, agente IA tools,
+            # checkpointer, store) herda app.empresa_id automaticamente
+            # via _RlsAwarePool wrapper. Garante isolamento entre
+            # mensagens de empresas diferentes processadas pelo mesmo
+            # worker.
+            with empresa_scope(empresa_id=message.empresa_id):
+                await process_message(
+                    message,
+                    pool,
+                    checkpointer=checkpointer,
+                    store=store,
+                    clients=clients_by_provider,
+                )
 
     except KeyboardInterrupt:
         logger.info("worker_interrupted")
@@ -194,45 +208,57 @@ async def _calendar_sync_loop(pool) -> None:
         sync_calendar_for_empresa,
     )
 
+    # Sprint A.2.5 — RLS context por empresa
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
     while True:
         try:
+            # list_active_calendar_empresas precisa ver TODAS as empresas
+            # com calendar ativo. Hoje funciona sem context (modo permissive).
+            # Após A.2.6 (DATABASE_URL chat_nexus_app + policy estrita),
+            # essa lista precisará bypass_rls=True ou ser feita via tabela
+            # `empresa` (sem RLS, pois é global).
             empresas = await list_active_calendar_empresas(pool)
             for empresa_id in empresas:
-                try:
-                    await sync_calendar_for_empresa(pool, empresa_id)
-                except Exception as e:  # noqa: BLE001
-                    err_str = str(e)
-                    # `invalid_grant` é PERMANENTE — token revogado/expirado
-                    # nunca volta sozinho. Auto-desabilita pra parar spam de
-                    # logs a cada 5min. Admin re-conecta no painel.
-                    if "invalid_grant" in err_str:
-                        try:
-                            async with pool.connection() as conn:
-                                await conn.execute(
-                                    "UPDATE empresa_calendar_config "
-                                    "SET ativo = FALSE, updated_at = NOW() "
-                                    "WHERE empresa_id = %s",
-                                    (empresa_id,),
+                # Cada sync roda no escopo RLS da própria empresa — qualquer
+                # query interna (agendamento, empresa_calendar_config) filtra
+                # automaticamente.
+                with empresa_scope(empresa_id=empresa_id):
+                    try:
+                        await sync_calendar_for_empresa(pool, empresa_id)
+                    except Exception as e:  # noqa: BLE001
+                        err_str = str(e)
+                        # `invalid_grant` é PERMANENTE — token revogado/
+                        # expirado nunca volta sozinho. Auto-desabilita pra
+                        # parar spam de logs a cada 5min. Admin re-conecta.
+                        if "invalid_grant" in err_str:
+                            try:
+                                async with pool.connection() as conn:
+                                    await conn.execute(
+                                        "UPDATE empresa_calendar_config "
+                                        "SET ativo = FALSE, updated_at = NOW() "
+                                        "WHERE empresa_id = %s",
+                                        (empresa_id,),
+                                    )
+                                    await conn.commit()
+                                logger.error(
+                                    "calendar_auto_disabled_token_revoked",
+                                    empresa_id=empresa_id,
+                                    reason="invalid_grant",
+                                    action="admin_must_reconnect_oauth",
                                 )
-                                await conn.commit()
-                            logger.error(
-                                "calendar_auto_disabled_token_revoked",
-                                empresa_id=empresa_id,
-                                reason="invalid_grant",
-                                action="admin_must_reconnect_oauth",
-                            )
-                        except Exception as inner:  # noqa: BLE001
+                            except Exception as inner:  # noqa: BLE001
+                                logger.warning(
+                                    "calendar_auto_disable_failed",
+                                    empresa_id=empresa_id,
+                                    error=str(inner),
+                                )
+                        else:
                             logger.warning(
-                                "calendar_auto_disable_failed",
+                                "calendar_sync_empresa_failed",
                                 empresa_id=empresa_id,
-                                error=str(inner),
+                                error=err_str,
                             )
-                    else:
-                        logger.warning(
-                            "calendar_sync_empresa_failed",
-                            empresa_id=empresa_id,
-                            error=err_str,
-                        )
         except Exception as e:  # noqa: BLE001
             logger.warning("calendar_sync_loop_error", error=str(e))
         await asyncio.sleep(CALENDAR_SYNC_INTERVAL_SECONDS)

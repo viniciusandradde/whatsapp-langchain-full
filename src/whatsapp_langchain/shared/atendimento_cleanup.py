@@ -271,9 +271,14 @@ async def cleanup_zumbis_all_empresas(
     results: list[dict[str, Any]] = []
     total_fechados = 0
 
+    # Sprint A.2.5 — wrap cada cleanup no scope RLS da própria empresa,
+    # garantindo que UPDATE/SELECT internos filtrem corretamente.
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
     for eid in empresa_ids:
         try:
-            r = await cleanup_zumbis(pool, eid, motivo=motivo)
+            with empresa_scope(empresa_id=eid):
+                r = await cleanup_zumbis(pool, eid, motivo=motivo)
             results.append({"empresa_id": eid, **r})
             total_fechados += r.get("total", 0)
         except Exception as exc:  # noqa: BLE001
