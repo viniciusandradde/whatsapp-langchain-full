@@ -104,6 +104,8 @@ async def waba_webhook_post(
     pool = await get_pool()
 
     # Mensagens inbound
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
     inbound_messages = parse_inbound(payload)
     for msg in inbound_messages:
         conexao = await get_conexao_by_waba_phone_id(pool, msg.waba_phone_id)
@@ -114,6 +116,9 @@ async def waba_webhook_post(
                 from_number=msg.from_number,
             )
             continue
+
+        # Sprint A.2 — seta RLS context da empresa após resolver conexão.
+        set_request_context(conexao.empresa_id)
 
         try:
             await enqueue_or_buffer(

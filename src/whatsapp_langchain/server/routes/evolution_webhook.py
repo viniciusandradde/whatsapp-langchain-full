@@ -290,6 +290,13 @@ async def webhook_evolution(
     conexao_id = conexao.id
     requested_agent = conexao.default_agent_id
 
+    # Sprint A.2 — após resolver empresa via conexao, seta context RLS.
+    # Webhook não passa pelo middleware FastAPI (sem X-Empresa-Id de
+    # provider externo). Daí em diante, qualquer pool.connection()
+    # injeta SET app.empresa_id via _RlsAwarePool.
+    from whatsapp_langchain.shared.rls_context import set_request_context
+    set_request_context(empresa_id)
+
     # A.6 — resolve via agente_ia table primeiro; cai pro catálogo se ausente.
     runtime = await resolve_agente_runtime(pool, empresa_id, requested_agent)
     if runtime is not None:
