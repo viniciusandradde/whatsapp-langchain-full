@@ -172,18 +172,119 @@ def _row_to_agente(row) -> AgenteIA:
 
 
 async def list_agentes(
-    pool: AsyncConnectionPool, empresa_id: int, *, only_active: bool = False
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    only_active: bool = False,
+    user_id: str | None = None,
 ) -> list[AgenteIA]:
-    where = "empresa_id = %s"
+    """Lista agentes da empresa, opcionalmente filtrados por ACL do user.
+
+    Sprint C — quando `user_id` é passado, retorna apenas agentes onde
+    `user_can_access_agente(user_id, empresa_id, agente_id, 'read')`
+    retorna TRUE. Sem `user_id` (uso interno worker/sistema), retorna
+    todos. Mantém compat: agentes sem ACL configurada aparecem pra todos.
+    """
+    params: list = [empresa_id]
+    where = "a.empresa_id = %s"
     if only_active:
-        where += " AND ativo = TRUE"
+        where += " AND a.ativo = TRUE"
+
+    if user_id is not None:
+        # Filtro ACL: só inclui agente se user_can_access_agente == TRUE
+        where += " AND user_can_access_agente(%s, %s, a.id, 'read')"
+        params.extend([user_id, empresa_id])
+
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {_COLS} FROM agente_ia WHERE {where} ORDER BY is_default DESC, nome",
-            (empresa_id,),
+            f"SELECT {_COLS} FROM agente_ia a WHERE {where} "
+            "ORDER BY a.is_default DESC, a.nome",
+            tuple(params),
         )
         rows = await cur.fetchall()
     return [_row_to_agente(r) for r in rows]
+
+
+# ---- ACL agente_perfil (Sprint C) ----
+
+
+async def list_perfis_de_agente(
+    pool: AsyncConnectionPool, agente_id: int
+) -> list[dict]:
+    """Retorna ACL atual: [{perfil_id, nome, can_read, can_write}, ...]."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT p.id, p.nome, ap.can_read, ap.can_write
+              FROM agente_perfil ap
+              JOIN perfil_acesso p ON p.id = ap.perfil_id
+             WHERE ap.agente_id = %s
+             ORDER BY p.nome
+            """,
+            (agente_id,),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "perfil_id": int(r[0]),
+            "nome": r[1],
+            "can_read": bool(r[2]),
+            "can_write": bool(r[3]),
+        }
+        for r in rows
+    ]
+
+
+async def replace_acl_agente(
+    pool: AsyncConnectionPool,
+    agente_id: int,
+    empresa_id: int,
+    entries: list[dict],
+) -> list[dict]:
+    """Substitui ACL inteira do agente (idempotente).
+
+    `entries` é lista de `{perfil_id, can_read, can_write}`. Perfis
+    omitidos são removidos. Lista vazia limpa ACL (volta pro modo compat).
+
+    Valida que todos perfil_id pertencem à mesma empresa do agente
+    (defense in depth contra forjar acesso cross-tenant).
+    """
+    async with pool.connection() as conn:
+        async with conn.transaction():
+            # Validação: perfis precisam ser da mesma empresa
+            if entries:
+                perfil_ids = [int(e["perfil_id"]) for e in entries]
+                cur = await conn.execute(
+                    "SELECT id FROM perfil_acesso "
+                    "WHERE empresa_id = %s AND id = ANY(%s)",
+                    (empresa_id, perfil_ids),
+                )
+                valid_ids = {int(r[0]) for r in await cur.fetchall()}
+                invalid = set(perfil_ids) - valid_ids
+                if invalid:
+                    raise ValueError(
+                        f"Perfis fora da empresa {empresa_id}: {sorted(invalid)}"
+                    )
+
+            await conn.execute(
+                "DELETE FROM agente_perfil WHERE agente_id = %s",
+                (agente_id,),
+            )
+            for entry in entries:
+                await conn.execute(
+                    """
+                    INSERT INTO agente_perfil
+                        (agente_id, perfil_id, can_read, can_write)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        agente_id,
+                        int(entry["perfil_id"]),
+                        bool(entry.get("can_read", True)),
+                        bool(entry.get("can_write", False)),
+                    ),
+                )
+    return await list_perfis_de_agente(pool, agente_id)
 
 
 async def get_agente_by_slug(

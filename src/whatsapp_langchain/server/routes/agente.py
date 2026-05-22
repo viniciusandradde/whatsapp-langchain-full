@@ -18,12 +18,17 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
-from whatsapp_langchain.server.dependencies_rbac import require_permission
+from whatsapp_langchain.server.dependencies_rbac import (
+    require_agente_access,
+    require_permission,
+)
 from whatsapp_langchain.shared.agente import (
     DuplicateAgenteError,
     create_agente,
     get_agente_by_slug,
     list_agentes,
+    list_perfis_de_agente,
+    replace_acl_agente,
     set_default_agente,
     soft_delete_agente,
     update_agente,
@@ -143,10 +148,15 @@ async def list_templates_endpoint(
 async def list_endpoint(
     only_active: bool = False,
     empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
+    """Sprint C: filtra por ACL (agente_perfil) — user só vê agentes
+    onde tem perfil autorizado. Compat: agentes sem ACL aparecem pra todos."""
     pool = await get_pool()
-    items = await list_agentes(pool, empresa_id, only_active=only_active)
+    items = await list_agentes(
+        pool, empresa_id, only_active=only_active, user_id=user_id
+    )
     return {"items": [a.to_dict() for a in items]}
 
 
@@ -155,6 +165,7 @@ async def get_endpoint(
     slug: str,
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
 ) -> dict:
     pool = await get_pool()
     out = await get_agente_by_slug(pool, empresa_id, slug)
@@ -205,6 +216,7 @@ async def update_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
 ) -> dict:
     pool = await get_pool()
     before = await get_agente_by_slug(pool, empresa_id, slug)
@@ -240,6 +252,7 @@ async def delete_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
 ) -> None:
     """Soft delete (ativo=false). Preserva FKs em atendimentos antigos."""
     pool = await get_pool()
@@ -264,6 +277,7 @@ async def set_default_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
 ) -> dict:
     """Promove agente a default da empresa (limpa default anterior)."""
     pool = await get_pool()
@@ -282,3 +296,83 @@ async def set_default_endpoint(
         request=request,
     )
     return {"ok": True, "slug": slug}
+
+
+# ---- Sprint C — ACL por agente (agente_perfil) ----
+
+
+class AgentePerfilEntry(BaseModel):
+    perfil_id: int = Field(..., gt=0)
+    can_read: bool = True
+    can_write: bool = False
+
+
+class ReplaceAclInput(BaseModel):
+    entries: list[AgentePerfilEntry] = Field(default_factory=list)
+
+
+@router.get("/{slug}/perfis")
+async def list_perfis_endpoint(
+    slug: str,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
+) -> dict:
+    """Lista perfis com acesso ao agente. Vazio = modo compat (todos os
+    perfis com perm agente.config tem acesso). Ver mig 099."""
+    pool = await get_pool()
+    out = await get_agente_by_slug(pool, empresa_id, slug)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+    entries = await list_perfis_de_agente(pool, out.id)
+    return {
+        "agente_id": out.id,
+        "slug": out.slug,
+        "entries": entries,
+        "modo": "whitelist" if entries else "compat",
+    }
+
+
+@router.put("/{slug}/perfis")
+async def replace_perfis_endpoint(
+    slug: str,
+    body: ReplaceAclInput,
+    request: Request,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
+) -> dict:
+    """Substitui ACL completa do agente. entries=[] limpa (volta pro modo compat)."""
+    pool = await get_pool()
+    out = await get_agente_by_slug(pool, empresa_id, slug)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+
+    before = await list_perfis_de_agente(pool, out.id)
+    try:
+        entries = await replace_acl_agente(
+            pool,
+            agente_id=out.id,
+            empresa_id=empresa_id,
+            entries=[e.model_dump() for e in body.entries],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    await record_audit(
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="agente.acl.update",
+        entity_type="agente_ia",
+        entity_id=slug,
+        payload_diff={"before": before, "after": entries},
+        request=request,
+    )
+    return {
+        "agente_id": out.id,
+        "slug": out.slug,
+        "entries": entries,
+        "modo": "whitelist" if entries else "compat",
+    }

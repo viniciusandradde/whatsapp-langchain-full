@@ -72,3 +72,87 @@ def require_permission(codigo: str):
             )
 
     return _checker
+
+
+def require_agente_access(mode: str = "read"):
+    """Sprint C — dependency que aplica ACL granular por agente.
+
+    Aplica APÓS `require_permission('agente.config')` — primeiro empresa
+    valida que user tem a perm geral, depois esta checa se o agente
+    específico está na whitelist do(s) perfil(is) do user.
+
+    Uso:
+        @router.put("/{slug}")
+        async def update_agente(
+            slug: str,
+            _perm: None = Depends(require_permission("agente.config")),
+            _acl:  None = Depends(require_agente_access("write")),
+        ):
+            ...
+
+    Como funciona o slug → agente_id:
+        O path param `{slug}` é extraído via `request.path_params`. Lookup
+        no DB. Se slug não existe, 404 (não 403 — não vaza ACL).
+
+    Modo compat: agentes sem rows em `agente_perfil` passam (back-compat).
+    Quando admin adiciona a 1ª linha pra um agente, vira whitelist
+    estrita pra esse agente específico.
+
+    Args:
+        mode: 'read' (GET) ou 'write' (POST/PUT/DELETE).
+    """
+    if mode not in ("read", "write"):
+        raise ValueError(f"mode inválido: {mode}")
+
+    async def _checker(
+        request: Request,
+        user_id: str = Depends(get_user_id_from_request),
+        empresa_id: int = Depends(get_empresa_context),
+    ) -> None:
+        slug = request.path_params.get("slug")
+        if not slug:
+            # Endpoints sem {slug} (ex: GET /api/v1/agentes lista) não
+            # devem usar essa dep — a list_agentes faz filtro próprio.
+            raise HTTPException(
+                status_code=500,
+                detail="require_agente_access requer {slug} no path.",
+            )
+
+        pool = await get_pool()
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM agente_ia WHERE empresa_id = %s AND slug = %s",
+                (empresa_id, slug),
+            )
+            row = await cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Agente não encontrado.")
+        agente_id = int(row[0])
+
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT user_can_access_agente(%s, %s, %s, %s)",
+                (user_id, empresa_id, agente_id, mode),
+            )
+            row = await cur.fetchone()
+        allowed = bool(row[0]) if row else False
+
+        if not allowed:
+            logger.warning(
+                "agente_acl_denied",
+                user_id=user_id,
+                empresa_id=empresa_id,
+                agente_id=agente_id,
+                slug=slug,
+                mode=mode,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Sem acesso ao agente '{slug}' "
+                    f"(modo {mode}). Solicite ao admin atribuir seu "
+                    "perfil em /agents/{slug}/perfis."
+                ),
+            )
+
+    return _checker
