@@ -31,7 +31,10 @@ export interface NavTab {
  * pertencimento usamos os prefixos dentro de cada grupo (ver GRUPO_PREFIXOS).
  */
 export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
-  visao: [{ label: "Atendimentos", href: "/dashboard/atendimento" }],
+  visao: [
+    { label: "Atendimentos", href: "/dashboard/atendimento" },
+    { label: "Plano & Cobrança", href: "/billing" },
+  ],
   operacao: [
     { label: "Atendimentos", href: "/atendimento", requires: "atendimento.read" },
     { label: "Conversas", href: "/chats", requires: "atendimento.read" },
@@ -89,7 +92,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
  * consistência: tab grupo X ativo ↔ sidebar destacando grupo X.
  */
 export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
-  { grupo: "visao", prefixos: ["/dashboard"] },
+  { grupo: "visao", prefixos: ["/dashboard", "/billing"] },
   {
     grupo: "operacao",
     prefixos: [

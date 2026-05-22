@@ -124,6 +124,31 @@ class Settings(BaseSettings):
     # Default False: feature opt-in, evita regressão em prod.
     enable_workflow_engine: bool = False
 
+    # --- Sprint B — ASAAS billing (cobrança recorrente) ---
+    # API key gerada em asaas.com → Configurações → API. Em sandbox usa
+    # https://sandbox.asaas.com/api/v3, em prod https://api.asaas.com/v3.
+    # Sem essas vars, rotas /api/billing/* respondem 503 e quota-card
+    # esconde botão Upgrade.
+    asaas_api_key: SecretStr | None = None
+    asaas_environment: str = "sandbox"  # "sandbox" | "production"
+    # Token compartilhado pra validar webhook Asaas (header asaas-access-token).
+    # Setar mesmo valor no painel Asaas → Integrações → Webhook.
+    asaas_webhook_token: SecretStr | None = None
+    # URL pública pro Asaas redirecionar após pagamento (succesUrl/cancelUrl).
+    # Default vazio = usa public_base_url.
+    asaas_success_url: str = ""
+    asaas_cancel_url: str = ""
+
+    @property
+    def asaas_enabled(self) -> bool:
+        return self.asaas_api_key is not None
+
+    @property
+    def asaas_base_url(self) -> str:
+        if self.asaas_environment.strip().lower() == "production":
+            return "https://api.asaas.com/v3"
+        return "https://sandbox.asaas.com/api/v3"
+
     # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
     # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
     # Wareline (password + client_secret) na tabela `wareline_credentials`.

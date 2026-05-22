@@ -31,7 +31,11 @@ from whatsapp_langchain.server.routes.agendamento_regras import (
     router as agendamento_regras_router,
 )
 from whatsapp_langchain.server.routes.agente import router as agente_router
+from whatsapp_langchain.server.routes.asaas_webhook import (
+    router as asaas_webhook_router,
+)
 from whatsapp_langchain.server.routes.atendente import router as atendente_router
+from whatsapp_langchain.server.routes.billing import router as billing_router
 from whatsapp_langchain.server.routes.atendimento import (
     router as atendimento_router,
 )
@@ -315,6 +319,8 @@ app.include_router(dashboard_ia_router)
 app.include_router(dashboard_atendimento_router)
 app.include_router(ia_budget_router)
 app.include_router(atendente_router)
+app.include_router(billing_router)
+app.include_router(asaas_webhook_router)
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)

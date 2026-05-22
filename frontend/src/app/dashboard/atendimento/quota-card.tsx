@@ -224,7 +224,7 @@ function UpgradeButton({
 }) {
   return (
     <a
-      href="/companies"
+      href="/billing"
       className={
         "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors " +
         (estourou

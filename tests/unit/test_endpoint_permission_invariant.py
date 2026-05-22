@@ -46,6 +46,14 @@ ALLOWLIST: list[tuple[str, str]] = [
     ("GET", "/api/auth/"),
     # Bootstrap empresa — primeira empresa não tem RBAC ainda
     ("POST", "/api/empresas"),
+    # Billing (sprint B) — usa is_admin_of() em vez de require_permission
+    # (billing é mais granular que perm "empresa.update": tem que ser
+    # admin EXPLÍCITO da empresa, superadmin não basta — auditoria fiscal)
+    ("POST", "/api/billing/"),
+    ("PUT", "/api/billing/"),
+    ("DELETE", "/api/billing/"),
+    # Webhook Asaas (validação via header asaas-access-token, não user)
+    ("POST", "/webhook/asaas"),
     # OAuth callbacks públicos (state CSRF + token Meta valida no callback)
     ("GET", "/api/conexoes/waba/oauth/callback"),
     # Test runner interno só pra dev/CI

@@ -3734,6 +3734,60 @@ export async function getEmpresaQuota(empresaId: number): Promise<QuotaSnapshot>
   return apiFetch<QuotaSnapshot>(`/api/empresas/${empresaId}/quota`);
 }
 
+// Sprint B.5 — billing (Asaas)
+export interface BillingTransacao {
+  id: number;
+  tipo: string;
+  valor_brl: number;
+  status: "pendente" | "pago" | "falhou" | "estornado" | "cancelado";
+  gateway: string | null;
+  gateway_id: string | null;
+  descricao: string | null;
+  pago_em: string | null;
+  created_at: string;
+  plano_slug: string | null;
+  plano_nome: string | null;
+}
+
+export interface BillingStatus {
+  empresa_id: number;
+  empresa_nome: string;
+  plano_atual: string;
+  asaas_customer_id: string | null;
+  asaas_subscription_id: string | null;
+  valor_mensal: number | null;
+  total_pagamentos: number;
+  ultimo_pagamento_em: string | null;
+  pendentes: number;
+}
+
+export interface CheckoutResult {
+  subscription_id: string;
+  payment_url: string | null;
+  valor: number;
+  next_due_date: string;
+  plano: string;
+}
+
+export async function billingCheckout(plano: "pro" | "enterprise"): Promise<CheckoutResult> {
+  return apiFetch<CheckoutResult>("/api/billing/checkout", {
+    method: "POST",
+    body: { plano },
+  });
+}
+
+export async function billingHistorico(): Promise<{ items: BillingTransacao[] }> {
+  return apiFetch<{ items: BillingTransacao[] }>("/api/billing/historico");
+}
+
+export async function billingStatus(): Promise<BillingStatus> {
+  return apiFetch<BillingStatus>("/api/billing/status");
+}
+
+export async function billingCancel(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>("/api/billing/cancel", { method: "POST" });
+}
+
 export async function updateEmpresaCsat(
   empresaId: number,
   body: EmpresaCsatConfig
