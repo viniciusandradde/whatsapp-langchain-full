@@ -19,6 +19,7 @@ from whatsapp_langchain.agents.loader import AgentNotFoundError
 from whatsapp_langchain.server.middlewares import (
     install_admin_rate_limit,
     install_correlation_id,
+    install_rls_context,
     install_security_headers,
 )
 from whatsapp_langchain.server.routes.aba import router as aba_router
@@ -50,11 +51,11 @@ from whatsapp_langchain.server.routes.catalogo import (
 )
 from whatsapp_langchain.server.routes.cliente import router as cliente_router
 from whatsapp_langchain.server.routes.conexao import router as conexao_router
-from whatsapp_langchain.server.routes.dashboard_ia import (
-    router as dashboard_ia_router,
-)
 from whatsapp_langchain.server.routes.dashboard_atendimento import (
     router as dashboard_atendimento_router,
+)
+from whatsapp_langchain.server.routes.dashboard_ia import (
+    router as dashboard_ia_router,
 )
 from whatsapp_langchain.server.routes.dashboard_ia import (
     router_budget as ia_budget_router,
@@ -201,9 +202,14 @@ app.add_middleware(
 
 install_security_headers(app, is_production=settings.is_production)
 install_admin_rate_limit(app, limit_per_minute=settings.admin_rate_limit_per_minute)
+# Sprint A.2.4 — RLS context: extrai X-Empresa-Id e seta contextvar pro
+# wrapper do pool injetar `SET app.empresa_id` em cada conexão. Roda
+# DEPOIS do correlation_id (registrado por último = roda primeiro LIFO)
+# pra que logs do RLS já tenham request_id.
+install_rls_context(app)
 # Correlation ID: registrado por último pra rodar PRIMEIRO no request
-# (Starlette empilha middlewares LIFO). Assim os logs do rate_limit e
-# security_headers já têm `request_id` no contextvars.
+# (Starlette empilha middlewares LIFO). Assim os logs do rate_limit,
+# security_headers e rls_context já têm `request_id` no contextvars.
 install_correlation_id(app)
 
 # Fase 0 enterprise — instrumentação OTel pro app inteiro. Cria span

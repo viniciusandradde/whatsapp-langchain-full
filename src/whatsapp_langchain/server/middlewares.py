@@ -161,3 +161,65 @@ def install_correlation_id(app: ASGIApp) -> None:
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         return await correlation_id_middleware(request, call_next)
+
+
+# =========================================================================
+# Sprint A.2.4 — RLS context middleware
+# =========================================================================
+
+
+async def rls_context_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Extrai empresa_id do header X-Empresa-Id e seta contextvar de RLS.
+
+    Pré-condição: middleware roda DEPOIS de auth ter validado a request
+    (Better Auth na borda + verify_service_token nos handlers); se header
+    vier de fonte não confiável, validate_runtime_settings já barra.
+
+    O contextvar é populado UMA vez por request — qualquer `pool.connection()`
+    chamado durante o handler herda o context (via `_RlsAwarePool`).
+
+    Casos especiais:
+    - Header ausente (ex: `/webhook/*`, `/health`, `/metrics`): contextvar
+      fica None → RLS opera em modo permissive (compat). Endpoints com
+      RBAC (`require_permission`) já filtram em código.
+    - Header inválido (não inteiro): ignora silenciosamente, contextvar
+      fica None. Não falha a request — handler vai validar empresa_id
+      via `get_empresa_context` se precisar.
+
+    Pra superadmin que precisa cross-tenant: handler chama
+    `set_request_context(None, bypass=True)` explicitamente OU usa
+    `with_empresa_context(pool, None, bypass_rls=True)` por escopo.
+    """
+    from whatsapp_langchain.shared.rls_context import (
+        set_request_context,
+    )
+
+    raw = request.headers.get("X-Empresa-Id", "").strip()
+    empresa_id: int | None = None
+    if raw:
+        try:
+            empresa_id = int(raw)
+        except ValueError:
+            empresa_id = None
+
+    set_request_context(empresa_id)
+    try:
+        return await call_next(request)
+    finally:
+        # Limpa contextvar ao final pra evitar vazamento entre requests
+        # (ContextVar é per-task mas defensive: reset explícito).
+        set_request_context(None)
+
+
+def install_rls_context(app: ASGIApp) -> None:
+    """Registra middleware que extrai X-Empresa-Id pra contextvar RLS."""
+
+    @app.middleware("http")  # type: ignore[attr-defined]
+    async def _wrapper(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        return await rls_context_middleware(request, call_next)

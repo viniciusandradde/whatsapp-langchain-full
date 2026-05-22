@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import structlog
 from langchain_openai import OpenAIEmbeddings
@@ -28,6 +29,7 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import SecretStr
 
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.rls_context import get_request_context
 
 logger = structlog.get_logger()
 
@@ -84,26 +86,90 @@ async def _release_advisory_lock(conn: AsyncConnection, lock_id: int) -> None:
     await conn.commit()
 
 
+class _RlsAwarePool:
+    """Sprint A.2.4 — wrapper de AsyncConnectionPool que injeta RLS context.
+
+    Quando código pega uma conexão via `async with pool.connection() as conn:`,
+    o wrapper:
+      1. Lê o contextvar atual (`get_request_context()`)
+      2. Se empresa_id setado → executa `SET app.empresa_id = X` (session-level,
+         vale pra qualquer query subsequente sem precisar de transação)
+      3. Se bypass → executa `SET app.bypass_rls = 'true'`
+      4. yields a conn pro código original
+      5. Finally: limpa setting (`SET app.empresa_id = ''`) ANTES de devolver
+         pro pool — evita vazamento de context entre requests
+
+    Sem context setado (worker sistema, scripts): conexão entregue limpa,
+    RLS opera em modo permissive (mig 096 — passa se context vazio).
+
+    Mantém compatibilidade 100% com código existente: signature de
+    `pool.connection()` inalterada, atributos não interceptados são
+    proxied via __getattr__.
+    """
+
+    def __init__(self, inner: AsyncConnectionPool) -> None:
+        self._inner = inner
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[AsyncConnection]:
+        async with self._inner.connection() as conn:
+            empresa_id, bypass = get_request_context()
+            try:
+                if bypass:
+                    await conn.execute(
+                        "SELECT set_config('app.bypass_rls', 'true', false)"
+                    )
+                elif empresa_id is not None:
+                    await conn.execute(
+                        "SELECT set_config('app.empresa_id', %s, false)",
+                        (str(empresa_id),),
+                    )
+                yield conn
+            finally:
+                # Limpa context antes de conn voltar pro pool. Sem isso,
+                # próxima request pode pegar essa conn com app.empresa_id
+                # da request anterior — vazamento cross-tenant silencioso.
+                try:
+                    await conn.execute(
+                        "SELECT set_config('app.empresa_id', '', false)"
+                    )
+                    await conn.execute(
+                        "SELECT set_config('app.bypass_rls', '', false)"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "rls_context_cleanup_failed", error=str(exc)
+                    )
+
+    def __getattr__(self, name: str) -> Any:
+        """Proxy não-interceptado pro pool original (open/close/etc)."""
+        return getattr(self._inner, name)
+
+
 async def get_pool() -> AsyncConnectionPool:
     """Retorna o pool de conexões, criando se necessário.
 
     O pool é singleton — chamadas subsequentes retornam a mesma instância.
+    Desde Sprint A.2.4, retorna um `_RlsAwarePool` wrapper que injeta
+    automaticamente `SET app.empresa_id` em cada conexão entregue. Código
+    legado (`async with pool.connection() as conn`) continua igual.
 
     Returns:
-        Pool de conexões assíncronas do psycopg.
+        Pool de conexões assíncronas (RlsAwarePool wrapper).
     """
     global pool
     if pool is None:
-        pool = AsyncConnectionPool(
+        inner_pool = AsyncConnectionPool(
             conninfo=settings.database_url,
             min_size=2,
             max_size=10,
             open=False,
         )
-        await pool.open()
+        await inner_pool.open()
+        pool = _RlsAwarePool(inner_pool)  # type: ignore[assignment]
         db_host = settings.database_url.split("@")[-1]
-        logger.info("db_pool_created", database_url=db_host)
-    return pool
+        logger.info("db_pool_created", database_url=db_host, rls_wrapped=True)
+    return pool  # type: ignore[return-value]
 
 
 async def close_pool() -> None:
