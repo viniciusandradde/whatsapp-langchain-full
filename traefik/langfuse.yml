@@ -1,0 +1,47 @@
+# Traefik dynamic config — Langfuse standalone (sem Dokploy discovery).
+#
+# Deploy: copiar este arquivo pra /etc/dokploy/traefik/dynamic/ no host
+# Dokploy. O Traefik tem `file.watch: true` e recarrega automaticamente
+# (~2s após o arquivo aparecer/mudar).
+#
+# Pré-requisito: container `langfuse-web` rodando E atachado na rede
+# `dokploy-network` (compose já faz isso quando subido via
+# `docker compose -f docker-compose.langfuse.yml up -d`).
+#
+# Verificar após instalar:
+#   docker exec dokploy-traefik wget -qO- http://localhost:8080/api/http/routers \
+#     | grep langfuse
+#   # Deve aparecer "langfuse-web@file" e "langfuse-websecure@file"
+#
+#   curl -sI https://langfuse.vsanexus.com/api/public/health
+#   # HTTP/2 200
+
+http:
+  routers:
+    # Router HTTP — redireciona pra HTTPS via middleware existente do Dokploy
+    langfuse-web:
+      rule: "Host(`langfuse.vsanexus.com`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https@file
+      service: langfuse-svc
+
+    # Router HTTPS — terminação TLS via Let's Encrypt (cert resolver do
+    # Dokploy já configurado no traefik.yml estático)
+    langfuse-websecure:
+      rule: "Host(`langfuse.vsanexus.com`)"
+      entryPoints:
+        - websecure
+      service: langfuse-svc
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    langfuse-svc:
+      loadBalancer:
+        servers:
+          # Traefik resolve `langfuse-web` via DNS interno da dokploy-network
+          # (network alias automático criado pelo Docker Compose).
+          - url: "http://langfuse-web:3000"
+        passHostHeader: true

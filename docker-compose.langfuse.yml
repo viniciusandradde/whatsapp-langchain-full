@@ -187,7 +187,22 @@ services:
       timeout: 5s
       retries: 10
       start_period: 90s
+    # Atacha langfuse-web na rede externa do Traefik (dokploy-network).
+    # Outros services do stack ficam na rede default do compose (isolada).
+    # Permite Traefik resolver `langfuse-web:3000` via DNS interno do Docker
+    # SEM depender de docker discovery por label (que estava bugando).
+    networks:
+      - default
+      - dokploy-network
     restart: unless-stopped
+
+# Rede externa do Traefik (criada pelo Dokploy). Compose plain reusa.
+# Se a rede não existir no host, criar antes:
+#   docker network create dokploy-network
+networks:
+  default:
+  dokploy-network:
+    external: true
 
 volumes:
   langfuse_postgres_data:

@@ -161,66 +161,102 @@ Filtrar por score no dashboard pra achar conversas detratoras.
 
 ---
 
-## 6. Produção (Dokploy)
+## 6. Produção (standalone — fora do Dokploy, reusando Traefik dele)
 
-Stack roda como **segundo Compose service** no projeto `vsanexus` no Dokploy
-(separado do `chat.vsanexus.com`).
+**Por que não via Dokploy como Compose service**: o Docker provider do
+Traefik do Dokploy não consegue descobrir o container do langfuse-web
+mesmo com labels corretas e network certa (bug específico do deployment ID
+dele em alguns casos). Após 6 commits de tentativas, partimos pra abordagem
+standalone: stack sobe via `docker compose` direto no host, e o Traefik
+do Dokploy aprende a rota via **file provider** (`/etc/dokploy/traefik/dynamic/`).
 
-### 6.1 Criar o Compose service no Dokploy
-
-1. **Projects → vsanexus → Create Service → Compose**
-2. **Source**: GitHub branch (mesmo repo `whatsapp-langchain`)
-3. **Compose Path**: `docker-compose.langfuse.yml`
-4. Salvar — **não fazer Deploy ainda**.
-
-### 6.2 Setar variáveis de ambiente (UI Dokploy)
-
-No service → **Environment** → adicionar:
-
-```bash
-# Gerar uma vez (UM por var; NÃO reusar a mesma string):
-#   openssl rand -hex 32
-LANGFUSE_SALT=<64 hex chars>
-LANGFUSE_ENCRYPTION_KEY=<64 hex chars>     # OBRIGATÓRIO 64 hex
-LANGFUSE_NEXTAUTH_SECRET=<32+ chars>
-
-# URL pública — bate com o domínio configurado no passo 6.3
-LANGFUSE_PUBLIC_URL=https://langfuse.vsanexus.com
+Vantagem: zero acoplamento com a engine Dokploy. Reusa Traefik + Let's Encrypt
+existentes. Funciona porque o `traefik.yml` do Dokploy tem:
+```yaml
+providers:
+  file:
+    directory: /etc/dokploy/traefik/dynamic
+    watch: true
 ```
 
-Os defaults do compose (`langfuse_dev_*`) servem só pra `make langfuse-up`
-local. Em prod o startup do `langfuse-web` aborta se `ENCRYPTION_KEY` é o
-default zerado.
+### 6.1 Setar DNS + clonar repo no host
 
-### 6.3 Expor `langfuse-web` no domínio
+```bash
+# DNS: apontar langfuse.vsanexus.com → IP do host (ANTES do deploy, senão
+# Let's Encrypt falha no HTTP-01 challenge).
 
-Service → **Domains → Create Domain**:
+# SSH no host Dokploy
+sudo su
+mkdir -p /opt/langfuse && cd /opt/langfuse
+git clone https://github.com/viniciusandradde/whatsapp-langchain-full.git .
+# OU: scp do docker-compose.langfuse.yml + traefik/langfuse.yml direto
+```
 
-| Campo | Valor |
-| ----- | ----- |
-| Host  | `langfuse.vsanexus.com` |
-| Path  | `/` (atenção bug `addPrefix` quando path != "/", vide `docs/DOKPLOY.md`) |
-| Service Name | `langfuse-web` |
-| Container Port | `3000` (porta interna do Node — NÃO 3001) |
-| HTTPS | ✅ on (Let's Encrypt) |
+### 6.2 Setar `.env` com secrets fortes
 
-Apontar registro DNS `langfuse.vsanexus.com` → IP do host Dokploy antes
-do Deploy (senão Let's Encrypt falha no challenge).
+```bash
+cat > /opt/langfuse/.env <<EOF
+LANGFUSE_ENCRYPTION_KEY=$(openssl rand -hex 32)
+LANGFUSE_SALT=$(openssl rand -hex 32)
+LANGFUSE_NEXTAUTH_SECRET=$(openssl rand -hex 32)
+LANGFUSE_PUBLIC_URL=https://langfuse.vsanexus.com
+EOF
 
-### 6.4 Deploy
+chmod 600 /opt/langfuse/.env
+```
 
-Service → **Deploy**. Aguardar 5 serviços virarem healthy (~2-3min). Logs:
-**Deployments → Live Logs → langfuse-web** — esperar `Ready in N ms`.
+### 6.3 Subir o stack (compose plain, sem Dokploy)
 
-### 6.5 Bootstrap do painel + keys
+```bash
+cd /opt/langfuse
+docker compose -f docker-compose.langfuse.yml --env-file .env up -d
 
-1. Abrir https://langfuse.vsanexus.com → criar conta (1ª vira admin).
+# Aguardar ~90s
+docker compose -f docker-compose.langfuse.yml ps
+# Esperado: 5 serviços Up + 1 init Exited (0)
+```
+
+O container `langfuse-web` ataca AUTOMATICAMENTE na rede `dokploy-network`
+(o compose declara ela como `external: true`). Traefik consegue alcançá-lo
+via hostname interno `langfuse-web:3000` na mesma rede.
+
+### 6.4 Registrar rota no Traefik do Dokploy
+
+Copiar o arquivo dynamic do repo pra dentro do diretório que Traefik observa:
+
+```bash
+cp /opt/langfuse/traefik/langfuse.yml /etc/dokploy/traefik/dynamic/langfuse.yml
+chmod 644 /etc/dokploy/traefik/dynamic/langfuse.yml
+
+# Verificar que Traefik pegou (watch: true → recarrega em ~2s)
+sleep 5
+docker exec dokploy-traefik wget -qO- http://localhost:8080/api/http/routers 2>/dev/null \
+  | grep -o '"name":"langfuse[^"]*"'
+# Esperado:
+# "name":"langfuse-web@file"
+# "name":"langfuse-websecure@file"
+```
+
+### 6.5 Smoke externo
+
+```bash
+# Deve retornar 200 + JSON
+curl -sI https://langfuse.vsanexus.com/api/public/health | head -3
+curl -s https://langfuse.vsanexus.com/api/public/health
+# {"status":"OK","version":"3.175.0"}
+```
+
+Abrir `https://langfuse.vsanexus.com` no navegador → tela **Sign up / Sign in** do Langfuse.
+
+### 6.6 Bootstrap do painel + keys
+
+1. Acessar https://langfuse.vsanexus.com → criar conta (1ª vira admin).
 2. Criar organização `nexus-chat` + projeto `whatsapp-langchain-prod`.
-3. **Project Settings → API Keys → Create new** → copiar keys.
+3. **Project Settings → API Keys → Create new** → copiar `pk-lf-...` + `sk-lf-...`.
 
-### 6.6 Conectar aplicação principal
+### 6.7 Conectar `chat.vsanexus.com` ao Langfuse
 
-No service do `chat.vsanexus.com` (Compose principal), adicionar env vars:
+No service Dokploy do `chat.vsanexus.com` → **Environment** → adicionar:
 
 ```bash
 LANGFUSE_HOST=https://langfuse.vsanexus.com
@@ -230,33 +266,52 @@ LANGFUSE_ENVIRONMENT=production
 LANGFUSE_PROMPT_LABEL=production
 ```
 
-**Redeploy** do service principal pra carregar as keys. Logs do worker
-devem mostrar `langfuse_client_initialized host=https://langfuse.vsanexus.com`.
+**Redeploy** do service principal. Logs do worker devem mostrar
+`langfuse_client_initialized host=https://langfuse.vsanexus.com`.
 
-### 6.7 Subir prompts + smoke E2E
+### 6.8 Subir prompts + smoke E2E
 
 1. Painel Langfuse → Prompts → criar `system-prompt:<template_id>` pra
    cada agente do catálogo, label `production`.
 2. Mandar mensagem real em `chat.vsanexus.com` (WhatsApp produção).
-3. Painel → Traces → confirmar trace com `environment=production`,
-   `model`, `tokens`, `tool_calls`, `prompt_version`.
-4. Fechar atendimento → cliente responde CSAT 0-10 → trace ganha `score
-   nps=N`.
+3. Painel → Traces → confirmar trace com `environment=production`, `model`,
+   `tokens`, `tool_calls`, `prompt_version`.
+4. Fechar atendimento → cliente responde CSAT 0-10 → trace ganha `score nps=N`.
 
-### 6.8 Caveats Dokploy
+### 6.9 Operação
 
-- **Volumes**: Dokploy cria volumes named (`langfuse_postgres_data` etc.)
-  no host. Backup via snapshot do disco ou `docker run --rm -v
-  langfuse_postgres_data:/data alpine tar czf - /data`.
-- **Memória**: stack pesa ~1.5GB (ClickHouse é o maior). Se o host
-  estiver perto do limite, considere subir só LANGFUSE em outro host
-  Dokploy menor.
-- **Bug `addPrefix`**: ao configurar Domains, manter path `/` (não usar
-  `/langfuse` ou similar) — Traefik do Dokploy tem bug que injeta
-  redirects errados quando path != "/". Vide [[reference_dokploy]].
-- **Sem `ports:` no compose**: o service `langfuse-web` usa `expose: 3000`
-  em vez de `ports: host:container`. Traefik roteia via hostname interno.
-  Vantagem: zero conflito de porta entre projetos no mesmo host Dokploy.
+```bash
+# Logs
+docker compose -f /opt/langfuse/docker-compose.langfuse.yml logs -f langfuse-web
+
+# Restart só o web
+docker compose -f /opt/langfuse/docker-compose.langfuse.yml restart langfuse-web
+
+# Update pra nova versão Langfuse
+cd /opt/langfuse
+git pull
+docker compose -f docker-compose.langfuse.yml pull
+docker compose -f docker-compose.langfuse.yml up -d
+
+# Backup volumes
+docker run --rm \
+  -v langfuse_langfuse_postgres_data:/data \
+  -v $(pwd):/backup alpine \
+  tar czf /backup/langfuse-postgres-$(date +%F).tar.gz /data
+```
+
+### 6.10 Caveats
+
+- **Sem gerenciamento Dokploy**: o stack NÃO aparece na UI Dokploy. Logs,
+  restart, env vars — tudo via SSH. Trade-off aceitável pra ter o serviço
+  funcionando.
+- **DNS challenge ACME**: Let's Encrypt usa HTTP-01 challenge (vide
+  `traefik.yml` do Dokploy). DNS deve estar resolvendo pro IP do host
+  **antes** do Traefik tentar emitir o cert.
+- **Memória**: stack pesa ~1.5GB (ClickHouse é o maior). Se VPS justa,
+  considere `LANGFUSE_SAMPLE_RATE=0.1` (10% sampling) ou Langfuse Cloud.
+- **Volumes**: vivem no host (`docker volume ls | grep langfuse_`).
+  Backup acima ou snapshot do disco.
 
 ---
 
