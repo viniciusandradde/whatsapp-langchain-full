@@ -134,17 +134,37 @@ async def load_graph(
         if system_prompt_override:
             system_prompt_override = render_template(system_prompt_override, ctx)
         else:
-            # Tenta renderizar o SYSTEM_PROMPT default do template (módulo
-            # do catálogo). Quando o template não exporta, fica None.
+            # Tenta resolver o SYSTEM_PROMPT em camadas:
+            #   1) Langfuse Prompt Management (quando enabled) — chave =
+            #      `system-prompt:<template_id>`, label = `langfuse_prompt_label`
+            #      do settings. Permite hot-swap sem deploy.
+            #   2) Constante Python `SYSTEM_PROMPT` do módulo prompts.py.
+            # Sempre renderiza `{{empresa.*}}` etc. via render_template no
+            # texto resolvido.
             try:
                 from importlib import import_module
+
+                from whatsapp_langchain.shared.langfuse_client import (
+                    get_system_prompt as _lf_get_prompt,
+                )
 
                 prompts_mod = import_module(
                     f"whatsapp_langchain.agents.catalog.{template_id}.prompts"
                 )
                 default_prompt = getattr(prompts_mod, "SYSTEM_PROMPT", None)
                 if default_prompt:
-                    system_prompt_override = render_template(default_prompt, ctx)
+                    resolved_text, prompt_meta = _lf_get_prompt(
+                        name=f"system-prompt:{template_id}",
+                        fallback=default_prompt,
+                    )
+                    system_prompt_override = render_template(resolved_text, ctx)
+                    if prompt_meta and prompt_meta.get("prompt_version"):
+                        logger.info(
+                            "prompt_resolved_from_langfuse",
+                            template=template_id,
+                            prompt_name=prompt_meta.get("prompt_name"),
+                            prompt_version=prompt_meta.get("prompt_version"),
+                        )
             except Exception as exc:
                 logger.warning(
                     "default_prompt_render_failed",

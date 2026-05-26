@@ -2270,16 +2270,33 @@ async def process_message(
 
         # Callback que registra ia_execucao + atualiza ia_budget após cada
         # chamada LLM (mig 057 + 058 padrão profissional).
+        # Sprint Langfuse — trace_id determinístico baseado em message.id.
+        # Mesmo seed → mesmo ID, então gravamos em message_queue/ia_execucao
+        # e o CallbackHandler do Langfuse emite trace com o mesmo ID. None
+        # quando feature off (langfuse_client é no-op).
+        from whatsapp_langchain.shared import langfuse_client
         from whatsapp_langchain.shared.llm_callback import IaExecucaoCallback
+
+        langfuse_trace_id = langfuse_client.create_trace_id(
+            seed=f"msg:{message.id}"
+        )
+        langfuse_handler = langfuse_client.get_callback_handler(
+            trace_id=langfuse_trace_id,
+        )
 
         ia_callback = IaExecucaoCallback(
             pool,
             empresa_id=message.empresa_id,
             atendimento_id=message.atendimento_id,
             agente_ia_id=agente_ia_id,
+            langfuse_trace_id=langfuse_trace_id,
         )
 
-        invoke_config = {
+        callbacks: list = [ia_callback]
+        if langfuse_handler is not None:
+            callbacks.append(langfuse_handler)
+
+        invoke_config: dict = {
             "configurable": {
                 "thread_id": message.thread_id,
                 "user_id": message.phone_number,
@@ -2299,7 +2316,17 @@ async def process_message(
                     if agente_runtime is not None else []
                 ),
             },
-            "callbacks": [ia_callback],
+            "callbacks": callbacks,
+            # Metadata anexada pela CallbackHandler do Langfuse à trace.
+            # Langfuse-specific keys (langfuse_user_id/session_id) ficam
+            # como facets no painel pra filtrar por cliente/conversa.
+            "metadata": {
+                "langfuse_user_id": message.phone_number,
+                "langfuse_session_id": message.thread_id,
+                "empresa_id": message.empresa_id,
+                "atendimento_id": message.atendimento_id,
+                "agent_id": message.agent_id,
+            },
         }
         graph = await load_graph(
             message.agent_id,
@@ -2313,6 +2340,24 @@ async def process_message(
             {"messages": [human_message]},
             config=invoke_config,
         )
+
+        # Sprint Langfuse — grava trace_id em message_queue pra deep-link
+        # do painel /atendimento → Langfuse UI por mensagem. Best-effort.
+        if langfuse_trace_id is not None:
+            try:
+                async with pool.connection() as _conn:
+                    await _conn.execute(
+                        "UPDATE message_queue SET langfuse_trace_id = %s "
+                        "WHERE id = %s",
+                        (langfuse_trace_id, message.id),
+                    )
+                    await _conn.commit()
+            except Exception as exc:
+                logger.warning(
+                    "langfuse_trace_id_update_failed",
+                    error=str(exc),
+                    message_id=message.id,
+                )
 
         # 4. Extrair resposta
         response_text = result["messages"][-1].content

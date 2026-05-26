@@ -84,6 +84,7 @@ async def registrar_execucao(
     atendimento_id: int | None = None,
     agente_ia_id: int | None = None,
     metadata: dict | None = None,
+    langfuse_trace_id: str | None = None,
 ) -> int:
     """Grava ia_execucao. Best-effort — falhas só logam, retorna 0."""
     import json
@@ -97,8 +98,9 @@ async def registrar_execucao(
                      modelo_provedor, modelo_nome,
                      tokens_input, tokens_output, tokens_cached,
                      custo_total, duracao_ms, tools_chamadas,
-                     status, erro_msg, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::text[], %s, %s, %s::jsonb)
+                     status, erro_msg, metadata, langfuse_trace_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::text[], %s, %s, %s::jsonb, %s)
                 RETURNING id
                 """,
                 (empresa_id, atendimento_id, agente_ia_id,
@@ -107,7 +109,8 @@ async def registrar_execucao(
                  Decimal(str(custo_total)) if custo_total is not None else None,
                  duracao_ms, list(tools_chamadas or []),
                  status, erro_msg,
-                 json.dumps(metadata or {})),
+                 json.dumps(metadata or {}),
+                 langfuse_trace_id),
             )
             row = await cur.fetchone()
             await conn.commit()

@@ -40,12 +40,14 @@ class IaExecucaoCallback(AsyncCallbackHandler):
         empresa_id: int,
         atendimento_id: int | None = None,
         agente_ia_id: int | None = None,
+        langfuse_trace_id: str | None = None,
     ) -> None:
         super().__init__()
         self.pool = pool
         self.empresa_id = empresa_id
         self.atendimento_id = atendimento_id
         self.agente_ia_id = agente_ia_id
+        self.langfuse_trace_id = langfuse_trace_id
         # Estado por run (LangChain re-usa instance entre calls; usamos
         # run_id como chave)
         self._starts: dict[UUID, float] = {}
@@ -135,6 +137,7 @@ class IaExecucaoCallback(AsyncCallbackHandler):
             status="success",
             atendimento_id=self.atendimento_id,
             agente_ia_id=self.agente_ia_id,
+            langfuse_trace_id=self.langfuse_trace_id,
         )
         if custo_total is not None and custo_total > 0:
             await acrescentar_consumo(self.pool, self.empresa_id, custo_total)
@@ -161,6 +164,7 @@ class IaExecucaoCallback(AsyncCallbackHandler):
             erro_msg=str(error)[:500],
             atendimento_id=self.atendimento_id,
             agente_ia_id=self.agente_ia_id,
+            langfuse_trace_id=self.langfuse_trace_id,
         )
 
     async def on_tool_start(

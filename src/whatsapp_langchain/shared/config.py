@@ -232,6 +232,32 @@ class Settings(BaseSettings):
     langchain_api_key: SecretStr | None = None
     langchain_project: str = ""
 
+    # --- Langfuse (opcional — observabilidade LLM self-hosted) ---
+    # Quando public_key + secret_key estão setadas, o worker injeta
+    # LangfuseCallbackHandler em invoke_config["callbacks"] e o loader
+    # tenta resolver SYSTEM_PROMPT via Langfuse Prompt Management (cai no
+    # arquivo Python como fallback). Sem as keys, todo o código é no-op.
+    #
+    # Host self-hosted padrão:
+    #   - dev rodando fora de Docker: http://localhost:3001
+    #   - dentro do compose principal alcançando stack langfuse local:
+    #     http://langfuse-web:3000 (compor as networks)
+    #   - prod Dokploy: https://langfuse.vsanexus.com
+    langfuse_host: str = "http://localhost:3001"
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    # Label do environment p/ filtrar traces no painel
+    # ("development" | "staging" | "production").
+    langfuse_environment: str = "development"
+    # Label usada pra resolver prompts (`langfuse.get_prompt(name, label=...)`).
+    # Convenção: "production" em prod, "latest" em dev pra ver mudanças imediatas.
+    langfuse_prompt_label: str = "latest"
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        """True quando ambas keys (public + secret) estão configuradas."""
+        return self.langfuse_public_key is not None and self.langfuse_secret_key is not None
+
     # --- Semantic Memory (LangGraph Store) ---
     memory_enabled: bool = True
     # Nome do modelo no OpenRouter (sem prefixo "openai:")

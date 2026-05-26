@@ -1,4 +1,4 @@
-.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both clean
+.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-reset clean
 
 # Cores para output
 CYAN := \033[36m
@@ -168,6 +168,29 @@ stress-evolution-docker: ## Stress Evolution via Docker (sem uv)
 
 stress-twilio-docker: ## Stress Twilio via Docker (precisa TWILIO_AUTH_TOKEN no env)
 	LOCUST_PROVIDER=twilio $(LOCUST_DOCKER)
+
+##@ Langfuse (observabilidade LLM self-hosted)
+# Stack separada (5 serviços de infra própria). Sobe sob demanda — não
+# acopla ao `make up`. Acessar em http://localhost:3001 após sobir.
+
+langfuse-up: ## Sobe stack Langfuse (web + worker + clickhouse + redis + minio + db)
+	docker compose -f docker-compose.langfuse.yml up -d
+	@echo ""
+	@echo "✅ Stack Langfuse iniciando — aguarde ~60s na 1ª subida (migrations + bootstrap)."
+	@echo "   Painel: http://localhost:3001"
+	@echo "   Health: curl http://localhost:3001/api/public/health"
+	@echo ""
+	@echo "Próximo passo: criar org+projeto no painel, copiar API keys pro .env."
+
+langfuse-down: ## Para stack Langfuse (mantém volumes)
+	docker compose -f docker-compose.langfuse.yml down
+
+langfuse-logs: ## Tail logs Langfuse (web + worker)
+	docker compose -f docker-compose.langfuse.yml logs -f langfuse-web langfuse-worker
+
+langfuse-reset: ## Reset total Langfuse (DROP volumes — perde traces + projetos)
+	docker compose -f docker-compose.langfuse.yml down -v
+	@echo "⚠️  Volumes removidos. Próximo langfuse-up parte do zero."
 
 ##@ Limpeza
 clean: ## Remove arquivos de cache do Python

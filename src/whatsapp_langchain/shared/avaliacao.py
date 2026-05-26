@@ -117,7 +117,85 @@ async def save_avaliacao(
         raise RuntimeError(
             f"Falha ao salvar avaliação para atendimento {atendimento_id}"
         )
+
+    # Sprint Langfuse — anexa nota como score na trace do agente. Busca
+    # o último ia_execucao do atendimento com trace_id e posta. Idempotente
+    # no Langfuse: chamar 2x com mesmo trace_id apenas atualiza valor/comentário.
+    # Best-effort: erro aqui não pode invalidar o save da nota.
+    try:
+        await _post_nps_to_langfuse(
+            pool,
+            atendimento_id=atendimento_id,
+            nota=nota,
+            comentario=comentario,
+        )
+    except Exception as exc:
+        import structlog as _structlog
+        _structlog.get_logger().warning(
+            "langfuse_nps_score_failed",
+            atendimento_id=atendimento_id,
+            error=str(exc),
+        )
+
     return int(row[0])
+
+
+async def _post_nps_to_langfuse(
+    pool: AsyncConnectionPool,
+    *,
+    atendimento_id: int,
+    nota: int | None,
+    comentario: str | None,
+) -> None:
+    """Resolve langfuse_trace_id do atendimento e posta score NPS.
+
+    Estratégia: pega a ÚLTIMA `ia_execucao` do atendimento com trace_id NOT NULL
+    (a mais recente = turno mais próximo do CSAT — best-effort, suficiente
+    em prática). Quando não encontra (Langfuse off na época ou atendimento
+    sem turno de IA), simplesmente não-op.
+    """
+    from whatsapp_langchain.shared import langfuse_client
+
+    if not langfuse_client.get_client():
+        return
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT langfuse_trace_id
+              FROM ia_execucao
+             WHERE atendimento_id = %s
+               AND langfuse_trace_id IS NOT NULL
+             ORDER BY id DESC
+             LIMIT 1
+            """,
+            (atendimento_id,),
+        )
+        row = await cur.fetchone()
+
+    trace_id = row[0] if row else None
+    if trace_id is None:
+        return
+
+    if nota is not None:
+        # Score numérico 0-10. Sem normalizar pra 0-1: deixar bruto facilita
+        # leitura no painel ("usuário deu 9" mais legível que "0.9").
+        langfuse_client.post_score(
+            trace_id=trace_id,
+            name="nps",
+            value=float(nota),
+            comment=comentario,
+            data_type="NUMERIC",
+        )
+    elif comentario:
+        # Comentário-only (2ª chamada do fluxo CSAT — janela 60s após a nota):
+        # grava como score TEXT separado pra preservar a categoria NUMERIC anterior.
+        langfuse_client.post_score(
+            trace_id=trace_id,
+            name="nps_comment",
+            value=comentario[:500],
+            data_type="TEXT",
+        )
 
 
 async def find_aguardando_avaliacao(

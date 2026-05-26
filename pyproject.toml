@@ -35,6 +35,10 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.30",
     # Sprint Wareline — cripto Fernet pra credenciais de integrações externas
     "cryptography>=42,<46",
+    # Langfuse — observabilidade LLM self-hosted (prompt mgmt + traces + scores).
+    # Opcional em runtime: settings.langfuse_enabled = (public_key + secret_key
+    # ambas setadas). Sem keys, todo código é no-op.
+    "langfuse>=3.0,<4.0",
 ]
 
 [project.optional-dependencies]

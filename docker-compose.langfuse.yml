@@ -1,0 +1,210 @@
+# Stack Langfuse v3 self-hosted (isolado do compose principal).
+#
+# Por que separado:
+#   Langfuse v3 exige ClickHouse + Redis + S3-compatible (Minio). Manter no
+#   compose principal acopla ~2GB RAM extra a qualquer `make up`. Aqui sobe
+#   sob demanda via `make langfuse-up`.
+#
+# Uso:
+#   make langfuse-up                 # sobe stack
+#   make langfuse-down               # derruba (mantém volumes)
+#   make langfuse-logs               # tail logs
+#   http://localhost:3001            # painel
+#
+# Bootstrap:
+#   1. make langfuse-up
+#   2. Acessar localhost:3001, criar organização + projeto
+#   3. Project Settings → API Keys → criar par
+#   4. Copiar pra .env:
+#        LANGFUSE_HOST=http://localhost:3001       (dev fora do compose)
+#        LANGFUSE_PUBLIC_KEY=pk-lf-...
+#        LANGFUSE_SECRET_KEY=sk-lf-...
+#   5. (opcional) make up && testar webhook → trace aparece em localhost:3001
+#
+# Prod (Dokploy):
+#   Segundo Compose service no mesmo projeto vsanexus. Setar:
+#     NEXTAUTH_URL=https://langfuse.vsanexus.com
+#     SALT=<openssl rand -hex 32>
+#     ENCRYPTION_KEY=<openssl rand -hex 32>
+#   Domínio aponta pra langfuse-web:3000 (cuidado bug addPrefix path != "/").
+
+services:
+  langfuse-db:
+    image: postgres:16-alpine
+    container_name: langfuse-db
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse_dev_password
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - langfuse_net
+    restart: unless-stopped
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: langfuse-clickhouse
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse_dev_password
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user clickhouse --password clickhouse_dev_password --query='SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - langfuse_net
+    restart: unless-stopped
+
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: langfuse-redis
+    command: ["redis-server", "--requirepass", "redis_dev_password", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_dev_password", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - langfuse_net
+    restart: unless-stopped
+
+  langfuse-minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: langfuse-minio
+    command: server --address ":9000" --console-address ":9001" /data
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio_dev_password
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - langfuse_net
+    restart: unless-stopped
+
+  langfuse-minio-init:
+    # Cria buckets esperados (events, media) no primeiro boot. Termina após
+    # criar — `restart: no` mantém compose limpo. Idempotente: mc mb --ignore-existing.
+    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    container_name: langfuse-minio-init
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://langfuse-minio:9000 minio minio_dev_password &&
+      mc mb --ignore-existing local/langfuse-events &&
+      mc mb --ignore-existing local/langfuse-media &&
+      echo 'buckets ready'
+      "
+    networks:
+      - langfuse_net
+    restart: "no"
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment: &langfuse_env
+      DATABASE_URL: postgresql://langfuse:langfuse_dev_password@langfuse-db:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-langfuse_dev_salt_change_in_prod_min_32_chars!!}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse_dev_password
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: redis_dev_password
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: minio_dev_password
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse-media
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: minio_dev_password
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+    networks:
+      - langfuse_net
+    restart: unless-stopped
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: langfuse-web
+    depends_on:
+      langfuse-worker:
+        condition: service_started
+    ports:
+      # 3001 externo p/ não colidir com frontend Next.js (3000)
+      - "3001:3000"
+    environment:
+      <<: *langfuse_env
+      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3001}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-langfuse_dev_nextauth_secret_change_min_32!!}
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    healthcheck:
+      # Next.js standalone bind no IP da rede do container (não em localhost),
+      # então localhost dá Connection refused. $HOSTNAME = nome do container
+      # = registrado no DNS interno do Docker → resolve no IP correto.
+      # `$$` no compose vira `$` no shell do container.
+      test: ["CMD-SHELL", "wget -q --spider http://$$HOSTNAME:3000/api/public/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+    networks:
+      - langfuse_net
+    restart: unless-stopped
+
+networks:
+  langfuse_net:
+    name: langfuse_net
+    driver: bridge
+
+volumes:
+  langfuse_postgres_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:
