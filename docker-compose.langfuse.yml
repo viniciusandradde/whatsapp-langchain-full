@@ -168,20 +168,14 @@ services:
     depends_on:
       langfuse-worker:
         condition: service_started
-    ports:
-      # Porta no HOST → 3000 interno. Default 3001 (dev local; evita colidir
-      # com frontend Next.js em 3000).
-      #
-      # Em Dokploy: Traefik roteia via hostname (langfuse.vsanexus.com →
-      # langfuse-web:3000), então essa porta de host é IRRELEVANTE pro
-      # acesso externo. Mas se 3001 já estiver em uso no host Dokploy
-      # (outro projeto), o container nem sobe.
-      #
-      # Soluções em Dokploy:
-      #   1) Setar env LANGFUSE_HOST_PORT=19001 (ou qualquer porta livre)
-      #   2) Setar LANGFUSE_HOST_PORT=127.0.0.1:19001 (binda só em loopback)
-      #   3) Comentar a linha inteira (acesso só via domínio, mais limpo)
-      - "${LANGFUSE_HOST_PORT:-3001}:3000"
+    expose:
+      # Porta interna acessível na rede do compose. Traefik (Dokploy) /
+      # langfuse_net (local) roteiam via hostname `langfuse-web:3000` —
+      # sem bind no host evita conflito de porta entre projetos. Em dev
+      # local: `docker compose -f docker-compose.langfuse.yml exec
+      # langfuse-web wget -qO- http://localhost:3000/api/public/health`
+      # ou acesse via Dokploy/Traefik com Domain configurado.
+      - "3000"
     environment:
       <<: *langfuse_env
       NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3001}

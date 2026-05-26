@@ -1,4 +1,4 @@
-.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-reset clean
+.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
 
 # Cores para output
 CYAN := \033[36m
@@ -177,16 +177,27 @@ langfuse-up: ## Sobe stack Langfuse (web + worker + clickhouse + redis + minio +
 	docker compose -f docker-compose.langfuse.yml up -d
 	@echo ""
 	@echo "✅ Stack Langfuse iniciando — aguarde ~60s na 1ª subida (migrations + bootstrap)."
-	@echo "   Painel: http://localhost:3001"
-	@echo "   Health: curl http://localhost:3001/api/public/health"
 	@echo ""
-	@echo "Próximo passo: criar org+projeto no painel, copiar API keys pro .env."
+	@echo "Compose NÃO publica porta no host (evita conflito multi-projeto)."
+	@echo "Pra acessar o painel em DEV local, opções:"
+	@echo "  1) Traefik local com Domain langfuse.localhost → langfuse-web:3000"
+	@echo "  2) Bind ad-hoc temporário:"
+	@echo "       docker run --rm -d --name lf-proxy --network langfuse_net \\"
+	@echo "         -p 3001:3000 alpine/socat tcp-listen:3000,fork tcp:langfuse-web:3000"
+	@echo "     Acessar: http://localhost:3001"
+	@echo "  3) Em Dokploy: configurar Domain no service (Traefik roteia)."
+	@echo ""
+	@echo "Health interno: make langfuse-health"
 
 langfuse-down: ## Para stack Langfuse (mantém volumes)
 	docker compose -f docker-compose.langfuse.yml down
 
 langfuse-logs: ## Tail logs Langfuse (web + worker)
 	docker compose -f docker-compose.langfuse.yml logs -f langfuse-web langfuse-worker
+
+langfuse-health: ## Bate no /api/public/health dentro da rede do compose
+	docker compose -f docker-compose.langfuse.yml exec langfuse-web \
+	  sh -c 'wget -qO- http://$$HOSTNAME:3000/api/public/health' && echo ""
 
 langfuse-reset: ## Reset total Langfuse (DROP volumes — perde traces + projetos)
 	docker compose -f docker-compose.langfuse.yml down -v

@@ -23,30 +23,52 @@ make langfuse-down         # derruba (mantém volumes)
 make langfuse-reset        # DROP volumes (perde traces e projetos)
 ```
 
-A 1ª subida demora ~60s (migrations ClickHouse + bootstrap web). Health check:
+A 1ª subida demora ~60s (migrations ClickHouse + bootstrap web). Health check
+(dentro da rede do compose):
 
 ```bash
-curl -fsS http://localhost:3001/api/public/health
+docker compose -f docker-compose.langfuse.yml exec langfuse-web \
+  wget -qO- http://$HOSTNAME:3000/api/public/health
 ```
+
+**Acesso pelo navegador em DEV local**: o compose **não publica porta** no
+host (escolha de design pra não conflitar com outros projetos no host
+Dokploy). Opções:
+
+1. **Acessar via Traefik local** (se já tem Dokploy/Traefik rodando local):
+   adicionar Domain `langfuse.localhost`.
+2. **Bind ad-hoc**: `docker run --rm --network langfuse_net -p 3001:3000
+   alpine sh -c "apk add socat && socat tcp-listen:3000,fork
+   tcp:langfuse-web:3000"` (gambiarra).
+3. **Mais simples — descomentar ports em dev**: editar localmente
+   `docker-compose.langfuse.yml` voltando o bloco `ports: - "3001:3000"`
+   no service `langfuse-web` e fazer `make langfuse-up`. NÃO commitar.
+
+Em **Dokploy** (prod): Traefik roteia `langfuse.<domain>` → `langfuse-web:3000`
+sem precisar de porta de host.
 
 **RAM**: ClickHouse + Postgres dedicado + Minio + Redis pesam ~1.5GB. Por isso
 a stack vive em `docker-compose.langfuse.yml` separado e não sobe junto com
 `make up`. A network `langfuse_net` é isolada do compose principal.
 
-**Porta**: `langfuse-web` é exposto em **3001** (não 3000) pra evitar
-conflito com o frontend Next.js do projeto.
-
 ---
 
 ## 2. Criar projeto + copiar API keys
 
-1. Acessar <http://localhost:3001>
+1. Acessar pela URL escolhida no passo anterior (Traefik local com Domain,
+   ou ad-hoc com `ports: 3001:3000` em dev).
 2. Criar organização (ex: `nexus`) → projeto (ex: `whatsapp-langchain-dev`)
 3. Settings → API Keys → **Create new API keys**
 4. Copiar para o `.env` da aplicação principal:
 
    ```bash
-   LANGFUSE_HOST=http://localhost:3001
+   # Em dev local fora do compose Langfuse (host bare-metal):
+   LANGFUSE_HOST=http://localhost:3001     # (se publicou porta ad-hoc)
+   # Em dev rodando API/Worker dentro de um compose com rede compartilhada:
+   # LANGFUSE_HOST=http://langfuse-web:3000
+   # Em prod Dokploy:
+   # LANGFUSE_HOST=https://langfuse.vsanexus.com
+
    LANGFUSE_PUBLIC_KEY=pk-lf-xxxxxxxx
    LANGFUSE_SECRET_KEY=sk-lf-xxxxxxxx
    LANGFUSE_ENVIRONMENT=development
@@ -232,10 +254,9 @@ devem mostrar `langfuse_client_initialized host=https://langfuse.vsanexus.com`.
 - **Bug `addPrefix`**: ao configurar Domains, manter path `/` (não usar
   `/langfuse` ou similar) — Traefik do Dokploy tem bug que injeta
   redirects errados quando path != "/". Vide [[reference_dokploy]].
-- **Não mapear porta no host**: o `ports: 3001:3000` do compose é só
-  pra dev local. Em Dokploy o roteamento é via Traefik na rede interna
-  do projeto — você pode remover essa linha em prod ou deixar (Dokploy
-  ignora porta de host quando você usa Domain).
+- **Sem `ports:` no compose**: o service `langfuse-web` usa `expose: 3000`
+  em vez de `ports: host:container`. Traefik roteia via hostname interno.
+  Vantagem: zero conflito de porta entre projetos no mesmo host Dokploy.
 
 ---
 
