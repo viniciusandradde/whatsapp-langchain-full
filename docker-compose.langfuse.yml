@@ -178,6 +178,11 @@ services:
       - "3000"
     environment:
       <<: *langfuse_env
+      # CRÍTICO em Dokploy: força Next.js bindar em 0.0.0.0 (todas interfaces).
+      # Sem isso o Node escolhe SÓ a primeira network atachada (langfuse_net
+      # ou compose default), e o Traefik (que alcança via dokploy-network)
+      # recebe Bad Gateway porque não tem listener naquele IP.
+      HOSTNAME: "0.0.0.0"
       NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-langfuse_dev_nextauth_secret_change_min_32!!}
       LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
@@ -190,11 +195,9 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
     healthcheck:
-      # Next.js standalone bind no IP da rede do container (não em localhost),
-      # então localhost dá Connection refused. $HOSTNAME = nome do container
-      # = registrado no DNS interno do Docker → resolve no IP correto.
-      # `$$` no compose vira `$` no shell do container.
-      test: ["CMD-SHELL", "wget -q --spider http://$$HOSTNAME:3000/api/public/health || exit 1"]
+      # Com HOSTNAME=0.0.0.0 setado, Node binda em todas interfaces incl.
+      # 127.0.0.1 — então localhost funciona dentro do container.
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/public/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
