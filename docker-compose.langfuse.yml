@@ -42,8 +42,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - langfuse_net
     restart: unless-stopped
 
   langfuse-clickhouse:
@@ -64,8 +62,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - langfuse_net
     restart: unless-stopped
 
   langfuse-redis:
@@ -76,8 +72,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - langfuse_net
     restart: unless-stopped
 
   langfuse-minio:
@@ -93,8 +87,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - langfuse_net
     restart: unless-stopped
 
   langfuse-minio-init:
@@ -111,8 +103,6 @@ services:
       mc mb --ignore-existing local/langfuse-media &&
       echo 'buckets ready'
       "
-    networks:
-      - langfuse_net
     restart: "no"
 
   langfuse-worker:
@@ -152,8 +142,6 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: minio_dev_password
       LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
-    networks:
-      - langfuse_net
     restart: unless-stopped
 
   langfuse-web:
@@ -169,19 +157,16 @@ services:
       langfuse-worker:
         condition: service_started
     expose:
-      # Porta interna acessível na rede do compose. Traefik (Dokploy) /
-      # langfuse_net (local) roteiam via hostname `langfuse-web:3000` —
-      # sem bind no host evita conflito de porta entre projetos. Em dev
-      # local: `docker compose -f docker-compose.langfuse.yml exec
-      # langfuse-web wget -qO- http://localhost:3000/api/public/health`
-      # ou acesse via Dokploy/Traefik com Domain configurado.
+      # Porta interna acessível na rede default do compose. Traefik
+      # (Dokploy) alcança via dokploy-network (Dokploy injeta automaticamente).
+      # Sem bind no host = zero conflito de porta entre projetos.
       - "3000"
     environment:
       <<: *langfuse_env
       # CRÍTICO em Dokploy: força Next.js bindar em 0.0.0.0 (todas interfaces).
-      # Sem isso o Node escolhe SÓ a primeira network atachada (langfuse_net
-      # ou compose default), e o Traefik (que alcança via dokploy-network)
-      # recebe Bad Gateway porque não tem listener naquele IP.
+      # Sem isso o Node escolhe SÓ a primeira network do container, e o
+      # Traefik tentando alcançar via dokploy-network recebe Connection
+      # refused / Bad Gateway.
       HOSTNAME: "0.0.0.0"
       NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-langfuse_dev_nextauth_secret_change_min_32!!}
@@ -202,14 +187,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 90s
-    networks:
-      - langfuse_net
     restart: unless-stopped
-
-networks:
-  langfuse_net:
-    name: langfuse_net
-    driver: bridge
 
 volumes:
   langfuse_postgres_data:
