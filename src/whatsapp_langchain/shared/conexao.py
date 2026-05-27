@@ -241,7 +241,27 @@ async def upsert_conexao(
         )
         row = await cur.fetchone()
     assert row is not None
-    return _row_to_conexao(row)
+    result = _row_to_conexao(row)
+
+    # Twilio (sandbox e prod) não tem callback/QR de ativação como WABA/Evolution
+    # — número global compartilhado (sandbox) ou número provisionado direto na
+    # console Twilio (prod). "Conectividade técnica" depende só de webhook
+    # configurado na console + opt-in do destinatário, ambos fora da nossa API.
+    # Mantemos `connection_state='pending'` (default da mig 092) faz a UI exibir
+    # "Não" pra Ativo indefinidamente. Promover pra 'open' aqui evita esse gap.
+    if result.provider in ("twilio_sandbox", "twilio_prod"):
+        await set_connection_state(
+            pool,
+            result.id,
+            state="open",
+            message="Twilio ready (configurar webhook na console + opt-in)",
+        )
+        result.connection_state = "open"
+        result.state_message = (
+            "Twilio ready (configurar webhook na console + opt-in)"
+        )
+
+    return result
 
 
 async def patch_conexao(

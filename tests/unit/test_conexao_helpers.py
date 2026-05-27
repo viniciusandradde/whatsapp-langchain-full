@@ -27,7 +27,10 @@ def _row(
     status="active",
     is_default=True,
     payload_json=None,
+    connection_state="pending",
+    state_message=None,
 ):
+    """Tupla mockada de SELECT (ordem bate com _SELECT_COLS em conexao.py)."""
     now = datetime.now(UTC)
     return (
         id_,
@@ -42,6 +45,19 @@ def _row(
         payload_json or {},
         now,
         now,
+        "ia",            # tipo_atendimento
+        None,            # whatsapp_state
+        None,            # waba_account_id
+        None,            # waba_phone_id
+        None,            # waba_app_id
+        None,            # waba_account_description
+        connection_state,
+        state_message,
+        None,            # qr_code
+        None,            # qr_expires_at
+        None,            # ultimo_health_check_at
+        None,            # ultimo_health_check_ok
+        None,            # webhook_verify_token
     )
 
 
@@ -100,7 +116,9 @@ async def test_list_conexoes_filters_by_empresa():
 
 @pytest.mark.asyncio
 async def test_upsert_conexao_returns_persisted_row():
-    pool, conn = _mock_pool(_row(id_=10, from_number="+1555NEW"))
+    pool, conn = _mock_pool(
+        _row(id_=10, provider="twilio_prod", from_number="+1555NEW")
+    )
     data = ConexaoInput(
         provider="twilio_prod",
         from_number="+1555NEW",
@@ -110,10 +128,54 @@ async def test_upsert_conexao_returns_persisted_row():
     out = await upsert_conexao(pool, 1, data)
     assert out.id == 10
     assert out.from_number == "+1555NEW"
-    # INSERT executado
-    sql = conn.execute.await_args.args[0]
-    assert "INSERT INTO conexao" in sql
-    assert "ON CONFLICT (from_number)" in sql
+    # INSERT executado (1ª execute do conn)
+    first_sql = conn.execute.await_args_list[0].args[0]
+    assert "INSERT INTO conexao" in first_sql
+    assert "ON CONFLICT" in first_sql
+
+
+@pytest.mark.asyncio
+async def test_upsert_conexao_twilio_promotes_to_open():
+    """Twilio (sandbox/prod) não tem callback de ativação como WABA/Evolution —
+    `upsert_conexao` deve transicionar `connection_state` direto pra 'open'.
+    Sem isso UI mostra "Pendente" indefinidamente."""
+    pool, conn = _mock_pool(_row(id_=20, provider="twilio_sandbox"))
+    data = ConexaoInput(
+        provider="twilio_sandbox",
+        from_number="+14155238886",
+        display_name="Sandbox",
+        default_agent_id="vsa_tech",
+    )
+    out = await upsert_conexao(pool, 1, data)
+    assert out.connection_state == "open"
+    assert out.state_message is not None and "Twilio" in out.state_message
+    # 2 SQLs: INSERT + UPDATE connection_state (set_connection_state)
+    sqls = [call.args[0] for call in conn.execute.await_args_list]
+    assert any("INSERT INTO conexao" in s for s in sqls)
+    assert any(
+        "UPDATE conexao" in s and "connection_state" in s for s in sqls
+    )
+
+
+@pytest.mark.asyncio
+async def test_upsert_conexao_waba_stays_pending():
+    """WABA tem fluxo OAuth próprio — connection_state NÃO deve ser tocado
+    pelo upsert (transição vira via /waba/finalize)."""
+    pool, conn = _mock_pool(_row(id_=30, provider="waba", from_number="+5511WABA"))
+    data = ConexaoInput(
+        provider="waba",
+        from_number="+5511WABA",
+        display_name="WABA prod",
+        default_agent_id="vsa_tech",
+    )
+    out = await upsert_conexao(pool, 1, data)
+    assert out.connection_state == "pending"  # default da mig 092 preservado
+    # Só 1 SQL: INSERT (nenhum UPDATE de connection_state)
+    sqls = [call.args[0] for call in conn.execute.await_args_list]
+    assert sum(1 for s in sqls if "INSERT INTO conexao" in s) == 1
+    assert not any(
+        "UPDATE conexao" in s and "connection_state" in s for s in sqls
+    )
 
 
 @pytest.mark.asyncio
