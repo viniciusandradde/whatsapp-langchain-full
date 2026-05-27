@@ -178,6 +178,97 @@ async def test_upsert_conexao_waba_stays_pending():
     )
 
 
+# ----------------------- Sprint Conexão Padrão -----------------------
+
+
+@pytest.mark.asyncio
+async def test_patch_conexao_is_default_unsets_others():
+    """Marcar is_default=True deve UNSET as outras da mesma empresa ANTES
+    do UPDATE alvo (guarda contra UNIQUE INDEX parcial da mig 108)."""
+    from whatsapp_langchain.shared.conexao import patch_conexao
+
+    pool, conn = _mock_pool(_row(id_=5, is_default=True))
+    out = await patch_conexao(pool, 5, is_default=True)
+    assert out is not None
+    assert out.is_default is True
+    sqls = [call.args[0] for call in conn.execute.await_args_list]
+    # Deve ter 2 execuções: unset batch + UPDATE alvo
+    assert len(sqls) == 2
+    unset_sql = sqls[0]
+    target_sql = sqls[1]
+    # 1º statement: unset is_default=FALSE em outras conexões da mesma empresa
+    assert "UPDATE conexao" in unset_sql
+    assert "is_default = FALSE" in unset_sql
+    assert "id != %s" in unset_sql
+    assert "empresa_id =" in unset_sql
+    # 2º statement: UPDATE alvo com is_default=TRUE
+    assert "UPDATE conexao SET" in target_sql
+    assert "is_default = %s" in target_sql
+
+
+@pytest.mark.asyncio
+async def test_patch_conexao_is_default_false_does_not_unset():
+    """Desmarcar (is_default=False) NÃO deve disparar unset batch — só altera
+    a row alvo, deixando empresa eventualmente sem padrão (válido)."""
+    from whatsapp_langchain.shared.conexao import patch_conexao
+
+    pool, conn = _mock_pool(_row(id_=5, is_default=False))
+    await patch_conexao(pool, 5, is_default=False)
+    sqls = [call.args[0] for call in conn.execute.await_args_list]
+    # Apenas 1 execução (o UPDATE alvo)
+    assert len(sqls) == 1
+    assert "UPDATE conexao SET" in sqls[0]
+    # Não deve haver unset batch ("WHERE id != %s AND is_default = TRUE")
+    assert not any(
+        "is_default = FALSE" in s and "id != %s" in s for s in sqls
+    )
+
+
+@pytest.mark.asyncio
+async def test_upsert_conexao_is_default_unsets_others():
+    """upsert com is_default=True também precisa desligar outras pra evitar
+    violação do UNIQUE INDEX da mig 108."""
+    pool, conn = _mock_pool(
+        _row(id_=10, provider="twilio_prod", from_number="+1555NEW", is_default=True)
+    )
+    data = ConexaoInput(
+        provider="twilio_prod",
+        from_number="+1555NEW",
+        display_name="prod default",
+        default_agent_id="vsa_tech",
+        is_default=True,
+    )
+    await upsert_conexao(pool, 1, data)
+    sqls = [call.args[0] for call in conn.execute.await_args_list]
+    # 1º SQL: unset batch das outras com is_default=TRUE da mesma empresa
+    assert "UPDATE conexao SET is_default = FALSE" in sqls[0]
+    assert "empresa_id = %s" in sqls[0]
+    assert "from_number != %s" in sqls[0]
+    # 2º SQL: INSERT da nova conexão (com is_default=TRUE)
+    assert "INSERT INTO conexao" in sqls[1]
+
+
+@pytest.mark.asyncio
+async def test_upsert_conexao_is_default_false_does_not_unset():
+    """Sem is_default=True no input, upsert não deve fazer batch unset."""
+    pool, conn = _mock_pool(
+        _row(id_=11, provider="twilio_prod", from_number="+1555OTHER", is_default=False)
+    )
+    data = ConexaoInput(
+        provider="twilio_prod",
+        from_number="+1555OTHER",
+        display_name="not default",
+        default_agent_id="vsa_tech",
+        is_default=False,
+    )
+    await upsert_conexao(pool, 1, data)
+    sqls = [call.args[0] for call in conn.execute.await_args_list]
+    # Sem batch unset — só INSERT (+ UPDATE connection_state pra Twilio)
+    assert not any(
+        "UPDATE conexao SET is_default = FALSE" in s for s in sqls
+    )
+
+
 @pytest.mark.asyncio
 async def test_set_conexao_status_runs_update():
     pool, conn = _mock_pool()
