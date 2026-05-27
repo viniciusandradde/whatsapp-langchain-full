@@ -108,7 +108,13 @@ class TwilioClient:
         self.delivery_mode = delivery_mode
         self.messages_url = TWILIO_MESSAGES_URL.format(account_sid=account_sid)
 
-    async def send_message(self, to: str, body: str) -> str:
+    async def send_message(
+        self,
+        to: str,
+        body: str,
+        *,
+        media_urls: list[str] | None = None,
+    ) -> str:
         """Envia mensagem WhatsApp via Twilio Messages API.
 
         Faz POST para /Messages.json com autenticação Basic Auth
@@ -117,6 +123,10 @@ class TwilioClient:
         Args:
             to: Número destino em E.164 (ex: +5511999999999).
             body: Texto da mensagem a enviar.
+            media_urls: URLs públicas (max 10) de mídia a anexar (image/audio/
+                video/PDF). Twilio aceita `MediaUrl` repetido no form data.
+                Quando setado, chunking é DESLIGADO (mídia é atômica — Twilio
+                envia 1 mensagem com body + mídias).
 
         Returns:
             SID da mensagem criada no Twilio (ex: SMxxxxxxxx).
@@ -124,7 +134,16 @@ class TwilioClient:
         Raises:
             TwilioSendError: Se a API retornar erro (4xx/5xx).
         """
-        chunks = split_message_body(body)
+        if media_urls and len(media_urls) > 10:
+            raise ValueError(
+                f"media_urls aceita no máximo 10 URLs, recebido: {len(media_urls)}"
+            )
+
+        # Chunking só pra texto puro — mídia é atômica
+        if media_urls:
+            chunks = [body]
+        else:
+            chunks = split_message_body(body)
         chunk_count = len(chunks)
 
         if chunk_count > 1:
@@ -146,20 +165,34 @@ class TwilioClient:
                     body_length=len(chunk),
                     chunk_index=idx,
                     chunk_count=chunk_count,
+                    media_count=len(media_urls or []),
                 )
             return last_sid
+
+        from urllib.parse import urlencode
 
         last_sid = ""
         async with httpx.AsyncClient() as http:
             for idx, chunk in enumerate(chunks, start=1):
+                # Serializa manualmente pra suportar MediaUrl repetido.
+                # `data=list[tuple]` aciona bug do httpx ("sync request with
+                # AsyncClient"); urlencode(doseq=True) + content=str + header
+                # explícito é o caminho robusto.
+                form: list[tuple[str, str]] = [
+                    ("From", self.from_number),
+                    ("To", f"whatsapp:{to}"),
+                    ("Body", chunk),
+                ]
+                # Anexa mídias APENAS no 1º chunk (com media, len(chunks)==1)
+                if media_urls and idx == 1:
+                    for url in media_urls:
+                        form.append(("MediaUrl", url))
+
                 response = await http.post(
                     self.messages_url,
                     auth=(self.api_key_sid, self.api_key_secret),
-                    data={
-                        "From": self.from_number,
-                        "To": f"whatsapp:{to}",
-                        "Body": chunk,
-                    },
+                    content=urlencode(form, doseq=True),
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                     timeout=15.0,
                 )
 
@@ -173,6 +206,7 @@ class TwilioClient:
                         chunk_index=idx,
                         chunk_count=chunk_count,
                         body_length=len(chunk),
+                        media_count=len(media_urls or []),
                     )
                     raise TwilioSendError(response.status_code, detail)
 
@@ -187,9 +221,97 @@ class TwilioClient:
                     body_length=len(chunk),
                     chunk_index=idx,
                     chunk_count=chunk_count,
+                    media_count=len(media_urls or []),
                 )
 
         return last_sid
+
+    async def send_template(
+        self,
+        to: str,
+        content_sid: str,
+        content_variables: dict[str, str] | None = None,
+    ) -> str:
+        """Envia template HSM (Content API) via Twilio Messages API.
+
+        Usado pra mandar mensagem FORA da janela de 24h (cliente não interagiu
+        nos últimos 1 dia) — Twilio só permite via template aprovado. Útil pra
+        notificação ativa: lembrete agendamento, CSAT proativo, alerta.
+
+        Args:
+            to: Número destino em E.164 (ex: +5511999999999).
+            content_sid: SID do template aprovado no Twilio Content Editor
+                (ex: HXb5b62575e6e4ff6129ad7c8efe1f983e — sample appointment).
+            content_variables: Dict de variáveis (chaves "1","2",... — Twilio
+                exige formato JSON com chaves stringificadas). Quando None,
+                template é enviado sem substituição.
+
+        Returns:
+            SID da mensagem criada no Twilio.
+
+        Raises:
+            TwilioSendError: Se a API retornar erro (4xx/5xx).
+
+        Example:
+            >>> await client.send_template(
+            ...     to="+5511999999999",
+            ...     content_sid="HXb5b62575e6e4ff6129ad7c8efe1f983e",
+            ...     content_variables={"1": "12/1", "2": "3pm"},
+            ... )
+        """
+        import json
+
+        if not content_sid:
+            raise ValueError("content_sid não pode ser vazio")
+
+        if self.delivery_mode == "mock":
+            sid = f"SM{uuid.uuid4().hex}"
+            logger.info(
+                "twilio_template_mocked",
+                to=to,
+                sid=sid,
+                content_sid=content_sid,
+                variables=content_variables,
+            )
+            return sid
+
+        data: dict[str, str] = {
+            "From": self.from_number,
+            "To": f"whatsapp:{to}",
+            "ContentSid": content_sid,
+        }
+        if content_variables:
+            data["ContentVariables"] = json.dumps(content_variables)
+
+        async with httpx.AsyncClient() as http:
+            response = await http.post(
+                self.messages_url,
+                auth=(self.api_key_sid, self.api_key_secret),
+                data=data,
+                timeout=15.0,
+            )
+
+        if not response.is_success:
+            detail = response.text[:500]
+            logger.error(
+                "twilio_template_send_failed",
+                to=to,
+                content_sid=content_sid,
+                status_code=response.status_code,
+                detail=detail,
+            )
+            raise TwilioSendError(response.status_code, detail)
+
+        result = response.json()
+        sid = result["sid"]
+        logger.info(
+            "twilio_template_sent",
+            to=to,
+            sid=sid,
+            content_sid=content_sid,
+            status=result.get("status"),
+        )
+        return sid
 
     async def send_typing(self, to: str, message_id: str | None = None) -> bool:
         """Envia indicador de digitação via Twilio (Public Beta, out/2025).

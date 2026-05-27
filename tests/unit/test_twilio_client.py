@@ -328,3 +328,165 @@ class TestMockMode:
         sid = await client.send_message("+5511999999999", "Olá!")
         assert sid.startswith("SM")
         assert len(sid) == 34
+
+
+class TestSendMessageWithMedia:
+    """Sprint Twilio Gap 2 — outbound media (media_urls param).
+
+    Usa respx (já em deps do projeto) — o pattern monkeypatch antigo dos
+    outros TestSendMessage não funciona com httpx atual.
+    """
+
+    @pytest.mark.respx
+    async def test_includes_media_url_in_payload(self, client, respx_mock):
+        respx_mock.post(client.messages_url).mock(
+            return_value=httpx.Response(
+                201, json={"sid": "SM_media", "status": "queued"}
+            )
+        )
+        sid = await client.send_message(
+            "+5511999999999",
+            "Aqui está o relatório:",
+            media_urls=["https://cdn.example.com/relatorio.pdf"],
+        )
+        assert sid == "SM_media"
+        # Inspeciona request capturada
+        captured = respx_mock.calls.last.request
+        parsed = parse_qs(captured.content.decode())
+        assert parsed["MediaUrl"] == ["https://cdn.example.com/relatorio.pdf"]
+        assert parsed["Body"] == ["Aqui está o relatório:"]
+
+    @pytest.mark.respx
+    async def test_includes_multiple_media_urls(self, client, respx_mock):
+        respx_mock.post(client.messages_url).mock(
+            return_value=httpx.Response(
+                201, json={"sid": "SM_multi", "status": "queued"}
+            )
+        )
+        await client.send_message(
+            "+5511999999999",
+            "Galeria:",
+            media_urls=[
+                "https://cdn.example.com/1.jpg",
+                "https://cdn.example.com/2.jpg",
+                "https://cdn.example.com/3.jpg",
+            ],
+        )
+        captured = respx_mock.calls.last.request
+        parsed = parse_qs(captured.content.decode())
+        assert sorted(parsed["MediaUrl"]) == sorted([
+            "https://cdn.example.com/1.jpg",
+            "https://cdn.example.com/2.jpg",
+            "https://cdn.example.com/3.jpg",
+        ])
+
+    async def test_rejects_more_than_10_media_urls(self, client):
+        with pytest.raises(ValueError, match="máximo 10"):
+            await client.send_message(
+                "+5511999999999",
+                "ops",
+                media_urls=[f"https://cdn/{i}.jpg" for i in range(11)],
+            )
+
+    @pytest.mark.respx
+    async def test_media_disables_chunking(self, client, respx_mock):
+        """Mensagem longa COM media não é fatiada — mídia é atômica."""
+        route = respx_mock.post(client.messages_url).mock(
+            return_value=httpx.Response(201, json={"sid": "SM_x", "status": "queued"})
+        )
+        long_body = "a" * 4000  # forçaria 3 chunks sem mídia
+        await client.send_message(
+            "+5511999999999",
+            long_body,
+            media_urls=["https://cdn.example.com/x.jpg"],
+        )
+        assert route.call_count == 1  # 1 POST só, não 3 chunks
+
+
+class TestSendTemplate:
+    """Sprint Twilio Gap 3 — templates HSM (Content API)."""
+
+    async def test_sends_template_with_content_sid(self, client, monkeypatch):
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["content"] = request.content.decode()
+            return httpx.Response(201, json={"sid": "SM_tpl", "status": "queued"})
+
+        transport = httpx.MockTransport(handler)
+        original_init = httpx.AsyncClient.__init__
+
+        def patched_init(self_client, **kwargs):
+            kwargs["transport"] = transport
+            original_init(self_client, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+        sid = await client.send_template(
+            to="+5511999999999",
+            content_sid="HXb5b62575e6e4ff6129ad7c8efe1f983e",
+            content_variables={"1": "12/1", "2": "3pm"},
+        )
+        assert sid == "SM_tpl"
+        parsed = parse_qs(captured["content"])
+        assert parsed["ContentSid"] == ["HXb5b62575e6e4ff6129ad7c8efe1f983e"]
+        # ContentVariables vai como JSON string
+        import json as _json
+        assert _json.loads(parsed["ContentVariables"][0]) == {"1": "12/1", "2": "3pm"}
+        # Sem Body no template
+        assert "Body" not in parsed
+
+    async def test_template_without_variables(self, client, monkeypatch):
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["content"] = request.content.decode()
+            return httpx.Response(201, json={"sid": "SM_tpl2", "status": "queued"})
+
+        transport = httpx.MockTransport(handler)
+        original_init = httpx.AsyncClient.__init__
+
+        def patched_init(self_client, **kwargs):
+            kwargs["transport"] = transport
+            original_init(self_client, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+        await client.send_template(
+            to="+5511999999999",
+            content_sid="HXabc123",
+        )
+        parsed = parse_qs(captured["content"])
+        assert parsed["ContentSid"] == ["HXabc123"]
+        assert "ContentVariables" not in parsed
+
+    async def test_template_rejects_empty_content_sid(self, client):
+        with pytest.raises(ValueError, match="content_sid"):
+            await client.send_template(to="+5511999999999", content_sid="")
+
+    async def test_template_raises_on_4xx(self, client, monkeypatch):
+        transport = mock_transport(
+            400,
+            {"code": 63016, "message": "Template not approved or expired"},
+        )
+        original_init = httpx.AsyncClient.__init__
+
+        def patched_init(self_client, **kwargs):
+            kwargs["transport"] = transport
+            original_init(self_client, **kwargs)
+
+        monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+        with pytest.raises(TwilioSendError) as exc_info:
+            await client.send_template(to="+5511999999999", content_sid="HXxxx")
+        assert exc_info.value.status_code == 400
+
+    async def test_mock_mode_template(self):
+        client = TwilioClient("", "", "", "", delivery_mode="mock")
+        sid = await client.send_template(
+            to="+5511999999999",
+            content_sid="HXmock",
+            content_variables={"1": "test"},
+        )
+        assert sid.startswith("SM")
+        assert len(sid) == 34
