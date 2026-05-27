@@ -330,3 +330,108 @@ async def send_system_outbound(
         chars=len(text),
     )
     return row
+
+
+async def send_outbound_template(
+    pool: AsyncConnectionPool,
+    *,
+    conexao_id: int,
+    empresa_id: int,
+    to: str,
+    content_sid: str,
+    content_variables: dict[str, str] | None = None,
+    atendimento_id: int | None = None,
+    user_id: str = "system:template",
+) -> dict:
+    """Envia template HSM (Twilio Content) — FORA da janela 24h.
+
+    Útil pra notificação ativa: CSAT proativo, lembrete agendamento, alerta.
+    Hoje só suporta Twilio (WABA tem fluxo de template próprio via Cloud API
+    que será atendido em sprint futura; Evolution não suporta HSM).
+
+    Args:
+        conexao_id: ID da conexão (deve ser provider twilio_*).
+        empresa_id: Tenant scope.
+        to: Número destino E.164 (ex: +5511999999999).
+        content_sid: SID do template aprovado no Twilio (ex: HXxxx...).
+        content_variables: Dict de variáveis {"1": "valor1", "2": "valor2"}.
+        atendimento_id: Opcional — quando setado, persiste row em
+            message_queue ligada ao atendimento (timeline). Sem isso,
+            template é enviado sem rastro no histórico do cliente.
+        user_id: Tag pra normalized_input. Default "system:template".
+
+    Raises:
+        OutboundError: provider não-Twilio, conexão não encontrada, ou
+            client retornou erro.
+    """
+    if not content_sid:
+        raise OutboundError("content_sid é obrigatório.")
+
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise OutboundError("Conexão não encontrada.")
+    if conexao.provider not in ("twilio_sandbox", "twilio_prod"):
+        raise OutboundError(
+            f"send_template não suportado pra provider {conexao.provider!r} "
+            "— hoje só Twilio (HSM via Content API)."
+        )
+
+    client, outbound_mode = await _build_client(pool, conexao)
+    # Guard de tipo: _build_client garante TwilioClient pra twilio_*, mas
+    # pyright não infere por causa do Protocol genérico.
+    if not isinstance(client, TwilioClient):
+        raise OutboundError("Esperado TwilioClient pra conexão Twilio.")
+
+    try:
+        provider_message_id = await client.send_template(
+            to, content_sid, content_variables
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            "outbound_template_send_failed",
+            conexao_id=conexao_id,
+            empresa_id=empresa_id,
+            content_sid=content_sid,
+            to=to,
+            error=str(e),
+        )
+        raise OutboundError(f"Falha ao enviar template via Twilio: {e}") from e
+
+    # Persiste na timeline SE atendimento_id setado — caso contrário é
+    # mensagem "fora de atendimento" (CSAT proativo, broadcast) sem timeline.
+    row: dict = {}
+    if atendimento_id is not None:
+        # Resumo legível do template no campo response (variables inline)
+        var_repr = (
+            ", ".join(f"{k}={v}" for k, v in content_variables.items())
+            if content_variables
+            else "no variables"
+        )
+        response_summary = f"[template {content_sid}] {var_repr}"
+        row = await _persist_outbound_row(
+            pool,
+            empresa_id=empresa_id,
+            conexao_id=conexao_id,
+            atendimento_id=atendimento_id,
+            phone_number=to,
+            agent_id=conexao.default_agent_id,
+            response=response_summary,
+            user_id=user_id,
+            provider_message_id=provider_message_id,
+        )
+
+    logger.info(
+        "outbound_template_sent",
+        conexao_id=conexao_id,
+        empresa_id=empresa_id,
+        atendimento_id=atendimento_id,
+        content_sid=content_sid,
+        to=to,
+        provider_message_id=provider_message_id,
+        outbound_mode=outbound_mode,
+    )
+    return {
+        "provider_message_id": provider_message_id,
+        "outbound_mode": outbound_mode,
+        "message_row": row or None,
+    }
