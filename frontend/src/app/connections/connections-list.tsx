@@ -11,6 +11,7 @@ import {
   RotateCw,
   Search,
   Smartphone,
+  Star,
   Trash2,
   Wifi,
   WifiOff,
@@ -31,6 +32,7 @@ import type {
 import {
   deleteConexaoAction,
   disconnectConexaoAction,
+  patchConexaoAction,
   testConexaoAction,
 } from "./actions";
 import { NewConnectionModal } from "./new-connection-modal";
@@ -171,6 +173,28 @@ export function ConnectionsList({ initialConexoes }: Props) {
     });
   }
 
+  function handleSetDefault(id: number) {
+    // Marca conexão como padrão (is_default=true). Backend faz unset batch
+    // das outras da mesma empresa automaticamente (single-default invariant).
+    setBusy(id);
+    startTransition(async () => {
+      const r = await patchConexaoAction(id, { is_default: true });
+      setBusy(null);
+      if (r.ok) {
+        // Reflete imediato na UI sem esperar refresh do servidor
+        setConexoes((prev) =>
+          prev.map((c) => ({
+            ...c,
+            is_default: c.id === id,
+          }))
+        );
+        router.refresh();
+      } else {
+        alert(`Erro ao marcar como padrão: ${r.error}`);
+      }
+    });
+  }
+
   return (
     <>
       {/* Filtros + botão Nova */}
@@ -271,11 +295,35 @@ export function ConnectionsList({ initialConexoes }: Props) {
                     />
                   </td>
                   <td className="px-3 py-2">
-                    {c.is_default ? (
-                      <span className="text-emerald-400 text-xs">✓ Sim</span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">Não</span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        !c.is_default && handleSetDefault(c.id)
+                      }
+                      disabled={busy === c.id || c.is_default}
+                      title={
+                        c.is_default
+                          ? "Conexão padrão da empresa"
+                          : "Marcar como padrão"
+                      }
+                      className={cn(
+                        "inline-flex items-center justify-center rounded-md p-1 transition-colors",
+                        c.is_default
+                          ? "cursor-default text-amber-400"
+                          : "cursor-pointer text-muted-foreground hover:bg-muted/30 hover:text-amber-400",
+                        busy === c.id && "opacity-50"
+                      )}
+                      aria-label={
+                        c.is_default ? "Conexão padrão" : "Marcar como padrão"
+                      }
+                    >
+                      <Star
+                        className={cn(
+                          "h-4 w-4",
+                          c.is_default && "fill-amber-400"
+                        )}
+                      />
+                    </button>
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">

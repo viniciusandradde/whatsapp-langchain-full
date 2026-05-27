@@ -204,8 +204,22 @@ async def upsert_conexao(
     """Cria/atualiza conexão.
 
     Após mig 092, UNIQUE é (empresa_id, from_number) — não mais global.
+
+    Sprint conexão padrão: quando `data.is_default=True`, faz batch unset nas
+    OUTRAS conexões da mesma empresa ANTES do INSERT, na mesma conexão psycopg
+    pra evitar violação do UNIQUE INDEX parcial (mig 108) durante o cutover.
     """
     async with pool.connection() as conn:
+        # 1) Pré-condição pra single-default: desliga as outras antes do INSERT.
+        #    Sem isso, o UNIQUE INDEX parcial (mig 108) levantaria erro de
+        #    integridade quando admin tenta promover uma segunda conexão.
+        if data.is_default:
+            await conn.execute(
+                "UPDATE conexao SET is_default = FALSE, updated_at = NOW() "
+                " WHERE empresa_id = %s AND is_default = TRUE "
+                "   AND from_number != %s",
+                (empresa_id, data.from_number),
+            )
         cur = await conn.execute(
             f"""
             INSERT INTO conexao (empresa_id, provider, sid, from_number,
@@ -302,6 +316,20 @@ async def patch_conexao(
         f"UPDATE conexao SET {', '.join(sets)} WHERE id = %s RETURNING {_SELECT_COLS}"
     )
     async with pool.connection() as conn:
+        # Sprint conexão padrão: quando promove esta pra is_default=TRUE,
+        # desliga as outras da MESMA empresa antes do UPDATE alvo. Sem isso o
+        # UNIQUE INDEX parcial (mig 108) rejeita ter 2 defaults na empresa.
+        # Mesma conexão psycopg = atômico (autocommit dentro do bloco).
+        if is_default is True:
+            await conn.execute(
+                "UPDATE conexao SET is_default = FALSE, updated_at = NOW() "
+                " WHERE id != %s "
+                "   AND is_default = TRUE "
+                "   AND empresa_id = ("
+                "       SELECT empresa_id FROM conexao WHERE id = %s"
+                "   )",
+                (conexao_id, conexao_id),
+            )
         cur = await conn.execute(query, tuple(args))  # type: ignore[arg-type]
         row = await cur.fetchone()
     return _row_to_conexao(row) if row else None
