@@ -61,6 +61,10 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
   }
 
   const isWABA = conexao.provider === "waba";
+  // Templates HSM: WABA (Meta direto) + Twilio (Content API). Evolution não tem.
+  const hasTemplates = ["waba", "twilio_sandbox", "twilio_prod"].includes(
+    conexao.provider
+  );
 
   return (
     <div className="space-y-6">
@@ -123,7 +127,7 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
         )}
       </div>
 
-      {isWABA && (
+      {hasTemplates && (
         <Link
           href={`/connections/${conexao.id}/templates`}
           className="flex items-center gap-3 rounded-lg border border-border/40 p-4 hover:bg-muted/20"
