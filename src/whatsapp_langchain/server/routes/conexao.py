@@ -319,6 +319,73 @@ async def waba_oauth_result(
     }
 
 
+async def _create_waba_conexao(
+    pool,
+    *,
+    empresa_id: int,
+    access_token: str,
+    waba_account_id: str,
+    phone_id: str,
+    display_name: str | None,
+    account_description: str | None,
+    from_number: str,
+    register_phone: bool = False,
+    pin: str | None = None,
+) -> Conexao:
+    """Cria/atualiza conexão WABA + cifra token + registra phone + webhook.
+
+    Núcleo compartilhado entre /waba/finalize (fluxo redirect legado) e
+    /waba/embedded-signup (FB SDK). Idempotente via upsert por
+    (empresa_id, from_number).
+    """
+    import secrets as _secrets
+
+    conexao = await upsert_conexao(
+        pool,
+        empresa_id,
+        ConexaoInput(
+            provider="waba",
+            from_number=from_number,
+            display_name=display_name,
+            default_agent_id="vsa_tech",
+            status="active",
+            is_default=False,
+            payload_json={},
+        ),
+    )
+    await save_credentials(
+        pool,
+        conexao.id,
+        {
+            "access_token": access_token,
+            "waba_account_id": waba_account_id,
+            "phone_id": phone_id,
+        },
+    )
+    verify_token = (
+        settings.waba_webhook_verify_token.get_secret_value()
+        if settings.waba_webhook_verify_token
+        else _secrets.token_urlsafe(24)
+    )
+    await update_waba_fields(
+        pool,
+        conexao.id,
+        waba_account_id=waba_account_id,
+        waba_phone_id=phone_id,
+        waba_app_id=settings.meta_app_id or None,
+        waba_account_description=account_description,
+        webhook_verify_token=verify_token,
+        from_number=from_number,
+    )
+    await set_connection_state(pool, conexao.id, state="open", message=None)
+
+    # Register phone (best-effort) + subscribe webhook
+    if register_phone:
+        await waba_oauth.register_phone(access_token, phone_id, pin=pin)
+    await waba_oauth.subscribe_webhook(access_token, waba_account_id)
+    return conexao
+
+
 class WabaFinalizeInput(BaseModel):
     state: str
     waba_account_id: str
@@ -340,7 +407,6 @@ async def waba_finalize(
     Sprint Q.3: bloqueado com 402 se limite de conexões do plano atingido.
     """
     import json as _json
-    import secrets
 
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -388,53 +454,18 @@ async def waba_finalize(
         c for c in (phone.get("display_phone_number") or "") if c.isdigit()
     )
 
-    # Cria Conexao base (precisa ID antes de salvar credentials)
-    conexao = await upsert_conexao(
+    conexao = await _create_waba_conexao(
         pool,
-        empresa_id,
-        ConexaoInput(
-            provider="waba",
-            from_number=from_number,
-            display_name=display,
-            default_agent_id="vsa_tech",
-            status="active",
-            is_default=False,
-            payload_json={},
-        ),
-    )
-
-    # Cifra access_token
-    await save_credentials(
-        pool,
-        conexao.id,
-        {
-            "access_token": access_token,
-            "waba_account_id": body.waba_account_id,
-            "phone_id": body.phone_id,
-        },
-    )
-    # Webhook verify token único por conexão (ou compartilha settings se vazio)
-    verify_token = (
-        settings.waba_webhook_verify_token.get_secret_value()
-        if settings.waba_webhook_verify_token
-        else secrets.token_urlsafe(24)
-    )
-    await update_waba_fields(
-        pool,
-        conexao.id,
+        empresa_id=empresa_id,
+        access_token=access_token,
         waba_account_id=body.waba_account_id,
-        waba_phone_id=body.phone_id,
-        waba_app_id=settings.meta_app_id or None,
-        waba_account_description=account.get("name"),
-        webhook_verify_token=verify_token,
+        phone_id=body.phone_id,
+        display_name=display,
+        account_description=account.get("name"),
         from_number=from_number,
+        register_phone=body.register_phone,
+        pin=body.pin,
     )
-    await set_connection_state(pool, conexao.id, state="open", message=None)
-
-    # Register phone (best-effort) + subscribe webhook
-    if body.register_phone:
-        await waba_oauth.register_phone(access_token, body.phone_id, pin=body.pin)
-    await waba_oauth.subscribe_webhook(access_token, body.waba_account_id)
 
     logger.info(
         "waba_conexao_finalized",
@@ -442,6 +473,118 @@ async def waba_finalize(
         user_id=user_id,
         conexao_id=conexao.id,
         waba_phone_id=body.phone_id,
+    )
+    return mask_sensitive(await get_conexao_by_id(pool, conexao.id) or conexao)
+
+
+# ---------- WABA Embedded Signup (FB JS SDK — método oficial Meta) ----------
+
+
+class WabaConfigResponse(BaseModel):
+    app_id: str
+    config_id: str
+    graph_version: str
+
+
+@router.get("/waba/config")
+async def waba_config() -> WabaConfigResponse:
+    """Config pública pro frontend inicializar o FB JS SDK.
+
+    Retorna SÓ app_id + config_id (públicos por design — vão no FB.init/login).
+    NUNCA retorna meta_app_secret. 503 se WABA não configurado."""
+    if not settings.waba_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Meta App não configurado. Setar "
+                "META_APP_ID/META_APP_SECRET/META_CONFIG_ID."
+            ),
+        )
+    return WabaConfigResponse(
+        app_id=settings.meta_app_id,
+        config_id=settings.meta_config_id,
+        graph_version=settings.waba_graph_api_version,
+    )
+
+
+class WabaEmbeddedSignupInput(BaseModel):
+    code: str = Field(min_length=10)
+    waba_account_id: str = Field(min_length=1)
+    phone_number_id: str = Field(min_length=1)
+    display_name: str | None = Field(default=None, max_length=80)
+    register_phone: bool = True
+
+
+@router.post("/waba/embedded-signup")
+async def waba_embedded_signup(
+    body: WabaEmbeddedSignupInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _quota: None = Depends(require_plano_limit("conexoes")),
+) -> Conexao:
+    """Finaliza o Embedded Signup do FB SDK.
+
+    O frontend captura o `code` (FB.login) + `waba_account_id`/`phone_number_id`
+    (sessionInfo do evento WA_EMBEDDED_SIGNUP) e manda aqui. Trocamos o code por
+    token, buscamos o número formatado e criamos a conexão WABA — sem precisar
+    listar accounts (o sessionInfo já trouxe os IDs selecionados pelo user no
+    popup oficial da Meta).
+    """
+    if not settings.waba_enabled:
+        raise HTTPException(status_code=503, detail="Meta App não configurado.")
+
+    pool = await get_pool()
+
+    # 1) code → access_token
+    try:
+        token_data = await waba_oauth.exchange_code_for_token(body.code)
+    except waba_oauth.WabaOAuthError as exc:
+        logger.warning("waba_embedded_exchange_failed", error=str(exc))
+        raise HTTPException(
+            status_code=502, detail=f"Falha ao trocar code por token: {exc}"
+        ) from exc
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=502, detail="Meta não retornou access_token.")
+
+    # 2) detalhes do phone (display_phone_number + verified_name)
+    try:
+        phone = await waba_oauth.fetch_phone_details(
+            access_token, body.phone_number_id
+        )
+    except waba_oauth.WabaOAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    from_number = "+" + "".join(
+        c for c in (phone.get("display_phone_number") or "") if c.isdigit()
+    )
+    if from_number == "+":
+        raise HTTPException(
+            status_code=502,
+            detail="Meta não retornou display_phone_number do número.",
+        )
+    display = body.display_name or phone.get("verified_name") or from_number
+
+    # 3) cria conexão (reusa helper compartilhado com /finalize)
+    conexao = await _create_waba_conexao(
+        pool,
+        empresa_id=empresa_id,
+        access_token=access_token,
+        waba_account_id=body.waba_account_id,
+        phone_id=body.phone_number_id,
+        display_name=display,
+        account_description=phone.get("verified_name"),
+        from_number=from_number,
+        register_phone=body.register_phone,
+    )
+
+    logger.info(
+        "waba_embedded_signup_done",
+        empresa_id=empresa_id,
+        user_id=user_id,
+        conexao_id=conexao.id,
+        waba_account_id=body.waba_account_id,
+        phone_number_id=body.phone_number_id,
     )
     return mask_sensitive(await get_conexao_by_id(pool, conexao.id) or conexao)
 

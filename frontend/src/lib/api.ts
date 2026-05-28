@@ -1333,6 +1333,33 @@ export async function wabaFinalize(body: WabaFinalizeInput): Promise<Conexao> {
   });
 }
 
+export interface WabaConfig {
+  app_id: string;
+  config_id: string;
+  graph_version: string;
+}
+
+export async function getWabaConfig(): Promise<WabaConfig> {
+  return apiFetch<WabaConfig>("/api/conexoes/waba/config");
+}
+
+export interface WabaEmbeddedSignupInput {
+  code: string;
+  waba_account_id: string;
+  phone_number_id: string;
+  display_name?: string | null;
+  register_phone?: boolean;
+}
+
+export async function wabaEmbeddedSignup(
+  body: WabaEmbeddedSignupInput
+): Promise<Conexao> {
+  return apiFetch<Conexao>("/api/conexoes/waba/embedded-signup", {
+    method: "POST",
+    body,
+  });
+}
+
 export async function evolutionProvision(
   body: EvolutionProvisionInput
 ): Promise<EvolutionProvisionResponse> {
@@ -3732,6 +3759,83 @@ export async function getEmpresaCsat(
 // Sprint Q.4 — quota snapshot do plano
 export async function getEmpresaQuota(empresaId: number): Promise<QuotaSnapshot> {
   return apiFetch<QuotaSnapshot>(`/api/empresas/${empresaId}/quota`);
+}
+
+// Sprint U — Usuários (CRUD completo)
+export interface Usuario {
+  id: string;
+  nome: string | null;
+  email: string | null;
+  telefone: string | null;
+  avatar_path: string | null;
+  image_url: string | null;
+  status: "active" | "disabled";
+  is_superadmin: boolean;
+  atendente_status: "online" | "ausente" | "pausa" | "offline" | null;
+  atendente_max_paralelos: number;
+  last_login_at: string | null;
+  created_at: string | null;
+  role_legacy: "admin" | "operator" | "viewer" | null;
+  is_default_empresa: boolean;
+  perfis: { id: number; nome: string; is_system: boolean }[];
+  departamentos: { id: number; nome: string }[];
+}
+
+export interface UsuarioCreateInput {
+  nome: string;
+  email?: string | null;
+  telefone?: string | null;
+  role_legacy?: "admin" | "operator" | "viewer";
+  perfis_ids?: number[];
+  departamentos_ids?: number[];
+}
+
+export interface UsuarioUpdateInput {
+  nome?: string;
+  email?: string | null;
+  telefone?: string | null;
+  role_legacy?: "admin" | "operator" | "viewer";
+  perfis_ids?: number[];
+  departamentos_ids?: number[];
+}
+
+export async function listUsuarios(params: {
+  search?: string;
+  perfil_id?: number;
+  departamento_id?: number;
+  status?: "active" | "disabled";
+  limit?: number;
+} = {}): Promise<{ items: Usuario[] }> {
+  const qs = new URLSearchParams();
+  if (params.search) qs.set("search", params.search);
+  if (params.perfil_id) qs.set("perfil_id", String(params.perfil_id));
+  if (params.departamento_id)
+    qs.set("departamento_id", String(params.departamento_id));
+  if (params.status) qs.set("status", params.status);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return apiFetch<{ items: Usuario[] }>(`/api/usuarios${query ? "?" + query : ""}`);
+}
+
+export async function getUsuario(userId: string): Promise<Usuario> {
+  return apiFetch<Usuario>(`/api/usuarios/${userId}`);
+}
+
+export async function criarUsuario(body: UsuarioCreateInput): Promise<Usuario> {
+  return apiFetch<Usuario>("/api/usuarios", { method: "POST", body });
+}
+
+export async function atualizarUsuario(
+  userId: string,
+  body: UsuarioUpdateInput
+): Promise<Usuario> {
+  return apiFetch<Usuario>(`/api/usuarios/${userId}`, { method: "PUT", body });
+}
+
+export async function invalidarSessionsUsuario(userId: string): Promise<void> {
+  await apiFetch<void>(`/api/usuarios/${userId}/sessions/invalidate`, {
+    method: "POST",
+  });
 }
 
 // Sprint B.5 — billing (Asaas)
