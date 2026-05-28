@@ -12,7 +12,9 @@ import {
   getConexaoStatus,
   patchConexao,
   testConexao,
+  getWabaConfig,
   testEvolutionConnection,
+  wabaEmbeddedSignup,
   wabaFinalize,
   wabaOAuthResult,
   wabaOAuthStart,
@@ -20,6 +22,7 @@ import {
   type ConexaoPatchInput,
   type EvolutionProvisionInput,
   type TestEvolutionResult,
+  type WabaEmbeddedSignupInput,
   type WabaFinalizeInput,
 } from "@/lib/api";
 
@@ -99,6 +102,28 @@ export async function wabaOAuthResultAction(state: string) {
     return { ok: true as const, data: await wabaOAuthResult(state) };
   } catch (e) {
     return { ok: false as const, error: safeError(e) };
+  }
+}
+
+// --- WABA Embedded Signup (FB JS SDK — método oficial Meta) ---
+
+export async function getWabaConfigAction() {
+  try {
+    return { ok: true as const, data: await getWabaConfig() };
+  } catch (e) {
+    return { ok: false as const, error: safeError(e) };
+  }
+}
+
+export async function wabaEmbeddedSignupAction(
+  body: WabaEmbeddedSignupInput
+): Promise<ActionResult> {
+  try {
+    await wabaEmbeddedSignup(body);
+    revalidatePath("/connections");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: safeError(e) };
   }
 }
 

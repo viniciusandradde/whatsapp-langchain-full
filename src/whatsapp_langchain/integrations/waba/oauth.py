@@ -171,6 +171,36 @@ async def fetch_embedded_signup(code: str) -> WabaEmbeddedSignupResult:
     )
 
 
+async def fetch_phone_details(
+    access_token: str, phone_number_id: str
+) -> dict[str, Any]:
+    """GET /{phone_number_id} → display_phone_number + verified_name.
+
+    Usado no Embedded Signup (FB SDK): o sessionInfo traz só o phone_number_id,
+    então buscamos o número formatado + nome verificado pra montar from_number
+    e display_name da conexão.
+    """
+    version = settings.waba_graph_api_version
+    url = f"{META_GRAPH_URL.format(version=version)}/{phone_number_id}"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"fields": "display_phone_number,verified_name,quality_rating"},
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "waba_fetch_phone_details_failed",
+                phone_number_id=phone_number_id,
+                status=resp.status_code,
+                body=resp.text[:300],
+            )
+            raise WabaOAuthError(
+                f"Falha ao buscar detalhes do phone: {resp.status_code}"
+            )
+        return resp.json()
+
+
 async def register_phone(
     access_token: str, phone_id: str, pin: str | None = None
 ) -> bool:

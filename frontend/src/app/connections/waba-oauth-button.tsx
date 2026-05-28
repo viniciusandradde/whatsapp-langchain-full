@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-import { wabaFinalizeAction, wabaOAuthResultAction, wabaOAuthStartAction } from "./actions";
+import { getWabaConfigAction, wabaEmbeddedSignupAction } from "./actions";
 
 interface Props {
   displayName?: string;
@@ -13,111 +13,175 @@ interface Props {
   onError?: (error: string) => void;
 }
 
+// FB JS SDK é injetado no window — tipagem mínima pro que usamos.
+declare global {
+  interface Window {
+    FB?: {
+      init: (params: Record<string, unknown>) => void;
+      login: (
+        cb: (resp: {
+          authResponse?: { code?: string } | null;
+          status?: string;
+        }) => void,
+        opts: Record<string, unknown>
+      ) => void;
+    };
+    fbAsyncInit?: () => void;
+  }
+}
+
+const FB_SDK_SRC = "https://connect.facebook.net/en_US/sdk.js";
+
 /**
- * Botão "Conectar com Meta" — abre popup OAuth Embedded Signup.
+ * Botão "Conectar com Meta" — Embedded Signup via FB JS SDK (método oficial).
  *
  * Fluxo:
- * 1. Click → POST /api/conexoes/waba/oauth/start → recebe redirect_url + state
- * 2. window.open() popup com redirect_url
- * 3. Listen postMessage do callback (oauth-callback/page.tsx)
- * 4. Em sucesso, GET /api/conexoes/waba/oauth/result → list de WABA accounts
- * 5. Se 1 account: POST finalize direto. Se N: callback onSuccess com picker
+ * 1. Mount → GET /waba/config (app_id + config_id) → FB.init
+ * 2. Listener `message` captura WA_EMBEDDED_SIGNUP {waba_id, phone_number_id}
+ * 3. Click → FB.login(config_id) abre popup oficial Meta
+ * 4. Callback do FB.login → authResponse.code
+ * 5. code + waba_id + phone_number_id → POST /waba/embedded-signup → conexão
  */
 export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
   const [busy, setBusy] = useState(false);
-  const popupRef = useRef<Window | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
+  const configRef = useRef<{ app_id: string; config_id: string; graph_version: string } | null>(
+    null
+  );
+  // sessionInfo (waba_id + phone_number_id) chega via postMessage ANTES do
+  // callback do FB.login resolver — guardamos aqui pra combinar com o code.
+  const sessionRef = useRef<{ waba_id?: string; phone_number_id?: string }>({});
 
+  // 1) Carrega FB SDK + config no mount
   useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      // Aceita só do mesmo origin (CSRF protection)
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== "waba_oauth_callback") return;
+    let cancelled = false;
 
-      const { status, state, reason } = event.data;
-      popupRef.current?.close();
-      popupRef.current = null;
-
-      if (status !== "ok") {
-        setBusy(false);
-        onError?.(reason || "OAuth cancelado.");
+    (async () => {
+      const cfg = await getWabaConfigAction();
+      if (cancelled) return;
+      if (!cfg.ok) {
+        onError?.(cfg.error);
         return;
       }
+      configRef.current = cfg.data;
 
-      // Buscar accounts disponíveis
-      (async () => {
-        const r = await wabaOAuthResultAction(state);
-        if (!r.ok) {
-          setBusy(false);
-          onError?.(r.error);
-          return;
-        }
-        const accounts = r.data.accounts;
-        if (accounts.length === 0) {
-          setBusy(false);
-          onError?.("Nenhuma WABA account encontrada na sua conta Meta.");
-          return;
-        }
-
-        // Auto-finalize se só 1 account + 1 phone
-        if (accounts.length === 1 && accounts[0].phone_numbers.length === 1) {
-          const account = accounts[0];
-          const phone = account.phone_numbers[0];
-          const fin = await wabaFinalizeAction({
-            state,
-            waba_account_id: account.id,
-            phone_id: phone.id,
-            display_name: r.data.display_name || account.name,
-            register_phone: false,
+      // Injeta o script do SDK uma vez
+      if (!document.getElementById("facebook-jssdk")) {
+        window.fbAsyncInit = () => {
+          window.FB?.init({
+            appId: cfg.data.app_id,
+            autoLogAppEvents: true,
+            xfbml: false,
+            version: cfg.data.graph_version,
           });
-          setBusy(false);
-          if (fin.ok) onSuccess?.();
-          else onError?.(fin.error);
-          return;
+          setSdkReady(true);
+        };
+        const js = document.createElement("script");
+        js.id = "facebook-jssdk";
+        js.src = FB_SDK_SRC;
+        js.async = true;
+        js.defer = true;
+        js.crossOrigin = "anonymous";
+        document.body.appendChild(js);
+      } else if (window.FB) {
+        window.FB.init({
+          appId: cfg.data.app_id,
+          version: cfg.data.graph_version,
+          xfbml: false,
+        });
+        setSdkReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onError]);
+
+  // 2) Listener do sessionInfo (evento WA_EMBEDDED_SIGNUP do popup Meta)
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      if (
+        event.origin !== "https://www.facebook.com" &&
+        event.origin !== "https://web.facebook.com"
+      )
+        return;
+      try {
+        const data =
+          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (data?.type !== "WA_EMBEDDED_SIGNUP") return;
+        // data.event: 'FINISH' | 'CANCEL' | 'ERROR'
+        if (data.event === "FINISH" && data.data) {
+          sessionRef.current = {
+            waba_id: data.data.waba_id,
+            phone_number_id: data.data.phone_number_id,
+          };
+        } else if (data.event === "CANCEL" || data.event === "ERROR") {
+          sessionRef.current = {};
         }
-
-        // Múltiplos accounts/phones — redirecionar pra picker
-        setBusy(false);
-        const url = `/connections/oauth-picker?state=${encodeURIComponent(state)}`;
-        window.location.href = url;
-      })();
+      } catch {
+        // mensagem não-JSON do FB — ignora
+      }
     }
-
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onSuccess, onError]);
+  }, []);
 
-  async function handleClick() {
+  const handleClick = useCallback(() => {
+    const cfg = configRef.current;
+    if (!cfg || !window.FB) {
+      onError?.("SDK do Facebook ainda não carregou. Aguarde e tente de novo.");
+      return;
+    }
     setBusy(true);
-    const r = await wabaOAuthStartAction(displayName);
-    if (!r.ok) {
-      setBusy(false);
-      onError?.(r.error);
-      return;
-    }
-    if (!r.data) {
-      setBusy(false);
-      onError?.("Sem URL de redirecionamento.");
-      return;
-    }
-    const w = 600;
-    const h = 700;
-    const left = (window.screen.width - w) / 2;
-    const top = (window.screen.height - h) / 2;
-    popupRef.current = window.open(
-      r.data.redirect_url,
-      "waba_oauth",
-      `width=${w},height=${h},left=${left},top=${top}`
+    sessionRef.current = {};
+
+    window.FB.login(
+      (resp) => {
+        const code = resp?.authResponse?.code;
+        const session = sessionRef.current;
+        if (!code) {
+          setBusy(false);
+          onError?.("Conexão cancelada ou sem autorização.");
+          return;
+        }
+        if (!session.waba_id || !session.phone_number_id) {
+          setBusy(false);
+          onError?.(
+            "Não recebemos os dados da conta WhatsApp (waba_id/phone). Tente de novo."
+          );
+          return;
+        }
+        (async () => {
+          const r = await wabaEmbeddedSignupAction({
+            code,
+            waba_account_id: session.waba_id!,
+            phone_number_id: session.phone_number_id!,
+            display_name: displayName || null,
+            register_phone: true,
+          });
+          setBusy(false);
+          if (r.ok) onSuccess?.();
+          else onError?.(r.error);
+        })();
+      },
+      {
+        config_id: cfg.config_id,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: {
+          setup: {},
+          featureType: "whatsapp_business_app_onboarding",
+          sessionInfoVersion: "3",
+        },
+      }
     );
-    if (!popupRef.current) {
-      setBusy(false);
-      onError?.("Popup bloqueado pelo browser. Permita pop-ups e tente de novo.");
-    }
-  }
+  }, [displayName, onSuccess, onError]);
 
   return (
-    <Button onClick={handleClick} disabled={busy} className="gap-2">
-      {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-      Conectar com Meta
+    <Button onClick={handleClick} disabled={busy || !sdkReady} className="gap-2">
+      {(busy || !sdkReady) && <Loader2 className="h-4 w-4 animate-spin" />}
+      {sdkReady ? "Conectar com Meta" : "Carregando SDK..."}
     </Button>
   );
 }
