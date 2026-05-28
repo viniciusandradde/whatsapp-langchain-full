@@ -52,7 +52,20 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
   // callback do FB.login resolver — guardamos aqui pra combinar com o code.
   const sessionRef = useRef<{ waba_id?: string; phone_number_id?: string }>({});
 
-  // 1) Carrega FB SDK + config no mount
+  // Callbacks em refs: o pai passa funções inline (nova ref a cada render),
+  // então NÃO podem entrar nas deps de effects — senão re-executam em loop
+  // (causou rate-limit storm no /waba/config). Atualizamos os refs sem
+  // disparar o effect de init.
+  const onErrorRef = useRef(onError);
+  const onSuccessRef = useRef(onSuccess);
+  const displayNameRef = useRef(displayName);
+  useEffect(() => {
+    onErrorRef.current = onError;
+    onSuccessRef.current = onSuccess;
+    displayNameRef.current = displayName;
+  });
+
+  // 1) Carrega FB SDK + config — SÓ no mount (deps vazias)
   useEffect(() => {
     let cancelled = false;
 
@@ -60,7 +73,7 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
       const cfg = await getWabaConfigAction();
       if (cancelled) return;
       if (!cfg.ok) {
-        onError?.(cfg.error);
+        onErrorRef.current?.(cfg.error);
         return;
       }
       configRef.current = cfg.data;
@@ -96,7 +109,7 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [onError]);
+  }, []);
 
   // 2) Listener do sessionInfo (evento WA_EMBEDDED_SIGNUP do popup Meta)
   useEffect(() => {
@@ -130,7 +143,9 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
   const handleClick = useCallback(() => {
     const cfg = configRef.current;
     if (!cfg || !window.FB) {
-      onError?.("SDK do Facebook ainda não carregou. Aguarde e tente de novo.");
+      onErrorRef.current?.(
+        "SDK do Facebook ainda não carregou. Aguarde e tente de novo."
+      );
       return;
     }
     setBusy(true);
@@ -142,12 +157,12 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
         const session = sessionRef.current;
         if (!code) {
           setBusy(false);
-          onError?.("Conexão cancelada ou sem autorização.");
+          onErrorRef.current?.("Conexão cancelada ou sem autorização.");
           return;
         }
         if (!session.waba_id || !session.phone_number_id) {
           setBusy(false);
-          onError?.(
+          onErrorRef.current?.(
             "Não recebemos os dados da conta WhatsApp (waba_id/phone). Tente de novo."
           );
           return;
@@ -157,12 +172,12 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
             code,
             waba_account_id: session.waba_id!,
             phone_number_id: session.phone_number_id!,
-            display_name: displayName || null,
+            display_name: displayNameRef.current || null,
             register_phone: true,
           });
           setBusy(false);
-          if (r.ok) onSuccess?.();
-          else onError?.(r.error);
+          if (r.ok) onSuccessRef.current?.();
+          else onErrorRef.current?.(r.error);
         })();
       },
       {
@@ -176,7 +191,7 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
         },
       }
     );
-  }, [displayName, onSuccess, onError]);
+  }, []);
 
   return (
     <Button onClick={handleClick} disabled={busy || !sdkReady} className="gap-2">
