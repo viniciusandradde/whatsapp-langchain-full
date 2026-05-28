@@ -119,7 +119,7 @@ export function TemplatesList({ conexaoId, initialTemplates }: Props) {
   function handleImport() {
     if (
       !confirm(
-        "Importar templates já aprovados na Meta que ainda não estão no painel?"
+        "Importar templates já existentes no provider (Meta/Twilio) que ainda não estão no painel?"
       )
     )
       return;
@@ -146,7 +146,7 @@ export function TemplatesList({ conexaoId, initialTemplates }: Props) {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleImport} className="gap-1.5">
             <Download className="h-4 w-4" />
-            Importar da Meta
+            Importar
           </Button>
           <Button onClick={() => setShowNew(true)} className="gap-1.5">
             <PlusCircle className="h-4 w-4" />

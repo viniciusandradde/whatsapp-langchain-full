@@ -99,3 +99,6 @@ class WabaTemplateRecord(BaseModel):
     created_at: datetime
     updated_at: datetime
     created_by_user_id: str | None = None
+    # Sprint message templates — multi-provider (mig 109)
+    provider: str = "waba"  # waba | twilio_sandbox | twilio_prod
+    content_sid: str | None = None  # Twilio ContentSid (HX...); WABA NULL
