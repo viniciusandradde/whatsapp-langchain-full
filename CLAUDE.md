@@ -139,6 +139,7 @@ When in doubt, prefer these over inferring from code:
 - `docs/DATABASE.md` — schema overview + ready-to-run inspection queries (queue, conversation, memory, checkpoints)
 - `docs/TWILIO.md` — sandbox vs production cutover, signature validation, tunneling
 - `docs/EVOLUTION.md` — Evolution API provider (M2.b)
+- `docs/WABA_SETUP.md` — passo a passo completo do app Meta + Embedded Signup (FB JS SDK): criar app, config_id, domínios, webhook, envs Dokploy, troubleshooting "tela branca"
 - `docs/AUTH.md` — Better Auth + user status + reset sem SMTP + login history + SSO Google + rate limits
 - `docs/NPS.md` — módulo de pesquisa de satisfação: schema, fluxo de captura, endpoints de relatório, dashboard
 - `docs/LANGSMITH.md` — datasets + LLM-as-judge + sync sandbox 999
