@@ -106,7 +106,7 @@ META_APP_ID=<app_id numérico do passo 3>
 META_APP_SECRET=<app_secret hex do passo 3>
 META_CONFIG_ID=<config_id do passo 2>
 WABA_WEBHOOK_VERIFY_TOKEN=<uuid gerado no passo 5>
-WABA_GRAPH_API_VERSION=v21.0
+WABA_GRAPH_API_VERSION=v25.0
 PUBLIC_BASE_URL=https://api.vsanexus.com
 ```
 

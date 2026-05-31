@@ -152,7 +152,8 @@ class Settings(BaseSettings):
     # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
     # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
     # Wareline (password + client_secret) na tabela `wareline_credentials`.
-    # Gerar: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Gerar: python -c "from cryptography.fernet import Fernet;
+    #         print(Fernet.generate_key().decode())"
     # Sem essa chave, integração Wareline (e qualquer outra integração que use
     # `integrations.crypto`) fica desabilitada (rotas retornam 503).
     wareline_encryption_key: SecretStr | None = None
@@ -171,7 +172,8 @@ class Settings(BaseSettings):
     # Gerar uuid4 e setar UMA VEZ. Reutilizado por todas as conexões WABA.
     waba_webhook_verify_token: SecretStr | None = None
     # Versão Graph API (atualizar periodicamente — Meta deprecia ~1x/ano).
-    waba_graph_api_version: str = "v21.0"
+    # v25.0 = mais nova (fev/2026); v21.0 era a ativa mais antiga (sunset primeiro).
+    waba_graph_api_version: str = "v25.0"
 
     # --- Sprint Conexões — Evolution admin (auto-provision de instances) ---
     # URL do Evolution server pra ops admin (create/connect/disconnect instance).
@@ -256,7 +258,10 @@ class Settings(BaseSettings):
     @property
     def langfuse_enabled(self) -> bool:
         """True quando ambas keys (public + secret) estão configuradas."""
-        return self.langfuse_public_key is not None and self.langfuse_secret_key is not None
+        return (
+            self.langfuse_public_key is not None
+            and self.langfuse_secret_key is not None
+        )
 
     # --- Semantic Memory (LangGraph Store) ---
     memory_enabled: bool = True
@@ -289,7 +294,7 @@ class Settings(BaseSettings):
 
     @property
     def resolved_meta_oauth_redirect_uri(self) -> str:
-        """Redirect URI do OAuth Meta — usa override se setado, senão public_base_url."""
+        """Redirect URI do OAuth Meta — override se setado, senão public_base_url."""
         explicit = self.meta_oauth_redirect_uri.strip()
         if explicit:
             return explicit
@@ -326,8 +331,7 @@ class Settings(BaseSettings):
     def evolution_admin_enabled(self) -> bool:
         """True quando há URL admin + alguma api-key (global ou normal)."""
         return bool(
-            self.resolved_evolution_admin_url
-            and self.resolved_evolution_global_api_key
+            self.resolved_evolution_admin_url and self.resolved_evolution_global_api_key
         )
 
     @property
