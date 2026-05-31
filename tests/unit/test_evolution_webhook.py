@@ -123,9 +123,7 @@ def mock_db(monkeypatch):
     from whatsapp_langchain.server.routes import evolution_webhook as ew
 
     mock_pool = AsyncMock()
-    monkeypatch.setattr(
-        ew.settings, "internal_service_token", "test-internal-token"
-    )
+    monkeypatch.setattr(ew.settings, "internal_service_token", "test-internal-token")
     # Default: validate OFF — testes específicos sobreescrevem.
     monkeypatch.setattr(ew.settings, "evolution_validate_apikey", False)
     monkeypatch.setattr(ew.settings, "evolution_api_key", SecretStr(TEST_API_KEY))
@@ -155,6 +153,13 @@ def mock_db(monkeypatch):
             "whatsapp_langchain.server.routes.evolution_webhook"
             ".open_or_attach_atendimento",
             new=AsyncMock(return_value=(_atendimento(), True)),
+        ),
+        # Default: remetente NÃO é conexão nossa (guard anti-loop desligado).
+        # Testes específicos sobreescrevem pra True.
+        patch(
+            "whatsapp_langchain.server.routes.evolution_webhook"
+            ".is_own_connection_number",
+            new=AsyncMock(return_value=False),
         ),
         patch(
             "whatsapp_langchain.server.routes.evolution_webhook.enqueue_or_buffer",
@@ -240,6 +245,18 @@ def test_skips_fromMe_true(mock_db):
     mock_db.assert_not_awaited()
 
 
+def test_skips_self_loop_own_number(mock_db, monkeypatch):
+    """Guard anti-loop: inbound de um número que é conexão NOSSA (bot-para-bot)
+    é ignorado, não enfileira (regressão prod 2026-05-31)."""
+    monkeypatch.setattr(
+        "whatsapp_langchain.server.routes.evolution_webhook.is_own_connection_number",
+        AsyncMock(return_value=True),
+    )
+    response = client.post("/webhook/evolution", json=_payload())
+    assert response.status_code == 200
+    mock_db.assert_not_awaited()
+
+
 def test_ignores_other_events(mock_db):
     """Eventos como connection.update / chats.upsert respondem 200 silently."""
     response = client.post(
@@ -251,9 +268,7 @@ def test_ignores_other_events(mock_db):
 
 def test_accepts_uppercase_event_name(mock_db):
     """Evolution envia event como MESSAGES_UPSERT em algumas configs — normaliza."""
-    response = client.post(
-        "/webhook/evolution", json=_payload(event="MESSAGES_UPSERT")
-    )
+    response = client.post("/webhook/evolution", json=_payload(event="MESSAGES_UPSERT"))
     assert response.status_code == 200
     mock_db.assert_awaited_once()
 

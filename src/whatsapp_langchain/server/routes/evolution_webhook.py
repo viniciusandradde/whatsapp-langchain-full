@@ -23,7 +23,10 @@ from whatsapp_langchain.server.dependencies import check_rate_limit
 from whatsapp_langchain.shared.agente import resolve_agente_runtime
 from whatsapp_langchain.shared.atendimento import open_or_attach_atendimento
 from whatsapp_langchain.shared.cliente import upsert_cliente
-from whatsapp_langchain.shared.conexao import get_conexao_by_evolution_instance
+from whatsapp_langchain.shared.conexao import (
+    get_conexao_by_evolution_instance,
+    is_own_connection_number,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
@@ -114,7 +117,9 @@ def _extract_message_payload(
 
     # Texto puro (sem mídia)
     text = _extract_text(message)
-    if text and not any(k.endswith("Message") and k != "extendedTextMessage" for k in message):
+    if text and not any(
+        k.endswith("Message") and k != "extendedTextMessage" for k in message
+    ):
         return (text, None, None)
 
     # Mapeia tipos de mídia → (key_no_payload, mime_default)
@@ -237,6 +242,17 @@ async def webhook_evolution(
         )
         raise HTTPException(status_code=400, detail="Missing sender JID")
 
+    # Guard anti-loop (bot-para-bot): se o remetente é uma das NOSSAS próprias
+    # conexões, são dois agentes Nexus conversando entre si — não cliente real.
+    # Ignora pra não entrar em loop infinito (prod 2026-05-31).
+    if await is_own_connection_number(pool, phone_number):
+        logger.warning(
+            "evolution_webhook_self_loop_ignored",
+            instance=instance,
+            phone=phone_number,
+        )
+        return Response(status_code=200)
+
     text, media_url, media_type = _extract_message_payload(data.get("message") or {})
     if not text and not media_url:
         # Sticker / location / contato / poll / etc — não suportado.
@@ -295,6 +311,7 @@ async def webhook_evolution(
     # provider externo). Daí em diante, qualquer pool.connection()
     # injeta SET app.empresa_id via _RlsAwarePool.
     from whatsapp_langchain.shared.rls_context import set_request_context
+
     set_request_context(empresa_id)
 
     # A.6 — resolve via agente_ia table primeiro; cai pro catálogo se ausente.
@@ -313,9 +330,7 @@ async def webhook_evolution(
     push_name = data.get("pushName")
     profile_name = push_name.strip() if isinstance(push_name, str) else None
 
-    cliente = await upsert_cliente(
-        pool, empresa_id, phone_number, nome=profile_name
-    )
+    cliente = await upsert_cliente(pool, empresa_id, phone_number, nome=profile_name)
     atendimento, atendimento_aberto = await open_or_attach_atendimento(
         pool,
         empresa_id=empresa_id,

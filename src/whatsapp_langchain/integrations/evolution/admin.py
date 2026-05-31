@@ -82,19 +82,28 @@ async def provision_instance(
                 "QRCODE_UPDATED",
             ],
         }
-        # Fix #448 — Evolution Server NÃO injeta apikey nos webhooks por
-        # default. Sem headers.apikey aqui, quando EVOLUTION_VALIDATE_APIKEY=true
-        # nosso /webhook/evolution rejeita com 401 e mensagens nunca entram
-        # na fila (bug observado prod 2026-05-22). Bug fixado manualmente via
-        # PATCH /webhook/set/{instance} pra instances existentes; novas
-        # instances precisam do header desde a criação.
+        # Fix #448 (prod 2026-05-22) + recorrência 2026-05-31 — Evolution Server
+        # NÃO injeta apikey nos webhooks por default. Sem headers.apikey aqui,
+        # quando EVOLUTION_VALIDATE_APIKEY=true nosso /webhook/evolution rejeita
+        # com 401 e mensagens nunca entram na fila.
+        #
+        # CRÍTICO: o header tem que carregar a MESMA chave que o handler valida
+        # em webhook_evolution.py — `settings.evolution_api_key` (per-instance),
+        # NÃO a global key. São direções distintas:
+        #   - _headers() autentica nós→Evolution (admin)   → global key
+        #   - este header autentica Evolution→nós (inbound) → evolution_api_key
+        # Em prod as duas chaves diferem; usar a global aqui gerava mismatch
+        # silencioso mesmo com o header presente.
         apikey = (
-            settings.resolved_evolution_global_api_key.get_secret_value()
-            if settings.resolved_evolution_global_api_key
+            settings.evolution_api_key.get_secret_value()
+            if settings.evolution_api_key
             else ""
         )
         if apikey:
-            webhook_cfg["headers"] = {"apikey": apikey}
+            webhook_cfg["headers"] = {
+                "apikey": apikey,
+                "Content-Type": "application/json",
+            }
         payload["webhook"] = webhook_cfg
 
     async with httpx.AsyncClient(timeout=30) as client:

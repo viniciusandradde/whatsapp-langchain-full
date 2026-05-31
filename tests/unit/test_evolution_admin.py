@@ -1,5 +1,7 @@
 """Tests do admin Evolution (provision/connect/state/disconnect)."""
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -14,6 +16,7 @@ def _patch_settings(monkeypatch):
     monkeypatch.setattr(settings, "evolution_admin_url", "https://evo.test")
     monkeypatch.setattr(settings, "evolution_api_url", "https://evo.test")
     monkeypatch.setattr(settings, "evolution_global_api_key", SecretStr("global-xyz"))
+    monkeypatch.setattr(settings, "evolution_api_key", SecretStr("instance-abc"))
 
 
 @pytest.mark.asyncio
@@ -27,6 +30,11 @@ async def test_provision_instance_envia_payload():
     body = route.calls[0].request.read()
     assert b'"instanceName":"x"' in body or b'"instanceName": "x"' in body
     assert b"webhook" in body
+    # O header do webhook (Evolution→nós) tem que carregar a chave per-instance
+    # que o handler valida — NÃO a global key (regressão 2026-05-31).
+    sent = json.loads(body)
+    assert sent["webhook"]["headers"]["apikey"] == "instance-abc"
+    assert sent["webhook"]["headers"]["apikey"] != "global-xyz"
     assert result["instance"]["instanceName"] == "x"
 
 

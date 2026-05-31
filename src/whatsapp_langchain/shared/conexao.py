@@ -127,6 +127,37 @@ async def get_conexao_by_from_number(
     return _row_to_conexao(row) if row else None
 
 
+async def is_own_connection_number(pool: AsyncConnectionPool, phone: str) -> bool:
+    """True se `phone` corresponde ao número de ALGUMA conexão nossa.
+
+    Guard anti-loop: se um inbound chega de um número que é uma das nossas
+    próprias conexões (qualquer empresa, qualquer status), é bot-para-bot —
+    dois agentes Nexus conversando entre si, não cliente real. O webhook
+    deve ignorar pra não entrar em loop infinito (observado prod 2026-05-31:
+    vsa-vinicius ↔ vsa-tecnologia trocando despedidas a cada ~23s).
+
+    Considera variantes do 9º dígito BR (`phone_variants`) e NÃO filtra por
+    status — a conexão looping pode estar 'disabled' e ainda gerar o ciclo.
+
+    Sprint A.2.3: bypass RLS (webhook ainda não tem empresa no contexto).
+    """
+    if not phone:
+        return False
+
+    from whatsapp_langchain.shared.phone_br import phone_variants
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    variants = phone_variants(phone)
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT 1 FROM conexao WHERE from_number = ANY(%s) LIMIT 1",
+                (variants,),
+            )
+            row = await cur.fetchone()
+    return row is not None
+
+
 async def get_conexao_by_evolution_instance(
     pool: AsyncConnectionPool, instance_name: str
 ) -> Conexao | None:
@@ -271,9 +302,7 @@ async def upsert_conexao(
             message="Twilio ready (configurar webhook na console + opt-in)",
         )
         result.connection_state = "open"
-        result.state_message = (
-            "Twilio ready (configurar webhook na console + opt-in)"
-        )
+        result.state_message = "Twilio ready (configurar webhook na console + opt-in)"
 
     return result
 
