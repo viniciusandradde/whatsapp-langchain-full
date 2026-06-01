@@ -86,7 +86,11 @@ async def _build_client(
         )
         return client, mode
 
-    # --- Evolution (com credentials cifradas multi-instance OU env vars fallback) ---
+    # --- Evolution (credenciais por-conexão do DB) ---
+    # api_url (server) e api_key (chave do server) podem cair em env por serem
+    # infra app-level. instance_name é a IDENTIDADE da conexão → vem só do DB
+    # (credentials cifradas ou payload_json). Sem env fallback: conexão tem que
+    # ser cadastrada pela UI (sem instance default "via código").
     if provider == "evolution":
         credentials = await get_credentials_decrypted(pool, conexao.id) or {}
         api_url = credentials.get("api_url") or settings.evolution_api_url
@@ -95,14 +99,13 @@ async def _build_client(
             if settings.evolution_api_key
             else ""
         )
-        instance_name = (
-            credentials.get("instance_name")
-            or conexao.payload_json.get("instance_name")
-            or settings.evolution_instance_name
+        instance_name = credentials.get("instance_name") or conexao.payload_json.get(
+            "instance_name"
         )
         if not (api_url and api_key and instance_name):
             raise OutboundError(
-                "Evolution não configurada (API URL / key / instance ausentes)."
+                "Evolution não configurada: conexão sem api_url/api_key/instance_name "
+                "(cadastre/reconecte a conexão pela UI)."
             )
         mode = settings.evolution_outbound_mode or "mock"
         client = EvolutionClient(
@@ -114,6 +117,11 @@ async def _build_client(
         return client, mode
 
     raise OutboundError(f"Provider desconhecido: {provider!r}")
+
+
+# Nome público: o worker (processor) usa o mesmo builder por-conexão que o
+# envio manual do painel — fonte única de verdade pro cliente outbound.
+build_outbound_client = _build_client
 
 
 async def _persist_outbound_row(

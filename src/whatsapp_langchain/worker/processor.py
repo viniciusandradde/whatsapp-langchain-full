@@ -69,6 +69,7 @@ from whatsapp_langchain.shared.coleta import (
     render_pergunta_label,
     validar_e_processar,
 )
+from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.departamento import get_departamento_by_id
 from whatsapp_langchain.shared.empresa import get_empresa_csat_config
@@ -86,6 +87,7 @@ from whatsapp_langchain.shared.menu_chatbot import (
     registrar_historico,
 )
 from whatsapp_langchain.shared.models import MessageQueue
+from whatsapp_langchain.shared.outbound import OutboundError, build_outbound_client
 from whatsapp_langchain.shared.queue import (
     mark_done,
     mark_failed,
@@ -327,30 +329,28 @@ async def _try_handle_approval(
 # como bolha de resposta automática.
 HANDOFF_HUMANO_MARKER = "[handoff humano — operador respondendo]"
 
-# Provider default pra rows sem conexao_id ou com conexão deletada
-# (mantém comportamento legado pré-M2.b).
-DEFAULT_PROVIDER = "twilio_sandbox"
 
-
-def _resolve_outbound_client(
-    clients: dict[str, OutboundClient], message: MessageQueue
+async def _resolve_outbound_client(
+    pool: AsyncConnectionPool, message: MessageQueue
 ) -> OutboundClient:
-    """Escolhe o cliente outbound certo pra mensagem.
+    """Monta o cliente outbound a partir da CONEXÃO do banco (cadastrada na
+    UI), não de config via env.
 
-    Cai no DEFAULT_PROVIDER quando `conexao_provider` é None (rows legacy
-    ou conexão removida) ou quando o provider não tem cliente registrado
-    (situação só possível por config inconsistente — logamos warning).
+    A conexão é resolvida por `message.conexao_id` e o cliente é construído
+    com as credenciais cifradas / payload da conexão (mesmo builder do envio
+    manual do painel). NÃO existe mais instance/número default "via código":
+    se a conexão sumiu ou está sem credenciais, levanta `OutboundError` — o
+    caller (`process_message`) trata com `mark_failed` (retry/falha), sem
+    enviar por uma conexão errada.
     """
-    provider = message.conexao_provider or DEFAULT_PROVIDER
-    client = clients.get(provider)
-    if client is None:
-        logger.warning(
-            "outbound_provider_not_registered",
-            provider=provider,
-            message_id=message.id,
-            fallback=DEFAULT_PROVIDER,
+    if not message.conexao_id:
+        raise OutboundError(f"message {message.id} sem conexao_id — conexão removida?")
+    conexao = await get_conexao_by_id(pool, message.conexao_id)
+    if conexao is None:
+        raise OutboundError(
+            f"conexão {message.conexao_id} não existe (removida da UI?)"
         )
-        return clients[DEFAULT_PROVIDER]
+    client, _mode = await build_outbound_client(pool, conexao)
     return client
 
 
@@ -398,9 +398,7 @@ async def _try_handle_encerrar_keyword(
     atd = await get_atendimento_by_id(pool, message.atendimento_id)
     if atd is None or atd.status not in ("aguardando", "em_andamento"):
         return False
-    closed = await close_atendimento(
-        pool, message.atendimento_id, "resolvido"
-    )
+    closed = await close_atendimento(pool, message.atendimento_id, "resolvido")
     if closed is None:
         return False
     msg = (
@@ -485,9 +483,7 @@ async def _try_capture_avaliacao(
     # toggle solicita_comentario). Default fallback se não configurada.
     config = await get_empresa_csat_config(pool, message.empresa_id)
     msg_agradecimento = (
-        config["agradecimento"]
-        if config
-        else "Obrigado pelo seu feedback! 😊"
+        config["agradecimento"] if config else "Obrigado pelo seu feedback! 😊"
     )
     solicita_comentario = bool(config["solicita_comentario"]) if config else True
 
@@ -495,9 +491,7 @@ async def _try_capture_avaliacao(
     # texto livre dentro de 60s pós-nota, grava como comentário.
     if aguardando["aguardando_comentario_at"] is not None:
         try:
-            await save_avaliacao(
-                pool, atendimento_id=atendimento_id, comentario=text
-            )
+            await save_avaliacao(pool, atendimento_id=atendimento_id, comentario=text)
             await clear_flags(pool, atendimento_id)
             await outbound.send_message(message.phone_number, msg_agradecimento)
             await mark_done(
@@ -529,9 +523,7 @@ async def _try_capture_avaliacao(
             # no fluxo normal (vai pro agente IA / menu como mensagem comum)
             return False
         try:
-            await save_avaliacao(
-                pool, atendimento_id=atendimento_id, nota=nota
-            )
+            await save_avaliacao(pool, atendimento_id=atendimento_id, nota=nota)
             if solicita_comentario:
                 await set_aguardando_comentario(pool, atendimento_id)
                 resposta = (
@@ -543,9 +535,7 @@ async def _try_capture_avaliacao(
                 await clear_flags(pool, atendimento_id)
                 resposta = msg_agradecimento
             await outbound.send_message(message.phone_number, resposta)
-            await mark_done(
-                pool, message.id, resposta, normalized_input=text
-            )
+            await mark_done(pool, message.id, resposta, normalized_input=text)
             logger.info(
                 "nps_nota_capturada",
                 atendimento_id=atendimento_id,
@@ -570,16 +560,18 @@ async def _try_capture_avaliacao(
 # Quais acoes do menu se beneficiam de coleta antes de despachar.
 # Submenu e setar_nome não rodam wizard (submenu navega, setar_nome JÁ é
 # coleta na sua semântica). Pesquisa_csat também não — ele coleta nota.
-_ACAO_TIPOS_COM_COLETA = frozenset({
-    "chamar_agente",
-    "transferir_dep",
-    "transferir_atendente",
-    "mudar_manual",
-    "enviar_template",
-    "chamar_webhook",
-    "enviar_link",
-    "enviar_msg",
-})
+_ACAO_TIPOS_COM_COLETA = frozenset(
+    {
+        "chamar_agente",
+        "transferir_dep",
+        "transferir_atendente",
+        "mudar_manual",
+        "enviar_template",
+        "chamar_webhook",
+        "enviar_link",
+        "enviar_msg",
+    }
+)
 
 
 def _coleta_ja_executada_pro_item(atendimento, item_id: int) -> bool:
@@ -743,9 +735,7 @@ async def _try_handle_coleta_em_curso(
 
     # Re-entra no menu com texto = ordem do item (cliente "escolhe de novo")
     if item is not None:
-        sintetica = message.model_copy(
-            update={"incoming_message": str(item.ordem)}
-        )
+        sintetica = message.model_copy(update={"incoming_message": str(item.ordem)})
         # `_try_handle_menu` agora não vai re-iniciar wizard porque
         # coleta_resumo está populado pro mesmo item_id.
         return await _try_handle_menu(sintetica, pool, outbound)
@@ -1207,8 +1197,7 @@ async def _try_handle_menu(
     # transferir (essas precisam ir pro agente IA, não pro menu).
     coleta_resumo = getattr(atendimento, "coleta_resumo", None) or {}
     coleta_em_reentry = (
-        bool(coleta_resumo.get("item_id"))
-        and parse_numero_opcao(text) is not None
+        bool(coleta_resumo.get("item_id")) and parse_numero_opcao(text) is not None
     )
     if (
         posicao_atual is None
@@ -1280,9 +1269,7 @@ async def _try_handle_menu(
         and item.acao_tipo in _ACAO_TIPOS_COM_COLETA
         and not _coleta_ja_executada_pro_item(atendimento, item.id)
     ):
-        await _iniciar_coleta_wizard(
-            message, pool, outbound, menu, item, text
-        )
+        await _iniciar_coleta_wizard(message, pool, outbound, menu, item, text)
         return True
 
     if item.acao_tipo == "submenu":
@@ -1476,9 +1463,7 @@ async def _try_handle_menu(
                     departamento_id=dep_id_resolvido,
                     atendimento_id=message.atendimento_id,
                 )
-                partes.append(
-                    f"Você está na posição *{pos}* da fila de atendimento."
-                )
+                partes.append(f"Você está na posição *{pos}* da fila de atendimento.")
             except Exception as exc:
                 logger.warning(
                     "menu_chamar_agente_fila_failed",
@@ -1962,7 +1947,6 @@ async def process_message(
     *,
     checkpointer: BaseCheckpointSaver,
     store: BaseStore | None = None,
-    clients: dict[str, OutboundClient],
 ) -> None:
     """Processa uma mensagem da fila com o agente apropriado.
 
@@ -1977,9 +1961,21 @@ async def process_message(
         pool: Pool de conexões do psycopg.
         checkpointer: Checkpointer LangGraph já inicializado no boot.
         store: Store LangGraph compartilhado (None se memória desabilitada).
-        clients: Dict provider→OutboundClient (resolve via conexao_provider).
     """
-    outbound = _resolve_outbound_client(clients, message)
+    try:
+        outbound = await _resolve_outbound_client(pool, message)
+    except OutboundError as exc:
+        # Conexão sumiu / sem credenciais → não há por onde enviar. Marca
+        # failed (retry/falha definitiva) em vez de derrubar o worker ou
+        # enviar por uma conexão default "via código" (que não existe mais).
+        logger.error(
+            "outbound_resolution_failed",
+            message_id=message.id,
+            conexao_id=message.conexao_id,
+            error=str(exc),
+        )
+        await mark_failed(pool, message.id, f"outbound: {exc}")
+        return
     logger.info(
         "processing_message",
         message_id=message.id,
@@ -2028,9 +2024,7 @@ async def process_message(
         # via `workflow_chatbot.ativo` + slug='menu_principal'.
         if settings.enable_workflow_engine:
             try:
-                if await _try_handle_workflow(
-                    message, pool, outbound, checkpointer
-                ):
+                if await _try_handle_workflow(message, pool, outbound, checkpointer):
                     return
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -2153,9 +2147,10 @@ async def process_message(
             input_check = check_input(normalized_text)
             if input_check.blocked:
                 import os as _os
-                shadow = _os.environ.get(
-                    "GUARDRAIL_INPUT_SHADOW", "true"
-                ).lower() == "true"
+
+                shadow = (
+                    _os.environ.get("GUARDRAIL_INPUT_SHADOW", "true").lower() == "true"
+                )
                 logger.warning(
                     "guardrail_input_blocked" + ("_shadow" if shadow else ""),
                     pattern=input_check.pattern,
@@ -2171,9 +2166,11 @@ async def process_message(
                                 %s, %s, %s)
                         """,
                         (
-                            message.empresa_id, message.atendimento_id,
+                            message.empresa_id,
+                            message.atendimento_id,
                             "shadow_block" if shadow else "block",
-                            input_check.pattern, input_check.sample,
+                            input_check.pattern,
+                            input_check.sample,
                         ),
                     )
                     await _conn.commit()
@@ -2182,11 +2179,11 @@ async def process_message(
                         "Olá! Não consigo processar essa mensagem. "
                         "Vou te transferir para um atendente humano."
                     )
-                    await outbound.send_message(
-                        message.phone_number, response_text
-                    )
+                    await outbound.send_message(message.phone_number, response_text)
                     await mark_done(
-                        pool, message.id, response_text,
+                        pool,
+                        message.id,
+                        response_text,
                         normalized_input=pre.normalized_text,
                     )
                     return
@@ -2210,7 +2207,8 @@ async def process_message(
                                 'redact', %s::jsonb)
                         """,
                         (
-                            message.empresa_id, message.atendimento_id,
+                            message.empresa_id,
+                            message.atendimento_id,
                             __import__("json").dumps(redact_in.counts),
                         ),
                     )
@@ -2277,9 +2275,7 @@ async def process_message(
         from whatsapp_langchain.shared import langfuse_client
         from whatsapp_langchain.shared.llm_callback import IaExecucaoCallback
 
-        langfuse_trace_id = langfuse_client.create_trace_id(
-            seed=f"msg:{message.id}"
-        )
+        langfuse_trace_id = langfuse_client.create_trace_id(seed=f"msg:{message.id}")
         langfuse_handler = langfuse_client.get_callback_handler(
             trace_id=langfuse_trace_id,
         )
@@ -2313,7 +2309,8 @@ async def process_message(
                 # global na empresa (fallback).
                 "base_conhecimento_ids": (
                     agente_runtime.base_conhecimento_ids
-                    if agente_runtime is not None else []
+                    if agente_runtime is not None
+                    else []
                 ),
             },
             "callbacks": callbacks,
@@ -2347,8 +2344,7 @@ async def process_message(
             try:
                 async with pool.connection() as _conn:
                     await _conn.execute(
-                        "UPDATE message_queue SET langfuse_trace_id = %s "
-                        "WHERE id = %s",
+                        "UPDATE message_queue SET langfuse_trace_id = %s WHERE id = %s",
                         (langfuse_trace_id, message.id),
                     )
                     await _conn.commit()
@@ -2387,7 +2383,8 @@ async def process_message(
                                 'redact', %s::jsonb)
                         """,
                         (
-                            message.empresa_id, message.atendimento_id,
+                            message.empresa_id,
+                            message.atendimento_id,
                             __import__("json").dumps(redact_out.counts),
                         ),
                     )
@@ -2410,9 +2407,7 @@ async def process_message(
                     )
                     _row = await _cur.fetchone()
                     if _row:
-                        rag_top_score = (
-                            float(_row[0]) if _row[0] is not None else None
-                        )
+                        rag_top_score = float(_row[0]) if _row[0] is not None else None
                         rag_hits = int(_row[1] or 0)
             except Exception:
                 pass
@@ -2434,12 +2429,15 @@ async def process_message(
                                 %s, %s::jsonb, %s)
                         """,
                         (
-                            message.empresa_id, message.atendimento_id,
+                            message.empresa_id,
+                            message.atendimento_id,
                             "allow" if judge.safe else "unsafe",
-                            __import__("json").dumps({
-                                "cached": judge.cached,
-                                "reason": judge.reason,
-                            }),
+                            __import__("json").dumps(
+                                {
+                                    "cached": judge.cached,
+                                    "reason": judge.reason,
+                                }
+                            ),
                             response_text[:500],
                         ),
                     )
@@ -2449,9 +2447,11 @@ async def process_message(
                     # NÃO substitui (default agora — coleta dados antes
                     # de bloquear de fato).
                     import os as _os
-                    shadow = _os.environ.get(
-                        "GUARDRAIL_OUTPUT_SHADOW", "true"
-                    ).lower() == "true"
+
+                    shadow = (
+                        _os.environ.get("GUARDRAIL_OUTPUT_SHADOW", "true").lower()
+                        == "true"
+                    )
                     if shadow:
                         logger.warning(
                             "guardrail_output_unsafe_shadow_only",

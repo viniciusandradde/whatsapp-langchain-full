@@ -48,9 +48,12 @@ class MessageQueue(BaseModel):
     agent_id: str = Field(description="Identificador do agente em langgraph.json")
     thread_id: str = Field(description="ID do thread para checkpointer: phone:agent_id")
     incoming_message: str
+    # Conexão (cadastrada na UI) que recebeu a mensagem. O worker monta o
+    # cliente outbound a partir dela (credenciais do DB) — não há mais
+    # instance/número default "via código". None só em rows legadas.
+    conexao_id: int | None = None
     # M2.b — provider resolvido via JOIN com `conexao` no claim. None em rows
-    # sem conexao_id ou quando a conexão foi removida; o worker cai no default
-    # `twilio_sandbox` pra preservar comportamento legado.
+    # sem conexao_id ou quando a conexão foi removida.
     conexao_provider: str | None = None
     media_url: str | None = None
     media_type: str | None = None
@@ -260,7 +263,9 @@ class Conexao(BaseModel):
     waba_app_id: str | None = None
     waba_account_description: str | None = None
     # Sprint Conexões WABA/Evolution (mig 092)
-    connection_state: str = "pending"  # pending|qr_pending|open|connecting|disconnected|error|ready
+    connection_state: str = (
+        "pending"  # pending|qr_pending|open|connecting|disconnected|error|ready
+    )
     state_message: str | None = None
     qr_code: str | None = None  # base64 PNG (Evolution)
     qr_expires_at: datetime | None = None
@@ -338,7 +343,9 @@ class Cliente(BaseModel):
 
     # ---- Comercial / lifecycle ----
     segmento: str | None = None
-    lifecycle_stage: str | None = None  # lead|qualified|opportunity|customer|evangelist|churned
+    lifecycle_stage: str | None = (
+        None  # lead|qualified|opportunity|customer|evangelist|churned
+    )
     score: int | None = None  # 0-100
     source: str | None = None  # whatsapp|website|indicacao|...
     responsavel_user_id: str | None = None
@@ -647,7 +654,9 @@ class DocumentoConhecimentoInput(BaseModel):
     """Payload do POST/PUT /api/empresas/{id}/base-conhecimento."""
 
     titulo: str = Field(min_length=1, max_length=200)
-    conteudo: str = Field(min_length=1, max_length=200000)  # sobe de 20k pra 200k pós-chunking
+    conteudo: str = Field(
+        min_length=1, max_length=200000
+    )  # sobe de 20k pra 200k pós-chunking
     tags: list[str] = Field(default_factory=list)
     ativo: bool = True
     pasta_id: int | None = None

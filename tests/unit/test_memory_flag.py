@@ -92,13 +92,18 @@ class TestProcessorMemoryFlag:
             mock_twilio.send_typing = AsyncMock(return_value=True)
             mock_twilio.send_message = AsyncMock(return_value="SM123")
 
-            await process_message(
-                message,
-                mock_pool,
-                checkpointer=mock_checkpointer,
-                store=None,
-                clients={"twilio_sandbox": mock_twilio},
-            )
+            # Worker monta o client por-conexão (build_outbound_client do DB);
+            # curto-circuita a resolução pro mock.
+            with patch(
+                "whatsapp_langchain.worker.processor._resolve_outbound_client",
+                new=AsyncMock(return_value=mock_twilio),
+            ):
+                await process_message(
+                    message,
+                    mock_pool,
+                    checkpointer=mock_checkpointer,
+                    store=None,
+                )
 
             mock_preprocess.assert_awaited_once()
 

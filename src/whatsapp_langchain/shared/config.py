@@ -66,11 +66,13 @@ class Settings(BaseSettings):
 
     # Outbound (envio de mensagens pelo worker via API Key)
     # Em dev local o fallback efetivo e "mock"; em production, "real".
+    # Conta Twilio (app-level, compartilhada por todas as conexões twilio_*).
+    # O NÚMERO de cada conexão vem de `conexao.from_number` (cadastro na UI),
+    # não de env — não há mais TWILIO_FROM_NUMBER "via código".
     twilio_outbound_mode: str = ""
     twilio_account_sid: str = ""
     twilio_api_key_sid: str = ""
     twilio_api_key_secret: str = ""
-    twilio_from_number: str = ""
 
     # --- Twilio Live Tests (smoke pré-deploy) ---
     # CUIDADO: rodar só manualmente. Cada teste envia mensagem real e cobra crédito.
@@ -275,12 +277,12 @@ class Settings(BaseSettings):
     # não inicializa cliente Evolution. Quando preenchido + ao menos
     # uma conexão `provider='evolution'` cadastrada, mensagens fluem
     # pelo pipeline normal.
+    # api_url (server) e api_key (chave do server) são infra app-level. O
+    # instance_name (QUAL conexão WhatsApp) vem de `conexao` (credentials
+    # cifradas / payload_json) cadastrada na UI — não há mais
+    # EVOLUTION_INSTANCE_NAME / EVOLUTION_PHONE_NUMBER "via código".
     evolution_api_url: str = ""
     evolution_api_key: SecretStr | None = None
-    # Instance default — só pra teste rápido / pré-cadastro UI. Em
-    # produção o instance_name vem da `conexao.payload_json`.
-    evolution_instance_name: str = ""
-    evolution_phone_number: str = ""
     # mock = log only; real = HTTP de fato. Default safe em dev.
     evolution_outbound_mode: str = "mock"
     # Quando true, valida header `apikey` no /webhook/evolution.

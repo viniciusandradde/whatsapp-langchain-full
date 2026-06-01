@@ -315,6 +315,7 @@ async def claim_next(
                       status, process_after, attempts, max_attempts,
                       lease_until, response, error,
                       created_at, updated_at, processed_at,
+                      conexao_id,
                       (
                           SELECT provider FROM conexao
                           WHERE id = message_queue.conexao_id
@@ -353,7 +354,8 @@ async def claim_next(
             created_at=row[21],
             updated_at=row[22],
             processed_at=row[23],
-            conexao_provider=row[24],
+            conexao_id=row[24],
+            conexao_provider=row[25],
         )
 
         logger.info(
@@ -513,9 +515,7 @@ async def upsert_conversation(
         await conn.commit()
 
 
-async def reset_thread_checkpoint(
-    pool, phone_number: str, agent_id: str
-) -> int:
+async def reset_thread_checkpoint(pool, phone_number: str, agent_id: str) -> int:
     """Apaga o checkpoint LangGraph do thread (phone:agent).
 
     Usado quando o agente "decora" um pattern errado nas últimas N
