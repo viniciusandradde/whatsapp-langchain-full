@@ -18,7 +18,8 @@ from collections import defaultdict
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg_pool import AsyncConnectionPool
 from twilio.request_validator import RequestValidator  # type: ignore[import-untyped]
 
@@ -105,7 +106,21 @@ async def validate_twilio_signature(request: Request) -> None:
     logger.debug("twilio_signature_valid")
 
 
-async def verify_service_token(request: Request) -> None:
+# Esquema Bearer do FastAPI: faz o OpenAPI declarar `securitySchemes.ServiceToken`
+# e marcar `security` em CADA rota que depende de `verify_service_token` (botão
+# "Authorize" no Swagger). `auto_error=False` pra mantermos as mesmas mensagens
+# de 401 abaixo em vez do erro padrão do HTTPBearer.
+_service_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="ServiceToken",
+    description="Token de serviço interno (INTERNAL_SERVICE_TOKEN).",
+)
+
+
+async def verify_service_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_service_bearer),
+) -> None:
     """Verifica o token de serviço interno no header Authorization.
 
     Rotas administrativas (/api/*) são protegidas por um token compartilhado
@@ -114,19 +129,20 @@ async def verify_service_token(request: Request) -> None:
 
     O header deve ser: Authorization: Bearer <token>
 
+    Usa `HTTPBearer` apenas pra que o FastAPI documente o esquema no OpenAPI;
+    a validação (token correto) continua sendo nossa, timing-safe.
+
     Raises:
         HTTPException 401: Se o token está ausente ou inválido.
     """
-    auth_header = request.headers.get("Authorization")
-
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if credentials is None or credentials.scheme.lower() != "bearer":
         logger.warning("service_token_missing", path=str(request.url.path))
         raise HTTPException(
             status_code=401,
             detail="Missing or malformed Authorization header",
         )
 
-    token = auth_header.removeprefix("Bearer ").strip()
+    token = credentials.credentials.strip()
 
     # Comparacao timing-safe para evitar timing attacks na verificacao do token
     if not hmac.compare_digest(token, settings.internal_service_token):

@@ -7,13 +7,15 @@ Uso:
     uvicorn whatsapp_langchain.server.main:app --reload --port 8000
 """
 
+import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError
 from whatsapp_langchain.server.middlewares import (
@@ -35,7 +37,6 @@ from whatsapp_langchain.server.routes.asaas_webhook import (
     router as asaas_webhook_router,
 )
 from whatsapp_langchain.server.routes.atendente import router as atendente_router
-from whatsapp_langchain.server.routes.billing import router as billing_router
 from whatsapp_langchain.server.routes.atendimento import (
     router as atendimento_router,
 )
@@ -43,6 +44,7 @@ from whatsapp_langchain.server.routes.audit import router as audit_router
 from whatsapp_langchain.server.routes.base_conhecimento import (
     router as base_conhecimento_router,
 )
+from whatsapp_langchain.server.routes.billing import router as billing_router
 from whatsapp_langchain.server.routes.calendar_integration import (
     router as calendar_integration_router,
 )
@@ -196,11 +198,63 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="WhatsApp LangChain API",
-    description="API para agentes conversacionais WhatsApp com LangGraph.",
+    title="API Nexus AI",
+    description="API de agentes conversacionais WhatsApp do Nexus AI.",
     version="0.1.0",
     lifespan=lifespan,
+    # Docs/OpenAPI automáticos DESLIGADOS — reexpostos abaixo via rotas custom
+    # gateadas pelo service token em produção (em dev ficam abertos).
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
+
+
+def _docs_token_ok(request: Request) -> bool:
+    """True se o acesso aos docs/OpenAPI é permitido.
+
+    Dev/staging: sempre liberado. Produção: exige o INTERNAL_SERVICE_TOKEN via
+    header `Authorization: Bearer <token>` OU query `?token=<token>` (o swagger
+    UI faz fetch do /openapi.json sem header, então o token na query propaga).
+    """
+    if not settings.is_production:
+        return True
+    auth = request.headers.get("Authorization", "")
+    token = (
+        auth.removeprefix("Bearer ").strip()
+        if auth.startswith("Bearer ")
+        else request.query_params.get("token", "")
+    )
+    return bool(token) and hmac.compare_digest(token, settings.internal_service_token)
+
+
+def _require_docs(request: Request) -> None:
+    # 404 (não 401) pra não revelar que os docs existem em produção.
+    if not _docs_token_ok(request):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+@app.get("/openapi.json", include_in_schema=False)
+async def _openapi(request: Request) -> JSONResponse:
+    _require_docs(request)
+    return JSONResponse(app.openapi())
+
+
+@app.get("/docs", include_in_schema=False)
+async def _swagger(request: Request) -> HTMLResponse:
+    _require_docs(request)
+    token = request.query_params.get("token", "")
+    openapi_url = f"/openapi.json?token={token}" if token else "/openapi.json"
+    return get_swagger_ui_html(openapi_url=openapi_url, title=f"{app.title} — Swagger")
+
+
+@app.get("/redoc", include_in_schema=False)
+async def _redoc(request: Request) -> HTMLResponse:
+    _require_docs(request)
+    token = request.query_params.get("token", "")
+    openapi_url = f"/openapi.json?token={token}" if token else "/openapi.json"
+    return get_redoc_html(openapi_url=openapi_url, title=f"{app.title} — ReDoc")
+
 
 # CORS para o frontend (Next.js) — origens restritas via FRONTEND_ORIGINS
 app.add_middleware(
