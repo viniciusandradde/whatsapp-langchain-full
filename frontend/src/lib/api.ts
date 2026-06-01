@@ -1592,6 +1592,167 @@ export async function getAtendimentos(
   );
 }
 
+// === Histórico de Atendimentos (módulo Conversas) ===
+
+export interface HistoricoRow {
+  id: number;
+  protocolo: string | null;
+  status: AtendimentoStatus;
+  created_at: string;
+  closed_at: string | null;
+  last_message_at: string | null;
+  prioridade: string | null;
+  sentimento: string | null;
+  classificacao: string | null;
+  resumo_ia: string | null;
+  iniciado_cliente: boolean;
+  departamento_id: number | null;
+  assigned_to_user_id: string | null;
+  conexao_id: number | null;
+  cliente_nome: string | null;
+  cliente_telefone: string | null;
+  conexao_nome: string | null;
+  conexao_numero: string | null;
+  conexao_provider: string | null;
+  departamento_nome: string | null;
+  atendente_nome: string | null;
+  nota_csat: number | null;
+  csat_categoria: string | null;
+  duracao_seg: number | null;
+}
+
+export interface HistoricoResponse {
+  rows: HistoricoRow[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface HistoricoFiltrosParams {
+  createdDe?: string;
+  createdAte?: string;
+  closedDe?: string;
+  closedAte?: string;
+  status?: string[];
+  conexaoId?: number;
+  departamentoId?: number;
+  atendenteId?: string;
+  tagId?: number;
+  prioridade?: string;
+  sentimento?: string;
+  iniciadoCliente?: boolean;
+  q?: string;
+  sortField?: string;
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  limit?: number;
+}
+
+/** Monta a querystring do histórico (compartilhada por lista e export). */
+export function historicoQuerystring(p: HistoricoFiltrosParams): string {
+  const qs = new URLSearchParams();
+  if (p.createdDe) qs.set("created_de", p.createdDe);
+  if (p.createdAte) qs.set("created_ate", p.createdAte);
+  if (p.closedDe) qs.set("closed_de", p.closedDe);
+  if (p.closedAte) qs.set("closed_ate", p.closedAte);
+  if (p.status) for (const s of p.status) qs.append("status", s);
+  if (p.conexaoId) qs.set("conexao_id", String(p.conexaoId));
+  if (p.departamentoId) qs.set("departamento_id", String(p.departamentoId));
+  if (p.atendenteId) qs.set("atendente_id", p.atendenteId);
+  if (p.tagId) qs.set("tag_id", String(p.tagId));
+  if (p.prioridade) qs.set("prioridade", p.prioridade);
+  if (p.sentimento) qs.set("sentimento", p.sentimento);
+  if (p.iniciadoCliente !== undefined)
+    qs.set("iniciado_cliente", String(p.iniciadoCliente));
+  if (p.q) qs.set("q", p.q);
+  if (p.sortField) qs.set("sort_field", p.sortField);
+  if (p.sortOrder) qs.set("sort_order", p.sortOrder);
+  if (p.page) qs.set("page", String(p.page));
+  if (p.limit) qs.set("limit", String(p.limit));
+  return qs.toString();
+}
+
+export async function getHistorico(
+  p: HistoricoFiltrosParams = {}
+): Promise<HistoricoResponse> {
+  const s = historicoQuerystring(p);
+  return apiFetch<HistoricoResponse>(`/api/historico${s ? `?${s}` : ""}`);
+}
+
+export interface HistoricoTransferencia {
+  id: number;
+  created_at: string;
+  motivo: string | null;
+  de_user_nome: string | null;
+  para_user_nome: string | null;
+  de_depto_nome: string | null;
+  para_depto_nome: string | null;
+}
+
+export interface HistoricoEvento {
+  tipo: string;
+  at: string;
+  [k: string]: unknown;
+}
+
+export interface HistoricoDetalhe {
+  atendimento: Record<string, unknown>;
+  mensagens: AtendimentoMensagem[];
+  tags: AtendimentoTag[];
+  transferencias: HistoricoTransferencia[];
+  avaliacao: {
+    nota: number;
+    categoria: string;
+    comentario: string | null;
+    created_at: string;
+  } | null;
+  anotacoes: Record<string, unknown>[];
+  eventos: HistoricoEvento[];
+}
+
+export async function getHistoricoDetalhe(
+  id: number
+): Promise<HistoricoDetalhe> {
+  return apiFetch<HistoricoDetalhe>(`/api/historico/${id}`);
+}
+
+/** Forward bruto do export (CSV/XLSX) — usado pelo route handler de download.
+ * `search` já contém `formato` + filtros (querystring do /api/historico-export). */
+export async function proxyHistoricoExport(
+  search: string
+): Promise<{ bytes: ArrayBuffer; contentType: string; filename: string }> {
+  ensureFrontendRuntimeConfig();
+  const qs = search.startsWith("?") ? search.slice(1) : search;
+  const url = `${API_URL}/api/historico/export${qs ? `?${qs}` : ""}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+  };
+  try {
+    const session = await auth.api.getSession({ headers: await nextHeaders() });
+    if (session?.user?.id) headers["X-User-Id"] = session.user.id;
+  } catch {
+    // sem session → 401 esperado
+  }
+  try {
+    const empresaCookie = (await cookies()).get(ACTIVE_EMPRESA_COOKIE)?.value;
+    if (empresaCookie) headers["X-Empresa-Id"] = empresaCookie;
+  } catch {
+    // sem cookies
+  }
+  const resp = await fetch(url, { headers, cache: "no-store" });
+  if (!resp.ok) {
+    throw new Error(`Falha ao exportar (${resp.status})`);
+  }
+  const cd = resp.headers.get("content-disposition") || "";
+  const m = cd.match(/filename="?([^"]+)"?/);
+  const fmt = new URLSearchParams(qs).get("formato") || "csv";
+  return {
+    bytes: await resp.arrayBuffer(),
+    contentType: resp.headers.get("content-type") || "application/octet-stream",
+    filename: m?.[1] || `historico.${fmt}`,
+  };
+}
+
 // --- Sprint Atendimento UX: Abas pessoais + contadores ---
 
 export interface Aba {

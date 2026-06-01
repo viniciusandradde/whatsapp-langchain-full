@@ -1,153 +1,127 @@
-import Link from "next/link";
-import { MessageSquare } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { History } from "lucide-react";
+
+import { ApiError } from "@/components/ui/api-error";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { getChats } from "@/lib/api";
+  getConexoes,
+  getDepartamentos,
+  getHistorico,
+  getTags,
+  type HistoricoFiltrosParams,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
+
+import { HistoricoFilters } from "./historico-filters";
+import { HistoricoTable } from "./historico-table";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Formata uma data ISO como string legível em português.
- *
- * Usa tempo relativo para datas recentes (hoje/ontem) e formato
- * locale para datas mais antigas — mantém simples sem libs externas.
- */
-function formatDate(dateString: string | null): string {
-  if (!dateString) return "—";
+type SP = Record<string, string | string[] | undefined>;
 
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMinutes = Math.floor(diffMs / 60_000);
-  const diffHours = Math.floor(diffMs / 3_600_000);
+function str(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
 
-  // Tempo relativo para datas recentes
-  if (diffMinutes < 1) return "agora";
-  if (diffMinutes < 60) return `${diffMinutes}min atrás`;
-  if (diffHours < 24) return `${diffHours}h atrás`;
-
-  // Formato locale para datas mais antigas
-  return date.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function arr(v: string | string[] | undefined): string[] | undefined {
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v : [v];
 }
 
 /**
- * Trunca texto longo adicionando reticências.
+ * Histórico de Atendimentos (aba "Conversas"). Substitui a listagem legada:
+ * consulta sobre TODOS os status com período + filtros + paginação + detalhe +
+ * export CSV/Excel. Backend: GET /api/historico.
  */
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + "...";
-}
-
-function formatPhone(phone: string): string {
-  if (phone.length > 4) {
-    return `***${phone.slice(-4)}`;
-  }
-
-  return phone;
-}
-
-/**
- * Página de listagem de conversas.
- *
- * Server Component que busca a lista de chats da API e exibe em tabela.
- * Cada linha é clicável e leva à página de detalhe da conversa.
- */
-export default async function ChatsPage() {
+export default async function ConversasPage({
+  searchParams,
+}: {
+  searchParams: Promise<SP>;
+}) {
   await requireSession();
+  const sp = await searchParams;
 
-  // Tenta buscar conversas — a API pode não estar rodando em dev
-  let data = null;
-  let error = null;
+  const page = Math.max(1, Number(str(sp.page)) || 1);
+  const limit = Math.min(200, Math.max(10, Number(str(sp.limit)) || 50));
+
+  const filtros: HistoricoFiltrosParams = {
+    createdDe: str(sp.created_de),
+    createdAte: str(sp.created_ate),
+    status: arr(sp.status),
+    conexaoId: str(sp.conexao_id) ? Number(str(sp.conexao_id)) : undefined,
+    departamentoId: str(sp.departamento_id)
+      ? Number(str(sp.departamento_id))
+      : undefined,
+    tagId: str(sp.tag_id) ? Number(str(sp.tag_id)) : undefined,
+    prioridade: str(sp.prioridade),
+    q: str(sp.q),
+    sortField: str(sp.sort_field) || "created_at",
+    sortOrder: (str(sp.sort_order) as "asc" | "desc") || "desc",
+    page,
+    limit,
+  };
+
+  let data: Awaited<ReturnType<typeof getHistorico>> | null = null;
+  let deptos: { id: number; nome: string }[] = [];
+  let conexoes: { id: number; label: string }[] = [];
+  let tags: { id: number; nome: string; cor: string | null }[] = [];
+  let error: string | null = null;
 
   try {
-    data = await getChats();
+    const [hist, dep, con, tg] = await Promise.all([
+      getHistorico(filtros),
+      getDepartamentos().catch(() => ({ departamentos: [] })),
+      getConexoes().catch(() => ({ conexoes: [] })),
+      getTags(true).catch(() => ({ items: [] })),
+    ]);
+    data = hist;
+    deptos = (dep.departamentos ?? []).map((d) => ({ id: d.id, nome: d.nome }));
+    conexoes = (con.conexoes ?? []).map((c) => ({
+      id: c.id,
+      label: c.display_name || c.from_number || `Conexão ${c.id}`,
+    }));
+    tags = (tg.items ?? []).map((t) => ({ id: t.id, nome: t.nome, cor: t.cor }));
   } catch (e) {
-    error =
-      e instanceof Error
-        ? e.message
-        : "Erro desconhecido ao buscar conversas";
+    error = e instanceof Error ? e.message : "Erro ao carregar histórico.";
   }
 
   return (
-    <div className="space-y-6">
-      {/* Cabeçalho da página */}
-      <div className="flex items-center gap-2">
-        <MessageSquare className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Conversas</h1>
-        {data && (
-          <Badge variant="secondary">{data.total}</Badge>
-        )}
-      </div>
-
-      {/* Estado de erro — API indisponível */}
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-          <p className="font-medium">Não foi possível carregar as conversas</p>
-          <p className="mt-1 text-destructive/80">{error}</p>
+    <div className="space-y-5">
+      <header className="flex items-center gap-3">
+        <History className="h-6 w-6 text-muted-foreground" />
+        <div>
+          <h1 className="text-xl font-semibold">Histórico de Atendimentos</h1>
+          <p className="text-sm text-muted-foreground">
+            Consulte, filtre e exporte todas as conversas — abertas e
+            finalizadas.
+          </p>
         </div>
+      </header>
+
+      <HistoricoFilters
+        deptos={deptos}
+        conexoes={conexoes}
+        tags={tags}
+        current={sp}
+      />
+
+      {error && <ApiError error={error} />}
+
+      {!error && data && data.rows.length === 0 && (
+        <EmptyState
+          icon={History}
+          title="Nenhum atendimento encontrado"
+          description="Ajuste o período ou os filtros para ver o histórico."
+        />
       )}
 
-      {/* Estado vazio — nenhuma conversa encontrada */}
-      {data && data.chats.length === 0 && (
-        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          <MessageSquare className="mx-auto mb-2 h-8 w-8" />
-          <p>Nenhuma conversa encontrada</p>
-        </div>
-      )}
-
-      {/* Tabela de conversas */}
-      {data && data.chats.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Telefone</TableHead>
-              <TableHead>Agente</TableHead>
-              <TableHead className="hidden md:table-cell">Última mensagem</TableHead>
-              <TableHead className="text-center">Mensagens</TableHead>
-              <TableHead className="text-right">Última atividade</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.chats.map((chat) => (
-              <TableRow key={chat.phone_number}>
-                <TableCell>
-                  <Link
-                    href={`/chats/${encodeURIComponent(chat.phone_number)}`}
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    {formatPhone(chat.phone_number)}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{chat.agent_id}</Badge>
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-muted-foreground">
-                  {truncate(chat.last_message, 50)}
-                </TableCell>
-                <TableCell className="text-center">
-                  {chat.message_count}
-                </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  {formatDate(chat.last_message_at)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      {!error && data && data.rows.length > 0 && (
+        <HistoricoTable
+          rows={data.rows}
+          total={data.total}
+          page={data.page}
+          limit={data.limit}
+          current={sp}
+        />
       )}
     </div>
   );

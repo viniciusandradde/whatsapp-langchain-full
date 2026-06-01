@@ -80,6 +80,7 @@ from whatsapp_langchain.server.routes.evolution_webhook import (
 )
 from whatsapp_langchain.server.routes.feature_flag import router as feature_flag_router
 from whatsapp_langchain.server.routes.health import router as health_router
+from whatsapp_langchain.server.routes.historico import router as historico_router
 from whatsapp_langchain.server.routes.hitl import (
     router as hitl_router,
 )
@@ -343,6 +344,7 @@ app.include_router(empresa_admin_router)
 app.include_router(conexao_router)
 app.include_router(cliente_router)
 app.include_router(atendimento_router)
+app.include_router(historico_router)
 app.include_router(aba_router)
 app.include_router(tag_router)
 app.include_router(integracoes_wareline_router)
