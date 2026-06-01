@@ -253,6 +253,7 @@ async def get_historico_detalhe(
 
     transferencias = await _list_transferencias(pool, atendimento_id)
     avaliacao = await _get_avaliacao(pool, atendimento_id)
+    menu_historico = await _list_menu_historico(pool, atendimento_id)
     eventos = _build_eventos(atd, transferencias, avaliacao)
 
     return {
@@ -262,8 +263,30 @@ async def get_historico_detalhe(
         "transferencias": transferencias,
         "avaliacao": avaliacao,
         "anotacoes": anotacoes,
+        "menu_historico": menu_historico,
         "eventos": eventos,
     }
+
+
+async def _list_menu_historico(
+    pool: AsyncConnectionPool, atendimento_id: int
+) -> list[dict[str, Any]]:
+    """Jornada do cliente no chatbot/menu (equivalente ao
+    AtendimentoMenuHistorico do ZigChat): qual menu/opção em cada passo."""
+    sql = """
+        SELECT mh.escolhido_at, mh.resposta,
+               mc.nome AS menu_nome, mi.label AS item_label
+          FROM atendimento_menu_historico mh
+          LEFT JOIN menu_chatbot mc ON mc.id = mh.menu_id
+          LEFT JOIN menu_item mi ON mi.id = mh.item_id
+         WHERE mh.atendimento_id = %s
+         ORDER BY mh.escolhido_at ASC, mh.id ASC
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(sql, (atendimento_id,))
+        rows = await cur.fetchall()
+        cols = [c.name for c in cur.description] if cur.description else []
+    return [{cols[i]: r[i] for i in range(len(cols))} for r in rows]
 
 
 async def _list_transferencias(

@@ -76,9 +76,14 @@ monta um único JSON:
   "transferencias": [ {de/para user/depto, motivo, created_at} ],
   "avaliacao":   { "nota": 10, "categoria": "promotor", "comentario": "..." },
   "anotacoes":   [ ...list_anotacoes do cliente... ],
+  "menu_historico": [ {item_label, menu_nome, resposta, escolhido_at} ],
   "eventos":     [ {tipo: "aberto|triagem|transferencia|fechado|avaliacao", at} ]
 }
 ```
+
+`menu_historico` é a **jornada do cliente no chatbot/menu** (paridade com o
+`AtendimentoMenuHistorico` do ZigChat) — qual opção foi escolhida em cada passo,
+via `atendimento_menu_historico` (mig 040/045).
 
 ## Exportação CSV / Excel
 

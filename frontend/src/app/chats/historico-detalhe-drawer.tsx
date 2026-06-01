@@ -175,6 +175,23 @@ export function HistoricoDetalheDrawer({
                 </Section>
               )}
 
+              {/* Jornada no chatbot/menu */}
+              {detalhe.menu_historico.length > 0 && (
+                <Section title="Jornada no chatbot">
+                  <ol className="space-y-1 text-sm">
+                    {detalhe.menu_historico.map((s, i) => (
+                      <li key={i} className="text-muted-foreground">
+                        <span className="text-foreground">
+                          {s.item_label ?? s.menu_nome ?? "Menu"}
+                        </span>
+                        {s.resposta ? ` · respondeu “${s.resposta}”` : ""} ·{" "}
+                        {fmt(s.escolhido_at)}
+                      </li>
+                    ))}
+                  </ol>
+                </Section>
+              )}
+
               {/* Eventos */}
               {detalhe.eventos.length > 0 && (
                 <Section title="Linha do tempo">

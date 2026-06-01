@@ -1707,6 +1707,12 @@ export interface HistoricoDetalhe {
     created_at: string;
   } | null;
   anotacoes: Record<string, unknown>[];
+  menu_historico: {
+    escolhido_at: string;
+    resposta: string | null;
+    menu_nome: string | null;
+    item_label: string | null;
+  }[];
   eventos: HistoricoEvento[];
 }
 
