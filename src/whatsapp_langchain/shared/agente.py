@@ -50,6 +50,7 @@ def resolve_temperatura_top_p(
 
 # ---- Modelo + helpers ----
 
+
 class DuplicateAgenteError(ValueError):
     """Slug já existe na empresa."""
 
@@ -156,7 +157,9 @@ class AgenteIA:
         # Campos derivados (pra UI mostrar valores efetivos)
         temp, top_p = resolve_temperatura_top_p(
             self.estilo_resposta,
-            float(self.temperatura_override) if self.temperatura_override is not None else None,
+            float(self.temperatura_override)
+            if self.temperatura_override is not None
+            else None,
             float(self.top_p_override) if self.top_p_override is not None else None,
         )
         out["temperatura_efetiva"] = temp
@@ -290,9 +293,18 @@ async def replace_acl_agente(
 async def get_agente_by_slug(
     pool: AsyncConnectionPool, empresa_id: int, slug: str
 ) -> AgenteIA | None:
+    # PREFERE o agente ativo e é determinístico: slugs podem colidir
+    # (duplicatas — ex. agente criado 2x). Sem ORDER, o `fetchone()` devolvia
+    # uma linha ARBITRÁRIA, e cair na duplicata sem config (ex. sem
+    # departamento_default_id) quebrava o handoff (prod 2026-06-01).
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {_COLS} FROM agente_ia WHERE empresa_id = %s AND slug = %s",
+            f"""
+            SELECT {_COLS} FROM agente_ia
+             WHERE empresa_id = %s AND slug = %s
+             ORDER BY ativo DESC, id DESC
+             LIMIT 1
+            """,
             (empresa_id, slug),
         )
         row = await cur.fetchone()
@@ -370,19 +382,35 @@ async def update_agente(
     campo (vira NULL no DB). Caller deve passar SÓ os campos explícitos
     (use `body.model_dump(exclude_unset=True)` na route).
     """
-    READONLY = {"id", "empresa_id", "slug", "created_at", "updated_at",
-                "created_by_user_id", "temperatura_efetiva", "top_p_efetivo"}
+    READONLY = {
+        "id",
+        "empresa_id",
+        "slug",
+        "created_at",
+        "updated_at",
+        "created_by_user_id",
+        "temperatura_efetiva",
+        "top_p_efetivo",
+    }
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
         if k in READONLY:
             continue
         # Listas + JSON precisam cast explícito em alguns drivers
-        if k in ("tools_enabled", "base_conhecimento_ids", "variavel_ids", "mcp_server_ids"):
-            sets.append(f"{k} = %s::text[]" if k == "tools_enabled" else f"{k} = %s::bigint[]")
+        if k in (
+            "tools_enabled",
+            "base_conhecimento_ids",
+            "variavel_ids",
+            "mcp_server_ids",
+        ):
+            sets.append(
+                f"{k} = %s::text[]" if k == "tools_enabled" else f"{k} = %s::bigint[]"
+            )
             params.append(list(v) if v is not None else None)
         elif k == "tools_config":
             import json
+
             sets.append("tools_config = %s::jsonb")
             params.append(json.dumps(v) if v is not None else None)
         else:
@@ -474,9 +502,7 @@ class AgenteRuntime:
             float(agente.temperatura_override)
             if agente.temperatura_override is not None
             else None,
-            float(agente.top_p_override)
-            if agente.top_p_override is not None
-            else None,
+            float(agente.top_p_override) if agente.top_p_override is not None else None,
         )
         # Resolve modelo efetivo: provedor + nome separados (mig 043) OU
         # modelo único legado. Provedor + nome ganha precedência se ambos
