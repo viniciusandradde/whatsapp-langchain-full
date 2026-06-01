@@ -80,15 +80,20 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 
 **Frontend / admin auth** — Next.js panel in `frontend/` uses Better Auth against the same Postgres in a separate `auth` schema (migrations `003_auth_schema.sql`, `004_better_auth_tables.sql`). Server-side fetches to `/api/*` go via `INTERNAL_API_URL` + bearer `INTERNAL_SERVICE_TOKEN` (enforced by `verify_service_token` dependency on the admin router). On first `/login` the frontend bootstraps the initial admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` if `auth."user"` is empty. **`INTERNAL_SERVICE_TOKEN` and `BETTER_AUTH_SECRET` must be set even locally** — `Settings.validate_runtime_settings()` raises at API startup otherwise; in production the token is also length-checked (≥32).
 
-**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 71 migration files** numbered up to 074 (chronological gaps existem — não são problema). Recent highlights:
+**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 103 migration files** numbered up to `109` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem). Recent highlights:
 - `022_rate_limit_generic.sql` — generic `rate_limit_bucket` (used by admin endpoints middleware)
 - `023_hook_dead_letter.sql` — DLQ for hooks that exhaust retries
 - `024_user_status.sql` — `auth.user.status` (active/disabled) blocks login + kills sessions
 - `025_password_reset_pending.sql` — cache of reset links (no SMTP path, admin shares manually)
 - `026_login_event.sql` — auth audit log with IP/user-agent
 - `027_agendamento.sql` — local mirror of Google Calendar events with governance
-- `073_atendimento_avaliacao.sql` — NPS/CSAT capture: nova tabela + flags `aguardando_avaliacao_at`/`aguardando_comentario_at` em `atendimento`
-- `074_empresa_csat_config.sql` — config NPS por empresa (4 colunas `csat_*`); desativa itens `pesquisa_csat` legados em `menu_item`
+- `073_atendimento_avaliacao.sql` / `074_empresa_csat_config.sql` — NPS/CSAT capture + config por empresa (ver módulo NPS abaixo)
+- `096`, `100`–`103` — RLS Postgres maturidade real: 4 roles application, expand FORCE RLS pra todas as tabelas com `empresa_id`, troca policy permissive→estrita, security hardening logging (Sprint A.2; runbook `docs/RLS_OPERATIONS.md`)
+- `105_asaas_billing_fields.sql` — campos Asaas em `empresa` + index pra webhook lookup (schema billing `plano`/`transacao` existe desde mig 059)
+- `106_user_profile_fields.sql` — Sprint U: `auth.user.telefone`/`last_login_at`/`avatar_path` + trigger `last_login_at` (ver módulo `/api/usuarios` abaixo)
+- `107_langfuse_trace_link.sql` — link bidirecional `ia_execucao`/`message_queue` ↔ Langfuse trace (worker gera `trace_id` determinístico quando `LANGFUSE_ENABLED`)
+- `108_conexao_default_unique.sql` — garante 1 só conexão `is_default` por empresa (defesa em profundidade)
+- `109_message_template_provider.sql` — generaliza `waba_template` → multi-provider (WABA + Twilio Content API)
 
 **Twilio outbound modes** (`TWILIO_OUTBOUND_MODE`) — `mock` (logs only, default in dev) vs `real` (Twilio Messages API via API Key auth). Worker startup fail-fasts if `real` mode is missing any of `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_FROM_NUMBER`. Empty value resolves to `real` in production, `mock` otherwise (`Settings.resolved_twilio_outbound_mode`).
 
@@ -107,6 +112,7 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 - Reset password without SMTP — Better Auth callback `sendResetPassword` persists URL+token in `auth.password_reset_pending` (1h expiry). Admin retrieves via `generateResetLinkAction()` and shares via WhatsApp/Slack/whatever. UI button (KeyRound icon) in members list.
 - Login audit — `databaseHooks.session.create.{before,after}` write to `auth_login_event` (migration 026). Best-effort (errors don't break login). Viewer at `/settings/security/login-history` (admin sees all, non-superadmin sees own).
 - Google SSO — opt-in. If `GOOGLE_OAUTH_CLIENT_ID/SECRET` are set, `socialProviders.google` is enabled in Better Auth and login form shows the Google button. Reuses Calendar OAuth Client; just add redirect URI `https://<domain>/api/auth/callback/google` in Google Console.
+- **User CRUD module** (`server/routes/usuarios.py`, `shared/usuarios.py`, frontend `/usuarios`) — Sprint U. `/api/usuarios` (perm `empresa.member.add`) é o caminho **preferido** sobre o legado `/api/empresas/{id}/membros` (não remova o legado). Endpoints: list enriquecida c/ filtros, detalhe, criar (Better Auth `auth.user` + `empresa_membro` membership), atualizar (nome/telefone/perfis/deptos), `POST /{id}/avatar` (upload local em `AVATARS_DIR`, default `/app/uploads/avatars`, ≤2MB, png/jpeg/webp/gif), `POST /{id}/sessions/invalidate` (força re-login após reset de senha), `exists/{id}`. Campos custom (`telefone`, `last_login_at`, `avatar_path`) ficam fora do Better Auth — acessados via SQL direto (mig 106).
 
 **Bootstrap admin** (`frontend/src/lib/bootstrap-admin-core.ts`) — on first login, when `auth.user` is empty, creates the user from `ADMIN_EMAIL`/`ADMIN_PASSWORD` PLUS `empresa_membro` row (empresa_id=1, role=admin, is_default=true) PLUS `is_superadmin=true`/`emailVerified=true`. Without this triple-insert, the user logs in but every `/api/*` returns 403 because `get_empresa_context` requires membership or superadmin. Don't drop these inserts when refactoring.
 

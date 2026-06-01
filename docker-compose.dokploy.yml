@@ -42,6 +42,9 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    volumes:
+      # Sprint U — avatares de usuário (upload local servido como estático)
+      - avatars_data:/app/uploads/avatars
 
   worker:
     build:
@@ -110,3 +113,4 @@ services:
 volumes:
   postgres_data:
   tests_reports:
+  avatars_data:  # Sprint U — uploads de avatar (persiste em rebuilds)

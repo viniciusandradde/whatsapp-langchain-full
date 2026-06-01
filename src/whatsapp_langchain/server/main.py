@@ -8,14 +8,17 @@ Uso:
 """
 
 import hmac
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from whatsapp_langchain.agents.loader import AgentNotFoundError
 from whatsapp_langchain.server.middlewares import (
@@ -118,6 +121,8 @@ from whatsapp_langchain.server.routes.test_runner import (
     router as test_runner_router,
 )
 from whatsapp_langchain.server.routes.traces import router as traces_router
+from whatsapp_langchain.server.routes.turno import router as turno_router
+from whatsapp_langchain.server.routes.usuarios import router as usuarios_router
 from whatsapp_langchain.server.routes.variavel import (
     router as variavel_router,
 )
@@ -377,6 +382,33 @@ app.include_router(ia_budget_router)
 app.include_router(atendente_router)
 app.include_router(billing_router)
 app.include_router(asaas_webhook_router)
+app.include_router(usuarios_router)
+app.include_router(turno_router)
+
+# Sprint U — upload de avatares de usuário servido como estático.
+# Volume Docker em docker-compose.dokploy.yml (avatars_data:/app/uploads/avatars)
+# garante persistência. Em dev local, cria diretório se não existir.
+# Tenta /app/uploads (container) ou env AVATARS_DIR ou ./uploads (cwd local).
+_default_avatars_dir = "/app/uploads/avatars"
+_AVATARS_DIR = Path(os.environ.get("AVATARS_DIR", _default_avatars_dir))
+try:
+    _AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError) as _exc:
+    # Fallback: usa diretório no cwd quando rodando fora do container Docker
+    # (ex: dev local com `uv run uvicorn ...` sem mount em /app).
+    _AVATARS_DIR = Path.cwd() / "uploads" / "avatars"
+    _AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "avatars_dir_fallback",
+        intended=str(_default_avatars_dir),
+        fallback=str(_AVATARS_DIR),
+        reason=str(_exc),
+    )
+app.mount(
+    "/uploads/avatars",
+    StaticFiles(directory=str(_AVATARS_DIR)),
+    name="avatars",
+)
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)

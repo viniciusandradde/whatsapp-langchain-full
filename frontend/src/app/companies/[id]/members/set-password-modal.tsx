@@ -37,7 +37,7 @@ export function SetPasswordModal({ userId, userEmail, onClose, onSaved }: Props)
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<{
     password: string;
-    email: string;
+    email: string | null;
   } | null>(null);
   const [show, setShow] = useState(false);
   const [copied, setCopied] = useState(false);

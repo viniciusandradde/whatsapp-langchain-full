@@ -3998,6 +3998,13 @@ export async function getEmpresaQuota(empresaId: number): Promise<QuotaSnapshot>
 }
 
 // Sprint U — Usuários (CRUD completo)
+export interface UsuarioConexao {
+  id: number;
+  nome: string;
+  provider: string;
+  is_default: boolean;
+}
+
 export interface Usuario {
   id: string;
   nome: string | null;
@@ -4015,6 +4022,12 @@ export interface Usuario {
   is_default_empresa: boolean;
   perfis: { id: number; nome: string; is_system: boolean }[];
   departamentos: { id: number; nome: string }[];
+  conexoes: UsuarioConexao[];
+}
+
+export interface ConexaoAssignInput {
+  id: number;
+  is_default: boolean;
 }
 
 export interface UsuarioCreateInput {
@@ -4024,6 +4037,8 @@ export interface UsuarioCreateInput {
   role_legacy?: "admin" | "operator" | "viewer";
   perfis_ids?: number[];
   departamentos_ids?: number[];
+  conexoes?: ConexaoAssignInput[];
+  atendente_max_paralelos?: number;
 }
 
 export interface UsuarioUpdateInput {
@@ -4033,6 +4048,14 @@ export interface UsuarioUpdateInput {
   role_legacy?: "admin" | "operator" | "viewer";
   perfis_ids?: number[];
   departamentos_ids?: number[];
+  conexoes?: ConexaoAssignInput[];
+}
+
+export interface UsuariosListResult {
+  items: Usuario[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export async function listUsuarios(params: {
@@ -4041,16 +4064,20 @@ export async function listUsuarios(params: {
   departamento_id?: number;
   status?: "active" | "disabled";
   limit?: number;
-} = {}): Promise<{ items: Usuario[] }> {
+  offset?: number;
+} = {}): Promise<UsuariosListResult> {
   const qs = new URLSearchParams();
   if (params.search) qs.set("search", params.search);
   if (params.perfil_id) qs.set("perfil_id", String(params.perfil_id));
   if (params.departamento_id)
     qs.set("departamento_id", String(params.departamento_id));
   if (params.status) qs.set("status", params.status);
-  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  if (params.offset != null) qs.set("offset", String(params.offset));
   const query = qs.toString();
-  return apiFetch<{ items: Usuario[] }>(`/api/usuarios${query ? "?" + query : ""}`);
+  return apiFetch<UsuariosListResult>(
+    `/api/usuarios${query ? "?" + query : ""}`
+  );
 }
 
 export async function getUsuario(userId: string): Promise<Usuario> {
@@ -4071,6 +4098,94 @@ export async function atualizarUsuario(
 export async function invalidarSessionsUsuario(userId: string): Promise<void> {
   await apiFetch<void>(`/api/usuarios/${userId}/sessions/invalidate`, {
     method: "POST",
+  });
+}
+
+export interface SetStatusUsuarioBody {
+  status: "active" | "disabled";
+  on_disable?: "reassign" | "departamento" | "none";
+  target_user_id?: string;
+  departamento_id?: number;
+}
+
+export async function setStatusUsuario(
+  userId: string,
+  body: SetStatusUsuarioBody
+): Promise<{ status: string; transferidos: number }> {
+  return apiFetch<{ status: string; transferidos: number }>(
+    `/api/usuarios/${userId}/status`,
+    { method: "PATCH", body }
+  );
+}
+
+export async function replicarUsuario(
+  userId: string,
+  body: { nome: string; email?: string | null; telefone?: string | null }
+): Promise<Usuario> {
+  return apiFetch<Usuario>(`/api/usuarios/${userId}/replicar`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function deletarUsuario(userId: string): Promise<void> {
+  await apiFetch<void>(`/api/usuarios/${userId}`, { method: "DELETE" });
+}
+
+// Turnos / jornada de trabalho (Sprint U Fase 2)
+export interface TurnoHorario {
+  dia_semana: number; // 0=Dom..6=Sáb
+  hora_inicio: string; // "HH:MM"
+  hora_fim: string;
+}
+
+export interface Turno {
+  id: number;
+  empresa_id: number;
+  nome: string;
+  ativo: boolean;
+  horarios: TurnoHorario[];
+  users_count: number;
+}
+
+export interface TurnoInput {
+  nome: string;
+  ativo?: boolean;
+  horarios?: TurnoHorario[];
+}
+
+export async function listTurnos(): Promise<{ items: Turno[] }> {
+  return apiFetch<{ items: Turno[] }>("/api/turnos");
+}
+
+export async function criarTurno(body: TurnoInput): Promise<Turno> {
+  return apiFetch<Turno>("/api/turnos", { method: "POST", body });
+}
+
+export async function atualizarTurno(
+  id: number,
+  body: Partial<TurnoInput>
+): Promise<Turno> {
+  return apiFetch<Turno>(`/api/turnos/${id}`, { method: "PUT", body });
+}
+
+export async function deletarTurno(id: number): Promise<void> {
+  await apiFetch<void>(`/api/turnos/${id}`, { method: "DELETE" });
+}
+
+export async function getTurnoUsers(
+  id: number
+): Promise<{ users: { id: string; nome: string | null; email: string | null }[] }> {
+  return apiFetch(`/api/turnos/${id}/users`);
+}
+
+export async function setTurnoUsers(
+  id: number,
+  userIds: string[]
+): Promise<void> {
+  await apiFetch<void>(`/api/turnos/${id}/users`, {
+    method: "PUT",
+    body: { user_ids: userIds },
   });
 }
 

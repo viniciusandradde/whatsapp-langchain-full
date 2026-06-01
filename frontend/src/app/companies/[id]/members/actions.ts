@@ -14,6 +14,7 @@ import {
   type UserStatus,
 } from "@/lib/api";
 import { auth, authPool } from "@/lib/auth";
+import { upsertUserPassword } from "@/lib/user-password";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -179,50 +180,35 @@ export async function generateResetLinkAction(
 export async function resetMemberPasswordAction(
   userId: string
 ): Promise<
-  | { ok: true; password: string; email: string }
+  | { ok: true; password: string; email: string | null }
   | { ok: false; error: string }
 > {
   try {
-    const userRow = await authPool.query<{ email: string }>(
-      `SELECT email FROM auth."user" WHERE id = $1`,
+    // Sprint U.4 — FIX: busca por user_id, não filtra por email NOT NULL.
+    // Users criados via /usuarios sem email têm email sintético
+    // (`user-{uuid}@no-email.local`) — funcionam pra reset normal.
+    // Quando email é NULL de verdade (corner case), ainda assim
+    // setUserPassword aceita userId direto.
+    const userRow = await authPool.query<{ id: string; email: string | null }>(
+      `SELECT id, email FROM auth."user" WHERE id = $1`,
       [userId]
     );
-    const email = userRow.rows[0]?.email;
-    if (!email) {
-      return { ok: false, error: "User não encontrado." };
+    if (userRow.rows.length === 0) {
+      return { ok: false, error: "Usuário não encontrado." };
     }
+    const email = userRow.rows[0].email;
 
     // 1. Gera senha aleatória forte no servidor (16 chars, sem ambiguidade)
     const newPassword = generateSecurePassword(16);
 
-    // 2. Dispara request reset → callback persiste token
-    await auth.api.requestPasswordReset({
-      body: { email, redirectTo: "/reset-password" },
-    });
+    // 2. Persiste hash via helper (mesma rotina usada em /usuarios) — não
+    // depende do admin plugin do Better Auth e funciona pra user sem email.
+    await upsertUserPassword(userId, newPassword);
 
-    // 3. Lê token recém-gerado
-    const tokenRow = await authPool.query<{ token: string }>(
-      `SELECT token FROM auth.password_reset_pending WHERE user_id = $1`,
-      [userId]
-    );
-    const token = tokenRow.rows[0]?.token;
-    if (!token) {
-      return {
-        ok: false,
-        error: "Token não foi gerado. Verifique config Better Auth.",
-      };
-    }
-
-    // 4. Aplica nova senha consumindo o token
-    await auth.api.resetPassword({
-      body: { newPassword, token },
-    });
-
-    // 5. Limpa pending residual
-    await authPool.query(
-      `DELETE FROM auth.password_reset_pending WHERE user_id = $1`,
-      [userId]
-    );
+    // 3. Invalida sessions ativas (força re-login)
+    await authPool.query(`DELETE FROM auth.session WHERE "userId" = $1`, [
+      userId,
+    ]);
 
     return { ok: true, password: newPassword, email };
   } catch (e) {

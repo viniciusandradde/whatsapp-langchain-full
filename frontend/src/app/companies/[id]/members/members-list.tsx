@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
+  ArrowRight,
   CheckCircle2,
+  Info,
   KeyRound,
   Shield,
   Trash2,
@@ -111,6 +114,24 @@ export function MembersList({
 
   return (
     <div className="space-y-4">
+      <div className="flex items-start gap-3 rounded-lg border border-brand-primary/30 bg-brand-primary/5 p-3 text-sm">
+        <Info className="mt-0.5 size-4 shrink-0 text-brand-primary" />
+        <div className="flex-1 space-y-1">
+          <p className="font-medium">Use a página Usuários pra gestão completa</p>
+          <p className="text-xs text-muted-foreground">
+            Avatar, telefone, perfis RBAC, departamentos e reset de senha em uma
+            interface só. Esta tela mostra apenas membership desta empresa.
+          </p>
+        </div>
+        <Link
+          href="/usuarios"
+          className="flex items-center gap-1 rounded-md border border-brand-primary/30 bg-brand-primary/10 px-3 py-1.5 text-xs font-medium text-brand-primary hover:bg-brand-primary/20"
+        >
+          Abrir Usuários
+          <ArrowRight className="size-3" />
+        </Link>
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {members.length} {members.length === 1 ? "membro" : "membros"}

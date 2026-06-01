@@ -59,11 +59,13 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
   ],
   governanca: [
     { label: "Empresas", href: "/companies", requires: "empresa.update" },
+    { label: "Usuários", href: "/usuarios", requires: "empresa.member.add" },
     { label: "Atendentes", href: "/atendentes", requires: "empresa.member.add" },
     { label: "Plano & Cobrança", href: "/billing", requires: "empresa.update" },
     { label: "IA Budget", href: "/governanca/ia-budget", requires: "empresa.update" },
     { label: "Perfis (RBAC)", href: "/settings/perfis", requires: "perfil.read" },
     { label: "Departamentos", href: "/settings/departamentos", requires: "departamento.read" },
+    { label: "Turnos / Jornada", href: "/settings/turnos", requires: "departamento.read" },
     { label: "Horário de Atendimento", href: "/settings/horarios", requires: "horario.write" },
     { label: "Regras de Agendamento", href: "/settings/calendar-rules", requires: "agendamento.regras.write" },
     { label: "Segurança", href: "/settings", requires: "security.audit.read" },
@@ -123,11 +125,13 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
     grupo: "governanca",
     prefixos: [
       "/companies",
+      "/usuarios",
       "/atendentes",
       "/billing",
       "/governanca",
       "/settings/perfis",
       "/settings/departamentos",
+      "/settings/turnos",
       "/settings/horarios",
       "/settings/calendar-rules",
       "/settings",  // /settings root = "Segurança" (vem por último — fallback)
