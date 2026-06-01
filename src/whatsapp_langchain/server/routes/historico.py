@@ -24,6 +24,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.shared import historico_relatorios as rel
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.historico import (
     HistoricoFiltros,
@@ -257,6 +258,66 @@ async def exportar_historico(
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@router.get("/relatorios/resumo")
+async def relatorio_resumo(
+    request: Request,
+    dias: int = Query(default=30, ge=1, le=365),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict[str, Any]:
+    scope = await _resolve_scope(request, user_id, empresa_id)
+    pool = await get_pool()
+    return await rel.resumo(pool, empresa_id, dias=dias, scope_departamento_ids=scope)
+
+
+@router.get("/relatorios/por-operador")
+async def relatorio_por_operador(
+    request: Request,
+    dias: int = Query(default=30, ge=1, le=365),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict[str, Any]:
+    scope = await _resolve_scope(request, user_id, empresa_id)
+    pool = await get_pool()
+    return {
+        "items": await rel.por_operador(
+            pool, empresa_id, dias=dias, scope_departamento_ids=scope
+        )
+    }
+
+
+@router.get("/relatorios/por-departamento")
+async def relatorio_por_departamento(
+    request: Request,
+    dias: int = Query(default=30, ge=1, le=365),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict[str, Any]:
+    scope = await _resolve_scope(request, user_id, empresa_id)
+    pool = await get_pool()
+    return {
+        "items": await rel.por_departamento(
+            pool, empresa_id, dias=dias, scope_departamento_ids=scope
+        )
+    }
+
+
+@router.get("/relatorios/por-canal")
+async def relatorio_por_canal(
+    request: Request,
+    dias: int = Query(default=30, ge=1, le=365),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict[str, Any]:
+    scope = await _resolve_scope(request, user_id, empresa_id)
+    pool = await get_pool()
+    return {
+        "items": await rel.por_canal(
+            pool, empresa_id, dias=dias, scope_departamento_ids=scope
+        )
+    }
 
 
 @router.get("/{atendimento_id}")

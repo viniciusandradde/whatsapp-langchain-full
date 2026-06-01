@@ -1,4 +1,5 @@
-import { History } from "lucide-react";
+import { BarChart3, History } from "lucide-react";
+import Link from "next/link";
 
 import { ApiError } from "@/components/ui/api-error";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -86,15 +87,21 @@ export default async function ConversasPage({
 
   return (
     <div className="space-y-5">
-      <header className="flex items-center gap-3">
+      <header className="flex flex-wrap items-center gap-3">
         <History className="h-6 w-6 text-muted-foreground" />
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-semibold">Histórico de Atendimentos</h1>
           <p className="text-sm text-muted-foreground">
             Consulte, filtre e exporte todas as conversas — abertas e
             finalizadas.
           </p>
         </div>
+        <Link
+          href="/chats/relatorios"
+          className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+        >
+          <BarChart3 className="h-4 w-4" /> Relatórios
+        </Link>
       </header>
 
       <HistoricoFilters

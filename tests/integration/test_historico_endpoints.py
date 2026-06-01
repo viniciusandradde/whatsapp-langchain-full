@@ -240,3 +240,40 @@ class TestE2EIsolamento:
         aid = setup["atendimentos"]["resolvido"]
         r = httpx.get(f"{API_BASE_URL}/api/historico/{aid}", headers=h, timeout=10)
         assert r.status_code == 404, r.text
+
+
+class TestE2ERelatorios:
+    def test_resumo(self, setup):
+        h = _headers(setup["user_id"], setup["empresa_id"])
+        r = httpx.get(
+            f"{API_BASE_URL}/api/historico/relatorios/resumo?dias=30",
+            headers=h,
+            timeout=10,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["kpis"]["total"] >= 3
+        assert body["kpis"]["csat_medio"] is not None  # tem a avaliação nota 10
+        assert isinstance(body["serie_diaria"], list)
+
+    def test_por_canal(self, setup):
+        h = _headers(setup["user_id"], setup["empresa_id"])
+        r = httpx.get(
+            f"{API_BASE_URL}/api/historico/relatorios/por-canal?dias=30",
+            headers=h,
+            timeout=10,
+        )
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        assert items and items[0]["total"] >= 3
+
+    def test_por_operador_e_departamento_ok(self, setup):
+        h = _headers(setup["user_id"], setup["empresa_id"])
+        for rota in ("por-operador", "por-departamento"):
+            r = httpx.get(
+                f"{API_BASE_URL}/api/historico/relatorios/{rota}?dias=30",
+                headers=h,
+                timeout=10,
+            )
+            assert r.status_code == 200, r.text
+            assert isinstance(r.json()["items"], list)

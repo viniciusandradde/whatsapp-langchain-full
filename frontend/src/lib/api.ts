@@ -1722,6 +1722,75 @@ export async function getHistoricoDetalhe(
   return apiFetch<HistoricoDetalhe>(`/api/historico/${id}`);
 }
 
+// --- Histórico: relatórios / analytics (Fase 2) ---
+
+export interface HistoricoResumo {
+  kpis: {
+    total: number;
+    resolvidos: number;
+    abandonados: number;
+    abertos: number;
+    resolvidos_via_ia: number;
+    tempo_medio_resolucao_seg: number | null;
+    tempo_medio_primeira_resposta_seg: number | null;
+    avaliacoes: number;
+    csat_medio: number | null;
+    nps: number | null;
+  };
+  serie_diaria: { dia: string; criados: number; finalizados: number }[];
+  periodo_dias: number;
+}
+
+export interface RelOperador {
+  user_id: string;
+  nome: string | null;
+  total: number;
+  resolvidos: number;
+  tempo_medio_seg: number | null;
+  csat_medio: number | null;
+}
+
+export interface RelDepartamento {
+  departamento_id: number;
+  departamento_nome: string | null;
+  total: number;
+  resolvidos: number;
+  tempo_medio_seg: number | null;
+  csat_medio: number | null;
+}
+
+export interface RelCanal {
+  conexao_id: number;
+  canal: string | null;
+  provider: string | null;
+  total: number;
+  resolvidos: number;
+}
+
+export async function getHistoricoResumo(dias = 30): Promise<HistoricoResumo> {
+  return apiFetch<HistoricoResumo>(
+    `/api/historico/relatorios/resumo?dias=${dias}`
+  );
+}
+
+export async function getHistoricoPorOperador(
+  dias = 30
+): Promise<{ items: RelOperador[] }> {
+  return apiFetch(`/api/historico/relatorios/por-operador?dias=${dias}`);
+}
+
+export async function getHistoricoPorDepartamento(
+  dias = 30
+): Promise<{ items: RelDepartamento[] }> {
+  return apiFetch(`/api/historico/relatorios/por-departamento?dias=${dias}`);
+}
+
+export async function getHistoricoPorCanal(
+  dias = 30
+): Promise<{ items: RelCanal[] }> {
+  return apiFetch(`/api/historico/relatorios/por-canal?dias=${dias}`);
+}
+
 /** Forward bruto do export (CSV/XLSX) — usado pelo route handler de download.
  * `search` já contém `formato` + filtros (querystring do /api/historico-export). */
 export async function proxyHistoricoExport(

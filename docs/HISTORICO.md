@@ -135,13 +135,21 @@ API client (`lib/api.ts`): `getHistorico`, `getHistoricoDetalhe`,
   uv run pytest tests/integration/test_historico_endpoints.py
   ```
 
-## Roadmap — Fase 2 (relatórios / analytics)
+## Fase 2 — Relatórios / analytics (production)
 
-- Migration: `atendimento.primeira_resposta_at` (worker seta no 1º outbound +
-  backfill) → métrica de tempo de 1ª resposta.
-- `shared/historico_relatorios.py` + `GET /api/historico/relatorios/*`:
-  - `resumo` — volume total/por status/por dia, tempo médio de resolução e de
-    1ª resposta, CSAT médio + NPS.
-  - `por-operador`, `por-departamento`, `por-canal` — volume, SLA, tempo médio, CSAT.
-- Frontend: sub-aba "Relatórios" (KPI cards + gráficos + tabelas), reusando o
-  layout de `dashboard/qualidade`.
+`shared/historico_relatorios.py` + `GET /api/historico/relatorios/*` (param
+`dias` 1–365, RBAC `.own` por depto). Tempo de 1ª resposta é **derivado** de
+`message_queue` (MIN `processed_at` com `response` por atendimento) — sem
+coluna nova nem alteração no hot-path do worker.
+
+| Endpoint | Conteúdo |
+|---|---|
+| `/relatorios/resumo` | KPIs (volume, resolvidos, % via IA, abandonados) + tempo médio de resolução e de 1ª resposta + CSAT médio + NPS + série diária |
+| `/relatorios/por-operador` | Por atendente: volume, resolvidos, tempo médio, CSAT |
+| `/relatorios/por-departamento` | Por depto: volume, resolvidos, tempo médio, CSAT |
+| `/relatorios/por-canal` | Por conexão: volume, resolvidos |
+
+Frontend: `frontend/src/app/chats/relatorios/page.tsx` (link "Relatórios" no
+header do histórico) — seletor de período (7/30/90/180), KPI cards, gráfico de
+volume por dia e tabelas (operador/departamento/canal). Reusa `Card` e os
+formatadores de `dashboard/qualidade`.
