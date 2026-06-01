@@ -12,10 +12,14 @@ empresa_id têm RLS; o contexto de empresa vem do middleware da request
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
+
+from whatsapp_langchain.shared.horario import _resolve_timezone
 
 logger = structlog.get_logger()
 
@@ -253,3 +257,87 @@ async def set_users_in_turno(
                     (uid, turno_id, empresa_id),
                 )
     return True
+
+
+# ---------------------------------------------------------------------
+# Gate de distribuição — atendente só recebe auto-atribuição se estiver
+# dentro de um turno ativo AGORA. Semântica: **sem turno ativo atribuído =
+# irrestrito** (compat retroativa — quem não usa turno nunca é bloqueado).
+# ---------------------------------------------------------------------
+
+
+async def turno_now(
+    pool: AsyncConnectionPool, empresa_id: int, now: datetime | None = None
+) -> tuple[int, str]:
+    """`(dia_semana 0=Dom..6=Sáb, 'HH:MM:SS')` no fuso da empresa.
+
+    Reusa a resolução de timezone de `horario.py` (default America/Sao_Paulo)
+    e a mesma convenção de dia_semana do `is_business_hours`.
+    """
+    tzname = await _resolve_timezone(pool, empresa_id)
+    tz = ZoneInfo(tzname)
+    if now is None:
+        now = datetime.now(tz)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=tz)
+    local = now.astimezone(tz)
+    dia_semana = (local.weekday() + 1) % 7  # Python 0=Seg → 0=Dom
+    return dia_semana, local.strftime("%H:%M:%S")
+
+
+def turno_gate_sql(alias: str = "u") -> str:
+    """Fragmento SQL pra WHERE: `{alias}` está elegível p/ distribuição agora.
+
+    Verdadeiro quando o usuário **não tem turno ativo atribuído** (irrestrito)
+    OU está **dentro de alguma janela** de um turno ativo. `alias` é o alias da
+    tabela `auth."user"` na query do caller.
+
+    Ordem dos params: `(empresa_id, empresa_id, dia_semana, hora, hora)`.
+    `alias` vem de lista hardcoded do caller — não é input (sem injeção).
+    """
+    return f"""(
+        NOT EXISTS (
+            SELECT 1 FROM usuario_turno utg
+              JOIN turno tg ON tg.id = utg.turno_id
+             WHERE utg.user_id = {alias}.id AND utg.empresa_id = %s AND tg.ativo
+        )
+        OR EXISTS (
+            SELECT 1 FROM usuario_turno utw
+              JOIN turno tw ON tw.id = utw.turno_id
+              JOIN turno_horario thw ON thw.turno_id = tw.id
+             WHERE utw.user_id = {alias}.id AND utw.empresa_id = %s AND tw.ativo
+               AND thw.dia_semana = %s
+               AND thw.hora_inicio <= %s::time AND thw.hora_fim > %s::time
+        )
+    )"""
+
+
+async def usuario_em_turno_agora(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    user_id: str,
+    now: datetime | None = None,
+) -> bool:
+    """Checagem standalone do gate pra um único usuário (claim/API/testes)."""
+    dia_semana, hora = await turno_now(pool, empresa_id, now)
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM usuario_turno ut "
+            "JOIN turno t ON t.id = ut.turno_id "
+            "WHERE ut.user_id = %s AND ut.empresa_id = %s AND t.ativo)",
+            (user_id, empresa_id),
+        )
+        row = await cur.fetchone()
+        if not (row and row[0]):
+            return True  # sem turno ativo atribuído → irrestrito
+        cur = await conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM usuario_turno ut "
+            "JOIN turno t ON t.id = ut.turno_id "
+            "JOIN turno_horario th ON th.turno_id = t.id "
+            "WHERE ut.user_id = %s AND ut.empresa_id = %s AND t.ativo "
+            "AND th.dia_semana = %s "
+            "AND th.hora_inicio <= %s::time AND th.hora_fim > %s::time)",
+            (user_id, empresa_id, dia_semana, hora, hora),
+        )
+        row = await cur.fetchone()
+    return bool(row and row[0])

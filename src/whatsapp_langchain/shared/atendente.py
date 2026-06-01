@@ -319,9 +319,7 @@ async def get_ranking_empresa(
             "nome": r[1],
             "image": r[2],
             "resolvidos": int(r[3] or 0),
-            "avg_segundos_resolucao": (
-                float(r[4]) if r[4] is not None else None
-            ),
+            "avg_segundos_resolucao": (float(r[4]) if r[4] is not None else None),
         }
         for r in rows
     ]
@@ -337,14 +335,17 @@ async def pick_best_atendente(
     2. auth.user.status = 'active'
     3. atendente_status = 'online'
     4. count_atendimentos_abertos < atendente_max_paralelos
-    5. Menor ratio (count/max) — desempate por menor count absoluto.
+    5. **Dentro do turno agora** (ou sem turno ativo atribuído — irrestrito)
+    6. Menor ratio (count/max) — desempate por menor count absoluto.
 
     Retorna None se ninguém disponível — atendimento fica na fila aguardando
     claim manual.
     """
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
+    # Gate de turno: dia/hora no fuso da empresa pra avaliar as janelas.
+    from whatsapp_langchain.shared.turno import turno_gate_sql, turno_now
+
+    dia_semana, hora = await turno_now(pool, empresa_id)
+    sql = f"""
             WITH abertos AS (
                 SELECT assigned_to_user_id, COUNT(*) AS n
                   FROM atendimento
@@ -364,11 +365,24 @@ async def pick_best_atendente(
                AND COALESCE(u.status, 'active') = 'active'
                AND u.atendente_status = 'online'
                AND COALESCE(a.n, 0) < u.atendente_max_paralelos
+               AND {turno_gate_sql("u")}
              ORDER BY (COALESCE(a.n, 0)::float / GREATEST(u.atendente_max_paralelos, 1))
                       ASC, COALESCE(a.n, 0) ASC, u.id
              LIMIT 1
-            """,
-            (empresa_id, empresa_id, departamento_id),
+            """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            sql,  # type: ignore[arg-type]
+            (
+                empresa_id,
+                empresa_id,
+                departamento_id,
+                empresa_id,
+                empresa_id,
+                dia_semana,
+                hora,
+                hora,
+            ),
         )
         row = await cur.fetchone()
     if row is None:

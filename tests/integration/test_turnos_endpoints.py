@@ -168,3 +168,87 @@ class TestE2E:
                 f"{API_BASE_URL}/api/turnos/{tid}", headers=h, timeout=10
             )
             assert r.status_code == 404
+
+
+@pytest.mark.docker_demo
+class TestE2EGateDistribuicao:
+    """Valida a SEMÂNTICA do gate de distribuição por turno (SQL de prod).
+
+    Importa `turno_gate_sql` (usado no `pick_best_atendente`) e exercita o
+    fragmento contra dados controlados — determinístico (dia/hora explícitos,
+    sem depender do relógio). `postgres` superuser bypassa RLS.
+    """
+
+    def test_gate_semantica(
+        self, db_url: str, empresa_id: int, admin_user_id: str
+    ) -> None:
+        from whatsapp_langchain.shared.turno import turno_gate_sql
+
+        gate_expr = turno_gate_sql("u")
+        sql = f'SELECT {gate_expr} FROM auth."user" u WHERE u.id = %s'
+
+        def eligivel(uid: str, dia: int, hora: str) -> bool:
+            with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+                cur.execute(
+                    sql, (empresa_id, empresa_id, dia, hora, hora, uid)
+                )
+                row = cur.fetchone()
+                assert row is not None
+                return bool(row[0])
+
+        # turno "GateTest": Seg (dia 1) 08:00–12:00, atribuído ao admin
+        with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO turno (empresa_id, nome, ativo) "
+                "VALUES (%s, 'GateTest', TRUE) RETURNING id",
+                (empresa_id,),
+            )
+            row = cur.fetchone()
+            assert row is not None
+            tid = int(row[0])
+            cur.execute(
+                "INSERT INTO turno_horario "
+                "(turno_id, dia_semana, hora_inicio, hora_fim) "
+                "VALUES (%s, 1, '08:00', '12:00')",
+                (tid,),
+            )
+            cur.execute(
+                "INSERT INTO usuario_turno (user_id, turno_id, empresa_id) "
+                "VALUES (%s, %s, %s)",
+                (admin_user_id, tid, empresa_id),
+            )
+
+        other = f"test-gate-noturno-{_RUN}"
+        try:
+            # dentro da janela (Seg 10:00) → elegível
+            assert eligivel(admin_user_id, 1, "10:00") is True
+            # fora da janela (Seg 20:00) → bloqueado
+            assert eligivel(admin_user_id, 1, "20:00") is False
+            # outro dia (Dom 10:00) → bloqueado
+            assert eligivel(admin_user_id, 0, "10:00") is False
+            # borda: hora_fim é exclusiva (12:00 não conta)
+            assert eligivel(admin_user_id, 1, "12:00") is False
+
+            # usuário SEM turno atribuído → irrestrito (sempre elegível)
+            with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+                cur.execute(
+                    'INSERT INTO auth."user" (id, name, email, "emailVerified", '
+                    '"createdAt", "updatedAt", status, is_superadmin) '
+                    "VALUES (%s, 'NoTurno', %s, TRUE, NOW(), NOW(), 'active', FALSE)",
+                    (other, f"{other}@e2e.test"),
+                )
+                cur.execute(
+                    "INSERT INTO empresa_membro (empresa_id, user_id, role, is_default) "
+                    "VALUES (%s, %s, 'operator', FALSE)",
+                    (empresa_id, other),
+                )
+            assert eligivel(other, 0, "03:00") is True
+
+            # turno inativo não conta como restrição (volta a irrestrito)
+            with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+                cur.execute("UPDATE turno SET ativo = FALSE WHERE id = %s", (tid,))
+            assert eligivel(admin_user_id, 0, "03:00") is True
+        finally:
+            with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+                cur.execute('DELETE FROM auth."user" WHERE id = %s', (other,))
+                cur.execute("DELETE FROM turno WHERE id = %s", (tid,))
