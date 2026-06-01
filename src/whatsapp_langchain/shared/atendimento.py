@@ -137,6 +137,42 @@ async def open_or_attach_atendimento(
             assert updated is not None
             return _row_to_atendimento(updated), False
 
+        # Fix A (prod 2026-06-01): se o cliente tem um atendimento com CSAT
+        # PENDENTE (resolvido + aguardando_avaliacao/comentario, ≤24h), a
+        # resposta dele anexa NESSE atendimento em vez de abrir um novo. Sem
+        # isso, a resposta da pesquisa criava um atendimento novo que, ao ser
+        # fechado, re-disparava a pesquisa → loop infinito de CSAT.
+        cur = await conn.execute(
+            f"""
+            SELECT {_BASE_COLS} FROM atendimento a
+             WHERE a.empresa_id = %s
+               AND a.cliente_id = %s
+               AND a.conexao_id = %s
+               AND (a.aguardando_avaliacao_at IS NOT NULL
+                    OR a.aguardando_comentario_at IS NOT NULL)
+               AND COALESCE(a.aguardando_avaliacao_at, a.aguardando_comentario_at)
+                   > NOW() - interval '24 hours'
+             ORDER BY a.id DESC
+             LIMIT 1
+             FOR UPDATE
+            """,
+            (empresa_id, cliente_id, conexao_id),
+        )
+        csat_row = await cur.fetchone()
+        if csat_row:
+            cur = await conn.execute(
+                f"""
+                UPDATE atendimento
+                   SET last_message_at = NOW(), updated_at = NOW()
+                 WHERE id = %s
+                RETURNING {_BARE_COLS}
+                """,
+                (csat_row[0],),
+            )
+            updated = await cur.fetchone()
+            assert updated is not None
+            return _row_to_atendimento(updated), False
+
         cur = await conn.execute(
             f"""
             INSERT INTO atendimento (empresa_id, cliente_id, conexao_id, agente_atual)
@@ -591,9 +627,7 @@ async def set_coleta_estado(
         )
 
 
-async def clear_coleta_estado(
-    pool: AsyncConnectionPool, atendimento_id: int
-) -> None:
+async def clear_coleta_estado(pool: AsyncConnectionPool, atendimento_id: int) -> None:
     """Limpa o estado runtime (chama após gravar resumo final)."""
     await set_coleta_estado(pool, atendimento_id, None)
 

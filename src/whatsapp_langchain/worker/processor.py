@@ -519,8 +519,19 @@ async def _try_capture_avaliacao(
     if aguardando["aguardando_avaliacao_at"] is not None:
         nota = parse_nota(text)
         if nota is None:
-            # Cliente respondeu mas sem número — ignora a flag e deixa cair
-            # no fluxo normal (vai pro agente IA / menu como mensagem comum)
+            # Resposta não-numérica na janela de avaliação = cliente quer
+            # outra coisa, não responder a pesquisa. Com o fix A a mensagem foi
+            # anexada ao atendimento em avaliação (resolvido): limpa a flag CSAT
+            # e REABRE o atendimento, senão o fluxo normal rodaria num
+            # atendimento resolvido invisível no painel.
+            await clear_flags(pool, atendimento_id)
+            async with pool.connection() as conn:
+                await conn.execute(
+                    "UPDATE atendimento SET status = 'em_andamento', "
+                    "updated_at = NOW() WHERE id = %s AND status = 'resolvido'",
+                    (atendimento_id,),
+                )
+                await conn.commit()
             return False
         try:
             await save_avaliacao(pool, atendimento_id=atendimento_id, nota=nota)
