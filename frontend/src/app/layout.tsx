@@ -26,7 +26,10 @@ async function resolveEmpresaSwitcher() {
     if (!empresas || empresas.length === 0) return null;
     const cookieStore = await cookies();
     const raw = cookieStore.get(ACTIVE_EMPRESA_COOKIE)?.value;
-    const active = raw ? Number(raw) : empresas[0].id;
+    // null quando não há cookie → o switcher auto-seleciona a empresa default
+    // (seta o cookie). Sem isso, o apiFetch não manda X-Empresa-Id e a RLS
+    // fica sem empresa → todas as telas vêm vazias no primeiro login.
+    const active = raw ? Number(raw) : null;
     return <EmpresaSwitcher empresas={empresas} activeEmpresaId={active} />;
   } catch {
     return null;

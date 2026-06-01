@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ChevronDown, Building2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -25,6 +25,24 @@ export function EmpresaSwitcher({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const didInit = useRef(false);
+
+  // 1º login (sem cookie `active_empresa_id`): auto-seleciona a empresa
+  // default (is_default) e seta o cookie. Roda ANTES do early-return abaixo,
+  // então cobre também single-empresa (onde o dropdown não aparece). Sem isso,
+  // o apiFetch não envia X-Empresa-Id e a RLS fica sem empresa → telas vazias.
+  useEffect(() => {
+    if (didInit.current || activeEmpresaId != null || empresas.length === 0) {
+      return;
+    }
+    didInit.current = true;
+    // GET /api/empresas ordena `is_default DESC` → empresas[0] é a default.
+    const def = empresas[0];
+    startTransition(async () => {
+      await setActiveEmpresa(def.id);
+      router.refresh();
+    });
+  }, [activeEmpresaId, empresas, router]);
 
   if (empresas.length <= 1) {
     return null;
