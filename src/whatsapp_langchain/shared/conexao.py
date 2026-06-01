@@ -167,6 +167,11 @@ async def get_conexao_by_evolution_instance(
     payload_json (compat). Procura nos dois — payload_json primeiro
     pra rows legadas, depois credentials decryptadas.
 
+    PREFERE a conexão `status='active'`: instance_names podem colidir
+    (duplicatas legadas disabled). Sem isso, o `LIMIT 1` podia devolver a
+    conexão disabled e o webhook era ignorado mesmo com a active certa
+    cadastrada (bug observado prod 2026-06-01).
+
     Sprint A.2.3: bypass RLS (webhook descobre empresa via este lookup).
     """
     from whatsapp_langchain.shared.rls_context import empresa_scope
@@ -178,6 +183,7 @@ async def get_conexao_by_evolution_instance(
                 SELECT {_SELECT_COLS} FROM conexao
                  WHERE provider = 'evolution'
                    AND payload_json->>'instance_name' = %s
+                 ORDER BY (status = 'active') DESC, id DESC
                  LIMIT 1
                 """,
                 (instance_name,),
@@ -187,11 +193,13 @@ async def get_conexao_by_evolution_instance(
             return _row_to_conexao(row)
 
         # Fallback: percorre conexões evolution com credentials_encrypted
+        # (active primeiro, mesmo critério da query principal).
         async with pool.connection() as conn:
             cur = await conn.execute(
                 f"""
                 SELECT {_SELECT_COLS} FROM conexao
                  WHERE provider = 'evolution' AND credentials_encrypted IS NOT NULL
+                 ORDER BY (status = 'active') DESC, id DESC
                 """,
                 (),
             )
