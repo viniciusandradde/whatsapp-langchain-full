@@ -52,14 +52,14 @@ export function LoginForm({
         <div className="mb-8 flex flex-col items-center">
           <Image
             src="/vsa-logo.png"
-            alt="VSA Tech"
+            alt="Chat Nexus"
             width={56}
             height={56}
             className="rounded"
             unoptimized
           />
           <span className="mt-3 text-lg font-semibold tracking-tight">
-            VSA Tech
+            Chat Nexus
           </span>
         </div>
 

@@ -133,7 +133,7 @@ export function Sidebar({
         )}>
           <Image
             src="/vsa-logo.png"
-            alt="VSA Tech"
+            alt="Chat Nexus"
             width={28}
             height={28}
             className="rounded shrink-0"
@@ -141,7 +141,7 @@ export function Sidebar({
           />
           <div className={cn(collapsed && "md:hidden")}>
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-              VSA Tech
+              Chat Nexus
             </span>
             <span className="block text-[10px] uppercase tracking-[0.15em] text-sidebar-foreground/50">
               operations
