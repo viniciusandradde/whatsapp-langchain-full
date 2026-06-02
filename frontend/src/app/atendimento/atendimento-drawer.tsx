@@ -25,6 +25,7 @@ import type {
   AtendimentoMensagem,
   Departamento,
   ModeloMensagem,
+  WabaTemplate,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -33,9 +34,11 @@ import {
   closeAction,
   criarNotaInternaAction,
   loadAtendentesOnlineAction,
+  enviarTemplateAction,
   loadDepartamentosAction,
   loadMensagensAction,
   loadModelosAction,
+  loadTemplatesAprovadosAction,
   loadTraceLinkAction,
   marcarAtendimentoLidoAction,
   resetThreadAction,
@@ -78,6 +81,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
   const [composerInterna, setComposerInterna] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
   const [modelosOpen, setModelosOpen] = useState(false);
@@ -512,7 +516,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
 
         {isOpen && (
           <div className="relative border-t bg-background/40 p-3">
-            <div className="mb-2 flex items-center gap-2">
+            <div className="mb-2 flex items-center gap-3">
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
@@ -524,6 +528,14 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                   🔒 Nota interna (não envia pro cliente)
                 </span>
               </label>
+              <button
+                type="button"
+                onClick={() => setTemplateModalOpen(true)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                title="Enviar template HSM aprovado (reabre fora da janela 24h)"
+              >
+                <FileText className="size-3.5" /> Template
+              </button>
             </div>
             <div className="flex items-end gap-2">
               <textarea
@@ -557,6 +569,18 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
               </Button>
             </div>
           </div>
+        )}
+
+        {templateModalOpen && (
+          <TemplateComposerModal
+            atendimentoId={atendimento.id}
+            conexaoId={atendimento.conexao_id}
+            onClose={() => setTemplateModalOpen(false)}
+            onSent={() => {
+              setTemplateModalOpen(false);
+              void reload();
+            }}
+          />
         )}
 
         {isOpen && (
@@ -1235,5 +1259,137 @@ function TraceConversaLink({ atendimentoId }: { atendimentoId: number }) {
         ver traces
       </Link>
     </>
+  );
+}
+
+function _bodyText(t: WabaTemplate): string {
+  const body = t.componentes_json.find(
+    (c) => (c.type || "").toUpperCase() === "BODY"
+  );
+  return body?.text ?? "";
+}
+
+function _varKeys(t: WabaTemplate): string[] {
+  const found = new Set<string>();
+  for (const m of _bodyText(t).matchAll(/\{\{(\d+)\}\}/g)) found.add(m[1]);
+  return [...found].sort((a, b) => Number(a) - Number(b));
+}
+
+/** Modal pra enviar um template HSM aprovado ao cliente (reabre fora da 24h). */
+function TemplateComposerModal({
+  atendimentoId,
+  conexaoId,
+  onClose,
+  onSent,
+}: {
+  atendimentoId: number;
+  conexaoId: number;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const [templates, setTemplates] = useState<WabaTemplate[] | null>(null);
+  const [selId, setSelId] = useState<number | null>(null);
+  const [vars, setVars] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [sending, startSend] = useTransition();
+
+  useEffect(() => {
+    let alive = true;
+    loadTemplatesAprovadosAction(conexaoId).then((r) => {
+      if (!alive) return;
+      if (r.ok) setTemplates(r.data);
+      else setError(r.error);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [conexaoId]);
+
+  const sel = templates?.find((t) => t.id === selId) ?? null;
+  const keys = sel ? _varKeys(sel) : [];
+
+  function confirmar() {
+    if (!sel) return;
+    setError(null);
+    startSend(async () => {
+      const r = await enviarTemplateAction(atendimentoId, sel.id, vars);
+      if (r.ok) onSent();
+      else setError(r.error);
+    });
+  }
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-xl border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <FileText className="size-4" /> Enviar template
+          </h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-3 px-4 py-4 text-sm">
+          {templates === null ? (
+            <p className="text-xs text-muted-foreground">Carregando templates aprovados…</p>
+          ) : templates.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Nenhum template aprovado nesta conexão. Crie/aprove em Conexões → Templates.
+            </p>
+          ) : (
+            <>
+              <select
+                value={selId ?? ""}
+                onChange={(e) => {
+                  setSelId(e.target.value ? Number(e.target.value) : null);
+                  setVars({});
+                }}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Selecione um template…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nome} ({t.idioma})
+                  </option>
+                ))}
+              </select>
+              {sel && (
+                <p className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
+                  {_bodyText(sel)}
+                </p>
+              )}
+              {keys.map((k) => (
+                <div key={k}>
+                  <label className="mb-0.5 block text-xs text-muted-foreground">
+                    Variável {`{{${k}}}`}
+                  </label>
+                  <input
+                    value={vars[k] ?? ""}
+                    onChange={(e) =>
+                      setVars((p) => ({ ...p, [k]: e.target.value }))
+                    }
+                    className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                    placeholder={k === "1" ? "ex: nome do cliente" : ""}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 border-t px-4 py-3">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={sending}>
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            onClick={confirmar}
+            disabled={sending || !sel || keys.some((k) => !(vars[k] ?? "").trim())}
+          >
+            {sending ? "Enviando…" : "Enviar template"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -115,19 +115,24 @@ export function NewConnectionModal({ onClose }: Props) {
             </div>
           </button>
 
-          {/* Twilio */}
+          {/* Twilio — legado */}
           <button
             onClick={() => setStep("twilio")}
-            className="group flex w-full items-start gap-3 rounded-lg border border-border/40 p-4 text-left transition-colors hover:bg-muted/20"
+            className="group flex w-full items-start gap-3 rounded-lg border border-border/40 p-4 text-left opacity-80 transition-colors hover:bg-muted/20"
           >
             <div className="rounded-md bg-rose-500/20 p-2">
               <MessageSquare className="h-5 w-5 text-rose-400" />
             </div>
             <div className="flex-1">
-              <div className="font-medium">Twilio</div>
+              <div className="flex items-center gap-2 font-medium">
+                Twilio
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-muted-foreground">
+                  Legado
+                </span>
+              </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Sandbox para desenvolvimento ou número Twilio prod. Útil
-                se você já tem conta Twilio ativa.
+                Caminho legado — prefira o WhatsApp oficial (Meta) acima. Mantido
+                só para contas Twilio existentes; será removido no futuro.
               </p>
             </div>
           </button>

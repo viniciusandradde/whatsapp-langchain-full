@@ -15,6 +15,9 @@ import {
   getAtendimentoMensagens,
   getAtendimentoTraceLink,
   getClienteAtendimentosAnteriores,
+  listTemplates,
+  sendAtendimentoTemplate,
+  type WabaTemplate,
   getContadoresAtendimento,
   getDepartamentos,
   getEmpresaAtendentes,
@@ -64,6 +67,38 @@ export async function loadTraceLinkAction(
 > {
   try {
     return { ok: true, data: await getAtendimentoTraceLink(atendimentoId) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function loadTemplatesAprovadosAction(
+  conexaoId: number
+): Promise<
+  { ok: true; data: WabaTemplate[] } | { ok: false; error: string }
+> {
+  try {
+    const r = await listTemplates(conexaoId);
+    return {
+      ok: true,
+      data: r.templates.filter((t) => t.status === "approved"),
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function enviarTemplateAction(
+  atendimentoId: number,
+  templateId: number,
+  variaveis: Record<string, string>
+): Promise<Result> {
+  try {
+    await sendAtendimentoTemplate(atendimentoId, {
+      template_id: templateId,
+      variaveis,
+    });
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

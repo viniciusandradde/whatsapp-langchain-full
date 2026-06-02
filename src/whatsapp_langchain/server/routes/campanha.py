@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
@@ -30,7 +30,8 @@ router = APIRouter(
 class CampanhaCreate(BaseModel):
     nome: str = Field(min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
-    mensagem: str = Field(min_length=1, max_length=4000)
+    # Texto livre (só dentro da janela 24h) OU template (message_template_id).
+    mensagem: str | None = Field(default=None, max_length=4000)
     conexao_id: int | None = None
     intervalo_ms: int = Field(default=500, ge=0, le=60_000)
     max_destinatarios: int = Field(default=1000, ge=1, le=10_000)
@@ -42,6 +43,15 @@ class CampanhaCreate(BaseModel):
     tipo: str = "broadcast"  # broadcast|transactional|reativacao
     filtro_segmento: str | None = Field(default=None, max_length=120)
     filtro_tags: list[str] | None = None
+    # Template HSM (mig 113) — broadcast fora da janela 24h
+    message_template_id: int | None = None
+    template_variaveis: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _texto_ou_template(self) -> CampanhaCreate:
+        if not self.message_template_id and not (self.mensagem or "").strip():
+            raise ValueError("Informe `mensagem` (texto) OU `message_template_id`.")
+        return self
 
 
 @router.get("")
@@ -104,6 +114,8 @@ async def create_endpoint(
             tipo=body.tipo,
             filtro_segmento=body.filtro_segmento,
             filtro_tags=body.filtro_tags,
+            message_template_id=body.message_template_id,
+            template_variaveis=body.template_variaveis,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -129,7 +141,10 @@ async def dispatch_endpoint(
     if out["status"] != "draft":
         raise HTTPException(
             status_code=409,
-            detail=f"Campanha em status {out['status']!r} — só draft pode ser despachado.",
+            detail=(
+                f"Campanha em status {out['status']!r} — "
+                "só draft pode ser despachado."
+            ),
         )
     camp_lib.schedule_dispatch(pool, empresa_id, camp_id)
     logger.info("campanha_dispatch_scheduled", camp_id=camp_id, empresa_id=empresa_id)

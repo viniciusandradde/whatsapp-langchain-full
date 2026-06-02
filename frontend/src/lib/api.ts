@@ -2238,6 +2238,16 @@ export async function responderAtendimento(
   );
 }
 
+export async function sendAtendimentoTemplate(
+  id: number,
+  body: { template_id: number; variaveis?: Record<string, string> }
+): Promise<{ mensagem: AtendimentoMensagem | null; provider_message_id: string }> {
+  return apiFetch(`/api/atendimentos/${id}/send-template`, {
+    method: "POST",
+    body,
+  });
+}
+
 // --- Modelos de mensagem (quick replies) ---
 
 export async function getModelosMensagem(
@@ -2538,7 +2548,8 @@ export interface CampanhaDestinatario {
 export interface CampanhaCreateInput {
   nome: string;
   descricao?: string | null;
-  mensagem: string;
+  // Texto livre (janela 24h) OU template (message_template_id).
+  mensagem?: string | null;
   conexao_id?: number | null;
   intervalo_ms?: number;
   max_destinatarios?: number;
@@ -2549,6 +2560,9 @@ export interface CampanhaCreateInput {
   tipo?: "broadcast" | "transactional" | "reativacao";
   filtro_segmento?: string | null;
   filtro_tags?: string[] | null;
+  // Template HSM (mig 113) — broadcast fora da janela 24h
+  message_template_id?: number | null;
+  template_variaveis?: Record<string, string>;
 }
 
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {

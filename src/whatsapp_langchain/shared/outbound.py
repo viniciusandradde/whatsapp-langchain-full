@@ -21,6 +21,7 @@ from __future__ import annotations
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.integrations.waba import templates as waba_templates
 from whatsapp_langchain.integrations.waba.client import WabaClient
 from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
@@ -443,3 +444,100 @@ async def send_outbound_template(
         "outbound_mode": outbound_mode,
         "message_row": row or None,
     }
+
+
+async def send_template_by_id(
+    pool: AsyncConnectionPool,
+    *,
+    conexao_id: int,
+    empresa_id: int,
+    to: str,
+    template_id: int,
+    variables: dict[str, str] | None = None,
+    atendimento_id: int | None = None,
+    user_id: str = "system:template",
+) -> dict:
+    """Envia um template HSM **aprovado** (por id no banco), roteando por provider.
+
+    Caminho único usado por campanhas (broadcast fora da janela 24h) e pelo
+    composer do `/atendimento`. WABA → Cloud API (`send_template_message`);
+    Twilio → Content API (`content_sid`). `variables` = `{"1": "...", ...}`.
+
+    Persiste row na timeline quando `atendimento_id` é setado.
+
+    Raises:
+        OutboundError: conexão/template ausentes, template não-approved,
+        provider sem suporte a HSM, ou falha do client.
+    """
+    variables = variables or {}
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise OutboundError("Conexão não encontrada.")
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT nome, idioma, status, provider, content_sid "
+            "FROM waba_template WHERE id = %s AND conexao_id = %s",
+            (template_id, conexao_id),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise OutboundError("Template não encontrado nesta conexão.")
+    nome, idioma, status, _tpl_provider, content_sid = row
+    if status != "approved":
+        raise OutboundError(f"Template não está aprovado (status={status}).")
+
+    if conexao.provider == "waba" and conexao.waba_phone_id:
+        creds = await get_credentials_decrypted(pool, conexao_id) or {}
+        access_token = creds.get("access_token")
+        if not access_token:
+            raise OutboundError("Conexão WABA sem access_token — refaça o OAuth.")
+        try:
+            provider_message_id = await waba_templates.send_template_message(
+                access_token,
+                conexao.waba_phone_id,
+                to=to,
+                template_name=nome,
+                language=idioma,
+                variables=variables,
+            )
+        except Exception as e:  # noqa: BLE001
+            raise OutboundError(f"Falha ao enviar template WABA: {e}") from e
+    elif conexao.provider in ("twilio_sandbox", "twilio_prod"):
+        if not content_sid:
+            raise OutboundError("Template Twilio sem content_sid.")
+        client, _mode = await _build_client(pool, conexao)
+        if not isinstance(client, TwilioClient):
+            raise OutboundError("Esperado TwilioClient pra conexão Twilio.")
+        try:
+            provider_message_id = await client.send_template(to, content_sid, variables)
+        except Exception as e:  # noqa: BLE001
+            raise OutboundError(f"Falha ao enviar template Twilio: {e}") from e
+    else:
+        raise OutboundError(f"Provider {conexao.provider!r} não suporta template HSM.")
+
+    row_out: dict = {}
+    if atendimento_id is not None:
+        var_repr = ", ".join(f"{k}={v}" for k, v in variables.items()) or "no variables"
+        row_out = await _persist_outbound_row(
+            pool,
+            empresa_id=empresa_id,
+            conexao_id=conexao_id,
+            atendimento_id=atendimento_id,
+            phone_number=to,
+            agent_id=conexao.default_agent_id,
+            response=f"[template {nome}] {var_repr}",
+            user_id=user_id,
+            provider_message_id=provider_message_id,
+        )
+
+    logger.info(
+        "outbound_template_by_id_sent",
+        conexao_id=conexao_id,
+        empresa_id=empresa_id,
+        template_id=template_id,
+        provider=conexao.provider,
+        to=to,
+        provider_message_id=provider_message_id,
+    )
+    return {"provider_message_id": provider_message_id, "message_row": row_out or None}

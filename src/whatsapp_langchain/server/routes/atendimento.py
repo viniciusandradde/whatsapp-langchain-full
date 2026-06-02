@@ -49,7 +49,11 @@ from whatsapp_langchain.shared.empresa import is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.nota_interna import create_nota_interna
-from whatsapp_langchain.shared.outbound import OutboundError, send_outbound_manual
+from whatsapp_langchain.shared.outbound import (
+    OutboundError,
+    send_outbound_manual,
+    send_template_by_id,
+)
 from whatsapp_langchain.shared.perfil import get_user_permissions
 from whatsapp_langchain.shared.permissoes import (
     effective_scope,
@@ -558,6 +562,53 @@ async def responder(
         status_code = 409 if "fechado" in msg else 404 if "encontrad" in msg else 400
         raise HTTPException(status_code=status_code, detail=msg) from e
     return {"mensagem": row}
+
+
+class SendTemplateInput(BaseModel):
+    template_id: int
+    variaveis: dict[str, str] = Field(default_factory=dict)
+
+
+@router.post("/{atendimento_id}/send-template")
+async def send_template(
+    atendimento_id: int,
+    body: SendTemplateInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.write")),
+) -> dict:
+    """Envia um template HSM **aprovado** ao cliente do atendimento.
+
+    Útil pra reabrir conversa fora da janela 24h (no WhatsApp oficial só
+    template é permitido). Roteia por provider (WABA/Twilio) e persiste na
+    timeline do drawer.
+    """
+    atd = await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    cliente = await get_cliente_by_id(pool, atd.cliente_id)
+    if cliente is None or cliente.empresa_id != empresa_id:
+        raise HTTPException(
+            status_code=404, detail="Cliente do atendimento não encontrado."
+        )
+    try:
+        res = await send_template_by_id(
+            pool,
+            conexao_id=atd.conexao_id,
+            empresa_id=empresa_id,
+            to=cliente.telefone,
+            template_id=body.template_id,
+            variables=body.variaveis,
+            atendimento_id=atendimento_id,
+            user_id=user_id,
+        )
+    except OutboundError as e:
+        msg = str(e)
+        status_code = 404 if "encontrad" in msg else 400
+        raise HTTPException(status_code=status_code, detail=msg) from e
+    return {
+        "mensagem": res.get("message_row"),
+        "provider_message_id": res["provider_message_id"],
+    }
 
 
 @router.post("/{atendimento_id}/transfer")

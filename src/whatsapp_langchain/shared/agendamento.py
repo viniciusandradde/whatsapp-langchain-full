@@ -701,18 +701,27 @@ async def notify_gestor(
         )
         return None
 
-    # Resolve conexão ativa (default first) pra mandar WhatsApp.
-    # Twilio Sandbox NÃO entrega outbound proativo — destino precisa ter
-    # mandado "join <code>" antes; mesmo SID gerado é engolido. Pra
-    # notificação automática de gestor, preferir QUALQUER conexão ativa
-    # de produção (waba, evolution, twilio_prod) sobre sandbox. Sandbox
-    # vira fallback só se for a única opção (ex: dev local).
+    # Resolve conexão ativa pra mandar WhatsApp, preferindo o canal oficial.
+    # Prioridade: waba (Meta oficial) > evolution > twilio_prod > twilio_sandbox.
+    # Sandbox é o último recurso (não entrega outbound proativo sem "join").
+    # Twilio é legado — WABA tem precedência quando ambas existem.
+    _PROVIDER_PRIORITY = {
+        "waba": 0,
+        "evolution": 1,
+        "twilio_prod": 2,
+        "twilio_sandbox": 3,
+    }
     conexoes = await list_conexoes(pool, empresa_id)
     ativas = [c for c in conexoes if c.status == "active"]
-    ativa = next(
-        (c for c in ativas if c.provider != "twilio_sandbox"),
-        None,
-    ) or next(iter(ativas), None)
+    ativas_sorted = sorted(
+        ativas,
+        key=lambda c: (
+            _PROVIDER_PRIORITY.get(c.provider, 9),
+            0 if c.is_default else 1,
+            c.id,
+        ),
+    )
+    ativa = ativas_sorted[0] if ativas_sorted else None
     if ativa is None:
         logger.warning(
             "notify_gestor_no_active_conexao",

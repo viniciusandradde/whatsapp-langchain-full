@@ -9,15 +9,21 @@ Não usa verify_service_token — Meta não envia esse header.
 
 from __future__ import annotations
 
+import base64
+
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from whatsapp_langchain.integrations.waba.client import download_media
 from whatsapp_langchain.integrations.waba.webhook import (
     parse_inbound,
     parse_template_status_updates,
     verify_signature,
 )
-from whatsapp_langchain.shared.conexao import get_conexao_by_waba_phone_id
+from whatsapp_langchain.shared.conexao import (
+    get_conexao_by_waba_phone_id,
+    get_credentials_decrypted,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.queue import enqueue_or_buffer
@@ -25,6 +31,32 @@ from whatsapp_langchain.shared.queue import enqueue_or_buffer
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/webhook/waba", tags=["webhook-waba"])
+
+
+async def _resolve_waba_media_url(pool, conexao, msg) -> str | None:
+    """Baixa a mídia inbound do WABA e devolve como data-URL base64.
+
+    Best-effort: sem media_id, sem creds, ou falha de download → None (a msg
+    segue como texto/caption). Espelha o que o webhook Evolution faz.
+    """
+    media_id = getattr(msg, "media_id", None)
+    if not media_id:
+        return None
+    try:
+        creds = await get_credentials_decrypted(pool, conexao.id) or {}
+        access_token = creds.get("access_token")
+        if not access_token:
+            return None
+        content, mime = await download_media(access_token, media_id)
+        b64 = base64.b64encode(content).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except Exception as exc:  # noqa: BLE001 — mídia é best-effort
+        logger.warning(
+            "waba_media_download_failed",
+            media_id=media_id,
+            error=str(exc),
+        )
+        return None
 
 
 @router.get("")
@@ -120,17 +152,22 @@ async def waba_webhook_post(
         # Sprint A.2 — seta RLS context da empresa após resolver conexão.
         set_request_context(conexao.empresa_id)
 
+        # Mídia inbound: baixa via Graph /{media_id} e embute como data-URL
+        # base64 (igual Evolution) — o worker já sabe processar data URLs
+        # (visão/transcrição). Best-effort: falha vira texto/caption.
+        media_url = await _resolve_waba_media_url(pool, conexao, msg)
+
         try:
             await enqueue_or_buffer(
                 pool,
                 phone_number=msg.from_number,
                 agent_id=conexao.default_agent_id,
-                body=msg.text or f"[{msg.type}]",
+                body=msg.text or msg.media_caption or f"[{msg.type}]",
                 empresa_id=conexao.empresa_id,
                 to_number=conexao.from_number,
                 message_id=msg.message_id,
                 conexao_id=conexao.id,
-                media_url=None,  # WABA mídia via /media/{id} — sprint futura
+                media_url=media_url,
                 media_type=msg.media_mime_type,
             )
         except Exception as exc:

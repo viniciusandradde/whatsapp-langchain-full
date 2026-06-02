@@ -16,8 +16,9 @@ agente. Persiste em `campanha_destinatario` direto.
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import structlog
@@ -27,7 +28,7 @@ from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     list_conexoes,
 )
-from whatsapp_langchain.shared.outbound import _build_client
+from whatsapp_langchain.shared.outbound import _build_client, send_template_by_id
 
 logger = structlog.get_logger()
 
@@ -58,7 +59,7 @@ class CampanhaSummary:
     empresa_id: int
     nome: str
     descricao: str | None
-    mensagem: str
+    mensagem: str | None
     conexao_id: int | None
     status: str
     intervalo_ms: int
@@ -77,6 +78,9 @@ class CampanhaSummary:
     tipo: str = "broadcast"
     filtro_segmento: str | None = None
     filtro_tags: list[str] | None = None
+    # Template HSM (mig 113) — broadcast fora da janela 24h
+    message_template_id: int | None = None
+    template_variaveis: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -105,6 +109,8 @@ class CampanhaSummary:
             "tipo": self.tipo,
             "filtro_segmento": self.filtro_segmento,
             "filtro_tags": list(self.filtro_tags or []),
+            "message_template_id": self.message_template_id,
+            "template_variaveis": dict(self.template_variaveis or {}),
         }
 
 
@@ -113,7 +119,9 @@ _COLS = (
     "intervalo_ms, max_destinatarios, total_destinatarios, enviados, falhas, "
     "started_at, finished_at, created_by_user_id, created_at, updated_at, "
     # B+ padrão profissional (mig 051)
-    "modelo_mensagem_id, scheduled_at, tipo, filtro_segmento, filtro_tags"
+    "modelo_mensagem_id, scheduled_at, tipo, filtro_segmento, filtro_tags, "
+    # Template HSM (mig 113)
+    "message_template_id, template_variaveis"
 )
 
 
@@ -121,9 +129,7 @@ def _row_to_camp(row) -> CampanhaSummary:
     return CampanhaSummary(*row)
 
 
-async def list_campanhas(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> list[dict]:
+async def list_campanhas(pool: AsyncConnectionPool, empresa_id: int) -> list[dict]:
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT {_COLS} FROM campanha WHERE empresa_id = %s "
@@ -152,7 +158,7 @@ async def create_campanha(
     *,
     nome: str,
     descricao: str | None,
-    mensagem: str,
+    mensagem: str | None,
     conexao_id: int | None,
     intervalo_ms: int,
     max_destinatarios: int,
@@ -164,6 +170,9 @@ async def create_campanha(
     tipo: str = "broadcast",
     filtro_segmento: str | None = None,
     filtro_tags: list[str] | None = None,
+    # Template HSM (mig 113)
+    message_template_id: int | None = None,
+    template_variaveis: dict | None = None,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -193,8 +202,10 @@ async def create_campanha(
                      intervalo_ms, max_destinatarios, total_destinatarios,
                      created_by_user_id,
                      modelo_mensagem_id, scheduled_at, tipo,
-                     filtro_segmento, filtro_tags)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::text[])
+                     filtro_segmento, filtro_tags,
+                     message_template_id, template_variaveis)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::text[], %s, %s::jsonb)
                 RETURNING {_COLS}
                 """,
                 (
@@ -212,6 +223,8 @@ async def create_campanha(
                     tipo,
                     filtro_segmento,
                     list(filtro_tags or []) if filtro_tags is not None else None,
+                    message_template_id,
+                    _json.dumps(template_variaveis or {}),
                 ),
             )
             row = await cur.fetchone()
@@ -288,6 +301,21 @@ async def abort_campanha(
 # ---- Dispatcher background ----
 
 
+def _resolve_template_vars(
+    base: dict | None, cliente_nome: str | None
+) -> dict[str, str]:
+    """Resolve variáveis do template por destinatário.
+
+    Substitui o token `{{nome}}` (em qualquer valor) pelo primeiro nome do
+    cliente. Os demais valores ficam estáticos (campaign-level).
+    """
+    primeiro = (cliente_nome or "").strip().split(" ")[0] if cliente_nome else ""
+    out: dict[str, str] = {}
+    for k, v in (base or {}).items():
+        out[str(k)] = str(v).replace("{{nome}}", primeiro)
+    return out
+
+
 async def _dispatch_loop(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int
 ) -> None:
@@ -308,7 +336,7 @@ async def _dispatch_loop(
     # Resolve conexão: se não especificada, primeira ativa
     conexao_id = camp["conexao_id"]
     if conexao_id is None:
-        conexoes = await list_conexoes(pool, empresa_id, apenas_ativas=True)
+        conexoes = await list_conexoes(pool, empresa_id)  # já retorna só ativas
         if not conexoes:
             await _mark_finished(pool, camp_id, "aborted", reason="sem conexão ativa")
             log.error("campanha_no_active_conexao")
@@ -321,7 +349,13 @@ async def _dispatch_loop(
             log.error("campanha_invalid_conexao", conexao_id=conexao_id)
             return
 
-    client, _mode = _build_client(conexao.provider, conexao.from_number)
+    template_id = camp.get("message_template_id")
+    if not template_id and not (camp.get("mensagem") or "").strip():
+        await _mark_finished(pool, camp_id, "aborted", reason="sem texto nem template")
+        log.error("campanha_sem_conteudo")
+        return
+
+    client, _mode = await _build_client(pool, conexao)
     intervalo_s = max(camp["intervalo_ms"], 0) / 1000.0
 
     # Marca como running
@@ -349,9 +383,11 @@ async def _dispatch_loop(
         async with pool.connection() as conn:
             cur = await conn.execute(
                 """
-                SELECT id, telefone FROM campanha_destinatario
-                 WHERE campanha_id = %s AND status = 'pendente'
-                 ORDER BY id
+                SELECT cd.id, cd.telefone, c.nome
+                  FROM campanha_destinatario cd
+                  LEFT JOIN cliente c ON c.id = cd.cliente_id
+                 WHERE cd.campanha_id = %s AND cd.status = 'pendente'
+                 ORDER BY cd.id
                  LIMIT 50
                 """,
                 (camp_id,),
@@ -362,18 +398,42 @@ async def _dispatch_loop(
             # Tudo enviado — marca done (ou partial se houve falhas)
             async with pool.connection() as conn:
                 cur = await conn.execute(
-                    "SELECT enviados, falhas, total_destinatarios FROM campanha WHERE id = %s",
+                    "SELECT enviados, falhas, total_destinatarios "
+                    "FROM campanha WHERE id = %s",
                     (camp_id,),
                 )
-                envs, falhas, total = await cur.fetchone()
+                stats = await cur.fetchone()
+            if stats is None:
+                return
+            envs, falhas, total = stats
             new_status = "done" if envs == total else "partial"
             await _mark_finished(pool, camp_id, new_status)
-            log.info("campanha_dispatch_finished", status=new_status, enviados=envs, falhas=falhas)
+            log.info(
+                "campanha_dispatch_finished",
+                status=new_status,
+                enviados=envs,
+                falhas=falhas,
+            )
             return
 
-        for dest_id, phone in batch:
+        for dest_id, phone, cliente_nome in batch:
             try:
-                provider_msg_id = await client.send_message(phone, camp["mensagem"])
+                if template_id:
+                    res = await send_template_by_id(
+                        pool,
+                        conexao_id=conexao.id,
+                        empresa_id=empresa_id,
+                        to=phone,
+                        template_id=template_id,
+                        variables=_resolve_template_vars(
+                            camp.get("template_variaveis"), cliente_nome
+                        ),
+                    )
+                    provider_msg_id = res["provider_message_id"]
+                else:
+                    provider_msg_id = await client.send_message(
+                        phone, camp.get("mensagem") or ""
+                    )
                 async with pool.connection() as conn:
                     await conn.execute(
                         """
@@ -384,7 +444,8 @@ async def _dispatch_loop(
                         (provider_msg_id, dest_id),
                     )
                     await conn.execute(
-                        "UPDATE campanha SET enviados = enviados + 1, updated_at=NOW() WHERE id = %s",
+                        "UPDATE campanha SET enviados = enviados + 1, "
+                        "updated_at=NOW() WHERE id = %s",
                         (camp_id,),
                     )
                     await conn.commit()
@@ -400,11 +461,14 @@ async def _dispatch_loop(
                         (err, dest_id),
                     )
                     await conn.execute(
-                        "UPDATE campanha SET falhas = falhas + 1, updated_at=NOW() WHERE id = %s",
+                        "UPDATE campanha SET falhas = falhas + 1, "
+                        "updated_at=NOW() WHERE id = %s",
                         (camp_id,),
                     )
                     await conn.commit()
-                log.warning("campanha_send_failed", dest_id=dest_id, phone=phone, error=err)
+                log.warning(
+                    "campanha_send_failed", dest_id=dest_id, phone=phone, error=err
+                )
 
             if intervalo_s > 0:
                 await asyncio.sleep(intervalo_s)
@@ -437,7 +501,9 @@ def schedule_dispatch(
     a Task pra logging — endpoint não precisa await."""
     task = asyncio.create_task(_dispatch_loop(pool, empresa_id, camp_id))
     task.add_done_callback(
-        lambda t: logger.error("campanha_dispatch_task_crashed", error=str(t.exception()))
+        lambda t: logger.error(
+            "campanha_dispatch_task_crashed", error=str(t.exception())
+        )
         if t.exception()
         else None
     )

@@ -62,6 +62,29 @@ def _split_long_body(body: str, limit: int = WABA_MESSAGE_BODY_LIMIT) -> list[st
     return chunks
 
 
+async def download_media(access_token: str, media_id: str) -> tuple[bytes, str]:
+    """Baixa mídia inbound do WABA (2 passos do Cloud API).
+
+    `GET /{media_id}` → `{url, mime_type}` → `GET url` (com Bearer) → bytes.
+    Retorna `(conteudo, mime_type)`. Levanta `WabaSendError` em falha.
+    """
+    base = WABA_BASE_URL.format(version=settings.waba_graph_api_version)
+    headers = {"Authorization": f"Bearer {access_token}"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        meta_resp = await client.get(f"{base}/{media_id}", headers=headers)
+        if meta_resp.status_code != 200:
+            raise WabaSendError(meta_resp.status_code, meta_resp.text[:300])
+        info = meta_resp.json()
+        url = info.get("url")
+        mime = info.get("mime_type") or "application/octet-stream"
+        if not url:
+            raise WabaSendError(meta_resp.status_code, "media url ausente na resposta")
+        bin_resp = await client.get(url, headers=headers)
+        if bin_resp.status_code != 200:
+            raise WabaSendError(bin_resp.status_code, bin_resp.text[:300])
+        return bin_resp.content, mime
+
+
 class WabaClient:
     """Cliente assíncrono WhatsApp Cloud API (Meta).
 
