@@ -22,6 +22,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ .
 
+# INTERNAL_API_URL precisa existir NO BUILD: o rewrite /uploads/* do
+# next.config.ts (output standalone) congela a destination no route-manifest
+# em build time. Sem isso cai no fallback localhost:8000 e o proxy de
+# /uploads (avatars + logos da empresa) quebra com ECONNREFUSED em runtime.
+ARG INTERNAL_API_URL=http://api:8000
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
+
 # Gera o build standalone (definido em next.config.ts)
 RUN npm run build
 

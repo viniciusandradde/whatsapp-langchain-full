@@ -70,6 +70,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        # Build-time: o rewrite /uploads/* (next.config standalone) congela a
+        # destination no route-manifest. Tem que bater com o runtime abaixo.
+        INTERNAL_API_URL: http://api:8000
     env_file: .env
     environment:
       INTERNAL_API_URL: http://api:8000
