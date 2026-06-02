@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Camera, Save, Star, User, X } from "lucide-react";
+import { Camera, History, Save, Star, User, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Usuario } from "@/lib/api";
+import type { AtividadeEvento, Usuario } from "@/lib/api";
 
 import {
   atualizarUsuarioAction,
   criarUsuarioAction,
+  loadAtividadeAction,
   loadConexoesOptionsAction,
   loadDepartamentosOptionsAction,
   loadPerfisOptionsAction,
@@ -19,6 +20,18 @@ import {
   type PerfilOption,
 } from "./actions";
 
+const ACAO_LABEL: Record<string, string> = {
+  "member.add": "Adicionado à empresa",
+  "member.remove": "Removido da empresa",
+  "member.disable": "Desativado",
+  "member.enable": "Reativado",
+  "role.change": "Cargo alterado",
+  "perfil.sync": "Perfis atualizados",
+  "depto.sync": "Departamentos atualizados",
+  "superadmin.grant": "Superadmin concedido",
+  "superadmin.revoke": "Superadmin revogado",
+};
+
 interface Props {
   usuario: Usuario | null; // null = criar novo
   onClose: () => void;
@@ -26,11 +39,16 @@ interface Props {
   onUpdated: (u: Usuario) => void;
 }
 
-type TabId = "dados" | "acessos" | "atendimento";
+type TabId = "dados" | "acessos" | "atendimento" | "atividade";
 
 interface ConexaoSel {
   id: number;
   is_default: boolean;
+}
+
+function _fmtData(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("pt-BR");
 }
 
 const INPUT_CLASS =
@@ -73,6 +91,10 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
   const [deptsDisponiveis, setDeptsDisponiveis] = useState<DepartamentoOption[]>([]);
   const [conexoesDisponiveis, setConexoesDisponiveis] = useState<ConexaoOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
+
+  // Atividade (auditoria) — carregada sob demanda, só no modo edição
+  const [atividade, setAtividade] = useState<AtividadeEvento[] | null>(null);
+  const [atividadeLoading, setAtividadeLoading] = useState(false);
 
   // Avatar
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +146,23 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
     setConexoesSel((prev) =>
       prev.map((c) => ({ ...c, is_default: c.id === id }))
     );
+  }
+
+  function selectTab(id: TabId) {
+    setTab(id);
+    // Lazy-load da auditoria ao abrir a aba (só edição).
+    if (
+      id === "atividade" &&
+      isEdit &&
+      usuario &&
+      atividade === null &&
+      !atividadeLoading
+    ) {
+      setAtividadeLoading(true);
+      loadAtividadeAction(usuario.id)
+        .then((r) => setAtividade(r.ok ? r.data : []))
+        .finally(() => setAtividadeLoading(false));
+    }
   }
 
   function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -217,12 +256,15 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
               { id: "dados" as const, label: "Dados básicos" },
               { id: "acessos" as const, label: "Acessos" },
               { id: "atendimento" as const, label: "Atendimento" },
+              ...(isEdit
+                ? [{ id: "atividade" as const, label: "Atividade" }]
+                : []),
             ]
           ).map((t) => (
             <button
               key={t.id}
               type="button"
-              onClick={() => setTab(t.id)}
+              onClick={() => selectTab(t.id)}
               className={
                 "px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px " +
                 (tab === t.id
@@ -460,6 +502,42 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
                   </div>
                 )}
               </Field>
+            </div>
+          )}
+
+          {tab === "atividade" && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <History className="size-3.5" />
+                Histórico de auditoria deste usuário (quem criou / alterou /
+                ativou / desativou).
+              </div>
+              {atividadeLoading ? (
+                <p className="text-xs italic text-muted-foreground">
+                  Carregando atividade…
+                </p>
+              ) : !atividade || atividade.length === 0 ? (
+                <p className="text-xs italic text-muted-foreground">
+                  Nenhum evento de auditoria registrado.
+                </p>
+              ) : (
+                <ul className="max-h-80 space-y-2 overflow-y-auto">
+                  {atividade.map((ev) => (
+                    <li
+                      key={ev.id}
+                      className="border-l-2 border-brand-primary/30 pl-3"
+                    >
+                      <p className="text-sm">
+                        {ACAO_LABEL[ev.action] ?? ev.action}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        por {ev.actor_nome ?? ev.actor_user_id} ·{" "}
+                        {_fmtData(ev.created_at)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </div>

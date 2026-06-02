@@ -4132,6 +4132,24 @@ export async function deletarUsuario(userId: string): Promise<void> {
   await apiFetch<void>(`/api/usuarios/${userId}`, { method: "DELETE" });
 }
 
+export interface AtividadeEvento {
+  id: number;
+  actor_user_id: string;
+  actor_nome: string | null;
+  action: string;
+  entity_type: string | null;
+  payload_after: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+export async function getUsuarioAtividade(
+  userId: string
+): Promise<{ items: AtividadeEvento[] }> {
+  return apiFetch<{ items: AtividadeEvento[] }>(
+    `/api/usuarios/${userId}/atividade`
+  );
+}
+
 // Turnos / jornada de trabalho (Sprint U Fase 2)
 export interface TurnoHorario {
   dia_semana: number; // 0=Dom..6=Sáb

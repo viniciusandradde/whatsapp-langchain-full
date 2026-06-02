@@ -544,6 +544,25 @@ async def invalidar_sessions(pool: AsyncConnectionPool, user_id: str) -> int:
     return cur.rowcount or 0
 
 
+async def resolve_user_names(
+    pool: AsyncConnectionPool, user_ids: list[str]
+) -> dict[str, str]:
+    """Mapa `{user_id: nome}` (fallback email) pra um lote de ids. auth.user
+    é global (sem RLS). Usado pra enriquecer logs/auditoria com nomes."""
+    ids = [u for u in {uid for uid in user_ids if uid}]
+    if not ids:
+        return {}
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                'SELECT id, COALESCE(name, email) FROM auth."user" '
+                "WHERE id = ANY(%s)",
+                (ids,),
+            )
+            rows = await cur.fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
 async def set_avatar_path(
     pool: AsyncConnectionPool, user_id: str, avatar_path: str | None
 ) -> None:

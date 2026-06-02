@@ -37,7 +37,10 @@ from whatsapp_langchain.shared.atendimento import (
     transfer_atendimento,
     transfer_atendimento_to_departamento,
 )
-from whatsapp_langchain.shared.audit_governanca import record_audit_governanca
+from whatsapp_langchain.shared.audit_governanca import (
+    list_audit_governanca,
+    record_audit_governanca,
+)
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import set_user_status
 from whatsapp_langchain.shared.usuarios import (
@@ -51,6 +54,7 @@ from whatsapp_langchain.shared.usuarios import (
     list_usuarios_da_empresa,
     remover_usuario_da_empresa,
     replicar_usuario,
+    resolve_user_names,
     set_avatar_path,
     verificar_user_existe,
 )
@@ -184,6 +188,30 @@ async def get_endpoint(
             status_code=404, detail="Usuário não encontrado nesta empresa."
         )
     return u.to_dict()
+
+
+@router.get("/{user_id}/atividade")
+async def atividade_endpoint(
+    user_id: str,
+    limit: int = 50,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("empresa.member.add")),
+):
+    """Histórico de auditoria (`audit_governanca`) do usuário — quem
+    criou/alterou/desativou. Read-only, enriquecido com o nome do ator."""
+    pool = await get_pool()
+    eventos = await list_audit_governanca(
+        pool,
+        empresa_id=empresa_id,
+        target_user_id=user_id,
+        limit=min(max(limit, 1), 200),
+    )
+    nomes = await resolve_user_names(
+        pool, [e["actor_user_id"] for e in eventos]
+    )
+    for e in eventos:
+        e["actor_nome"] = nomes.get(e["actor_user_id"])
+    return {"items": eventos}
 
 
 @router.post("", status_code=201)

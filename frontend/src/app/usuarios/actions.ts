@@ -12,12 +12,14 @@ import {
   getDepartamentos,
   getEmpresaAtendentes,
   getPerfis,
+  getUsuarioAtividade,
   invalidarSessionsUsuario,
   listUsuarios,
   replicarUsuario,
   setAtendenteMaxParalelos,
   setStatusUsuario,
   type AtendenteStatus,
+  type AtividadeEvento,
   type SetStatusUsuarioBody,
   type Usuario,
   type UsuarioCreateInput,
@@ -319,6 +321,17 @@ export async function loadAtendentesAction(): Promise<Result<AtendenteStatus[]>>
   try {
     const r = await getEmpresaAtendentes();
     return { ok: true, data: r.atendentes };
+  } catch (e) {
+    return { ok: false, error: _err(e) };
+  }
+}
+
+export async function loadAtividadeAction(
+  userId: string
+): Promise<Result<AtividadeEvento[]>> {
+  try {
+    const r = await getUsuarioAtividade(userId);
+    return { ok: true, data: r.items };
   } catch (e) {
     return { ok: false, error: _err(e) };
   }

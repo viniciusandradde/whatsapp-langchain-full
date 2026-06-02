@@ -56,3 +56,7 @@ class TestSmokeUsuariosEndpoints:
     def test_delete_sem_auth_401(self) -> None:
         resp = _client().delete("/api/usuarios/x")
         assert resp.status_code == 401, resp.text
+
+    def test_atividade_sem_auth_401(self) -> None:
+        resp = _client().get("/api/usuarios/x/atividade")
+        assert resp.status_code == 401, resp.text

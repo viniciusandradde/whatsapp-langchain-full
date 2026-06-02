@@ -74,6 +74,9 @@ class TestSmoke:
     def test_delete_sem_auth_401(self) -> None:
         assert _client().delete("/api/usuarios/x").status_code == 401
 
+    def test_atividade_sem_auth_401(self) -> None:
+        assert _client().get("/api/usuarios/x/atividade").status_code == 401
+
 
 # ============================================================================
 # E2E (stack real)
@@ -362,6 +365,17 @@ class TestE2E:
             timeout=10,
         )
         assert r.status_code == 200, r.text
+
+        # atividade: registra disable + enable, com nome do ator resolvido
+        r = httpx.get(
+            f"{API_BASE_URL}/api/usuarios/{uid}/atividade", headers=h, timeout=10
+        )
+        assert r.status_code == 200, r.text
+        eventos = r.json()["items"]
+        acoes = {e["action"] for e in eventos}
+        assert "member.disable" in acoes, eventos
+        assert "member.enable" in acoes, eventos
+        assert any(e.get("actor_nome") for e in eventos), eventos
 
         # reassign sem target → 422 (model validator)
         r = httpx.patch(
