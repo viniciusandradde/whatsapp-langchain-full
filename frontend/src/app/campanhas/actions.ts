@@ -8,9 +8,11 @@ import {
   dispatchCampanha,
   getCampanha,
   getCampanhaDestinatarios,
+  listTemplates,
   type Campanha,
   type CampanhaCreateInput,
   type CampanhaDestinatario,
+  type WabaTemplate,
 } from "@/lib/api";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -27,6 +29,20 @@ export async function createCampanhaAction(
     const c = await createCampanha(body);
     revalidatePath("/campanhas");
     return { ok: true, data: c };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function loadApprovedTemplatesAction(
+  conexaoId: number
+): Promise<Result<WabaTemplate[]>> {
+  try {
+    const r = await listTemplates(conexaoId);
+    return {
+      ok: true,
+      data: r.templates.filter((t) => t.status === "approved"),
+    };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

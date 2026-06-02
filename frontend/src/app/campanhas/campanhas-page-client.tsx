@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Megaphone, Plus, Send, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +12,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Campanha, Conexao } from "@/lib/api";
+import type { Campanha, Conexao, WabaTemplate } from "@/lib/api";
 
-import { createCampanhaAction } from "./actions";
+import { createCampanhaAction, loadApprovedTemplatesAction } from "./actions";
+
+function _bodyText(t: WabaTemplate): string {
+  return t.componentes_json.find((c) => (c.type || "").toUpperCase() === "BODY")?.text ?? "";
+}
+
+function _varKeys(t: WabaTemplate): string[] {
+  const found = new Set<string>();
+  for (const m of _bodyText(t).matchAll(/\{\{(\d+)\}\}/g)) found.add(m[1]);
+  return [...found].sort((a, b) => Number(a) - Number(b));
+}
 
 interface Props {
   initialCampanhas: Campanha[];
@@ -49,6 +59,32 @@ export function CampanhasPageClient({
   const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Modo de conteúdo: texto livre (janela 24h) OU template HSM aprovado.
+  const [modo, setModo] = useState<"texto" | "template">("texto");
+  const [conexaoId, setConexaoId] = useState<string>("");
+  const [templates, setTemplates] = useState<WabaTemplate[]>([]);
+  const [templateId, setTemplateId] = useState<number | null>(null);
+  const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
+
+  // Carrega templates aprovados ao escolher conexão no modo template.
+  // (setState só no callback async — evita set-state-in-effect do compiler.)
+  useEffect(() => {
+    if (modo !== "template" || !conexaoId) return;
+    let alive = true;
+    loadApprovedTemplatesAction(Number(conexaoId)).then((r) => {
+      if (alive && r.ok) setTemplates(r.data);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [modo, conexaoId]);
+
+  // Só consideramos templates carregados quando relevante (modo+conexão).
+  const templatesAtivos =
+    modo === "template" && conexaoId ? templates : [];
+  const selTemplate = templatesAtivos.find((t) => t.id === templateId) ?? null;
+  const templateKeys = selTemplate ? _varKeys(selTemplate) : [];
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -64,8 +100,15 @@ export function CampanhasPageClient({
       setError("Adicione ao menos 1 telefone.");
       return;
     }
+    if (modo === "template" && !templateId) {
+      setError("Escolha um template aprovado (ou use Texto livre).");
+      return;
+    }
+    if (modo === "template" && templateKeys.some((k) => !(templateVars[k] ?? "").trim())) {
+      setError("Preencha todas as variáveis do template ({{nome}} usa o nome do cliente).");
+      return;
+    }
 
-    const conexaoRaw = String(fd.get("conexao_id") || "").trim();
     const modeloRaw = String(fd.get("modelo_mensagem_id") || "").trim();
     const tagsRaw = String(fd.get("filtro_tags") || "").trim();
     const scheduledRaw = String(fd.get("scheduled_at") || "").trim();
@@ -74,8 +117,8 @@ export function CampanhasPageClient({
       descricao: (String(fd.get("descricao") || "").trim() || null) as
         | string
         | null,
-      mensagem: String(fd.get("mensagem") || "").trim(),
-      conexao_id: conexaoRaw ? Number(conexaoRaw) : null,
+      mensagem: modo === "texto" ? String(fd.get("mensagem") || "").trim() : null,
+      conexao_id: conexaoId ? Number(conexaoId) : null,
       intervalo_ms: Number(fd.get("intervalo_ms") || 500),
       max_destinatarios: Number(fd.get("max_destinatarios") || 1000),
       telefones,
@@ -87,6 +130,9 @@ export function CampanhasPageClient({
       filtro_tags: tagsRaw
         ? tagsRaw.split(",").map((s) => s.trim()).filter(Boolean)
         : null,
+      // Template HSM (mig 113)
+      message_template_id: modo === "template" ? templateId : null,
+      template_variaveis: modo === "template" ? templateVars : {},
     };
 
     startTransition(async () => {
@@ -171,17 +217,94 @@ export function CampanhasPageClient({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-                  Mensagem
-                </label>
-                <textarea
-                  name="mensagem"
-                  required
-                  maxLength={4000}
-                  rows={4}
-                  placeholder="Olá! Promoção válida até..."
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                />
+                <div className="mb-2 flex gap-1 rounded-md border border-border/40 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setModo("texto")}
+                    className={`flex-1 rounded px-2 py-1 ${modo === "texto" ? "bg-primary/15 font-medium text-primary" : "text-muted-foreground"}`}
+                  >
+                    Texto livre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModo("template")}
+                    className={`flex-1 rounded px-2 py-1 ${modo === "template" ? "bg-primary/15 font-medium text-primary" : "text-muted-foreground"}`}
+                  >
+                    Template HSM
+                  </button>
+                </div>
+
+                {modo === "texto" ? (
+                  <>
+                    <textarea
+                      name="mensagem"
+                      required
+                      maxLength={4000}
+                      rows={4}
+                      placeholder="Olá! Promoção válida até..."
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Texto livre só entrega pra contatos com janela de 24h aberta.
+                      Pra broadcast real (fora da janela), use Template HSM.
+                    </p>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    {!conexaoId ? (
+                      <p className="text-xs text-muted-foreground">
+                        Escolha a conexão abaixo pra listar os templates aprovados.
+                      </p>
+                    ) : templatesAtivos.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Nenhum template aprovado nesta conexão. Aprove em
+                        Conexões → Templates.
+                      </p>
+                    ) : (
+                      <>
+                        <select
+                          value={templateId ?? ""}
+                          onChange={(e) => {
+                            setTemplateId(e.target.value ? Number(e.target.value) : null);
+                            setTemplateVars({});
+                          }}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">Selecione um template…</option>
+                          {templatesAtivos.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.nome} ({t.idioma})
+                            </option>
+                          ))}
+                        </select>
+                        {selTemplate && (
+                          <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground whitespace-pre-wrap">
+                            {_bodyText(selTemplate)}
+                          </p>
+                        )}
+                        {templateKeys.map((k) => (
+                          <div key={k}>
+                            <label className="mb-0.5 block text-[11px] text-muted-foreground">
+                              Variável {`{{${k}}}`}
+                            </label>
+                            <input
+                              value={templateVars[k] ?? ""}
+                              onChange={(e) =>
+                                setTemplateVars((p) => ({ ...p, [k]: e.target.value }))
+                              }
+                              placeholder={k === "1" ? "ex: {{nome}} (usa o nome do cliente)" : ""}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
+                            />
+                          </div>
+                        ))}
+                        <p className="text-[11px] text-muted-foreground">
+                          Dica: use <code>{"{{nome}}"}</code> numa variável pra
+                          inserir o primeiro nome de cada cliente.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div>
@@ -190,9 +313,17 @@ export function CampanhasPageClient({
                   </label>
                   <select
                     name="conexao_id"
+                    value={conexaoId}
+                    onChange={(e) => {
+                      setConexaoId(e.target.value);
+                      setTemplateId(null);
+                      setTemplateVars({});
+                    }}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   >
-                    <option value="">Primeira ativa</option>
+                    <option value="">
+                      {modo === "template" ? "Selecione a conexão…" : "Primeira ativa"}
+                    </option>
                     {conexoes.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.from_number} ({c.provider})
@@ -266,7 +397,7 @@ export function CampanhasPageClient({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-                      Template (modelo_mensagem ID)
+                      Modelo interno (ID)
                     </label>
                     <input
                       type="number"
@@ -275,7 +406,8 @@ export function CampanhasPageClient({
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      Pra HSM aprovado (WABA) — substitui campo Mensagem
+                      Quick-reply interno (≠ template HSM — esse fica no toggle
+                      acima).
                     </p>
                   </div>
                   <div>
