@@ -13,6 +13,7 @@ import {
   deleteAba,
   deleteTag,
   getAtendimentoMensagens,
+  getAtendimentoTraceLink,
   getClienteAtendimentosAnteriores,
   getContadoresAtendimento,
   getDepartamentos,
@@ -33,6 +34,7 @@ import {
   type AtendenteStatus,
   type Atendimento,
   type AtendimentoMensagem,
+  type AtendimentoTraceLink,
   type AtendimentoTag,
   type ContadoresAtendimento,
   type Departamento,
@@ -53,6 +55,18 @@ type ModelosResult =
 
 function toError(e: unknown): string {
   return e instanceof Error ? e.message : "Erro desconhecido.";
+}
+
+export async function loadTraceLinkAction(
+  atendimentoId: number
+): Promise<
+  { ok: true; data: AtendimentoTraceLink } | { ok: false; error: string }
+> {
+  try {
+    return { ok: true, data: await getAtendimentoTraceLink(atendimentoId) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
 }
 
 export async function loadMensagensAction(

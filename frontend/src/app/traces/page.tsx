@@ -2,8 +2,13 @@ import Link from "next/link";
 import { Activity, ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { getTraces } from "@/lib/api";
+import { getTraces, getTracesConfig } from "@/lib/api";
 import { requireSession } from "@/lib/session";
+
+const PROVIDER_LABEL: Record<string, string> = {
+  langfuse: "Langfuse",
+  langsmith: "LangSmith (fallback)",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -26,21 +31,33 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
   const sp = await searchParams;
 
   let traces: Awaited<ReturnType<typeof getTraces>>["traces"] = [];
+  let provider: string | null = null;
   let error: string | null = null;
 
   try {
-    const data = await getTraces({ limit: 50, thread_id: sp.thread_id });
+    const [data, cfg] = await Promise.all([
+      getTraces({ limit: 50, thread_id: sp.thread_id }),
+      getTracesConfig().catch(() => ({ provider: null, enabled: false })),
+    ]);
     traces = data.traces;
+    provider = cfg.provider;
   } catch (e) {
     error = e instanceof Error ? e.message : "Erro desconhecido ao buscar traces.";
   }
+
+  const providerLabel = provider
+    ? (PROVIDER_LABEL[provider] ?? provider)
+    : "não configurado";
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Activity className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">Traces — LangSmith</h1>
+          <h1 className="text-2xl font-semibold">Traces</h1>
+          <Badge variant={provider === "langfuse" ? "secondary" : "outline"}>
+            {providerLabel}
+          </Badge>
         </div>
         <span className="text-sm text-muted-foreground">
           {traces.length} runs
@@ -58,8 +75,8 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
           <p className="font-medium">Não foi possível carregar os traces</p>
           <p className="mt-1 text-destructive/80">{error}</p>
           <p className="mt-2 text-xs text-destructive/80">
-            Verifique se LANGCHAIN_API_KEY e LANGCHAIN_PROJECT estão
-            configurados na API.
+            Verifique a observabilidade na API: LANGFUSE_* (primário) ou
+            LANGCHAIN_API_KEY/PROJECT (fallback).
           </p>
         </div>
       )}
@@ -114,7 +131,7 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Link
-                        href={t.smith_url}
+                        href={t.url || t.smith_url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-primary hover:underline"

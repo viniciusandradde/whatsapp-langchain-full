@@ -200,6 +200,46 @@ def post_score(
         )
 
 
+def trace_url(trace_id: str) -> str:
+    """Short-link pra UI do trace (redireciona pro projeto certo, sem precisar
+    do project_id)."""
+    host = settings.langfuse_host.rstrip("/")
+    return f"{host}/trace/{trace_id}"
+
+
+def list_traces(limit: int = 20, session_id: str | None = None) -> list[dict[str, Any]]:
+    """Lista traces via REST público (`GET /api/public/traces`) com basic-auth
+    pk:sk — estável entre versões do SDK. Best-effort: `[]` quando off/erro.
+
+    `session_id` filtra por conversa (worker seta `session_id = thread_id`).
+    """
+    if not settings.langfuse_enabled:
+        return []
+    pub = settings.langfuse_public_key
+    sec = settings.langfuse_secret_key
+    if pub is None or sec is None:
+        return []
+    try:
+        import httpx
+
+        params: dict[str, str] = {"limit": str(max(1, min(limit, 100)))}
+        if session_id:
+            params["sessionId"] = session_id
+        host = settings.langfuse_host.rstrip("/")
+        resp = httpx.get(
+            f"{host}/api/public/traces",
+            params=params,
+            auth=(pub.get_secret_value(), sec.get_secret_value()),
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", [])
+        return data if isinstance(data, list) else []
+    except Exception as exc:
+        logger.warning("langfuse_list_traces_failed", error=str(exc))
+        return []
+
+
 def flush() -> None:
     """Força flush do batch de spans/scores. Usar em testes ou shutdown."""
     client = get_client()

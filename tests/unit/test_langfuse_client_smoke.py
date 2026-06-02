@@ -62,6 +62,19 @@ class TestLangfuseDisabled:
     def test_flush_silent_noop_when_disabled(self) -> None:
         langfuse_client.flush()
 
+    def test_list_traces_empty_when_disabled(self) -> None:
+        from whatsapp_langchain.shared.config import settings
+
+        if settings.langfuse_enabled:
+            return
+        assert langfuse_client.list_traces(limit=5) == []
+
+    def test_trace_url_builds_short_link(self) -> None:
+        from whatsapp_langchain.shared.config import settings
+
+        url = langfuse_client.trace_url("abc123")
+        assert url == f"{settings.langfuse_host.rstrip('/')}/trace/abc123"
+
 
 class TestSystemPromptFallback:
     """get_system_prompt cai no fallback file-based quando Langfuse off."""

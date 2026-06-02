@@ -180,9 +180,9 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
     healthcheck:
-      # Com HOSTNAME=0.0.0.0 setado, Node binda em todas interfaces incl.
-      # 127.0.0.1 — então localhost funciona dentro do container.
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/public/health || exit 1"]
+      # 127.0.0.1 (NÃO localhost): Node binda IPv4 0.0.0.0, mas "localhost"
+      # resolve ::1 (IPv6) primeiro → Connection refused. 127.0.0.1 acerta.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/public/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

@@ -397,7 +397,9 @@ export interface TraceInfo {
   latency_ms: number | null;
   total_tokens: number | null;
   thread_id: string | null;
-  smith_url: string;
+  source: "langfuse" | "langsmith";
+  url: string;
+  smith_url: string; // alias legado de url
 }
 
 export interface TracesResponse {
@@ -1500,6 +1502,29 @@ export async function getTraces(params: {
   if (params.thread_id) q.set("thread_id", params.thread_id);
   const qs = q.toString();
   return apiFetch<TracesResponse>(`/api/traces${qs ? `?${qs}` : ""}`);
+}
+
+export interface TracesConfig {
+  provider: "langfuse" | "langsmith" | null;
+  enabled: boolean;
+}
+
+export async function getTracesConfig(): Promise<TracesConfig> {
+  return apiFetch<TracesConfig>("/api/traces/config");
+}
+
+export interface AtendimentoTraceLink {
+  provider: "langfuse" | "langsmith" | null;
+  thread_id: string | null;
+  trace_url: string | null;
+}
+
+export async function getAtendimentoTraceLink(
+  atendimentoId: number
+): Promise<AtendimentoTraceLink> {
+  return apiFetch<AtendimentoTraceLink>(
+    `/api/traces/atendimento/${atendimentoId}`
+  );
 }
 
 // --- Clientes ---

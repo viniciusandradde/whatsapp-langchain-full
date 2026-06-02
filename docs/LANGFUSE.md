@@ -334,6 +334,21 @@ aceita N callbacks. Hoje o worker injeta só Langfuse + `IaExecucaoCallback`,
 mas o caminho pra plugar LangSmith é o mesmo (`LANGSMITH_TRACING=true` já
 ativa via env no LangChain core).
 
+### Painel `/traces` (Langfuse primary, LangSmith fallback)
+
+A página `/traces` é **provider-aware**: quando `LANGFUSE_ENABLED`, lista os
+traces via REST do Langfuse (`GET {host}/api/public/traces`) e mostra o badge
+"Langfuse"; sem as keys, cai pro LangSmith ("LangSmith (fallback)"). 503 só
+quando nenhum dos dois está configurado. Endpoints:
+- `GET /api/traces` — lista do provider ativo (filtro `thread_id`→`session_id`).
+- `GET /api/traces/config` — `{provider, enabled}` (badge + deep-links no front).
+- `GET /api/traces/atendimento/{id}` — resolve o `thread_id` exato
+  (`phone_number:agent_id`) da última msg na `message_queue` → deep-link.
+
+No drawer de `/atendimento`, o link **"ver traces"** leva pra
+`/traces?thread_id=…` filtrado pela conversa; cada trace tem "Abrir →" pro
+short-link `{host}/trace/{id}`.
+
 ---
 
 ## 8. Troubleshooting

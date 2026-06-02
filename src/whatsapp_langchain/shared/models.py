@@ -160,7 +160,7 @@ class UpdateAgentLLMConfigRequest(BaseModel):
 
 
 class TraceInfo(BaseModel):
-    """Run enxuta do LangSmith pra exibir na tabela `/traces` do painel."""
+    """Run enxuta de observabilidade (Langfuse OU LangSmith) pra tabela `/traces`."""
 
     run_id: str
     name: str | None
@@ -170,7 +170,12 @@ class TraceInfo(BaseModel):
     latency_ms: int | None
     total_tokens: int | None
     thread_id: str | None
-    smith_url: str = Field(description="URL direta pro run em smith.langchain.com")
+    source: str = Field(
+        default="langsmith", description="Origem do trace: langfuse | langsmith"
+    )
+    url: str = Field(default="", description="Deep-link pra UI do provider")
+    # Compat retroativa — clientes antigos liam `smith_url`. Espelha `url`.
+    smith_url: str = Field(default="", description="Alias legado de `url`")
 
 
 # --- Multi-tenant: Empresa + Membership ---
