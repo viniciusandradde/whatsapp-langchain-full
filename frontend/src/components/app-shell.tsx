@@ -16,12 +16,19 @@ import { useSidebar } from "@/components/sidebar-context";
 import { TopNavTabs } from "@/components/top-nav-tabs";
 import { cn } from "@/lib/utils";
 
+export interface SidebarBrand {
+  nome: string;
+  logo_path: string | null;
+}
+
 export function AppShell({
   children,
   empresaSwitcher,
+  brand,
 }: {
   children: React.ReactNode;
   empresaSwitcher?: React.ReactNode;
+  brand?: SidebarBrand | null;
 }) {
   const pathname = usePathname();
   const { collapsed } = useSidebar();
@@ -33,7 +40,7 @@ export function AppShell({
 
   return (
     <>
-      <Sidebar empresaSwitcher={empresaSwitcher} />
+      <Sidebar empresaSwitcher={empresaSwitcher} brand={brand} />
       <main
         className={cn(
           "min-h-screen p-6 pt-16 md:pt-6",

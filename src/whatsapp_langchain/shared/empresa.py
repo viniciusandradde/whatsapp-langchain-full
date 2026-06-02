@@ -42,7 +42,9 @@ async def list_empresas_of_user(
             cur = await conn.execute(
                 """
                 SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
-                       e.config, e.created_at, e.updated_at, m.role
+                       e.config, e.created_at, e.updated_at,
+                       e.logo_path, e.nome_exibicao, e.cor_primaria,
+                       e.cor_secundaria, m.role
                   FROM empresa e
                   JOIN empresa_membro m ON m.empresa_id = e.id
                  WHERE m.user_id = %s
@@ -64,15 +66,17 @@ async def list_empresas_of_user(
             config=r[6] or {},
             created_at=r[7],
             updated_at=r[8],
-            my_role=r[9],
+            logo_path=r[9],
+            nome_exibicao=r[10],
+            cor_primaria=r[11],
+            cor_secundaria=r[12],
+            my_role=r[13],
         )
         for r in rows
     ]
 
 
-async def get_default_empresa_id(
-    pool: AsyncConnectionPool, user_id: str
-) -> int | None:
+async def get_default_empresa_id(pool: AsyncConnectionPool, user_id: str) -> int | None:
     """Retorna o empresa_id marcado como default pro user (None se não tem).
 
     Sprint A.2: chamada pelo middleware `get_empresa_context` ANTES de
@@ -145,7 +149,8 @@ async def is_superadmin(pool: AsyncConnectionPool, user_id: str) -> bool:
 
 
 _EMPRESA_COLS = (
-    "id, nome, slug, doc, plano, status, config, created_at, updated_at"
+    "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
+    "logo_path, nome_exibicao, cor_primaria, cor_secundaria"
 )
 
 
@@ -160,6 +165,10 @@ def _row_to_empresa(row) -> Empresa:
         config=row[6] or {},
         created_at=row[7],
         updated_at=row[8],
+        logo_path=row[9],
+        nome_exibicao=row[10],
+        cor_primaria=row[11],
+        cor_secundaria=row[12],
     )
 
 
@@ -288,11 +297,18 @@ async def create_empresa(
                 RETURNING {_EMPRESA_COLS}
                 """,
                 (
-                    nome, slug, plano, doc,
-                    razao_social, inscricao_estadual,
-                    endereco_fiscal_cep, endereco_fiscal_logradouro,
-                    endereco_fiscal_numero, endereco_fiscal_complemento,
-                    endereco_fiscal_bairro, endereco_fiscal_cidade,
+                    nome,
+                    slug,
+                    plano,
+                    doc,
+                    razao_social,
+                    inscricao_estadual,
+                    endereco_fiscal_cep,
+                    endereco_fiscal_logradouro,
+                    endereco_fiscal_numero,
+                    endereco_fiscal_complemento,
+                    endereco_fiscal_bairro,
+                    endereco_fiscal_cidade,
                     endereco_fiscal_uf,
                 ),
             )
@@ -329,6 +345,11 @@ async def update_empresa(
     endereco_fiscal_bairro: str | None = None,
     endereco_fiscal_cidade: str | None = None,
     endereco_fiscal_uf: str | None = None,
+    # White-label (mig 115)
+    logo_path: str | None = None,
+    nome_exibicao: str | None = None,
+    cor_primaria: str | None = None,
+    cor_secundaria: str | None = None,
 ) -> Empresa | None:
     """Atualiza campos não-None. Retorna None se a empresa não existe."""
     fields: list[str] = []
@@ -348,6 +369,10 @@ async def update_empresa(
         ("endereco_fiscal_bairro", endereco_fiscal_bairro),
         ("endereco_fiscal_cidade", endereco_fiscal_cidade),
         ("endereco_fiscal_uf", endereco_fiscal_uf),
+        ("logo_path", logo_path),
+        ("nome_exibicao", nome_exibicao),
+        ("cor_primaria", cor_primaria),
+        ("cor_secundaria", cor_secundaria),
     ):
         if value is not None:
             fields.append(f"{name} = %s")
@@ -505,9 +530,7 @@ async def remove_member(
     return True
 
 
-async def is_admin_of(
-    pool: AsyncConnectionPool, empresa_id: int, user_id: str
-) -> bool:
+async def is_admin_of(pool: AsyncConnectionPool, empresa_id: int, user_id: str) -> bool:
     """True se o user é admin da empresa OU superadmin global."""
     if await is_superadmin(pool, user_id):
         return True

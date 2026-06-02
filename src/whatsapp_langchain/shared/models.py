@@ -215,6 +215,11 @@ class Empresa(BaseModel):
     endereco_fiscal_bairro: str | None = None
     endereco_fiscal_cidade: str | None = None
     endereco_fiscal_uf: str | None = None
+    # White-label por empresa (mig 115)
+    logo_path: str | None = None
+    nome_exibicao: str | None = None
+    cor_primaria: str | None = None
+    cor_secundaria: str | None = None
 
 
 class EmpresaMembro(BaseModel):

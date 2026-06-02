@@ -6,8 +6,12 @@ genérico pra manter as regras (ex: "remover último admin" → 409) no
 lugar onde a operação acontece.
 """
 
+import io
+import os
+from pathlib import Path
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
@@ -75,6 +79,10 @@ class UpdateEmpresaInput(BaseModel):
     endereco_fiscal_bairro: str | None = None
     endereco_fiscal_cidade: str | None = None
     endereco_fiscal_uf: str | None = Field(default=None, max_length=2)
+    # White-label (mig 115)
+    nome_exibicao: str | None = Field(default=None, max_length=80)
+    cor_primaria: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    cor_secundaria: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
 
 
 class AddMemberInput(BaseModel):
@@ -106,7 +114,12 @@ async def create_empresa_endpoint(
     pool = await get_pool()
     try:
         empresa = await create_empresa(
-            pool, body.nome, body.slug, body.plano, body.doc, user_id,
+            pool,
+            body.nome,
+            body.slug,
+            body.plano,
+            body.doc,
+            user_id,
             razao_social=body.razao_social,
             inscricao_estadual=body.inscricao_estadual,
             endereco_fiscal_cep=body.endereco_fiscal_cep,
@@ -167,6 +180,9 @@ async def update_empresa_endpoint(
             endereco_fiscal_bairro=body.endereco_fiscal_bairro,
             endereco_fiscal_cidade=body.endereco_fiscal_cidade,
             endereco_fiscal_uf=body.endereco_fiscal_uf,
+            nome_exibicao=body.nome_exibicao,
+            cor_primaria=body.cor_primaria,
+            cor_secundaria=body.cor_secundaria,
         )
     except Exception as e:
         msg = str(e).lower()
@@ -182,6 +198,73 @@ async def update_empresa_endpoint(
     if out is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     return out
+
+
+# --- White-label: upload de logo (mig 115) ---
+
+_LOGOS_DIR = Path(os.environ.get("LOGOS_DIR", "/app/uploads/logos"))
+_LOGO_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
+_LOGO_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+@router.post("/{empresa_id}/logo")
+async def upload_logo_endpoint(
+    empresa_id: int,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Sobe a logo da empresa (white-label). Só admin/superadmin.
+
+    Re-encoda via Pillow pra PNG (≤512px, preserva alpha). Path local
+    `/uploads/logos/{empresa_id}.png` servido como estático.
+    """
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
+
+    content = await file.read()
+    max_mb = _LOGO_MAX_BYTES // 1024 // 1024
+    if len(content) > _LOGO_MAX_BYTES:
+        raise HTTPException(
+            status_code=413, detail=f"Arquivo muito grande. Máximo: {max_mb} MB."
+        )
+    if file.content_type not in _LOGO_ALLOWED_MIMES:
+        raise HTTPException(
+            status_code=415,
+            detail="Formato não suportado. Use: PNG, JPEG, WebP ou GIF.",
+        )
+
+    try:
+        from PIL import Image
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503, detail="Pillow não disponível no servidor."
+        ) from e
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.verify()
+        img = Image.open(io.BytesIO(content))  # re-abre após verify
+        # Mantém aspecto + alpha (PNG). 512px serve pra retina no sidebar.
+        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Imagem inválida: {e}") from e
+
+    _LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = _LOGOS_DIR / f"{empresa_id}.png"
+    img.save(out_path, format="PNG", optimize=True)
+
+    rel_path = f"/uploads/logos/{empresa_id}.png"
+    updated = await update_empresa(pool, empresa_id, logo_path=rel_path)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    logger.info(
+        "empresa_logo_uploaded",
+        empresa_id=empresa_id,
+        size_bytes=len(content),
+        path=rel_path,
+    )
+    return {"logo_path": rel_path}
 
 
 # Sprint Y: configuração da pesquisa NPS por empresa
@@ -366,9 +449,7 @@ async def update_member_status(
     if body.status == "disabled":
         members = await list_members(pool, empresa_id)
         admins_ativos = [
-            m
-            for m in members
-            if m.role == "admin" and m.user_id != member_user_id
+            m for m in members if m.role == "admin" and m.user_id != member_user_id
         ]
         target_member = next((m for m in members if m.user_id == member_user_id), None)
         if target_member and target_member.role == "admin" and not admins_ativos:
@@ -438,9 +519,7 @@ async def _list_user_perfil_ids(pool, empresa_id: int, user_id: str) -> list[int
     return [r[0] for r in rows]
 
 
-async def _list_user_departamento_ids(
-    pool, empresa_id: int, user_id: str
-) -> list[int]:
+async def _list_user_departamento_ids(pool, empresa_id: int, user_id: str) -> list[int]:
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -497,8 +576,7 @@ async def sync_member_perfis(
     if desired:
         async with pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT id FROM perfil_acesso WHERE empresa_id = %s "
-                "AND id = ANY(%s)",
+                "SELECT id FROM perfil_acesso WHERE empresa_id = %s AND id = ANY(%s)",
                 (empresa_id, list(desired)),
             )
             valid = {r[0] for r in await cur.fetchall()}
@@ -592,8 +670,7 @@ async def sync_member_departamentos(
     if desired:
         async with pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT id FROM departamento WHERE empresa_id = %s "
-                "AND id = ANY(%s)",
+                "SELECT id FROM departamento WHERE empresa_id = %s AND id = ANY(%s)",
                 (empresa_id, list(desired)),
             )
             valid = {r[0] for r in await cur.fetchall()}
@@ -601,9 +678,7 @@ async def sync_member_departamentos(
             invalid = desired - valid
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    f"Departamentos inválidos pra esta empresa: {sorted(invalid)}"
-                ),
+                detail=(f"Departamentos inválidos pra esta empresa: {sorted(invalid)}"),
             )
 
     current = set(before_ids)
@@ -686,7 +761,6 @@ async def list_audit_governanca_endpoint(
         offset=max(offset, 0),
     )
     return {"items": items}
-
 
 
 # Sprint Q.4 — endpoint quota (uso/limites/features do plano)

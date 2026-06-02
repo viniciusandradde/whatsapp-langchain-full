@@ -110,6 +110,11 @@ export interface Empresa {
   endereco_fiscal_bairro?: string | null;
   endereco_fiscal_cidade?: string | null;
   endereco_fiscal_uf?: string | null;
+  // White-label por empresa (mig 115)
+  logo_path?: string | null;
+  nome_exibicao?: string | null;
+  cor_primaria?: string | null;
+  cor_secundaria?: string | null;
 }
 
 export interface EmpresaInput {
@@ -143,6 +148,10 @@ export interface EmpresaUpdateInput {
   endereco_fiscal_bairro?: string | null;
   endereco_fiscal_cidade?: string | null;
   endereco_fiscal_uf?: string | null;
+  // White-label (mig 115)
+  nome_exibicao?: string | null;
+  cor_primaria?: string | null;
+  cor_secundaria?: string | null;
 }
 
 export type UserStatus = "active" | "disabled";

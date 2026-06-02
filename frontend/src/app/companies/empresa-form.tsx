@@ -26,6 +26,7 @@ import {
   loadEmpresaCsatAction,
   saveEmpresa,
   saveEmpresaCsatAction,
+  uploadEmpresaLogoAction,
 } from "./actions";
 
 interface Props {
@@ -89,6 +90,17 @@ export function EmpresaForm({ initial, onDone }: Props) {
   const [cepError, setCepError] = useState<string | null>(null);
 
   const [plano, setPlano] = useState(initial?.plano ?? "free");
+
+  // White-label (mig 115)
+  const [nomeExibicao, setNomeExibicao] = useState(initial?.nome_exibicao ?? "");
+  const [corPrimaria, setCorPrimaria] = useState(initial?.cor_primaria ?? "");
+  const [corSecundaria, setCorSecundaria] = useState(
+    initial?.cor_secundaria ?? ""
+  );
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(
+    initial?.logo_path ?? null
+  );
 
   // Auto-gera slug enquanto user digita o nome (até ele editar manualmente)
   useEffect(() => {
@@ -159,16 +171,44 @@ export function EmpresaForm({ initial, onDone }: Props) {
     formData.set("endereco_fiscal_bairro", bairro.trim());
     formData.set("endereco_fiscal_cidade", cidade.trim());
     formData.set("endereco_fiscal_uf", uf.trim().toUpperCase());
+    // White-label
+    formData.set("nome_exibicao", nomeExibicao.trim());
+    formData.set("cor_primaria", corPrimaria);
+    formData.set("cor_secundaria", corSecundaria);
 
     startTransition(async () => {
       const result = await saveEmpresa(initial?.id ?? null, formData);
-      if (result.ok) {
-        setFeedback({ kind: "ok" });
-        onDone?.();
-      } else {
+      if (!result.ok) {
         setFeedback({ kind: "err", message: result.error });
+        return;
       }
+      // Logo é multipart — upload separado após salvar (precisa do id).
+      if (logoFile) {
+        const fd = new FormData();
+        fd.set("file", logoFile);
+        const up = await uploadEmpresaLogoAction(result.empresaId, fd);
+        if (!up.ok) {
+          setFeedback({
+            kind: "err",
+            message: "Empresa salva, mas falha no upload da logo: " + up.error,
+          });
+          return;
+        }
+      }
+      setFeedback({ kind: "ok" });
+      onDone?.();
     });
+  }
+
+  function handleLogoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) {
+      setFeedback({ kind: "err", message: "Logo maior que 2MB." });
+      return;
+    }
+    setLogoFile(f);
+    setLogoPreview(URL.createObjectURL(f));
   }
 
   const planoInfo = PLANO_INFO[plano] ?? PLANO_INFO.free;
@@ -291,6 +331,82 @@ export function EmpresaForm({ initial, onDone }: Props) {
                   </select>
                 </Field>
               )}
+
+              {/* Identidade visual (white-label) */}
+              <div className="space-y-3 rounded-lg border border-white/10 bg-obsidian-800/40 p-4 md:col-span-2">
+                <p className="text-sm font-medium">
+                  Identidade visual{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    — aparece no topo do menu (white-label)
+                  </span>
+                </p>
+                <div className="flex flex-wrap items-start gap-4">
+                  <div className="space-y-2">
+                    <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-white/15 bg-obsidian-900">
+                      {logoPreview ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={logoPreview}
+                          alt="logo"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <Building2 className="h-7 w-7 text-muted-foreground" />
+                      )}
+                    </div>
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-white/15 px-2 py-1 text-xs hover:bg-white/5">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        onChange={handleLogoPick}
+                        className="hidden"
+                        disabled={isPending}
+                      />
+                      Trocar logo
+                    </label>
+                    <p className="text-[10px] text-muted-foreground">
+                      PNG transparente, ≤2MB
+                    </p>
+                  </div>
+                  <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field
+                      label="Nome de marca"
+                      htmlFor="nome_exibicao"
+                      hint="Vazio = nome fantasia."
+                    >
+                      <input
+                        id="nome_exibicao"
+                        value={nomeExibicao}
+                        onChange={(e) => setNomeExibicao(e.target.value)}
+                        maxLength={80}
+                        placeholder={nome || "Sua Marca"}
+                        className={INPUT_CLASS}
+                        disabled={isPending}
+                      />
+                    </Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Cor primária" htmlFor="cor_primaria">
+                        <input
+                          type="color"
+                          value={corPrimaria || "#f97316"}
+                          onChange={(e) => setCorPrimaria(e.target.value)}
+                          className="h-10 w-full rounded-md border border-white/10 bg-obsidian-800"
+                          disabled={isPending}
+                        />
+                      </Field>
+                      <Field label="Cor secundária" htmlFor="cor_secundaria">
+                        <input
+                          type="color"
+                          value={corSecundaria || "#3b82f6"}
+                          onChange={(e) => setCorSecundaria(e.target.value)}
+                          className="h-10 w-full rounded-md border border-white/10 bg-obsidian-800"
+                          disabled={isPending}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

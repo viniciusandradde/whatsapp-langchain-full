@@ -8,7 +8,6 @@
  */
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -59,8 +58,10 @@ const NAV_GROUPS: NavGroup[] = [
 
 export function Sidebar({
   empresaSwitcher,
+  brand,
 }: {
   empresaSwitcher?: React.ReactNode;
+  brand?: { nome: string; logo_path: string | null } | null;
 } = {}) {
   const pathname = usePathname();
   const router = useRouter();
@@ -131,17 +132,17 @@ export function Sidebar({
           "flex h-16 items-center gap-3",
           collapsed ? "md:px-3 md:justify-center px-6" : "px-6"
         )}>
-          <Image
-            src="/vsa-logo.png"
-            alt="Chat Nexus"
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={brand?.logo_path ?? "/vsa-logo.png"}
+            alt={brand?.nome ?? "Chat Nexus"}
             width={28}
             height={28}
-            className="rounded shrink-0"
-            unoptimized
+            className="h-7 w-7 rounded shrink-0 object-contain"
           />
           <div className={cn(collapsed && "md:hidden")}>
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-              Chat Nexus
+              {brand?.nome ?? "Chat Nexus"}
             </span>
             <span className="block text-[10px] uppercase tracking-[0.15em] text-sidebar-foreground/50">
               operations

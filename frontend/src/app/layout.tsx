@@ -17,23 +17,65 @@ import "./globals.css";
 
 const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
 
-async function resolveEmpresaSwitcher() {
-  // Tentamos buscar a lista de empresas do user — se a session estiver
-  // ausente (rota /login, primeiro carregamento) ou a API falhar, o
-  // switcher simplesmente não renderiza.
+export interface EmpresaBrand {
+  nome: string;
+  logo_path: string | null;
+  cor_primaria: string | null;
+  cor_secundaria: string | null;
+}
+
+async function resolveEmpresaUI(): Promise<{
+  switcher: React.ReactNode;
+  brand: EmpresaBrand | null;
+}> {
+  // Busca empresas do user UMA vez — deriva o switcher + a marca (white-label)
+  // da empresa ATIVA pra pintar logo/nome/cores no sidebar.
   try {
     const { empresas } = await getMyEmpresas();
-    if (!empresas || empresas.length === 0) return null;
+    if (!empresas || empresas.length === 0) return { switcher: null, brand: null };
     const cookieStore = await cookies();
     const raw = cookieStore.get(ACTIVE_EMPRESA_COOKIE)?.value;
-    // null quando não há cookie → o switcher auto-seleciona a empresa default
-    // (seta o cookie). Sem isso, o apiFetch não manda X-Empresa-Id e a RLS
-    // fica sem empresa → todas as telas vêm vazias no primeiro login.
     const active = raw ? Number(raw) : null;
-    return <EmpresaSwitcher empresas={empresas} activeEmpresaId={active} />;
+    // empresas vem ordenado is_default DESC → [0] é a default.
+    const ativa = empresas.find((e) => e.id === active) ?? empresas[0];
+    const brand: EmpresaBrand = {
+      nome: ativa.nome_exibicao?.trim() || ativa.nome,
+      logo_path: ativa.logo_path ?? null,
+      cor_primaria: ativa.cor_primaria ?? null,
+      cor_secundaria: ativa.cor_secundaria ?? null,
+    };
+    return {
+      switcher: <EmpresaSwitcher empresas={empresas} activeEmpresaId={active} />,
+      brand,
+    };
   } catch {
-    return null;
+    return { switcher: null, brand: null };
   }
+}
+
+/** CSS vars de marca por empresa — sobrescreve --brand-* sem tocar nos temas. */
+function brandStyleVars(brand: EmpresaBrand | null): string | null {
+  if (!brand?.cor_primaria && !brand?.cor_secundaria) return null;
+  const lines: string[] = [];
+  if (brand.cor_primaria) {
+    lines.push(`--brand-primary:${brand.cor_primaria};`);
+    lines.push(
+      `--brand-primary-light:color-mix(in srgb, ${brand.cor_primaria}, white 18%);`
+    );
+    lines.push(
+      `--brand-primary-dark:color-mix(in srgb, ${brand.cor_primaria}, black 18%);`
+    );
+  }
+  if (brand.cor_secundaria) {
+    lines.push(`--brand-secondary:${brand.cor_secundaria};`);
+    lines.push(
+      `--brand-secondary-light:color-mix(in srgb, ${brand.cor_secundaria}, white 18%);`
+    );
+    lines.push(
+      `--brand-secondary-dark:color-mix(in srgb, ${brand.cor_secundaria}, black 18%);`
+    );
+  }
+  return `:root{${lines.join("")}}`;
 }
 
 async function resolveInitialPermissions() {
@@ -89,10 +131,11 @@ export const viewport: Viewport = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const [empresaSwitcher, initialPerms] = await Promise.all([
-    resolveEmpresaSwitcher(),
+  const [{ switcher: empresaSwitcher, brand }, initialPerms] = await Promise.all([
+    resolveEmpresaUI(),
     resolveInitialPermissions(),
   ]);
+  const brandCss = brandStyleVars(brand);
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
@@ -102,6 +145,10 @@ export default async function RootLayout({
         {/* Anti-flash sidebar: aplica data-sidebar-collapsed antes da
             hidratação. Evita flicker w-64 → w-16 quando colapsada. */}
         <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT_SCRIPT }} />
+        {/* White-label: cores da marca da empresa ativa (sobrescreve --brand-*). */}
+        {brandCss && (
+          <style id="brand-vars" dangerouslySetInnerHTML={{ __html: brandCss }} />
+        )}
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
@@ -126,7 +173,9 @@ export default async function RootLayout({
           initialPerfis={initialPerms.perfis}
         >
           <SidebarProvider>
-            <AppShell empresaSwitcher={empresaSwitcher}>{children}</AppShell>
+            <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>
+              {children}
+            </AppShell>
           </SidebarProvider>
         </PermissionsProvider>
         <ServiceWorkerRegister />

@@ -45,6 +45,8 @@ services:
     volumes:
       # Sprint U — avatares de usuário (upload local servido como estático)
       - avatars_data:/app/uploads/avatars
+      # White-label — logos por empresa (servidas como estático)
+      - logos_data:/app/uploads/logos
 
   worker:
     build:
@@ -114,3 +116,4 @@ volumes:
   postgres_data:
   tests_reports:
   avatars_data:  # Sprint U — uploads de avatar (persiste em rebuilds)
+  logos_data:  # White-label — logos por empresa (persiste em rebuilds)

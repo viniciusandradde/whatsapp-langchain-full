@@ -409,6 +409,27 @@ app.mount(
     StaticFiles(directory=str(_AVATARS_DIR)),
     name="avatars",
 )
+
+# Sprint white-label — logo por empresa servida como estático (mesmo padrão
+# dos avatares; volume logos_data:/app/uploads/logos pra persistir no rebuild).
+_default_logos_dir = "/app/uploads/logos"
+_LOGOS_DIR = Path(os.environ.get("LOGOS_DIR", _default_logos_dir))
+try:
+    _LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError) as _exc:
+    _LOGOS_DIR = Path.cwd() / "uploads" / "logos"
+    _LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "logos_dir_fallback",
+        intended=str(_default_logos_dir),
+        fallback=str(_LOGOS_DIR),
+        reason=str(_exc),
+    )
+app.mount(
+    "/uploads/logos",
+    StaticFiles(directory=str(_LOGOS_DIR)),
+    name="logos",
+)
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)
