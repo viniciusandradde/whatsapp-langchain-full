@@ -80,7 +80,7 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 
 **Frontend / admin auth** — Next.js panel in `frontend/` uses Better Auth against the same Postgres in a separate `auth` schema (migrations `003_auth_schema.sql`, `004_better_auth_tables.sql`). Server-side fetches to `/api/*` go via `INTERNAL_API_URL` + bearer `INTERNAL_SERVICE_TOKEN` (enforced by `verify_service_token` dependency on the admin router). On first `/login` the frontend bootstraps the initial admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` if `auth."user"` is empty. **`INTERNAL_SERVICE_TOKEN` and `BETTER_AUTH_SECRET` must be set even locally** — `Settings.validate_runtime_settings()` raises at API startup otherwise; in production the token is also length-checked (≥32).
 
-**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 103 migration files** numbered up to `109` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem). Recent highlights:
+**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 109 migration files** numbered up to `115` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem). Recent highlights:
 - `022_rate_limit_generic.sql` — generic `rate_limit_bucket` (used by admin endpoints middleware)
 - `023_hook_dead_letter.sql` — DLQ for hooks that exhaust retries
 - `024_user_status.sql` — `auth.user.status` (active/disabled) blocks login + kills sessions
@@ -94,6 +94,11 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 - `107_langfuse_trace_link.sql` — link bidirecional `ia_execucao`/`message_queue` ↔ Langfuse trace (worker gera `trace_id` determinístico quando `LANGFUSE_ENABLED`)
 - `108_conexao_default_unique.sql` — garante 1 só conexão `is_default` por empresa (defesa em profundidade)
 - `109_message_template_provider.sql` — generaliza `waba_template` → multi-provider (WABA + Twilio Content API)
+- `110_historico_indexes.sql` — índices pro módulo Histórico (/chats repaginado: filtros + export CSV/XLSX)
+- `111_usuario_conexao.sql` / `112_turnos.sql` — Sprint U: conexão padrão por usuário + turnos/jornada (gate de distribuição no `pick_best_atendente`)
+- `113_campanha_template.sql` — campanha dispara template HSM aprovado (selector no form + variáveis)
+- `114_twilio_legacy.sql` — marca Twilio como legado (WABA-first); coluna/flag de depreciação
+- `115_empresa_branding.sql` — **white-label por empresa**: `empresa` += `logo_path`/`nome_exibicao`/`cor_primaria`/`cor_secundaria` (ver módulo White-label abaixo)
 
 **Twilio outbound modes** (`TWILIO_OUTBOUND_MODE`) — `mock` (logs only, default in dev) vs `real` (Twilio Messages API via API Key auth). Worker startup fail-fasts if `real` mode is missing any of `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_FROM_NUMBER`. Empty value resolves to `real` in production, `mock` otherwise (`Settings.resolved_twilio_outbound_mode`).
 
@@ -115,6 +120,10 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 - **User CRUD module** (`server/routes/usuarios.py`, `shared/usuarios.py`, frontend `/usuarios`) — Sprint U. `/api/usuarios` (perm `empresa.member.add`) é o caminho **preferido** sobre o legado `/api/empresas/{id}/membros` (não remova o legado). Endpoints: list enriquecida c/ filtros, detalhe, criar (Better Auth `auth.user` + `empresa_membro` membership), atualizar (nome/telefone/perfis/deptos), `POST /{id}/avatar` (upload local em `AVATARS_DIR`, default `/app/uploads/avatars`, ≤2MB, png/jpeg/webp/gif), `POST /{id}/sessions/invalidate` (força re-login após reset de senha), `exists/{id}`. Campos custom (`telefone`, `last_login_at`, `avatar_path`) ficam fora do Better Auth — acessados via SQL direto (mig 106).
 
 **Bootstrap admin** (`frontend/src/lib/bootstrap-admin-core.ts`) — on first login, when `auth.user` is empty, creates the user from `ADMIN_EMAIL`/`ADMIN_PASSWORD` PLUS `empresa_membro` row (empresa_id=1, role=admin, is_default=true) PLUS `is_superadmin=true`/`emailVerified=true`. Without this triple-insert, the user logs in but every `/api/*` returns 403 because `get_empresa_context` requires membership or superadmin. Don't drop these inserts when refactoring.
+
+**White-label por empresa** (mig `115`, `routes/empresa_admin.py`, `shared/empresa.py`, frontend `companies/empresa-form.tsx` + `layout.tsx` + `sidebar.tsx`) — cada empresa sobe **logo + nome de marca + cores** próprias, exibidas no topo do sidebar (substitui "Chat Nexus"/`/vsa-logo.png`). Espelha o padrão de avatar do Sprint U: `POST /api/empresas/{id}/logo` (admin, Pillow PNG ≤512px) → `LOGOS_DIR` (default `/app/uploads/logos`) → `update_empresa(logo_path=...)`; mount `/uploads/logos` (StaticFiles) + volume `logos_data`. `layout.tsx::resolveEmpresaUI` resolve a empresa ATIVA (cookie `active_empresa_id`) → passa `brand{nome,logo_path}` por `AppShell`→`Sidebar` (fallback default quando sem logo). As **cores** viram CSS vars `--brand-primary`/`--brand-secondary` (+ `-light`/`-dark` via `color-mix`) injetadas num `<style>` no `<head>`, sem tocar nos 3 temas. Login mantém marca padrão (sem mapeamento subdomínio→empresa).
+
+**⚠️ `/uploads/*` e o rewrite do Next (gotcha load-bearing)** — o front serve `/uploads/avatars/*` e `/uploads/logos/*` via `next.config.ts::rewrites()` proxiando pra `INTERNAL_API_URL`. Como `output: "standalone"` **congela a destination do rewrite no route-manifest em BUILD time**, `INTERNAL_API_URL` TEM que existir no `npm run build` — por isso é passado como **`ARG` no `Dockerfile.frontend`** (+ `build.args` no compose), não só como env de runtime. Sem o ARG, cai no fallback `http://localhost:8000` e o proxy quebra com `ECONNREFUSED` (500) em produção. Regra geral: **rewrite que depende de env precisa do env no build**, não só no runtime.
 
 ## Branch / patch layout (didactic)
 
