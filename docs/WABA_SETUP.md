@@ -6,6 +6,11 @@ conectar um número WhatsApp oficial ao Nexus via o botão "Conectar com Meta".
 Método usado: **Embedded Signup via Facebook JS SDK** (igual ZigChat) — o popup
 oficial da Meta retorna `waba_id` + `phone_number_id` e o backend cria a conexão.
 
+> **WABA é o provider PRIMARY** desde 2026 (Twilio marcado como legado na migration
+> `114`). É o caminho recomendado para qualquer número WhatsApp oficial novo. Para
+> provider não-oficial (Baileys) veja [docs/EVOLUTION.md](EVOLUTION.md); para a
+> integração legada veja [docs/TWILIO.md](TWILIO.md).
+
 > Pré-requisito de negócio: o número WhatsApp que você vai conectar **não pode**
 > estar registrado em outro app/WABA ao mesmo tempo. Se já estiver (ex: no app
 > do ZigChat), migre o número pro novo app OU use um número novo.
@@ -176,7 +181,7 @@ isso aponta direto pra Parte 4 (domínios).
 | `GET /api/conexoes/waba/config` | Frontend pega `app_id`+`config_id` pro FB.init (sem secret) |
 | `POST /api/conexoes/waba/embedded-signup` | Recebe `{code, waba_account_id, phone_number_id}` → cria conexão |
 | `GET/POST /webhook/waba` | Handshake (verify token) + recebimento de mensagens |
-| `/api/conexoes/{id}/templates` | Templates HSM (após conexão criada) — vide módulo de templates |
+| `/api/conexoes/{id}/templates` | Templates HSM (após conexão criada). Desde a mig `113`, templates HSM aprovados são **enviáveis** via campanha (selector no form) e via composer do `/atendimento` |
 
 Código: `integrations/waba/oauth.py` (exchange/phone/register/subscribe),
 `server/routes/conexao.py` (`_create_waba_conexao`, endpoints),

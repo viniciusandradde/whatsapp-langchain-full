@@ -2,6 +2,10 @@
 
 Este guia define o contrato padrão para novos agentes neste template.
 
+> O catálogo atual (`langgraph.json`) registra 4 grafos: `vsa_tech`,
+> `atendimento_completo`, `atendimento_router` e `agendamentos`. Os exemplos
+> abaixo usam `vsa_tech` como referência. Stack: LangGraph 1.1 / LangChain 1.2.
+
 ## Contrato do Agente
 
 Cada agente deve viver em:
@@ -81,15 +85,40 @@ def build_graph(
 
 ### 4. Exportar grafo para Studio
 
+Há dois padrões válidos para o `graph.py` (ambos em uso no catálogo):
+
+**Opção A — store em memória (variável `graph` no nível do módulo):**
+
 ```python
 # graph.py
 from langgraph.store.memory import InMemoryStore
 
-from whatsapp_langchain.agents.catalog.meu_agente.agent import build_graph
+from .agent import build_graph
 
 store = InMemoryStore()
 graph = build_graph(store=store)
 ```
+
+**Opção B — factory que recebe o `runtime` do LangGraph** (usada por
+`vsa_tech`; o runtime injeta store/checkpointer automaticamente):
+
+```python
+# graph.py
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from .agent import build_graph
+
+if TYPE_CHECKING:
+    from langgraph_sdk.runtime import ServerRuntime
+
+
+def graph(runtime: ServerRuntime):
+    return build_graph(store=runtime.store)
+```
+
+Em ambos os casos, o `langgraph.json` aponta para `graph.py:graph`.
 
 ### 5. Registrar no `langgraph.json`
 
@@ -98,11 +127,17 @@ graph = build_graph(store=store)
   "dependencies": ["."],
   "graphs": {
     "vsa_tech": "./src/whatsapp_langchain/agents/catalog/vsa_tech/graph.py:graph",
+    "atendimento_completo": "./src/whatsapp_langchain/agents/catalog/atendimento_completo/graph.py:graph",
+    "atendimento_router": "./src/whatsapp_langchain/agents/catalog/atendimento_router/graph.py:graph",
+    "agendamentos": "./src/whatsapp_langchain/agents/catalog/agendamentos/graph.py:graph",
     "meu_agente": "./src/whatsapp_langchain/agents/catalog/meu_agente/graph.py:graph"
   },
   "env": ".env"
 }
 ```
+
+> O `langgraph.json` só importa para o Studio (`langgraph dev`). Em produção,
+> o `loader.py` descobre o diretório do agente no catálogo automaticamente.
 
 ## Contexto e memória
 

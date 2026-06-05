@@ -22,24 +22,63 @@ Sem testes de carga, você só descobre gargalos em produção — quando já é
 
 ## Cenários disponíveis
 
-O `locustfile.py` define duas classes de usuários virtuais, cada uma simulando um padrão de uso diferente:
+O `locustfile.py` suporta **dois providers de webhook**, selecionáveis via a env
+`LOCUST_PROVIDER` (`twilio` | `evolution` | `both`):
 
-| Cenário | Classe | Endpoint | Peso | Wait Time | Assinatura |
-|---------|--------|----------|------|-----------|------------|
-| Webhook Async | `TwilioWebhookUser` | `/webhook/twilio` | 10 (normal) / 1 (longo) | 1-3s | Sim (HMAC-SHA1) |
-| Burst | `BurstUser` | `/webhook/twilio` | 1 | 5-15s (entre rajadas) | Sim |
+- **Twilio** (`/webhook/twilio`) — payload form-urlencoded com assinatura HMAC-SHA1
+- **Evolution API** (`/webhook/evolution`) — payload JSON com header `apikey`
 
-### Webhook Async (TwilioWebhookUser)
+Cada provider expõe duas classes de usuários virtuais (normal + burst):
 
-Cenário principal. Simula usuários enviando mensagens pelo webhook do Twilio com assinatura HMAC-SHA1 válida. A API enfileira a mensagem e retorna `200` imediatamente — o worker processa depois.
+| Cenário | Classe | Endpoint | Provider | Wait Time | Assinatura |
+|---------|--------|----------|----------|-----------|------------|
+| Webhook Async | `TwilioWebhookUser` | `/webhook/twilio` | twilio | 1-3s | Sim (HMAC-SHA1) |
+| Burst | `TwilioBurstUser` | `/webhook/twilio` | twilio | 5-15s (entre rajadas) | Sim |
+| Webhook Async | `EvolutionWebhookUser` | `/webhook/evolution` | evolution | 1-3s | header `apikey` |
+| Burst | `EvolutionBurstUser` | `/webhook/evolution` | evolution | 5-15s (entre rajadas) | header `apikey` |
 
-### Burst (BurstUser)
+> O default do `locustfile.py` é `LOCUST_PROVIDER=twilio` (compat com o legado),
+> mas o alias `make stress` roda **Evolution** (provider primário em produção).
 
-Simula rajadas de 5-20 mensagens com intervalo de 0.1-0.5s entre elas (como um usuário colando várias linhas). Estressa rate limiting, crescimento de fila e estabilidade do banco sob muitas escritas simultâneas.
+### Webhook Async
+
+Cenário principal. Simula usuários enviando mensagens pelo webhook do provider
+escolhido. A API enfileira a mensagem e retorna `200` imediatamente — o worker
+processa depois.
+
+### Burst
+
+Simula rajadas de 5-20 mensagens com intervalo de 0.1-0.5s entre elas (como um
+usuário colando várias linhas). Estressa rate limiting, crescimento de fila e
+estabilidade do banco sob muitas escritas simultâneas.
 
 ## Como executar
 
-### Localmente (sem Docker)
+### Via Makefile (recomendado)
+
+O Makefile é o ponto de entrada canônico — roda Locust headless via `uv run --with locust`
+(não precisa de venv manual). Defaults: `-u 10 -r 2 -t 60s` contra `https://api.vsanexus.com`.
+
+```bash
+make stress-evolution   # webhook Evolution (provider primário)
+make stress-twilio      # webhook Twilio (precisa TWILIO_AUTH_TOKEN)
+make stress-both        # ambos os providers ao mesmo tempo
+make stress             # alias de stress-evolution
+```
+
+Sobrescreva os parâmetros via env:
+
+```bash
+make stress-evolution USERS=20 RATE=5 TIME=120s HOST=https://outra.url
+```
+
+Fallback sem `uv` local (constrói a imagem de `stress/Dockerfile`):
+
+```bash
+make stress-evolution-docker   # ou stress-twilio-docker
+```
+
+### Localmente (sem Makefile)
 
 ```bash
 cd /caminho/para/whatsapp-langchain/stress
@@ -48,22 +87,10 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 export TWILIO_AUTH_TOKEN=seu_token
 export TWILIO_WEBHOOK_URL=http://localhost:8000
-locust
+LOCUST_PROVIDER=evolution locust
 ```
 
 Acesse http://localhost:8089 para a interface web do Locust.
-
-### Via Docker Compose (profile testing)
-
-O serviço `stress` está configurado com o profile `testing`, então não sobe junto com os serviços principais. Para iniciá-lo:
-
-```bash
-docker compose --profile testing up stress
-```
-
-Isso sobe o Locust apontando para o serviço `api` via rede interna do Compose. Acesse http://localhost:8089.
-
-> **Nota:** As variáveis `TWILIO_AUTH_TOKEN` e `TWILIO_WEBHOOK_URL` já estão configuradas no `docker-compose.yml`. O token vem do `.env` (ou usa `test-token` como fallback).
 
 ### Modo headless (CI/CD)
 

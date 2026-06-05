@@ -200,15 +200,19 @@ railway run --service api python db/migrate.py
 
 ### Arquivos de migração
 
+`db/migrations/` tem atualmente **109 arquivos** numerados até `115` (há gaps cronológicos nos números — não são problema). As primeiras estabelecem o núcleo:
+
 ```
 db/migrations/
 ├── 001_initial.sql                 # Schema da fila de mensagens
 ├── 002_media_processing_audit.sql  # Auditoria de mídia
 ├── 003_auth_schema.sql             # Schema de auth
-└── 004_better_auth_tables.sql      # Tabelas do Better Auth
+├── 004_better_auth_tables.sql      # Tabelas do Better Auth
+├── ...                             # multi-tenant, RBAC, agendamento, NPS, RLS, billing...
+└── 115_empresa_branding.sql        # White-label por empresa (logo + cores)
 ```
 
-Para adicionar uma nova migração, crie um arquivo SQL com o próximo número sequencial (ex: `005_nova_feature.sql`). A ordem alfabética dos nomes determina a ordem de aplicação.
+Para adicionar uma nova migração, crie um arquivo SQL com o próximo número sequencial. A ordem alfabética dos nomes determina a ordem de aplicação.
 
 ### Idempotência e réplicas
 
@@ -318,6 +322,15 @@ Abaixo estão todas as variáveis necessárias, organizadas por serviço.
 | `ADMIN_PASSWORD` | --- | Senha do primeiro acesso ao painel; troque após o login inicial |
 | `ADMIN_NAME` | `Admin` | Nome exibido do primeiro usuário (opcional) |
 | `RAILWAY_DOCKERFILE_PATH` | `Dockerfile.frontend` | Aponta para o Dockerfile do Frontend |
+
+> **⚠️ `INTERNAL_API_URL` precisa existir no BUILD do frontend, não só no runtime.**
+> O frontend serve `/uploads/avatars/*` e `/uploads/logos/*` via `next.config.ts::rewrites()`,
+> que proxia pra `INTERNAL_API_URL`. Como o build é `output: "standalone"`, a destination
+> do rewrite é congelada no route-manifest em build time. O `Dockerfile.frontend` declara
+> `ARG INTERNAL_API_URL` justamente por isso; no Railway, garanta que a variável esteja
+> setada no serviço **antes** do build (ela é injetada como build arg). Sem isso, cai no
+> fallback `http://localhost:8000` e o proxy de uploads (avatares + logos white-label)
+> quebra com `ECONNREFUSED` em produção.
 
 ---
 

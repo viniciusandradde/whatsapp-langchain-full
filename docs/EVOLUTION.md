@@ -161,14 +161,21 @@ interno) e o número real em `key.remoteJidAlt`:
 `remoteJid.endswith("@lid")`. Sem esse fix, mensagens via LID criariam
 clientes com números fantasma.
 
-### Tipos de mensagem suportados (MVP)
+### Tipos de mensagem suportados
 
+Texto:
 - `data.message.conversation` — texto curto
 - `data.message.extendedTextMessage.text` — texto com link/preview
 
-Mídia (`imageMessage`, `audioMessage`, `videoMessage`, `stickerMessage`)
-ainda não suportada — webhook responde 200 e ignora silently. **TODO
-M2.b.1**.
+Mídia (suportada — `_extract_message_payload` em `evolution_webhook.py`):
+- `imageMessage` → media_url + caption (texto opcional)
+- `audioMessage` → media_url + mime `audio/ogg`
+- `documentMessage` → media_url + caption + mime
+
+A mídia é baixada e convertida pra data URL (base64) já no webhook via
+`download_evolution_media_b64`, e o worker faz o preprocess multimodal
+(imagem/áudio → texto via OpenRouter). `videoMessage`/`stickerMessage` caem
+em fallback (worker descarta o conteúdo de vídeo).
 
 ---
 

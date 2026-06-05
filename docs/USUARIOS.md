@@ -54,8 +54,10 @@ Módulo `/settings/turnos` (perm leitura `departamento.read`, escrita
 | GET/PUT | `/api/turnos/{id}/users` |
 
 Janelas por dia da semana (0=Dom..6=Sáb) + atribuição de atendentes.
-**Follow-up**: o *gate de distribuição* (worker/claim respeitar a janela do
-turno) ainda não está ligado — hoje turnos são cadastro + atribuição.
+O *gate de distribuição* já está **ligado**: `pick_best_atendente`
+(`shared/atendente.py`) só roteia pra atendentes dentro da janela do turno
+ativo (ou sem turno atribuído = irrestrito), via `turno_gate_sql`/`turno_now`
+(`shared/turno.py`) no fuso da empresa.
 
 ## Migrations
 - `111_usuario_conexao.sql` — conexão por usuário + RLS.
@@ -68,6 +70,7 @@ turno) ainda não está ligado — hoje turnos são cadastro + atribuição.
   (criar/clonar/status+transferência/delete/isolamento),
   `tests/integration/test_turnos_endpoints.py`.
 
-## Follow-ups conhecidos
-- Painel "Atividade" (auditoria por usuário) no editor — não implementado.
-- Gate de distribuição por turno (worker) — não implementado.
+## Status / shipped
+- Aba **"Atividade"** (auditoria por usuário) no modal de edição — entregue
+  (`usuario-form-modal.tsx`, lazy-load via `loadAtividadeAction`).
+- **Gate de distribuição por turno** — entregue (ver "Turnos / Jornada" acima).

@@ -112,6 +112,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        # ⚠️ INTERNAL_API_URL TEM que ser build arg (não só env de runtime).
+        # O rewrite /uploads/* do next.config (output standalone) congela a
+        # destination no route-manifest em BUILD. Sem isso, o proxy de uploads
+        # (avatares + logos white-label) quebra com ECONNREFUSED em runtime.
+        INTERNAL_API_URL: http://api:8000
     env_file: .env
     environment:
       INTERNAL_API_URL: http://api:8000
@@ -124,7 +130,14 @@ services:
 
 volumes:
   postgres_data:
+  avatars_data:   # Sprint U — uploads de avatar (persiste em rebuilds)
+  logos_data:     # White-label — logos por empresa (persiste em rebuilds)
 ```
+
+> **⚠️ Volumes de upload + mounts.** O serviço `api` monta `avatars_data` em
+> `/app/uploads/avatars` e `logos_data` em `/app/uploads/logos` (StaticFiles
+> servidos pela API; o frontend proxia `/uploads/*` pra lá). Sem volume nomeado,
+> avatares e logos somem a cada rebuild.
 
 **Commit + push:**
 ```bash
@@ -361,9 +374,10 @@ quando quiser deploy. Pra desabilitar temporariamente: aba Source →
 toggle off.
 
 ### Migrations
-O worker roda migrations no boot via `_migrations` table (idempotente).
+A API roda migrations no boot via `_migrations` table (idempotente).
 Não precisa rodar `make migrate` manual no Dokploy. A primeira deploy
-aplica todas 001–020 do zero.
+aplica todas as migrations de `db/migrations/` do zero (atualmente até a
+`115_empresa_branding.sql`).
 
 ### LangSmith tracing
 `LANGCHAIN_TRACING_V2=true` + `LANGCHAIN_API_KEY` no painel = traces

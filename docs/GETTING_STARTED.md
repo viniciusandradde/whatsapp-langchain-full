@@ -1,5 +1,10 @@
 # Primeiros Passos
 
+> Estado de referência: **v0.b2 (Beta 2 — 2026-06-05)**. Produção em
+> `chat.vsanexus.com` (24/7). Stack: FastAPI 0.129 + psycopg 3.3 async +
+> LangGraph 1.1 / LangChain 1.2 (backend), Next.js 16.1.6 + React 19.2.3 +
+> Tailwind 4 + Better Auth (frontend), PostgreSQL 16.
+
 Este guia tem duas trilhas:
 - **Trilha A (agentes):** LangGraph Studio para desenvolver comportamento
 - **Trilha B (harness):** API + Worker + DB para aprender arquitetura operacional
@@ -59,7 +64,8 @@ make dev
 # abre o LangGraph Studio
 ```
 
-O grafo padrão é `vsa_tech`, registrado em `langgraph.json`.
+O grafo padrão é `vsa_tech`. O `langgraph.json` registra 4 grafos no catálogo:
+`vsa_tech`, `atendimento_completo`, `atendimento_router` e `agendamentos`.
 
 Arquivos centrais do agente:
 - `src/whatsapp_langchain/agents/catalog/vsa_tech/agent.py`

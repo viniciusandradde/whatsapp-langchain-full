@@ -1,5 +1,14 @@
 # Integração Twilio — Sandbox, Produção e Cutover
 
+> ⚠️ **Twilio é provider LEGADO** (desde a migration `114`, 2026). O caminho
+> **recomendado** para WhatsApp oficial passou a ser **WABA via Embedded Signup**
+> (Meta direto) — veja [docs/WABA_SETUP.md](WABA_SETUP.md). Para provider
+> não-oficial baseada em Baileys, veja [docs/EVOLUTION.md](EVOLUTION.md). A
+> integração Twilio continua **funcional e suportada** (o webhook `/webhook/twilio`,
+> o `TwilioClient` e a validação de assinatura seguem ativos), mas novos números
+> devem preferir WABA. Este guia é mantido para quem já opera em Twilio ou precisa
+> do sandbox para desenvolvimento local rápido.
+
 Guia completo para configurar envio e recebimento de mensagens WhatsApp via Twilio.
 Dividido em duas trilhas: **Parte A** (sandbox/desenvolvimento local) e **Parte B** (número real/produção).
 
@@ -537,9 +546,12 @@ legítimo do Twilio.
 
 ### NumMedia > 1
 
-Se o Twilio enviar um webhook com `NumMedia > 1` (múltiplas mídias no mesmo webhook), apenas a primeira mídia (`MediaUrl0`, `MediaContentType0`) é processada. As demais são ignoradas.
-
-Este é um tradeoff consciente --- o template educacional foca em clareza do fluxo single-media. Suporte a multi-media pode ser adicionado em fases futuras.
+Webhooks com `NumMedia > 1` (múltiplas mídias no mesmo webhook) são suportados: cada
+mídia (`MediaUrl0..N`, `MediaContentType0..N`) é enfileirada como uma **row independente**
+na `message_queue` com o mesmo `message_id`. O worker processa cada uma como um turn
+separado do agente; o checkpointer LangGraph agrega tudo por `thread_id`. Eventuais textos
+pendentes do mesmo `(phone, agent)` são "flushed" antes das mídias para preservar a ordem
+`created_at`.
 
 ### Typing indicator
 

@@ -5,11 +5,15 @@ para validação operacional (fila, conversa e memória semântica via tools).
 
 ## Visão Geral
 
-O PostgreSQL guarda três blocos de dados:
+O PostgreSQL guarda cinco blocos de dados:
 
-1. Tabelas de aplicação (`message_queue`, `conversations`, `_migrations`)
+1. Tabelas de aplicação (`message_queue`, `conversations`, `_migrations`, mais ~90 tabelas de domínio: `empresa`, `conexao`, `cliente`, `atendimento`, `agente_ia`, `departamento`, `campanha`, `permissao`, etc.)
 2. Tabelas de checkpointer do LangGraph (`checkpoints`, `checkpoint_writes`, `checkpoint_blobs`, `checkpoint_migrations`)
 3. Tabelas de memória semântica (`store`, `store_vectors`, `store_migrations`, `vector_migrations`)
+4. Schema `auth` do Better Auth (`user`, `session`, `account`, `verification`, `password_reset_pending`)
+5. Schema de billing (`plano`, `transacao`) — integração Asaas
+
+> Este doc cobre em detalhe o núcleo do harness (fila + checkpointer + store) e o módulo NPS. O schema completo da app tem **~95 tabelas** (mig `001` → `115`), criadas pelas migrations em `db/migrations/*.sql`. As tabelas do LangGraph (`checkpoints*`, `store*`) são criadas em código por `bootstrap_langgraph_schema()` no startup — não há migration SQL para elas. Para o inventário completo, leia as migrations ou rode `\dt` no psql.
 
 ## Tabelas de Aplicação
 
@@ -38,7 +42,7 @@ Resumo por conversa (`phone_number + agent_id`) para o painel/admin.
 
 ### `atendimento`
 
-Atendimentos do painel CRM. Sprint X adicionou flags de captura NPS:
+Atendimentos do painel CRM. O módulo NPS adicionou flags de captura (mig 073):
 
 | Coluna | Tipo | Uso |
 |---|---|---|
@@ -50,7 +54,7 @@ IA / menu pra interceptar a resposta como nota/comentário.
 
 ### `empresa`
 
-Sprint Y adicionou 4 colunas de config NPS (mig 074):
+A config de NPS por empresa vive em 4 colunas (mig 074):
 
 | Coluna | Default | Uso |
 |---|---|---|

@@ -3,6 +3,10 @@
 Este guia ensina como usar a interface Swagger (`/docs`) para enviar mensagens
 e depois verificar o resultado diretamente no banco de dados.
 
+> Os exemplos usam o agente `vsa_tech`. O catálogo atual registra 4 grafos
+> (`vsa_tech`, `atendimento_completo`, `atendimento_router`, `agendamentos`) —
+> confirme os disponíveis em `GET /api/agents`.
+
 ## Passo 0: Subir a Stack
 
 ```bash

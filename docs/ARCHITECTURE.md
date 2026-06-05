@@ -6,14 +6,16 @@ entrada confiável, processamento assíncrono, persistência, recuperação de f
 
 ## Estado Atual
 
-Implementado:
-- API FastAPI com webhook Twilio assíncrono (`POST /webhook/twilio`)
-- validação criptográfica real de `X-Twilio-Signature` com SDK oficial do Twilio
+> **Nota de evolução.** Este documento descreve o **núcleo do harness** (a parte pedagógica: borda HTTP → fila → worker → agente). Desde então o projeto cresceu para uma plataforma de atendimento completa — multi-tenant (empresa como raiz), multi-conexão (WABA-first, Evolution, Twilio legado), multi-agente (catálogo + config em DB), com RBAC, NPS, calendar, campanhas, histórico, white-label e observabilidade (Langfuse/LangSmith). O harness abaixo continua sendo a fundação; para o panorama de produto veja o [README](../README.md) e o `CLAUDE.md`.
+
+Implementado (núcleo do harness):
+- API FastAPI com webhook assíncrono multi-provider (`POST /webhook/twilio`, `/webhook/evolution`, `/webhook/waba`)
+- validação criptográfica real de assinatura (HMAC) por provider — `X-Twilio-Signature` via SDK oficial Twilio, HMAC-SHA256 nos demais
 - fila em PostgreSQL (`message_queue`) com debounce texto-only, flush antes de mídia e lease
 - worker assíncrono consumindo fila com `FOR UPDATE SKIP LOCKED`
-- cliente outbound Twilio com autenticação via API Key
+- cliente outbound resolvido por `Conexao.provider` via `OutboundClient` Protocol (Twilio/Evolution/WABA, mesmo contrato)
 - typing indicator best-effort antes da execução do agente
-- envio da resposta para o WhatsApp via Twilio antes de `mark_done`
+- envio da resposta para o WhatsApp via provider da conexão antes de `mark_done`
 - execução de agentes via loader dinâmico
 - checkpointer PostgreSQL (contexto por `thread_id`)
 - store semântico PostgreSQL (memória por `user_id`)
@@ -41,7 +43,7 @@ Limitações conhecidas:
 ![Arquitetura](diagrams/harness_whatsapp.jpg)
 
 ```text
-[Twilio/WhatsApp]
+[WhatsApp via WABA / Evolution / Twilio]
       |
       v
 [Frontend Next.js]
@@ -67,7 +69,7 @@ Limitações conhecidas:
   - processa mídia
   - envia typing
   - invoca agente
-  - envia resposta via Twilio
+  - envia resposta via provider da conexão (WABA/Evolution/Twilio)
   - marca done/failed
 
 [PostgreSQL auth]
@@ -215,13 +217,17 @@ Logs estruturados com `structlog` em todos os componentes.
 
 ## Endpoints Disponíveis
 
+Núcleo do harness (didático):
+
 - `GET /health`
-- `POST /webhook/twilio?agent=<id>`
-- `POST /webhook/sync?agent=<id>` (educacional)
+- `POST /webhook/twilio?agent=<id>` · `POST /webhook/evolution` · `POST /webhook/waba`
+- `POST /webhook/sync?agent=<id>` (educacional, auto-desabilitado em produção)
 - `GET /api/agents`
 - `GET /api/chats`
 - `GET /api/chats/{phone_number}`
 - `GET /api/metrics`
+
+Além desses, a API administrativa expõe **~290 rotas REST** (`/api/*`) cobrindo empresas, conexões, clientes, atendimentos, agentes IA, departamentos, RBAC, campanhas, base de conhecimento, NPS, histórico, usuários, billing, etc. — todas protegidas por `INTERNAL_SERVICE_TOKEN` e escopadas por tenant via RLS. O Swagger fica em `/docs` (API "Nexus AI").
 
 ## Decisões do Harness (didáticas)
 

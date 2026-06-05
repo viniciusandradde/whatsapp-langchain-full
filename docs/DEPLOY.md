@@ -6,14 +6,14 @@ de operação.
 ## Estado atual
 
 Hoje o projeto cobre:
-- API FastAPI pública para `POST /webhook/twilio`
-- Worker assíncrono com envio outbound via Twilio
-- Frontend/admin panel em Next.js com Better Auth
+- API FastAPI pública para `POST /webhook/twilio` e `POST /webhook/evolution`
+- Worker assíncrono com envio outbound multi-provider (Twilio / WABA / Evolution)
+- Frontend/admin panel em Next.js 16 com Better Auth
 - PostgreSQL com pgvector
-- deploy de referência em Railway
+- **deploy primário em Dokploy (Docker Compose) em Oracle Cloud** (`chat.vsanexus.com`); Railway é alternativa de referência
 - stress testing e leitura de gargalos
 - documentação final com separação clara entre sandbox e produção
-- branding mínimo aplicado no frontend
+- white-label por empresa no frontend (logo + nome + cores)
 
 ## Topologia alvo
 
@@ -30,8 +30,10 @@ Worker -> Twilio (outbound)
 
 ## Guias detalhados
 
-- [Railway](RAILWAY.md): provisionamento de serviços, rede interna, variáveis e watch paths
+- [Dokploy](DOKPLOY.md): deploy primário (Compose único no Oracle Cloud + Traefik + Let's Encrypt)
+- [Railway](RAILWAY.md): alternativa — provisionamento de serviços, rede interna, variáveis e watch paths
 - [Twilio](TWILIO.md): credenciais, webhook, assinatura, sandbox e cloudflared
+- [Evolution](EVOLUTION.md): provider Evolution API (webhook + outbound)
 - [Stress Testing](STRESS_TESTING.md): preparo do ambiente e leitura de throughput/latência
 
 ## Variáveis essenciais por serviço
@@ -77,6 +79,15 @@ Worker -> Twilio (outbound)
 - `BETTER_AUTH_URL`
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
+
+> **⚠️ `INTERNAL_API_URL` é build arg, não só env de runtime.** O frontend serve
+> `/uploads/avatars/*` e `/uploads/logos/*` via `next.config.ts::rewrites()`, que
+> proxia pra `INTERNAL_API_URL`. Como o build é `output: "standalone"`, a destination
+> do rewrite **é congelada no route-manifest em BUILD time** — então `INTERNAL_API_URL`
+> precisa existir no `npm run build`. Por isso é passado como `ARG` no
+> `Dockerfile.frontend` (+ `build.args` no compose), não apenas como env de runtime.
+> Sem o ARG, cai no fallback `http://localhost:8000` e o proxy de uploads (avatares +
+> logos white-label) quebra com `ECONNREFUSED` (500) em produção.
 
 ## Fluxo recomendado de publicacao
 
@@ -158,4 +169,4 @@ Cabeçalhos de segurança aplicados automaticamente:
 - `TWILIO_OUTBOUND_MODE=mock` e útil para desenvolvimento local e stress test sem custo real.
 - Em qualquer ambiente, o painel falha cedo se `INTERNAL_SERVICE_TOKEN` ou `BETTER_AUTH_SECRET` estiverem ausentes; em production, também exige valores fortes.
 - Se `auth."user"` estiver vazio, o primeiro acesso ao `/login` cria o admin automaticamente a partir de `ADMIN_EMAIL` e `ADMIN_PASSWORD`.
-- O guia detalhado de Railway fica em [RAILWAY.md](RAILWAY.md); este arquivo é a visão geral.
+- O guia detalhado do deploy primário fica em [DOKPLOY.md](DOKPLOY.md); a alternativa Railway em [RAILWAY.md](RAILWAY.md). Este arquivo é a visão geral.

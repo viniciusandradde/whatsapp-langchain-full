@@ -21,8 +21,8 @@ Plataforma WhatsApp multi-tenant com agentes LangChain/LangGraph. Em produção 
 
 ## Stack rápida
 
-- **Backend** (`src/whatsapp_langchain/`): Python 3.12 + FastAPI + LangGraph + asyncpg + AsyncPostgresSaver
-- **Frontend** (`frontend/`): Next.js 16 + React 19 + TypeScript + Tailwind + Better Auth
+- **Backend** (`src/whatsapp_langchain/`): Python 3.12 + FastAPI 0.129 + LangGraph 1.1 + LangChain 1.2 + psycopg 3.3 async + AsyncPostgresSaver
+- **Frontend** (`frontend/`): Next.js 16.1 + React 19.2 + TypeScript + Tailwind 4 + Better Auth
 - **DB**: Postgres (queue via `FOR UPDATE SKIP LOCKED`, sem Redis — ver [[ADR-001]])
 - **LLM**: OpenRouter unificado (LLM + embeddings + audio — ver [[ADR-004]])
 - **Infra**: Dokploy on Oracle Cloud ARM ([[ADR-008]])
@@ -71,14 +71,16 @@ make ci           # check + test (o que CI roda)
 - **Rebuild após código** — restart container não pega edits. Sempre `make up --build`. Memória [[feedback_rebuild_after_code_changes]]
 - **`uv lock` antes de commitar dep nova** — senão Docker build quebra. Memória [[feedback_uv_lock_after_pyproject]]
 
-## Estado em 2026-05-18
+## Estado em 2026-06-05
 
-- master em `e22d0aa`
-- 84 migrations aplicadas (última `084_audit_governanca`)
-- RBAC sprint 1+2 SHIPPED
-- Vault Obsidian criado em `docs/obsidian-vault/`
+- master em `e2c0c13`
+- 109 migrations aplicadas (numeradas até `115_empresa_branding`)
+- RBAC sprint 1+2 SHIPPED; governança record-level (`.own`/`.all`) ativa
+- RLS Postgres real 10/10 (Sprint A.2): 4 roles least-privilege, 58 tabelas FORCE — runbook `docs/RLS_OPERATIONS.md`
+- Vault Obsidian em `docs/obsidian-vault/`
 - Workflows LangGraph Mackenzie rodando em prod (9 workflows, 123 nodes)
 - Calendar v2 S1+S2 entregue (S3-S5 pendente: rules, WhatsApp approval, sync+audit)
+- Módulos pós-Beta 1 entregues: Histórico (`/chats` repaginada + export, mig 110), Sprint U gestão de usuários (`/usuarios` + turnos, migs 106/111/112), Langfuse self-host (mig 107), WABA templates HSM enviáveis (mig 113), Twilio marcado legado / WABA-first (mig 114), White-label por empresa (logo+nome+cores, mig 115)
 
 ## Arquivos untracked sensíveis no working tree
 
