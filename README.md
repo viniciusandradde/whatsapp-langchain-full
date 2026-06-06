@@ -350,6 +350,7 @@ Cabeçalhos de segurança automáticos: `X-Content-Type-Options: nosniff`, `X-Fr
 - [Gestão de Usuários](docs/USUARIOS.md) — módulo `/usuarios` + turnos
 - [Histórico](docs/HISTORICO.md) — `/chats` + filtros + export
 - [NPS / Pesquisa de Satisfação](docs/NPS.md)
+- [Billing Asaas](docs/BILLING_ASAAS.md) — config (env/UI) + webhook + teste no Dokploy
 - [Observabilidade — Langfuse](docs/LANGFUSE.md) · [LangSmith](docs/LANGSMITH.md)
 - [RLS Operations Runbook](docs/RLS_OPERATIONS.md) — roles, troubleshooting, rotação de senha, emergency bypass
 - **Deploy:** [Dokploy (primário)](docs/DOKPLOY.md) · [genérico](docs/DEPLOY.md) · [Railway](docs/RAILWAY.md)
