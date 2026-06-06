@@ -156,7 +156,7 @@ class WorkflowRunner:
                     # node_update aqui é tuple/list de Interrupt objects
                     iv = (
                         node_update[0]
-                        if isinstance(node_update, (list, tuple))
+                        if isinstance(node_update, list | tuple)
                         else node_update
                     )
                     interrupt_value = iv.value if hasattr(iv, "value") else iv

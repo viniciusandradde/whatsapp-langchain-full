@@ -54,9 +54,7 @@ async def list_pastas(
          ORDER BY nome
         """
         if com_docs_count
-        else (
-            f"SELECT {_COLS} FROM pasta WHERE empresa_id = %s ORDER BY nome"
-        )
+        else (f"SELECT {_COLS} FROM pasta WHERE empresa_id = %s ORDER BY nome")
     )
     async with pool.connection() as conn:
         cur = await conn.execute(sql, (empresa_id,))
@@ -115,9 +113,7 @@ async def create_pasta(
     if parent_id is not None:
         parent = await get_pasta(pool, empresa_id, parent_id)
         if parent is None:
-            raise ValueError(
-                f"parent_id={parent_id} não existe nessa empresa"
-            )
+            raise ValueError(f"parent_id={parent_id} não existe nessa empresa")
     try:
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -132,9 +128,7 @@ async def create_pasta(
             row = await cur.fetchone()
             await conn.commit()
     except pg_errors.UniqueViolation as e:
-        raise DuplicatePastaError(
-            f"pasta '{nome}' já existe nesse nível"
-        ) from e
+        raise DuplicatePastaError(f"pasta '{nome}' já existe nesse nível") from e
     assert row is not None
     return _row_to_dict(row)
 
@@ -156,9 +150,7 @@ async def update_pasta(
             raise ValueError("parent_id é descendente — criaria ciclo")
         parent = await get_pasta(pool, empresa_id, parent_id)
         if parent is None:
-            raise ValueError(
-                f"parent_id={parent_id} não existe nessa empresa"
-            )
+            raise ValueError(f"parent_id={parent_id} não existe nessa empresa")
     try:
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -174,9 +166,7 @@ async def update_pasta(
             row = await cur.fetchone()
             await conn.commit()
     except pg_errors.UniqueViolation as e:
-        raise DuplicatePastaError(
-            f"pasta '{nome}' já existe nesse nível"
-        ) from e
+        raise DuplicatePastaError(f"pasta '{nome}' já existe nesse nível") from e
     return _row_to_dict(row) if row else None
 
 

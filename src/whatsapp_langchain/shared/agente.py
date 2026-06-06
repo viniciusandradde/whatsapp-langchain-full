@@ -16,10 +16,11 @@ Mapping `estilo_resposta` → (temperatura, top_p):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from psycopg import errors as pg_errors
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
@@ -423,11 +424,15 @@ async def update_agente(
     params.extend([empresa_id, slug])
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             UPDATE agente_ia SET {", ".join(sets)}
              WHERE empresa_id = %s AND slug = %s
             RETURNING {_COLS}
             """,
+            ),
             tuple(params),
         )
         row = await cur.fetchone()

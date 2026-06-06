@@ -17,10 +17,11 @@ Auth:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from psycopg.abc import QueryNoTemplate as Query
 from pydantic import BaseModel
 
 from whatsapp_langchain.server.dependencies import (
@@ -205,13 +206,9 @@ async def update_workflow(
     if body.definicao is not None:
         # Validação mínima
         if not isinstance(body.definicao.get("nodes"), dict):
-            raise HTTPException(
-                status_code=400, detail="definicao.nodes deve ser dict"
-            )
+            raise HTTPException(status_code=400, detail="definicao.nodes deve ser dict")
         if not body.definicao.get("entry"):
-            raise HTTPException(
-                status_code=400, detail="definicao.entry obrigatório"
-            )
+            raise HTTPException(status_code=400, detail="definicao.entry obrigatório")
         if body.definicao["entry"] not in body.definicao["nodes"]:
             raise HTTPException(
                 status_code=400,
@@ -268,8 +265,12 @@ async def update_workflow(
             update_fields.append("updated_at = NOW()")
             update_params.extend([workflow_id, empresa_id])
             await conn.execute(
-                f"""UPDATE workflow_chatbot SET {', '.join(update_fields)}
+                # query dinâmica (colunas do SET), valores parametrizados via %s
+                cast(
+                    Query,
+                    f"""UPDATE workflow_chatbot SET {", ".join(update_fields)}
                     WHERE id = %s AND empresa_id = %s""",
+                ),
                 tuple(update_params),
             )
             await conn.commit()

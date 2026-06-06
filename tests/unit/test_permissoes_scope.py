@@ -10,7 +10,6 @@ from whatsapp_langchain.shared.permissoes import (
     effective_scope,
 )
 
-
 # ---- effective_scope ----
 
 

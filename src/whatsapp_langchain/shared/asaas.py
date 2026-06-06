@@ -67,7 +67,8 @@ async def create_or_get_asaas_customer(
         asaas_id = existing[0]["id"]
         logger.info(
             "asaas_customer_found_existing",
-            empresa_id=empresa_id, asaas_customer_id=asaas_id,
+            empresa_id=empresa_id,
+            asaas_customer_id=asaas_id,
         )
     else:
         created = await client.create_customer(
@@ -78,7 +79,8 @@ async def create_or_get_asaas_customer(
         asaas_id = created["id"]
         logger.info(
             "asaas_customer_created",
-            empresa_id=empresa_id, asaas_customer_id=asaas_id,
+            empresa_id=empresa_id,
+            asaas_customer_id=asaas_id,
         )
 
     # Persiste (bypass — empresa não tem RLS própria mas mantém pattern)
@@ -136,12 +138,14 @@ async def create_subscription_for_plano(
             await AsaasClient().cancel_subscription(existing_sub)
             logger.info(
                 "asaas_old_subscription_cancelled",
-                empresa_id=empresa_id, subscription_id=existing_sub,
+                empresa_id=empresa_id,
+                subscription_id=existing_sub,
             )
         except AsaasError as exc:
             logger.warning(
                 "asaas_old_subscription_cancel_failed",
-                empresa_id=empresa_id, error=str(exc),
+                empresa_id=empresa_id,
+                error=str(exc),
             )
 
     # Cria nova subscription (próximo dia útil como vencimento)
@@ -184,7 +188,9 @@ async def create_subscription_for_plano(
                         'asaas', %s, %s)
                 """,
                 (
-                    empresa_id, plano_id, valor,
+                    empresa_id,
+                    plano_id,
+                    valor,
                     asaas_payment_id,
                     f"Assinatura {plano_nome} — vencimento {next_due}",
                 ),
@@ -195,7 +201,8 @@ async def create_subscription_for_plano(
         "asaas_subscription_created",
         empresa_id=empresa_id,
         subscription_id=subscription_id,
-        plano=plano_slug, valor=valor,
+        plano=plano_slug,
+        valor=valor,
     )
     return {
         "subscription_id": subscription_id,
@@ -227,7 +234,8 @@ async def cancel_active_subscription(
     except AsaasError as exc:
         logger.warning(
             "asaas_subscription_cancel_failed",
-            empresa_id=empresa_id, error=str(exc),
+            empresa_id=empresa_id,
+            error=str(exc),
         )
         # Continua o downgrade local mesmo se Asaas falhou — manual sync depois
 
@@ -245,7 +253,8 @@ async def cancel_active_subscription(
     clear_plano_cache(empresa_id)
     logger.info(
         "asaas_subscription_cancelled",
-        empresa_id=empresa_id, subscription_id=sub_id,
+        empresa_id=empresa_id,
+        subscription_id=sub_id,
     )
     return {"status": "cancelled", "subscription_id": sub_id}
 
@@ -292,12 +301,17 @@ async def process_asaas_webhook(
     customer_id = payment.get("customer")
     payment_id = payment.get("id")
 
-    # Resolve empresa via customer_id ou subscription_id
-    empresa_id = await _resolve_empresa_from_event(
-        pool, customer_id, subscription_id
-    )
+    # Chave de dedup (R9): event.id do Asaas, ou sintetizada. Asaas reentrega o
+    # MESMO webhook em timeout/5xx; sem dedup, reprocessava e duplicava o log.
+    _ref = payment_id or subscription_id
+    dedup_key = event.get("id") or (f"{event_type}:{_ref}" if _ref else None)
 
-    # SEMPRE registra log (audit append-only)
+    # Resolve empresa via customer_id ou subscription_id
+    empresa_id = await _resolve_empresa_from_event(pool, customer_id, subscription_id)
+
+    # SEMPRE registra log (audit append-only). ON CONFLICT (dedup_key) DO
+    # NOTHING: se já vimos este evento, log_id volta None e paramos aqui
+    # (idempotente) — é o que torna o retry do Asaas (após 5xx) seguro.
     log_id = await _log_billing_event(
         pool,
         event_type=event_type,
@@ -306,12 +320,22 @@ async def process_asaas_webhook(
         asaas_subscription_id=subscription_id,
         empresa_id=empresa_id,
         payload=event,
+        dedup_key=dedup_key,
     )
+
+    if log_id is None:
+        logger.info(
+            "asaas_webhook_duplicate_skipped",
+            event_type=event_type,
+            dedup_key=dedup_key,
+        )
+        return {"processado": False, "reason": "duplicate_event"}
 
     if empresa_id is None:
         logger.warning(
             "asaas_webhook_unknown_customer",
-            customer_id=customer_id, subscription_id=subscription_id,
+            customer_id=customer_id,
+            subscription_id=subscription_id,
             event_type=event_type,
         )
         return {"processado": False, "reason": "unknown_customer"}
@@ -321,23 +345,17 @@ async def process_asaas_webhook(
     transacao_id: int | None = None
 
     if event_type in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
-        transacao_id = await _mark_transacao_paga(
-            pool, empresa_id, payment_id
-        )
+        transacao_id = await _mark_transacao_paga(pool, empresa_id, payment_id)
         # Atualiza plano da empresa baseado no plano da subscription Asaas
         await _ativar_plano_pos_pagamento(pool, empresa_id, subscription_id)
         action_taken = "plano_ativado"
 
     elif event_type == "PAYMENT_OVERDUE":
-        transacao_id = await _mark_transacao_vencida(
-            pool, empresa_id, payment_id
-        )
+        transacao_id = await _mark_transacao_vencida(pool, empresa_id, payment_id)
         action_taken = "marcado_pendente"
 
     elif event_type == "PAYMENT_REFUNDED":
-        transacao_id = await _mark_transacao_estornada(
-            pool, empresa_id, payment_id
-        )
+        transacao_id = await _mark_transacao_estornada(pool, empresa_id, payment_id)
         # Reverte plano pra free
         with empresa_scope(None, bypass=True):
             async with pool.connection() as conn:
@@ -369,8 +387,10 @@ async def process_asaas_webhook(
 
     logger.info(
         "asaas_webhook_processed",
-        event_type=event_type, empresa_id=empresa_id,
-        action_taken=action_taken, transacao_id=transacao_id,
+        event_type=event_type,
+        empresa_id=empresa_id,
+        action_taken=action_taken,
+        transacao_id=transacao_id,
     )
     return {
         "processado": True,
@@ -417,7 +437,14 @@ async def _log_billing_event(
     asaas_subscription_id: str | None,
     empresa_id: int | None,
     payload: dict,
-) -> int:
+    dedup_key: str | None = None,
+) -> int | None:
+    """Registra o evento no audit log. Idempotente por `dedup_key` (R9).
+
+    Retorna o id do log, ou None se já existia um evento com o mesmo
+    `dedup_key` (reentrega do Asaas) — nesse caso o caller deve parar (não
+    reprocessar).
+    """
     import json as _json
 
     with empresa_scope(None, bypass=True):
@@ -426,16 +453,25 @@ async def _log_billing_event(
                 """
                 INSERT INTO billing_event_log
                     (event_type, asaas_payment_id, asaas_customer_id,
-                     asaas_subscription_id, empresa_id, payload)
-                VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                     asaas_subscription_id, empresa_id, payload, dedup_key)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s)
+                ON CONFLICT (dedup_key) DO NOTHING
                 RETURNING id
                 """,
-                (event_type, asaas_payment_id, asaas_customer_id,
-                 asaas_subscription_id, empresa_id, _json.dumps(payload)),
+                (
+                    event_type,
+                    asaas_payment_id,
+                    asaas_customer_id,
+                    asaas_subscription_id,
+                    empresa_id,
+                    _json.dumps(payload),
+                    dedup_key,
+                ),
             )
             row = await cur.fetchone()
             await conn.commit()
-    return int(row[0])
+    # row None = ON CONFLICT (evento duplicado já registrado)
+    return int(row[0]) if row else None
 
 
 async def _mark_log_processado(
@@ -476,8 +512,16 @@ async def _mark_transacao_paga(
 async def _mark_transacao_vencida(
     pool: AsyncConnectionPool, empresa_id: int, payment_id: str | None
 ) -> int | None:
-    # Asaas considera "overdue" como pendente ainda — não muda status,
-    # só registra no log. Função existe pra dispatch ficar simétrico.
+    # Asaas considera "overdue" como pendente ainda (pode ser pago em atraso),
+    # então NÃO mudamos o status da transacao. Mas logamos como sinal de DUNNING
+    # pra visibilidade/alerta. Suspensão/downgrade automático por inadimplência
+    # é decisão de POLÍTICA (carência) e fica como follow-up (job de
+    # reconciliação) — não cortamos o cliente num overdue transitório aqui.
+    logger.warning(
+        "asaas_payment_overdue",
+        empresa_id=empresa_id,
+        payment_id=payment_id,
+    )
     return None
 
 
@@ -534,8 +578,7 @@ async def _ativar_plano_pos_pagamento(
     with empresa_scope(None, bypass=True):
         async with pool.connection() as conn:
             await conn.execute(
-                "UPDATE empresa SET plano = %s, updated_at = NOW() "
-                "WHERE id = %s",
+                "UPDATE empresa SET plano = %s, updated_at = NOW() WHERE id = %s",
                 (plano_slug, empresa_id),
             )
             await conn.commit()

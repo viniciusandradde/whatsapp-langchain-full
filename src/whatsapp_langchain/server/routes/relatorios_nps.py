@@ -158,12 +158,8 @@ async def nps_geral(
             for r in await cur.fetchall()
         ]
 
-    pct_promotores = (
-        round(100.0 * promotores / total, 1) if total > 0 else None
-    )
-    pct_detratores = (
-        round(100.0 * detratores / total, 1) if total > 0 else None
-    )
+    pct_promotores = round(100.0 * promotores / total, 1) if total > 0 else None
+    pct_detratores = round(100.0 * detratores / total, 1) if total > 0 else None
 
     return NPSResumo(
         score=score,
@@ -292,9 +288,7 @@ async def nps_avaliacoes(
         else (empresa_id, periodo, limit, offset)
     )
     count_params: tuple = (
-        (empresa_id, periodo, categoria)
-        if categoria
-        else (empresa_id, periodo)
+        (empresa_id, periodo, categoria) if categoria else (empresa_id, periodo)
     )
 
     pool = await get_pool()

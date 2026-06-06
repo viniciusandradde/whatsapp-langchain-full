@@ -92,9 +92,7 @@ def clear_plano_cache(empresa_id: int | None = None) -> None:
         _plano_cache.pop(empresa_id, None)
 
 
-async def get_plano_info(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> PlanoInfo:
+async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInfo:
     """Retorna PlanoInfo da empresa (com cache 30s).
 
     Sprint A.2: cross-tenant (lê plano sem RLS pq plano não tem
@@ -126,8 +124,16 @@ async def get_plano_info(
         raise ValueError(f"Empresa {empresa_id} não existe")
 
     (
-        plano_id, slug, nome, preco,
-        lim_users, lim_conex, lim_atend, lim_ia, lim_docs, features,
+        plano_id,
+        slug,
+        nome,
+        preco,
+        lim_users,
+        lim_conex,
+        lim_atend,
+        lim_ia,
+        lim_docs,
+        features,
     ) = row
     info = PlanoInfo(
         empresa_id=empresa_id,
@@ -169,8 +175,7 @@ async def count_agentes(pool: AsyncConnectionPool, empresa_id: int) -> int:
     with empresa_scope(empresa_id=empresa_id):
         async with pool.connection() as conn:
             cur = await conn.execute(
-                "SELECT count(*) FROM agente_ia "
-                "WHERE empresa_id = %s AND ativo = TRUE",
+                "SELECT count(*) FROM agente_ia WHERE empresa_id = %s AND ativo = TRUE",
                 (empresa_id,),
             )
             row = await cur.fetchone()

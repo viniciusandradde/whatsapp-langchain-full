@@ -33,12 +33,17 @@ from langchain_core.messages import HumanMessage
 from whatsapp_langchain.shared.db import close_pool, get_pool
 from whatsapp_langchain.shared.llm import create_chat_model
 
-
 CACHE_DIR = Path(__file__).parent / "cache" / "hospitalar"
 
 SLUGS = {
-    "atendimento", "atendimento-cliente", "agendamentos", "exames",
-    "orcamento", "ouvidoria", "rh-recrutamento-selecao", "tesouraria",
+    "atendimento",
+    "atendimento-cliente",
+    "agendamentos",
+    "exames",
+    "orcamento",
+    "ouvidoria",
+    "rh-recrutamento-selecao",
+    "tesouraria",
 }
 
 PROMPT = """Você classifica mensagens de pacientes/clientes de um HOSPITAL em UM dos
@@ -160,16 +165,18 @@ async def reset_classification(pool, empresa_id: int) -> int:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--empresa-id", type=int,
-                        default=int(os.environ.get("EMPRESA_ID", "999")))
+    parser.add_argument(
+        "--empresa-id", type=int, default=int(os.environ.get("EMPRESA_ID", "999"))
+    )
     parser.add_argument("--limit", type=int, default=100000)
     parser.add_argument("--batch", type=int, default=100)
     parser.add_argument("--concurrency", type=int, default=15)
-    parser.add_argument("--reset", action="store_true",
-                        help="Reseta setor_classificado=NULL antes")
+    parser.add_argument(
+        "--reset", action="store_true", help="Reseta setor_classificado=NULL antes"
+    )
     args = parser.parse_args()
 
-    print(f"=== Sprint R.2 Hospitalar ===")
+    print("=== Sprint R.2 Hospitalar ===")
     print(f"empresa_id: {args.empresa_id}")
     print(f"concurrency: {args.concurrency}, batch: {args.batch}")
     print()

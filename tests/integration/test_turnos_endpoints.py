@@ -160,13 +160,9 @@ class TestE2E:
             assert achado["users_count"] == 1
 
         finally:
-            r = httpx.delete(
-                f"{API_BASE_URL}/api/turnos/{tid}", headers=h, timeout=10
-            )
+            r = httpx.delete(f"{API_BASE_URL}/api/turnos/{tid}", headers=h, timeout=10)
             assert r.status_code == 204, r.text
-            r = httpx.get(
-                f"{API_BASE_URL}/api/turnos/{tid}", headers=h, timeout=10
-            )
+            r = httpx.get(f"{API_BASE_URL}/api/turnos/{tid}", headers=h, timeout=10)
             assert r.status_code == 404
 
 
@@ -189,9 +185,7 @@ class TestE2EGateDistribuicao:
 
         def eligivel(uid: str, dia: int, hora: str) -> bool:
             with psycopg.connect(db_url) as conn, conn.cursor() as cur:
-                cur.execute(
-                    sql, (empresa_id, empresa_id, dia, hora, hora, uid)
-                )
+                cur.execute(sql, (empresa_id, empresa_id, dia, hora, hora, uid))
                 row = cur.fetchone()
                 assert row is not None
                 return bool(row[0])

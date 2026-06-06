@@ -19,7 +19,7 @@ funcionar em multi-instância (a stack roda 4+ workers + N réplicas API).
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import HTTPException, status
@@ -50,7 +50,7 @@ def _window_start(now: datetime, window_seconds: int) -> datetime:
     """Trunca `now` pro início da janela (ex: window=60 → minuto cheio)."""
     epoch_seconds = int(now.timestamp())
     bucket_seconds = (epoch_seconds // window_seconds) * window_seconds
-    return datetime.fromtimestamp(bucket_seconds, tz=timezone.utc)
+    return datetime.fromtimestamp(bucket_seconds, tz=UTC)
 
 
 async def enforce_bucket_limit(
@@ -75,7 +75,7 @@ async def enforce_bucket_limit(
     Raises:
         RateLimitExceeded: HTTP 429 quando contador > limit.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window = _window_start(now, window_seconds)
 
     async with pool.connection() as conn:

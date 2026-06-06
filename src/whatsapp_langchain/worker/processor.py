@@ -613,21 +613,25 @@ async def _iniciar_coleta_wizard(
     perguntas = item.coleta_perguntas or []
     if not perguntas:
         return
+    atend_id = message.atendimento_id
+    if atend_id is None:
+        # Wizard só faz sentido com atendimento aberto; sem ele, não inicia.
+        return
     estado = make_estado_inicial(item.id, perguntas)
     try:
         base_ctx = await build_render_context(
-            pool, empresa_id=message.empresa_id, cliente_phone=message.phone_number
+            pool, empresa_id=message.empresa_id, atendimento_id=atend_id
         )
     except Exception:  # noqa: BLE001
         base_ctx = {}
     ctx = build_coleta_render_ctx(base_ctx, {})
     primeira = perguntas[0]
     label = render_pergunta_label(primeira.get("label", ""), ctx)
-    await set_coleta_estado(pool, message.atendimento_id, estado)
+    await set_coleta_estado(pool, atend_id, estado)
     await outbound.send_message(message.phone_number, label)
     await registrar_historico(
         pool,
-        atendimento_id=message.atendimento_id,
+        atendimento_id=atend_id,
         menu_id=menu.id,
         item_id=item.id,
         posicao_atual_item_id=None,
@@ -706,7 +710,7 @@ async def _try_handle_coleta_em_curso(
 
         try:
             base_ctx = await build_render_context(
-                pool, empresa_id=message.empresa_id, cliente_phone=message.phone_number
+                pool, empresa_id=message.empresa_id, atendimento_id=atend_id
             )
         except Exception:  # noqa: BLE001
             base_ctx = {}

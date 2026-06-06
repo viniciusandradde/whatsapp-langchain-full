@@ -35,9 +35,7 @@ def test_slugs_sao_unicos() -> None:
 def test_slugs_prefixo_saude() -> None:
     """Convenção: prefixo `saude_` pra deixar claro o domínio do agente."""
     for a in AGENTES_SAUDE:
-        assert a["slug"].startswith("saude_"), (
-            f"slug {a['slug']} fora da convenção"
-        )
+        assert a["slug"].startswith("saude_"), f"slug {a['slug']} fora da convenção"
 
 
 @pytest.mark.parametrize("agente", AGENTES_SAUDE, ids=lambda a: a["slug"])
@@ -66,9 +64,7 @@ def test_prompt_substantivo(agente: dict) -> None:
     assert "## Seu papel" in p or "## Contexto" in p, (
         f"sem seção 'Seu papel' ou 'Contexto' em {agente['slug']}"
     )
-    assert "## Regras importantes" in p, (
-        f"sem 'Regras importantes' em {agente['slug']}"
-    )
+    assert "## Regras importantes" in p, f"sem 'Regras importantes' em {agente['slug']}"
     assert "## Tom" in p, f"sem seção 'Tom' em {agente['slug']}"
 
 

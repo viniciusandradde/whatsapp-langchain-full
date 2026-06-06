@@ -68,6 +68,48 @@ class TestProcessorMemoryFlag:
                 new_callable=AsyncMock,
                 return_value=True,
             ),
+            # Guards de interceptação que rodam ANTES do agente (approval,
+            # CSAT, encerrar, coleta, menu) — todos retornam False pra deixar
+            # o fluxo chegar no load_graph. Sem stubar, batem no pool mock e
+            # quebram (TypeError no async-CM) mascarando o teste real.
+            patch(
+                "whatsapp_langchain.worker.processor._try_handle_approval",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor._try_capture_avaliacao",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor._try_handle_encerrar_keyword",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor._try_handle_coleta_em_curso",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor._try_handle_menu",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            # A.6 — runtime do agente_ia (DB). None mantém path legacy do
+            # catálogo e evita o SELECT inline de agente_ia.id.
+            patch(
+                "whatsapp_langchain.worker.processor.resolve_agente_runtime",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            # ia_budget pré-call (mig 058). None = sem bloqueio de orçamento.
+            patch(
+                "whatsapp_langchain.shared.governanca_ia.get_budget_atual",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             mock_graph = AsyncMock()
             mock_graph.ainvoke.return_value = {
@@ -75,7 +117,17 @@ class TestProcessorMemoryFlag:
             }
             mock_load.return_value = mock_graph
             mock_checkpointer = AsyncMock()
-            mock_pool = AsyncMock()
+            # Pool cujo connection() é um async CM (vários blocos inline pós
+            # load_graph fazem `async with pool.connection()` — langfuse trace,
+            # guardrail/rag log; em try/except, mas evita warnings de coroutine).
+            _cur = AsyncMock()
+            _cur.fetchone = AsyncMock(return_value=None)
+            _conn = MagicMock()
+            _conn.execute = AsyncMock(return_value=_cur)
+            _conn.commit = AsyncMock()
+            mock_pool = MagicMock()
+            mock_pool.connection.return_value.__aenter__ = AsyncMock(return_value=_conn)
+            mock_pool.connection.return_value.__aexit__ = AsyncMock(return_value=None)
 
             from whatsapp_langchain.shared.models import MessageQueue
             from whatsapp_langchain.worker.processor import process_message
@@ -118,4 +170,5 @@ class TestProcessorMemoryFlag:
                 store=None,
                 pool=mock_pool,
                 empresa_id=1,
+                agente_runtime=None,
             )

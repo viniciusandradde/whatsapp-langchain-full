@@ -65,9 +65,7 @@ async def get_cleanup_config(
     }
 
 
-async def preview_zumbis(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> dict[str, Any]:
+async def preview_zumbis(pool: AsyncConnectionPool, empresa_id: int) -> dict[str, Any]:
     """Conta atendimentos que SERIAM fechados se cleanup rodasse agora.
 
     Não modifica nada. Usado pelo dashboard pra mostrar contador + endpoint

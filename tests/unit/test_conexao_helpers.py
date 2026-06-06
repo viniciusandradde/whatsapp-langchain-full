@@ -45,19 +45,19 @@ def _row(
         payload_json or {},
         now,
         now,
-        "ia",            # tipo_atendimento
-        None,            # whatsapp_state
-        None,            # waba_account_id
-        None,            # waba_phone_id
-        None,            # waba_app_id
-        None,            # waba_account_description
+        "ia",  # tipo_atendimento
+        None,  # whatsapp_state
+        None,  # waba_account_id
+        None,  # waba_phone_id
+        None,  # waba_app_id
+        None,  # waba_account_description
         connection_state,
         state_message,
-        None,            # qr_code
-        None,            # qr_expires_at
-        None,            # ultimo_health_check_at
-        None,            # ultimo_health_check_ok
-        None,            # webhook_verify_token
+        None,  # qr_code
+        None,  # qr_expires_at
+        None,  # ultimo_health_check_at
+        None,  # ultimo_health_check_ok
+        None,  # webhook_verify_token
     )
 
 
@@ -152,9 +152,7 @@ async def test_upsert_conexao_twilio_promotes_to_open():
     # 2 SQLs: INSERT + UPDATE connection_state (set_connection_state)
     sqls = [call.args[0] for call in conn.execute.await_args_list]
     assert any("INSERT INTO conexao" in s for s in sqls)
-    assert any(
-        "UPDATE conexao" in s and "connection_state" in s for s in sqls
-    )
+    assert any("UPDATE conexao" in s and "connection_state" in s for s in sqls)
 
 
 @pytest.mark.asyncio
@@ -173,9 +171,7 @@ async def test_upsert_conexao_waba_stays_pending():
     # Só 1 SQL: INSERT (nenhum UPDATE de connection_state)
     sqls = [call.args[0] for call in conn.execute.await_args_list]
     assert sum(1 for s in sqls if "INSERT INTO conexao" in s) == 1
-    assert not any(
-        "UPDATE conexao" in s and "connection_state" in s for s in sqls
-    )
+    assert not any("UPDATE conexao" in s and "connection_state" in s for s in sqls)
 
 
 # ----------------------- Sprint Conexão Padrão -----------------------
@@ -219,9 +215,7 @@ async def test_patch_conexao_is_default_false_does_not_unset():
     assert len(sqls) == 1
     assert "UPDATE conexao SET" in sqls[0]
     # Não deve haver unset batch ("WHERE id != %s AND is_default = TRUE")
-    assert not any(
-        "is_default = FALSE" in s and "id != %s" in s for s in sqls
-    )
+    assert not any("is_default = FALSE" in s and "id != %s" in s for s in sqls)
 
 
 @pytest.mark.asyncio
@@ -264,9 +258,7 @@ async def test_upsert_conexao_is_default_false_does_not_unset():
     await upsert_conexao(pool, 1, data)
     sqls = [call.args[0] for call in conn.execute.await_args_list]
     # Sem batch unset — só INSERT (+ UPDATE connection_state pra Twilio)
-    assert not any(
-        "UPDATE conexao SET is_default = FALSE" in s for s in sqls
-    )
+    assert not any("UPDATE conexao SET is_default = FALSE" in s for s in sqls)
 
 
 @pytest.mark.asyncio

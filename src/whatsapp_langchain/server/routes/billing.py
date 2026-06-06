@@ -79,9 +79,7 @@ async def checkout(
 
     pool = await get_pool()
     try:
-        result = await create_subscription_for_plano(
-            pool, empresa_id, body.plano
-        )
+        result = await create_subscription_for_plano(pool, empresa_id, body.plano)
     except AsaasError as e:
         status = e.status_code if e.status_code and 400 <= e.status_code < 600 else 502
         raise HTTPException(status_code=status, detail=str(e)) from e
@@ -90,7 +88,9 @@ async def checkout(
 
     logger.info(
         "billing_checkout_created",
-        empresa_id=empresa_id, user_id=user_id, plano=body.plano,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        plano=body.plano,
         subscription_id=result["subscription_id"],
     )
     return result
@@ -126,7 +126,9 @@ async def cancel(
     result = await cancel_active_subscription(pool, empresa_id)
     logger.info(
         "billing_cancel",
-        empresa_id=empresa_id, user_id=user_id, result=result,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        result=result,
     )
     return result
 

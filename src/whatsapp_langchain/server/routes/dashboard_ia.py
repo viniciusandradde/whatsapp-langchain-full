@@ -270,14 +270,23 @@ async def upsert_budget_endpoint(
                 updated_at = NOW()
             RETURNING id, limite_usd, consumo_usd, acao_estouro, alerta_pct
             """,
-            (empresa_id, target, Decimal(str(body.limite_usd)),
-             body.acao_estouro, body.alerta_pct),
+            (
+                empresa_id,
+                target,
+                Decimal(str(body.limite_usd)),
+                body.acao_estouro,
+                body.alerta_pct,
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
+    assert row is not None  # INSERT ... RETURNING sempre retorna 1 row
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="ia_budget.upsert", entity_type="ia_budget",
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="ia_budget.upsert",
+        entity_type="ia_budget",
         entity_id=str(row[0]) if row else target,
         payload_diff={"after": dict(body.model_dump(), ano_mes=target)},
         request=request,

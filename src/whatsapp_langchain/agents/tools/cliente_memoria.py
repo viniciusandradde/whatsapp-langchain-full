@@ -128,9 +128,7 @@ async def save_cliente_fato(
     """
     categoria = categoria.strip().lower()
     if categoria not in ("perfil", "preferencia", "fato"):
-        return (
-            "Categoria inválida — use 'perfil', 'preferencia' ou 'fato'."
-        )
+        return "Categoria inválida — use 'perfil', 'preferencia' ou 'fato'."
     conteudo = conteudo.strip()
     if len(conteudo) < 3:
         return "Conteúdo muito curto (mínimo 3 chars)."

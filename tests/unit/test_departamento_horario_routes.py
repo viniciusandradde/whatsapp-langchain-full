@@ -94,9 +94,7 @@ def test_create_departamento_returns_201(client):
         "whatsapp_langchain.server.routes.departamento.create_departamento",
         new=AsyncMock(return_value=_dep(id=42)),
     ):
-        response = client.post(
-            "/api/departamentos", json={"nome": "Suporte"}
-        )
+        response = client.post("/api/departamentos", json={"nome": "Suporte"})
     assert response.status_code == 201
     assert response.json()["id"] == 42
 
@@ -108,9 +106,7 @@ def test_create_departamento_409_on_duplicate(client):
         "whatsapp_langchain.server.routes.departamento.create_departamento",
         new=AsyncMock(side_effect=DuplicateDepartamentoError("já existe")),
     ):
-        response = client.post(
-            "/api/departamentos", json={"nome": "Suporte"}
-        )
+        response = client.post("/api/departamentos", json={"nome": "Suporte"})
     assert response.status_code == 409
 
 
@@ -208,16 +204,12 @@ def test_create_feriado_409_on_duplicate(client):
         "whatsapp_langchain.server.routes.horario.create_feriado",
         new=AsyncMock(side_effect=DuplicateFeriadoError("já existe")),
     ):
-        response = client.post(
-            "/api/feriados", json={"data": "2026-12-25"}
-        )
+        response = client.post("/api/feriados", json={"data": "2026-12-25"})
     assert response.status_code == 409
 
 
 def test_create_feriado_422_on_invalid_date(client):
-    response = client.post(
-        "/api/feriados", json={"data": "25/12/2026"}
-    )
+    response = client.post("/api/feriados", json={"data": "25/12/2026"})
     assert response.status_code == 422
 
 

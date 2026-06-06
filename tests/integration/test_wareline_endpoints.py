@@ -29,20 +29,14 @@ class TestSmoke:
         assert _client().get("/api/integracoes/wareline").status_code == 401
 
     def test_put_sem_auth_401(self) -> None:
-        resp = _client().put(
-            "/api/integracoes/wareline", json={"username": "x"}
-        )
+        resp = _client().put("/api/integracoes/wareline", json={"username": "x"})
         assert resp.status_code == 401
 
     def test_post_testar_sem_auth_401(self) -> None:
-        assert (
-            _client().post("/api/integracoes/wareline/testar").status_code == 401
-        )
+        assert _client().post("/api/integracoes/wareline/testar").status_code == 401
 
     def test_delete_sem_auth_401(self) -> None:
-        assert (
-            _client().delete("/api/integracoes/wareline").status_code == 401
-        )
+        assert _client().delete("/api/integracoes/wareline").status_code == 401
 
 
 # ============================================================================

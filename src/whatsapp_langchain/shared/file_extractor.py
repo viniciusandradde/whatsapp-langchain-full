@@ -100,8 +100,7 @@ async def extract_text(filename: str, raw_bytes: bytes) -> str:
     """
     if len(raw_bytes) > MAX_FILE_SIZE_BYTES:
         raise FileTooLargeError(
-            f"arquivo tem {len(raw_bytes)} bytes — máximo é "
-            f"{MAX_FILE_SIZE_BYTES}"
+            f"arquivo tem {len(raw_bytes)} bytes — máximo é {MAX_FILE_SIZE_BYTES}"
         )
     if not raw_bytes:
         raise FileExtractionError("arquivo vazio")
@@ -212,9 +211,7 @@ def _extract_text_plain(raw: bytes) -> str:
         try:
             return raw.decode("latin-1")
         except UnicodeDecodeError as e:
-            raise FileExtractionError(
-                f"não consegui decodificar texto: {e}"
-            ) from e
+            raise FileExtractionError(f"não consegui decodificar texto: {e}") from e
 
 
 def _clean_whitespace(text: str) -> str:

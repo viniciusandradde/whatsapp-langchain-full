@@ -86,7 +86,9 @@ async def search_knowledge_base(
     if empresa_id is None:
         return "empresa_id ausente no contexto — não consigo consultar a base."
     pasta_ids = _extract_pasta_ids(runtime)
-    agente_slug = _extract_from_runtime(runtime, "agent_id") or _extract_from_runtime(runtime, "agente_slug")
+    agente_slug = _extract_from_runtime(runtime, "agent_id") or _extract_from_runtime(
+        runtime, "agente_slug"
+    )
     atendimento_id = _extract_from_runtime(runtime, "atendimento_id")
     thread_id = _extract_from_runtime(runtime, "thread_id")
     pool = await get_pool()
@@ -105,7 +107,9 @@ async def search_knowledge_base(
                 query, agent_slug=agente_slug
             )
         results = await base_conhecimento.search_relevant(
-            pool, empresa_id, query,
+            pool,
+            empresa_id,
+            query,
             pasta_ids=pasta_ids,
             mode=mode,
             agent_slug=agente_slug,
@@ -168,11 +172,10 @@ async def search_knowledge_base(
     # do reranker quando disponível.
     lines: list[str] = []
     for r in results:
-        meta = (
-            f"doc {r.documento.id}, trecho {r.chunk_idx}, "
-            f"relevância {r.score:.2f}"
-        )
+        meta = f"doc {r.documento.id}, trecho {r.chunk_idx}, relevância {r.score:.2f}"
         if r.reason:
             meta += f" — {r.reason}"
-        lines.append(f"- [{r.documento.titulo}] ({meta})\n  {_snippet(r.chunk_conteudo)}")
+        lines.append(
+            f"- [{r.documento.titulo}] ({meta})\n  {_snippet(r.chunk_conteudo)}"
+        )
     return "Trechos relevantes da base de conhecimento:\n" + "\n".join(lines)

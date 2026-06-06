@@ -137,8 +137,7 @@ async def test_mackenzie_principal_flow_via_handover():
                     "Cliente: {{vars.nome_cliente}} | Setor: Agendamentos"
                 ),
                 "message_to_client": (
-                    "Você está na fila, {{vars.nome_cliente}}."
-                    " Aguarde um atendente."
+                    "Você está na fila, {{vars.nome_cliente}}. Aguarde um atendente."
                 ),
                 "next": "__end__",
             },

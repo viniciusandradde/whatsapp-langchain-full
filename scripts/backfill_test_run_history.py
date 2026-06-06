@@ -25,8 +25,7 @@ from pathlib import Path
 # Permite rodar standalone (fora do pacote)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from whatsapp_langchain.shared.db import get_pool, close_pool
-
+from whatsapp_langchain.shared.db import close_pool, get_pool
 
 REPO_ROOT = Path(os.environ.get("TEST_RUNNER_REPO_ROOT", os.getcwd()))
 REPORTS_DIR = REPO_ROOT / "tests" / "reports"
@@ -76,9 +75,18 @@ async def insert_run(
             RETURNING id
             """,
             (
-                user_id, started_at, finished_at, status,
-                None, total, passed, failed, duration,
-                storage_path, log_size, "backfill_sprint_k",
+                user_id,
+                started_at,
+                finished_at,
+                status,
+                None,
+                total,
+                passed,
+                failed,
+                duration,
+                storage_path,
+                log_size,
+                "backfill_sprint_k",
             ),
         )
         row = await cur.fetchone()

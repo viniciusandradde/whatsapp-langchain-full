@@ -30,7 +30,7 @@ from whatsapp_langchain.shared.models import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from datetime import date
+    pass
 
 logger = structlog.get_logger()
 
@@ -150,8 +150,7 @@ async def delete_horario(
 ) -> bool:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "DELETE FROM horario_funcionamento "
-            "WHERE id = %s AND empresa_id = %s",
+            "DELETE FROM horario_funcionamento WHERE id = %s AND empresa_id = %s",
             (horario_id, empresa_id),
         )
     return (cur.rowcount or 0) > 0
@@ -177,9 +176,7 @@ def _row_to_feriado(row) -> Feriado:
     )
 
 
-async def list_feriados(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> list[Feriado]:
+async def list_feriados(pool: AsyncConnectionPool, empresa_id: int) -> list[Feriado]:
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT {_FERIADO_COLS} FROM feriado "
@@ -231,13 +228,10 @@ async def delete_feriado(
 # --- Business hours ---
 
 
-async def _resolve_timezone(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> str:
+async def _resolve_timezone(pool: AsyncConnectionPool, empresa_id: int) -> str:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT timezone FROM empresa_calendar_config "
-            "WHERE empresa_id = %s",
+            "SELECT timezone FROM empresa_calendar_config WHERE empresa_id = %s",
             (empresa_id,),
         )
         row = await cur.fetchone()

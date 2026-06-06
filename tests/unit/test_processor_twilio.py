@@ -88,6 +88,54 @@ def _patch_outbound_resolution(mock_twilio):
         yield
 
 
+@pytest.fixture(autouse=True)
+def _patch_early_handlers():
+    """Neutraliza os handlers que rodam ANTES do agente no `process_message`.
+
+    O processor cresceu com gates de pré-agente (approval / CSAT / encerrar /
+    wizard de coleta / menu chatbot), cada um abrindo `pool.connection()`.
+    Como o pool nos testes é um AsyncMock puro (não é async CM real), qualquer
+    um deles levantaria TypeError e o fluxo cairia em mark_failed antes de
+    chegar no send/agente. Aqui forçamos todos a retornar False = "não tratei,
+    siga adiante" — preservando o caminho normal (texto → agente → send).
+    """
+    with (
+        patch(
+            "whatsapp_langchain.worker.processor._try_handle_approval",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "whatsapp_langchain.worker.processor._try_capture_avaliacao",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "whatsapp_langchain.worker.processor._try_handle_encerrar_keyword",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "whatsapp_langchain.worker.processor._try_handle_coleta_em_curso",
+            new=AsyncMock(return_value=False),
+        ),
+        patch(
+            "whatsapp_langchain.worker.processor._try_handle_menu",
+            new=AsyncMock(return_value=False),
+        ),
+        # A.6 — resolução de agente via DB; None mantém o path legacy (catálogo)
+        # e evita o lookup de agente_ia.id (que abriria pool.connection()).
+        patch(
+            "whatsapp_langchain.worker.processor.resolve_agente_runtime",
+            new=AsyncMock(return_value=None),
+        ),
+        # ia_budget (mig 058) — None = sem orçamento estourado, não bloqueia.
+        # Import é local dentro de process_message, então patcha-se na origem.
+        patch(
+            "whatsapp_langchain.shared.governanca_ia.get_budget_atual",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        yield
+
+
 # --- Helpers ---
 
 
@@ -272,10 +320,13 @@ class TestSendMessageMarkDone:
             mock_twilio.send_message.assert_awaited_once()
             # mark_done NÃO chamado
             mock_done.assert_not_awaited()
-            # mark_failed chamado com o erro
+            # mark_failed chamado com o erro SANITIZADO. O detalhe técnico
+            # (status 500, mensagem bruta) fica só no log; o que vai pra
+            # message_queue.error é "processing_failed:<TipoExcecao>" pra não
+            # vazar SQL/erro cru no drawer do operador.
             mock_failed.assert_awaited_once()
             error_arg = mock_failed.call_args[0][2]
-            assert "500" in error_arg
+            assert error_arg == "processing_failed:TwilioSendError"
 
     async def test_mark_failed_on_generic_send_exception(
         self, message, mock_twilio, mock_clients
@@ -312,7 +363,8 @@ class TestSendMessageMarkDone:
 
             mock_done.assert_not_awaited()
             mock_failed.assert_awaited_once()
-            assert "Connection timeout" in mock_failed.call_args[0][2]
+            # Erro sanitizado: tipo da exception, não a mensagem bruta.
+            assert mock_failed.call_args[0][2] == "processing_failed:Exception"
 
 
 # === Testes do fluxo auto-response (mídia) ===
@@ -384,9 +436,9 @@ class TestAutoResponseTwilio:
             mock_twilio.send_message.assert_awaited_once()
             # mark_done NÃO chamado
             mock_done.assert_not_awaited()
-            # mark_failed chamado
+            # mark_failed chamado com erro sanitizado (tipo, não status bruto).
             mock_failed.assert_awaited_once()
-            assert "503" in mock_failed.call_args[0][2]
+            assert mock_failed.call_args[0][2] == "processing_failed:TwilioSendError"
 
 
 # === Testes do handoff humano (M4.c) ===

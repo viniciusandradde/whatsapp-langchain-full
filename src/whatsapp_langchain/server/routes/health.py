@@ -85,9 +85,7 @@ async def health_queue() -> JSONResponse:
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
-            await conn.execute(
-                "SELECT set_config('app.bypass_rls', 'true', false)"
-            )
+            await conn.execute("SELECT set_config('app.bypass_rls', 'true', false)")
             cur = await conn.execute(
                 """
                 SELECT status, COUNT(*)
@@ -143,9 +141,7 @@ async def health_agent() -> JSONResponse:
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
-            await conn.execute(
-                "SELECT set_config('app.bypass_rls', 'true', false)"
-            )
+            await conn.execute("SELECT set_config('app.bypass_rls', 'true', false)")
             cur = await conn.execute(
                 """
                 SELECT EXTRACT(EPOCH FROM NOW() - MAX(processed_at))
@@ -163,7 +159,9 @@ async def health_agent() -> JSONResponse:
                  WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '10 minutes'
                 """
             )
-            failed_recent = (await cur.fetchone())[0]
+            count_row = await cur.fetchone()
+            assert count_row is not None  # COUNT(*) sempre retorna 1 row
+            failed_recent = count_row[0]
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(
             status_code=503,
@@ -203,9 +201,7 @@ async def health_workers() -> JSONResponse:
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
-            await conn.execute(
-                "SELECT set_config('app.bypass_rls', 'true', false)"
-            )
+            await conn.execute("SELECT set_config('app.bypass_rls', 'true', false)")
             cur = await conn.execute(
                 """
                 SELECT COUNT(DISTINCT id)
@@ -213,7 +209,9 @@ async def health_workers() -> JSONResponse:
                  WHERE status = 'processing' AND lease_until > NOW()
                 """
             )
-            active_leases = (await cur.fetchone())[0]
+            leases_row = await cur.fetchone()
+            assert leases_row is not None  # COUNT(*) sempre retorna 1 row
+            active_leases = leases_row[0]
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(
             status_code=503,

@@ -30,15 +30,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Final
 
-_empresa_var: Final[ContextVar[int | None]] = ContextVar(
-    "rls_empresa_id", default=None
-)
+_empresa_var: Final[ContextVar[int | None]] = ContextVar("rls_empresa_id", default=None)
 _bypass_var: Final[ContextVar[bool]] = ContextVar("rls_bypass", default=False)
 
 
-def set_request_context(
-    empresa_id: int | None = None, *, bypass: bool = False
-) -> None:
+def set_request_context(empresa_id: int | None = None, *, bypass: bool = False) -> None:
     """Seta o context da request. Chamado pelo middleware no início."""
     _empresa_var.set(empresa_id)
     _bypass_var.set(bypass)

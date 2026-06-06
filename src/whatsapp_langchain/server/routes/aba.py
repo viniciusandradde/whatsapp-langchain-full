@@ -136,7 +136,5 @@ async def reorder_my_abas(
     _: None = Depends(require_permission("atendimento.aba.manage")),
 ) -> dict:
     pool = await get_pool()
-    count = await reorder_abas(
-        pool, user_id=user_id, ordered_ids=payload.ordered_ids
-    )
+    count = await reorder_abas(pool, user_id=user_id, ordered_ids=payload.ordered_ids)
     return {"updated": count}

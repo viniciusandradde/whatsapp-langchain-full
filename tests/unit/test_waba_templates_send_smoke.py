@@ -17,15 +17,16 @@ def _client() -> TestClient:
 
 class TestSmokeWabaTemplateSend:
     def test_atendimento_send_template_sem_auth_401(self) -> None:
-        r = _client().post(
-            "/api/atendimentos/1/send-template", json={"template_id": 1}
-        )
+        r = _client().post("/api/atendimentos/1/send-template", json={"template_id": 1})
         assert r.status_code == 401, r.text
 
     def test_campanha_create_sem_auth_401(self) -> None:
         r = _client().post(
             "/api/campanhas",
-            json={"nome": "x", "telefones": ["+5511999999999"],
-                  "message_template_id": 1},
+            json={
+                "nome": "x",
+                "telefones": ["+5511999999999"],
+                "message_template_id": 1,
+            },
         )
         assert r.status_code == 401, r.text

@@ -338,9 +338,7 @@ async def test_search_relevant_handles_json_in_code_fences():
     pool, _ = _mock_simple_pool(*rows, multi=True)
 
     fake_response = MagicMock()
-    fake_response.content = (
-        '```json\n{"ranking": [{"idx": 1, "reason": "ok"}]}\n```'
-    )
+    fake_response.content = '```json\n{"ranking": [{"idx": 1, "reason": "ok"}]}\n```'
     fake_model = MagicMock()
     fake_model.ainvoke = AsyncMock(return_value=fake_response)
     with (

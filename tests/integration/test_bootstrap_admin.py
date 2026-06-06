@@ -101,9 +101,7 @@ def test_bootstrap_empresa_default_exists():
     """Empresa default (id=1, slug=vsa-tech) precisa existir."""
     with psycopg.connect(get_db_url()) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, nome, slug, status FROM empresa WHERE id = 1"
-            )
+            cur.execute("SELECT id, nome, slug, status FROM empresa WHERE id = 1")
             row = cur.fetchone()
 
     assert row is not None, (

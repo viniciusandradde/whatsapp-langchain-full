@@ -18,9 +18,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import structlog
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
@@ -265,8 +266,15 @@ async def create_menu(
             VALUES (%s, %s, %s, %s, %s::text[], %s, %s)
             RETURNING {_MENU_COLS}
             """,
-            (empresa_id, conexao_id, nome, mensagem_boas_vindas,
-             keywords, invalida, user_id),
+            (
+                empresa_id,
+                conexao_id,
+                nome,
+                mensagem_boas_vindas,
+                keywords,
+                invalida,
+                user_id,
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -281,8 +289,7 @@ async def update_menu(
     **fields: Any,
 ) -> MenuChatbot | None:
     # Ver docs/dev/PATCH_PATTERN.md — None = limpar, ausente = não tocar.
-    READONLY = {"id", "empresa_id", "created_at", "updated_at",
-                "created_by_user_id"}
+    READONLY = {"id", "empresa_id", "created_at", "updated_at", "created_by_user_id"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():
@@ -300,11 +307,15 @@ async def update_menu(
     params.extend([empresa_id, menu_id])
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             UPDATE menu_chatbot SET {", ".join(sets)}
              WHERE empresa_id = %s AND id = %s
             RETURNING {_MENU_COLS}
             """,
+            ),
             tuple(params),
         )
         row = await cur.fetchone()
@@ -312,9 +323,7 @@ async def update_menu(
     return _row_to_menu(row) if row else None
 
 
-async def delete_menu(
-    pool: AsyncConnectionPool, empresa_id: int, menu_id: int
-) -> bool:
+async def delete_menu(pool: AsyncConnectionPool, empresa_id: int, menu_id: int) -> bool:
     """Hard delete — cascade limpa items + historicos."""
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -370,9 +379,7 @@ async def list_children(
     return [_row_to_item(r) for r in rows]
 
 
-async def get_item(
-    pool: AsyncConnectionPool, item_id: int
-) -> MenuItem | None:
+async def get_item(pool: AsyncConnectionPool, item_id: int) -> MenuItem | None:
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT {_ITEM_COLS} FROM menu_item WHERE id = %s",
@@ -394,9 +401,7 @@ async def create_item(
     coleta_perguntas: list[dict] | None = None,
 ) -> MenuItem:
     if acao_tipo not in ACAO_TIPOS:
-        raise ValueError(
-            f"acao_tipo '{acao_tipo}' inválido. Esperado: {ACAO_TIPOS}"
-        )
+        raise ValueError(f"acao_tipo '{acao_tipo}' inválido. Esperado: {ACAO_TIPOS}")
     payload = acao_payload or {}
     if ordem is None:
         # Auto-incrementa: pega max(ordem) + 1 do mesmo nível
@@ -417,9 +422,7 @@ async def create_item(
             ordem = (row[0] if row else 1) or 1
 
     coleta_json = (
-        json.dumps(coleta_perguntas, ensure_ascii=False)
-        if coleta_perguntas
-        else None
+        json.dumps(coleta_perguntas, ensure_ascii=False) if coleta_perguntas else None
     )
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -431,8 +434,13 @@ async def create_item(
             RETURNING {_ITEM_COLS}
             """,
             (
-                menu_id, parent_id, ordem, label, acao_tipo,
-                json.dumps(payload), coleta_json,
+                menu_id,
+                parent_id,
+                ordem,
+                label,
+                acao_tipo,
+                json.dumps(payload),
+                coleta_json,
             ),
         )
         row = await cur.fetchone()
@@ -474,8 +482,12 @@ async def update_item(
     params.append(item_id)
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"UPDATE menu_item SET {', '.join(sets)} WHERE id = %s "
-            f"RETURNING {_ITEM_COLS}",
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"UPDATE menu_item SET {', '.join(sets)} WHERE id = %s "
+                f"RETURNING {_ITEM_COLS}",
+            ),
             tuple(params),
         )
         row = await cur.fetchone()
@@ -495,7 +507,9 @@ async def delete_item(pool: AsyncConnectionPool, item_id: int) -> bool:
 
 
 async def reorder_items(
-    pool: AsyncConnectionPool, menu_id: int, parent_id: int | None,
+    pool: AsyncConnectionPool,
+    menu_id: int,
+    parent_id: int | None,
     ordered_ids: list[int],
 ) -> None:
     """Reordena items de um nível (raiz ou submenu).
@@ -643,9 +657,7 @@ async def find_csat_item_ativo(
     """
     # `_ITEM_COLS` não tem alias — prefixa com `mi.` no JOIN pra evitar
     # ambiguidade com `mc.id` (ambas têm coluna `id`).
-    item_cols_aliased = ", ".join(
-        f"mi.{c.strip()}" for c in _ITEM_COLS.split(",")
-    )
+    item_cols_aliased = ", ".join(f"mi.{c.strip()}" for c in _ITEM_COLS.split(","))
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""

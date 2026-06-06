@@ -5,7 +5,7 @@ de chave ausente.
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -168,7 +168,9 @@ async def test_save_credentials_cripto_password_e_secret():
     assert result["username"] == "user-x"
     # Confirma que INSERT recebeu senha CIFRADA (não plain)
     insert_call = next(
-        c for c in conn.execute.await_args_list if "INSERT INTO wareline_credentials" in c.args[0]
+        c
+        for c in conn.execute.await_args_list
+        if "INSERT INTO wareline_credentials" in c.args[0]
     )
     args = insert_call.args[1]
     # senha plain "senha-plain" não pode aparecer nos args
@@ -194,9 +196,7 @@ async def test_update_credentials_partial_sem_password_preserva():
         datetime.now(UTC),
     )
     pool, conn = _mock_pool(("1",), view_row)
-    result = await update_credentials_partial(
-        pool, empresa_id=1, username="novo-user"
-    )
+    result = await update_credentials_partial(pool, empresa_id=1, username="novo-user")
     assert result is not None
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
     # DELETE no token_cache só deve ocorrer se password/secret trocou
@@ -232,8 +232,6 @@ async def test_record_test_result_ok_zera_erro():
 @pytest.mark.asyncio
 async def test_record_test_result_erro_grava_mensagem():
     pool, conn = _mock_pool()
-    await record_test_result(
-        pool, empresa_id=1, ok=False, mensagem="Token inválido"
-    )
+    await record_test_result(pool, empresa_id=1, ok=False, mensagem="Token inválido")
     args = conn.execute.await_args.args[1]
     assert args == (False, "Token inválido", 1)

@@ -154,7 +154,9 @@ async def get_tabela_aguardando(
 
 
 async def get_tabela_em_andamento_sem_resposta(
-    pool: AsyncConnectionPool, empresa_id: int, limit: int = 20,
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    limit: int = 20,
     minutos_threshold: int = 5,
 ) -> list[dict[str, Any]]:
     """Atendimentos em_andamento sem resposta há > N min.
@@ -288,9 +290,7 @@ async def get_chart_por_departamento(
         )
         rows = await cur.fetchall()
 
-    return [
-        {"departamento": r[0], "total": int(r[1] or 0)} for r in rows
-    ]
+    return [{"departamento": r[0], "total": int(r[1] or 0)} for r in rows]
 
 
 async def get_atendentes_online(

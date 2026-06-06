@@ -48,10 +48,12 @@ class TestMediaPreprocess:
         assert result.media_processing_status == "disabled"
 
     async def test_unsupported_media_short_circuits(self):
+        # video/* não é imagem/áudio/documento → kind "unsupported".
+        # (PDF/DOCX agora são "document" suportado, não caem mais aqui.)
         result = await preprocess_incoming_message(
             body="arquivo",
-            media_url="https://example.com/file.pdf",
-            media_type="application/pdf",
+            media_url="https://example.com/clip.mp4",
+            media_type="video/mp4",
         )
         assert result.should_invoke_agent is False
         assert result.auto_response == AUTO_RESPONSE_UNSUPPORTED_MEDIA

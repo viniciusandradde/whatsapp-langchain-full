@@ -176,9 +176,7 @@ async def verify_cliente_identity(
         rows = await cur.fetchall()
 
     # Match nome em Python pra normalizar acentos/case
-    matches = [
-        r for r in rows if r[1] and _normalize_nome(r[1]) == nome_norm
-    ]
+    matches = [r for r in rows if r[1] and _normalize_nome(r[1]) == nome_norm]
     if not matches:
         return {"verified": False, "reason": "nao_encontrado"}
     if len(matches) > 1:

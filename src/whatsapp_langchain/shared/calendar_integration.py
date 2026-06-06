@@ -247,9 +247,7 @@ async def update_aprovador_telefone(
     if value == "":
         value = None
     # Passa string vazia explicitamente quando remove (helper interpreta)
-    return await update_setting_dual(
-        pool, empresa_id, aprovador_telefone=value or ""
-    )
+    return await update_setting_dual(pool, empresa_id, aprovador_telefone=value or "")
 
 
 async def disconnect_calendar(pool: AsyncConnectionPool, empresa_id: int) -> bool:
@@ -278,9 +276,7 @@ async def _resolve_credentials(
         except Exception as e:  # noqa: BLE001
             raise CalendarIntegrationError(f"Falha ao renovar credenciais: {e}") from e
         # Persiste o token novo via dual-write (refresh atualiza token + expiry)
-        await refresh_credentials_dual(
-            pool, empresa_id, credentials_to_json(creds)
-        )
+        await refresh_credentials_dual(pool, empresa_id, credentials_to_json(creds))
     return config, creds
 
 
@@ -477,7 +473,9 @@ async def create_event(
             from whatsapp_langchain.shared.cliente import get_cliente_by_id
 
             cli = await get_cliente_by_id(pool, cliente_id)
-            cliente_nome = (cli.nome if cli else None) or (cli.telefone if cli else None)
+            cliente_nome = (cli.nome if cli else None) or (
+                cli.telefone if cli else None
+            )
 
         token = await _agendamento_helpers.notify_gestor(
             pool,
@@ -493,6 +491,7 @@ async def create_event(
         from whatsapp_langchain.shared.hook_dispatcher import (
             dispatch_event as _dispatch,
         )
+
         await _dispatch(
             pool,
             empresa_id,
@@ -510,7 +509,7 @@ async def create_event(
         )
 
         return {
-            "id": None,                         # ainda sem evento Google
+            "id": None,  # ainda sem evento Google
             "htmlLink": None,
             "agendamento_id": ag.id,
             "status": "pendente",
@@ -537,11 +536,7 @@ async def create_event(
         body["attendees"] = [{"email": attendee_email}]
 
     try:
-        ev = (
-            service.events()
-            .insert(calendarId=config.calendar_id, body=body)
-            .execute()
-        )
+        ev = service.events().insert(calendarId=config.calendar_id, body=body).execute()
     except HttpError as e:
         # 5b. Drift compensado: marca local como cancelado pra não ficar
         # ghost row. Logger crítico pra investigação.
@@ -612,9 +607,7 @@ async def reschedule_event(
     if ag is None:
         raise CalendarIntegrationError("Agendamento não encontrado.")
     if ag.status == "cancelado":
-        raise CalendarIntegrationError(
-            "Não é possível reagendar evento cancelado."
-        )
+        raise CalendarIntegrationError("Não é possível reagendar evento cancelado.")
 
     try:
         novo_inicio = _dt.fromisoformat(novo_inicio_iso.replace("Z", "+00:00"))
@@ -754,9 +747,7 @@ async def sync_calendar_for_empresa(
         google_status = ev.get("status", "confirmed")
         # Google usa 'cancelled' (com double-l), mapeamos pro nosso 'cancelado'
         if google_status == "cancelled" and local.status != "cancelado":
-            await _agendamento_helpers.cancel_local(
-                pool, local.id, empresa_id
-            )
+            await _agendamento_helpers.cancel_local(pool, local.id, empresa_id)
             await _agendamento_helpers.append_history(
                 pool,
                 local.id,
@@ -797,9 +788,7 @@ async def confirm_pending_event(
 
     ag = await _agendamento_helpers.get_by_id(pool, agendamento_id, empresa_id)
     if ag is None:
-        raise CalendarIntegrationError(
-            f"Agendamento {agendamento_id} não encontrado."
-        )
+        raise CalendarIntegrationError(f"Agendamento {agendamento_id} não encontrado.")
     if ag.status != "pendente":
         raise CalendarIntegrationError(
             f"Agendamento {agendamento_id} já tem status {ag.status!r}, não pode confirmar."
@@ -816,11 +805,7 @@ async def confirm_pending_event(
         body["description"] = ag.descricao
 
     try:
-        ev = (
-            service.events()
-            .insert(calendarId=ag.calendar_id, body=body)
-            .execute()
-        )
+        ev = service.events().insert(calendarId=ag.calendar_id, body=body).execute()
     except HttpError as e:
         await _agendamento_helpers.cancel_local(pool, ag.id, empresa_id)
         logger.error(
@@ -1054,7 +1039,9 @@ async def list_events(
                 "htmlLink": ev.get("htmlLink"),
                 "organizer_email": (ev.get("organizer") or {}).get("email"),
                 "attendees": [
-                    a.get("email") for a in (ev.get("attendees") or []) if a.get("email")
+                    a.get("email")
+                    for a in (ev.get("attendees") or [])
+                    if a.get("email")
                 ],
             }
         )

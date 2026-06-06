@@ -25,9 +25,7 @@ def _get_openrouter_llm():
 
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise RuntimeError(
-            "OPENROUTER_API_KEY ausente — configure pra rodar G-Eval."
-        )
+        raise RuntimeError("OPENROUTER_API_KEY ausente — configure pra rodar G-Eval.")
 
     model_name = os.getenv("DEEPEVAL_MODEL", "google/gemini-2.5-flash-lite")
 
@@ -80,9 +78,7 @@ def avaliar_qualidade_resposta(jornada, setor: dict, modalidade: str) -> dict:
         f"Modalidade do turno final: {modalidade}. "
         f"Atendimento ID #{jornada.atendimento_id}. "
     )
-    output_agente = (
-        jornada.response_proativa or jornada.response_final or ""
-    )
+    output_agente = jornada.response_proativa or jornada.response_final or ""
 
     test_case = LLMTestCase(
         input=f"Cliente entrou via setor {setor['slug']} ({modalidade})",

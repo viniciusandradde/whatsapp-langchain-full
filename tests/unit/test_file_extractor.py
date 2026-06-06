@@ -12,7 +12,6 @@ from whatsapp_langchain.shared.file_extractor import (
     extract_text,
 )
 
-
 # --- detect_kind ---
 
 
@@ -55,7 +54,7 @@ def test_detect_kind_image_extensions():
 
 
 async def test_extract_txt_utf8():
-    text = await extract_text("notas.txt", "Olá mundo, café.".encode("utf-8"))
+    text = await extract_text("notas.txt", "Olá mundo, café.".encode())
     assert "Olá mundo" in text
     assert "café" in text
 
@@ -122,7 +121,8 @@ def _build_pdf(text: str) -> bytes:
         b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
         b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
         b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
-        b"4 0 obj<</Length " + str(len(text) + 50).encode()
+        b"4 0 obj<</Length "
+        + str(len(text) + 50).encode()
         + b">>\nstream\nBT /F1 12 Tf 50 700 Td ("
         + text.encode("ascii", errors="replace")
         + b") Tj ET\nendstream\nendobj\n"
@@ -171,9 +171,7 @@ async def test_extract_image_calls_ocr():
     from whatsapp_langchain.shared import file_extractor as fe
 
     fake_png = b"\x89PNG\r\n\x1a\n" + b"x" * 100
-    with patch.object(
-        fe, "_ocr_image", AsyncMock(return_value="texto da imagem")
-    ):
+    with patch.object(fe, "_ocr_image", AsyncMock(return_value="texto da imagem")):
         text = await extract_text("foto.png", fake_png)
     assert "texto da imagem" in text
 

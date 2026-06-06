@@ -548,9 +548,7 @@ class TestConsistenciaAPIAdmin:
         )
         assert agents_resp.status_code == 200
         agents = agents_resp.json()["agents"]
-        assert "vsa_tech" in agents, (
-            f"vsa_tech não está na lista: {agents}"
-        )
+        assert "vsa_tech" in agents, f"vsa_tech não está na lista: {agents}"
         print(f"  ✓ Agentes disponíveis: {agents}")
 
         # --- GET /api/chats ---

@@ -222,9 +222,7 @@ async def log_lgpd_event(
             agent_slug=agent_slug,
         )
     except LGPDEventTypeError as exc:
-        return json.dumps(
-            {"logged": False, "reason": str(exc)}, ensure_ascii=False
-        )
+        return json.dumps({"logged": False, "reason": str(exc)}, ensure_ascii=False)
     except Exception as exc:
         logger.exception("log_lgpd_event_failed", error=str(exc))
         return json.dumps(

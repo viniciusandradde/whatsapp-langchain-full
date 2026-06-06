@@ -51,7 +51,10 @@ class TestCreateContent:
         )
         with pytest.raises(tc.TwilioContentError) as exc:
             await tc.create_content(
-                ACCOUNT, TOKEN, friendly_name="x", language="pt_BR",
+                ACCOUNT,
+                TOKEN,
+                friendly_name="x",
+                language="pt_BR",
                 types=tc.build_text_types("oi"),
             )
         assert exc.value.status_code == 400

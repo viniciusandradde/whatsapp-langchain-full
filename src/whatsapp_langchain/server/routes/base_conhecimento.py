@@ -262,8 +262,10 @@ async def upload_documento(
             doc_ids.append(out.id)
         logger.info(
             "base_conhecimento_uploaded_md_split",
-            empresa_id=empresa_id, filename=arquivo.filename,
-            sections=len(sections), bytes=len(raw),
+            empresa_id=empresa_id,
+            filename=arquivo.filename,
+            sections=len(sections),
+            bytes=len(raw),
         )
     else:
         body = DocumentoConhecimentoInput(
@@ -279,8 +281,12 @@ async def upload_documento(
         doc_ids.append(out.id)
         logger.info(
             "base_conhecimento_uploaded",
-            empresa_id=empresa_id, doc_id=out.id, titulo=out.titulo,
-            filename=arquivo.filename, bytes=len(raw), chars=len(texto),
+            empresa_id=empresa_id,
+            doc_id=out.id,
+            titulo=out.titulo,
+            filename=arquivo.filename,
+            bytes=len(raw),
+            chars=len(texto),
         )
 
     return {"docs_created": len(doc_ids), "doc_ids": doc_ids}

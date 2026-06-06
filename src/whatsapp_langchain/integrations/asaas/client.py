@@ -45,8 +45,7 @@ class AsaasClient:
     def __init__(self, *, timeout_seconds: float = 30.0):
         if not settings.asaas_enabled:
             raise AsaasError(
-                "ASAAS_API_KEY não configurado. "
-                "Setar em env vars + redeploy.",
+                "ASAAS_API_KEY não configurado. Setar em env vars + redeploy.",
                 status_code=503,
             )
         self._key = settings.asaas_api_key.get_secret_value()  # type: ignore[union-attr]
@@ -74,9 +73,11 @@ class AsaasClient:
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
                     resp = await client.request(
-                        method, url,
+                        method,
+                        url,
                         headers=self._headers(),
-                        json=json, params=params,
+                        json=json,
+                        params=params,
                     )
                 # 4xx — erro do cliente, não retry
                 if 400 <= resp.status_code < 500:
@@ -87,8 +88,10 @@ class AsaasClient:
                     msg = self._extract_error_message(body, resp.status_code)
                     logger.warning(
                         "asaas_4xx",
-                        method=method, path=path,
-                        status=resp.status_code, body=body,
+                        method=method,
+                        path=path,
+                        status=resp.status_code,
+                        body=body,
                     )
                     raise AsaasError(msg, status_code=resp.status_code, body=body)
                 # 5xx — retry com backoff
@@ -98,7 +101,7 @@ class AsaasClient:
                         status_code=resp.status_code,
                     )
                     if attempt < 2:
-                        await asyncio.sleep(2 ** attempt)
+                        await asyncio.sleep(2**attempt)
                         continue
                     raise last_err
                 # 2xx ok
@@ -109,7 +112,7 @@ class AsaasClient:
                     f"Asaas connection error: {exc}", status_code=None
                 )
                 if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                     continue
                 raise last_err from exc
         raise last_err or AsaasError("Unknown Asaas error")
@@ -193,9 +196,7 @@ class AsaasClient:
         return await self._request("DELETE", f"/subscriptions/{subscription_id}")
 
     async def list_subscription_payments(self, subscription_id: str) -> list[dict]:
-        resp = await self._request(
-            "GET", f"/subscriptions/{subscription_id}/payments"
-        )
+        resp = await self._request("GET", f"/subscriptions/{subscription_id}/payments")
         return resp.get("data", [])
 
     # ---- Payments (cobrança individual, fora de subscription) ----

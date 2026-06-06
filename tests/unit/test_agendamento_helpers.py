@@ -9,7 +9,7 @@ Mocka pool/cursor pra evitar dep de DB real. Foca em:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -25,22 +25,22 @@ def mock_pool_with_row():
     cur = MagicMock()
     cur.fetchone = AsyncMock(
         return_value=(
-            42,                                    # id
-            1,                                     # empresa_id
-            "primary",                             # calendar_id
-            "user-uuid",                           # user_id_criador
-            None,                                  # cliente_id
-            "google-evt-id",                       # evento_id_externo
-            "Reunião Wareline",                    # summary
-            "descrição",                           # descricao
-            datetime(2026, 5, 5, 14, 0, tzinfo=timezone.utc),
-            datetime(2026, 5, 5, 15, 0, tzinfo=timezone.utc),
-            "confirmado",                          # status
-            True,                                  # aprovado
-            False,                                 # gestor_notificado
-            {"htmlLink": "https://..."},           # payload_externo
-            datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),  # created_at
-            datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc),  # updated_at
+            42,  # id
+            1,  # empresa_id
+            "primary",  # calendar_id
+            "user-uuid",  # user_id_criador
+            None,  # cliente_id
+            "google-evt-id",  # evento_id_externo
+            "Reunião Wareline",  # summary
+            "descrição",  # descricao
+            datetime(2026, 5, 5, 14, 0, tzinfo=UTC),
+            datetime(2026, 5, 5, 15, 0, tzinfo=UTC),
+            "confirmado",  # status
+            True,  # aprovado
+            False,  # gestor_notificado
+            {"htmlLink": "https://..."},  # payload_externo
+            datetime(2026, 5, 4, 12, 0, tzinfo=UTC),  # created_at
+            datetime(2026, 5, 4, 12, 0, tzinfo=UTC),  # updated_at
         )
     )
     cur.fetchall = AsyncMock(return_value=[])
@@ -59,8 +59,8 @@ async def test_create_inserts_and_returns_object(mock_pool_with_row):
         empresa_id=1,
         calendar_id="primary",
         summary="Reunião Wareline",
-        data_inicio=datetime(2026, 5, 5, 14, 0, tzinfo=timezone.utc),
-        data_fim=datetime(2026, 5, 5, 15, 0, tzinfo=timezone.utc),
+        data_inicio=datetime(2026, 5, 5, 14, 0, tzinfo=UTC),
+        data_fim=datetime(2026, 5, 5, 15, 0, tzinfo=UTC),
         user_id_criador="user-uuid",
     )
     assert out.id == 42
@@ -78,8 +78,8 @@ async def test_create_rejects_invalid_status(mock_pool_with_row):
             empresa_id=1,
             calendar_id="primary",
             summary="x",
-            data_inicio=datetime.now(timezone.utc),
-            data_fim=datetime.now(timezone.utc),
+            data_inicio=datetime.now(UTC),
+            data_fim=datetime.now(UTC),
             status="banana",
         )
 
@@ -102,8 +102,8 @@ async def test_list_by_period_with_filters_appends_clauses(mock_pool_with_row):
     await ag.list_by_period(
         pool,
         1,
-        inicio=datetime(2026, 5, 1, tzinfo=timezone.utc),
-        fim=datetime(2026, 5, 31, tzinfo=timezone.utc),
+        inicio=datetime(2026, 5, 1, tzinfo=UTC),
+        fim=datetime(2026, 5, 31, tzinfo=UTC),
         status="confirmado",
         cliente_id=99,
         limit=50,
@@ -121,8 +121,8 @@ async def test_list_by_period_invalid_status(mock_pool_with_row):
         await ag.list_by_period(
             pool,
             1,
-            inicio=datetime.now(timezone.utc),
-            fim=datetime.now(timezone.utc),
+            inicio=datetime.now(UTC),
+            fim=datetime.now(UTC),
             status="zzz",
         )
 

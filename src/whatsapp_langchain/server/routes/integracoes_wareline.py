@@ -187,24 +187,16 @@ async def testar_wareline(
                 )
             else:
                 raise
-        await record_test_result(
-            pool, empresa_id=empresa_id, ok=True, mensagem=None
-        )
+        await record_test_result(pool, empresa_id=empresa_id, ok=True, mensagem=None)
         return {"ok": True, "mensagem": mensagem}
     except WarelineConfigError as exc:
         msg = str(exc)
-        await record_test_result(
-            pool, empresa_id=empresa_id, ok=False, mensagem=msg
-        )
+        await record_test_result(pool, empresa_id=empresa_id, ok=False, mensagem=msg)
         return {"ok": False, "mensagem": msg}
     except WarelineError as exc:
         msg = str(exc)
-        logger.warning(
-            "wareline_test_failed", empresa_id=empresa_id, error=msg
-        )
-        await record_test_result(
-            pool, empresa_id=empresa_id, ok=False, mensagem=msg
-        )
+        logger.warning("wareline_test_failed", empresa_id=empresa_id, error=msg)
+        await record_test_result(pool, empresa_id=empresa_id, ok=False, mensagem=msg)
         return {"ok": False, "mensagem": msg}
 
 

@@ -74,7 +74,7 @@ class MediaExtractionValidator:
 
         # Bonus: confere que a parte extraída tem conteúdo (>20 chars após prefixo)
         idx = ni.find(prefixo)
-        depois = ni[idx + len(prefixo):][:200].strip()
+        depois = ni[idx + len(prefixo) :][:200].strip()
         if len(depois) < 20:
             return ValidationResult(
                 name=self.name,

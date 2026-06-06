@@ -21,7 +21,6 @@ from fastapi.testclient import TestClient
 
 from .helpers import API_BASE_URL, get_admin_api_headers, get_db_url
 
-
 # ============================================================================
 # Smoke (TestClient — sem DB real, roda em CI)
 # ============================================================================
@@ -391,9 +390,7 @@ class TestE2E:
             headers=h,
             timeout=5,
         )
-        r = httpx.delete(
-            f"{API_BASE_URL}/api/abas/{aba1['id']}", headers=h, timeout=5
-        )
+        r = httpx.delete(f"{API_BASE_URL}/api/abas/{aba1['id']}", headers=h, timeout=5)
         assert r.status_code == 200, r.text
         assert r.json()["ok"] is True
         # Atendimento agora tá sem aba (delete fez UPDATE aba_id=NULL)
@@ -415,9 +412,7 @@ class TestE2E:
         assert items[0]["id"] == aba2["id"]
 
         # --- 13. DELETE de aba inexistente → 404 ---
-        r = httpx.delete(
-            f"{API_BASE_URL}/api/abas/999999", headers=h, timeout=5
-        )
+        r = httpx.delete(f"{API_BASE_URL}/api/abas/999999", headers=h, timeout=5)
         assert r.status_code == 404
 
         # --- 14. Reorder muda ordem ---
@@ -540,6 +535,4 @@ class TestE2EIsolamento:
         finally:
             with psycopg.connect(db_url, autocommit=True) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        'DELETE FROM auth."user" WHERE id = %s', (other_user,)
-                    )
+                    cur.execute('DELETE FROM auth."user" WHERE id = %s', (other_user,))

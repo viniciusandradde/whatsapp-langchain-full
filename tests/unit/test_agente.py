@@ -29,16 +29,20 @@ class TestEstiloPresets:
 
     def test_temperatura_crescente_por_estilo(self):
         """Quanto mais "criativo", maior temperatura."""
-        temps = [ESTILO_PRESETS[k][0] for k in [
-            "preciso", "equilibrado", "criativo", "muito_criativo"
-        ]]
-        assert temps == sorted(temps), "temperatura deve subir do mais preciso pro mais criativo"
+        temps = [
+            ESTILO_PRESETS[k][0]
+            for k in ["preciso", "equilibrado", "criativo", "muito_criativo"]
+        ]
+        assert temps == sorted(temps), (
+            "temperatura deve subir do mais preciso pro mais criativo"
+        )
 
     def test_top_p_crescente_por_estilo(self):
         """top_p também sobe (mais sampling permissivo em estilos criativos)."""
-        top_ps = [ESTILO_PRESETS[k][1] for k in [
-            "preciso", "equilibrado", "criativo", "muito_criativo"
-        ]]
+        top_ps = [
+            ESTILO_PRESETS[k][1]
+            for k in ["preciso", "equilibrado", "criativo", "muito_criativo"]
+        ]
         assert top_ps == sorted(top_ps)
 
     def test_valores_dentro_dos_limites_validos(self):

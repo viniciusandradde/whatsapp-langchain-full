@@ -25,7 +25,6 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
-from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -84,8 +83,12 @@ async def list_pendentes(
         rows = await cur.fetchall()
     return [
         AcaoPendente(
-            id=r[0], atendimento_id=r[1], agente_slug=r[2],
-            tool_name=r[3], tool_args=r[4] or {}, motivo=r[5],
+            id=r[0],
+            atendimento_id=r[1],
+            agente_slug=r[2],
+            tool_name=r[3],
+            tool_args=r[4] or {},
+            motivo=r[5],
             status=r[6],
             expires_at=r[7].isoformat() if r[7] else "",
             created_at=r[8].isoformat() if r[8] else "",
@@ -119,7 +122,10 @@ async def approve(
         raise HTTPException(status_code=404, detail="Ação não pendente.")
     logger.info(
         "hitl_approved",
-        acao_id=acao_id, tool=row[0], atendimento_id=row[1], user_id=user_id,
+        acao_id=acao_id,
+        tool=row[0],
+        atendimento_id=row[1],
+        user_id=user_id,
     )
     return {"ok": True, "tool_name": row[0]}
 
@@ -149,7 +155,10 @@ async def reject(
         raise HTTPException(status_code=404, detail="Ação não pendente.")
     logger.info(
         "hitl_rejected",
-        acao_id=acao_id, tool=row[0], atendimento_id=row[1], user_id=user_id,
+        acao_id=acao_id,
+        tool=row[0],
+        atendimento_id=row[1],
+        user_id=user_id,
     )
     return {"ok": True}
 
@@ -162,6 +171,7 @@ async def events_stream(
 
     UI assina pra atualizar lista em real-time.
     """
+
     async def gen():
         # Snapshot inicial
         pool = await get_pool()
@@ -174,6 +184,7 @@ async def events_stream(
                 (empresa_id,),
             )
             row = await cur.fetchone()
+        assert row is not None  # COUNT(*) sempre retorna 1 row
         snapshot = {"pending_count": int(row[0] or 0)}
         yield f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
 
@@ -183,11 +194,11 @@ async def events_stream(
                 await conn.set_autocommit(True)
                 await conn.execute("LISTEN acao_pendente_change")
                 while True:
-                    notif = await conn.notifies(timeout=25.0)
-                    if not notif:
-                        yield ": heartbeat\n\n"
-                        continue
-                    for n in notif:
+                    # notifies() é um async generator: cede cada Notify até o
+                    # timeout expirar. Se nada chegou na janela, manda heartbeat.
+                    received = False
+                    async for n in conn.notifies(timeout=25.0):
+                        received = True
                         try:
                             payload = json.loads(n.payload)
                         except json.JSONDecodeError:
@@ -195,6 +206,8 @@ async def events_stream(
                         if payload.get("empresa_id") != empresa_id:
                             continue
                         yield f"event: change\ndata: {json.dumps(payload)}\n\n"
+                    if not received:
+                        yield ": heartbeat\n\n"
         except asyncio.CancelledError:
             return
         except Exception as e:

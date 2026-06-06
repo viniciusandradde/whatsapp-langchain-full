@@ -30,7 +30,6 @@ from langchain_core.messages import HumanMessage
 from whatsapp_langchain.shared.db import close_pool, get_pool
 from whatsapp_langchain.shared.llm import create_chat_model
 
-
 CACHE_DIR = Path(__file__).parent / "cache" / "classify"
 SETORES = {"ti", "hospitalar", "financeiro", "diretoria", "operacional", "outro"}
 
@@ -72,10 +71,10 @@ async def classify_one(llm, msg: str, sem: asyncio.Semaphore) -> str:
         return cached
     async with sem:
         try:
-            resp = await llm.ainvoke([
-                HumanMessage(content=PROMPT_TEMPLATE.format(msg=msg[:300]))
-            ])
-            text = (resp.content if isinstance(resp.content, str) else str(resp.content))
+            resp = await llm.ainvoke(
+                [HumanMessage(content=PROMPT_TEMPLATE.format(msg=msg[:300]))]
+            )
+            text = resp.content if isinstance(resp.content, str) else str(resp.content)
             text = text.strip().lower().split()[0] if text else "outro"
             text = text.strip(".,;:")
             if text not in SETORES:
@@ -138,14 +137,15 @@ async def update_setores(pool, updates: list[tuple[int, str]]) -> int:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--empresa-id", type=int,
-                        default=int(os.environ.get("EMPRESA_ID", "999")))
+    parser.add_argument(
+        "--empresa-id", type=int, default=int(os.environ.get("EMPRESA_ID", "999"))
+    )
     parser.add_argument("--limit", type=int, default=100000)
     parser.add_argument("--batch", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=8)
     args = parser.parse_args()
 
-    print(f"=== Sprint R.2 Classificador Setorial ===")
+    print("=== Sprint R.2 Classificador Setorial ===")
     print(f"empresa_id: {args.empresa_id}")
     print(f"concurrency: {args.concurrency}, batch: {args.batch}")
     print()

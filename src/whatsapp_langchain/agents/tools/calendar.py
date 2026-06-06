@@ -318,11 +318,9 @@ async def calendar_list_events(
         return f"Nenhum evento entre {time_min_iso} e {time_max_iso}."
     lines = []
     for e in events:
-        attendees = (
-            f" com {', '.join(e['attendees'])}" if e.get("attendees") else ""
-        )
+        attendees = f" com {', '.join(e['attendees'])}" if e.get("attendees") else ""
         lines.append(
             f"- {e.get('summary') or '(sem título)'} "
             f"({e.get('start')} → {e.get('end')}){attendees}"
         )
-    return f"Eventos no período:\n" + "\n".join(lines)
+    return "Eventos no período:\n" + "\n".join(lines)

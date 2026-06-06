@@ -88,7 +88,8 @@ async def _hyde_expand(query: str, agent_slug: str | None = None) -> str:
 
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         expanded = (
-            response.content if isinstance(response.content, str)
+            response.content
+            if isinstance(response.content, str)
             else str(response.content)
         ).strip()
         # Combina query original + expansão pra preservar termos exatos
@@ -236,9 +237,7 @@ async def get_documento(
     return _row_to_documento(row) if row else None
 
 
-async def has_active_documents(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> bool:
+async def has_active_documents(pool: AsyncConnectionPool, empresa_id: int) -> bool:
     """Gate barato — usado pelo loader pra decidir se injeta a tool."""
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -362,8 +361,7 @@ async def delete_documento(
 ) -> bool:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "DELETE FROM documento_conhecimento "
-            "WHERE id = %s AND empresa_id = %s",
+            "DELETE FROM documento_conhecimento WHERE id = %s AND empresa_id = %s",
             (doc_id, empresa_id),
         )
     deleted = (cur.rowcount or 0) > 0
@@ -510,18 +508,21 @@ async def _llm_rerank(
     )
     prompt = (
         "Você é um reranker de RAG. Dada a pergunta do cliente e os trechos "
-        "candidatos, escolha os {top_k} MAIS úteis pra responder.\n\n"
-        "PERGUNTA:\n{query}\n\n"
-        "TRECHOS CANDIDATOS:\n{bullets}\n\n"
+        f"candidatos, escolha os {top_k} MAIS úteis pra responder.\n\n"
+        f"PERGUNTA:\n{query}\n\n"
+        f"TRECHOS CANDIDATOS:\n{bullets}\n\n"
         "Responda APENAS com JSON no formato:\n"
-        '{{"ranking": [{{"idx": <número>, "reason": "<uma frase>"}}]}}\n'
+        '{"ranking": [{"idx": <número>, "reason": "<uma frase>"}]}\n'
         "Onde `idx` é o número entre colchetes do trecho (0..N-1)."
-    ).format(top_k=top_k, query=query, bullets=bullets)
+    )
 
     try:
         model = create_chat_model(model=RERANKER_MODEL, temperature=0.0)
         response = await model.ainvoke(prompt)
+        # response.content pode ser str ou list[str|dict] (LangChain) — normaliza p/ str.
         raw = response.content if hasattr(response, "content") else str(response)
+        if not isinstance(raw, str):
+            raw = str(raw)
         # LLM às vezes embrulha em ```json — limpa.
         cleaned = raw.strip()
         if cleaned.startswith("```"):
@@ -616,8 +617,11 @@ async def search_relevant(
     if search_mode == "hybrid":
         try:
             candidates = await _hybrid_search(
-                pool, empresa_id, effective_query,
-                fetch_k=fetch_k, pasta_ids=pasta_ids,
+                pool,
+                empresa_id,
+                effective_query,
+                fetch_k=fetch_k,
+                pasta_ids=pasta_ids,
             )
         except Exception as e:
             # Fallback pra cosine se a function SQL falhar (ex: mig 065
@@ -625,13 +629,19 @@ async def search_relevant(
             # durante deploy.
             logger.warning("hybrid_search_fallback_to_cosine", error=str(e))
             candidates = await _cosine_search(
-                pool, empresa_id, effective_query,
-                fetch_k=fetch_k, pasta_ids=pasta_ids,
+                pool,
+                empresa_id,
+                effective_query,
+                fetch_k=fetch_k,
+                pasta_ids=pasta_ids,
             )
     else:
         candidates = await _cosine_search(
-            pool, empresa_id, effective_query,
-            fetch_k=fetch_k, pasta_ids=pasta_ids,
+            pool,
+            empresa_id,
+            effective_query,
+            fetch_k=fetch_k,
+            pasta_ids=pasta_ids,
         )
 
     candidates = [c for c in candidates if c[3] >= min_score]

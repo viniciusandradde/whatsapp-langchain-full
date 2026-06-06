@@ -61,14 +61,17 @@ class TestSmokeAsaasWebhook:
 
 class TestAsaasClientConfig:
     def test_raises_se_nao_configurado(self):
-        from whatsapp_langchain.integrations.asaas import AsaasClient, AsaasError
         import pytest
+
+        from whatsapp_langchain.integrations.asaas import AsaasClient, AsaasError
 
         # Settings em dev tem asaas_api_key=None
         from whatsapp_langchain.shared.config import settings
 
         if settings.asaas_enabled:
-            pytest.skip("ASAAS_API_KEY configurado nesse env — teste só faz sentido sem")
+            pytest.skip(
+                "ASAAS_API_KEY configurado nesse env — teste só faz sentido sem"
+            )
 
         with pytest.raises(AsaasError, match="não configurado"):
             AsaasClient()
@@ -94,15 +97,12 @@ class TestWebhookEventProcessing:
 
         # Mock _resolve, _log, _mark_log
         monkeypatch.setattr(
-            asaas_mod, "_resolve_empresa_from_event",
+            asaas_mod,
+            "_resolve_empresa_from_event",
             AsyncMock(return_value=1),
         )
-        monkeypatch.setattr(
-            asaas_mod, "_log_billing_event", AsyncMock(return_value=99)
-        )
-        monkeypatch.setattr(
-            asaas_mod, "_mark_log_processado", AsyncMock()
-        )
+        monkeypatch.setattr(asaas_mod, "_log_billing_event", AsyncMock(return_value=99))
+        monkeypatch.setattr(asaas_mod, "_mark_log_processado", AsyncMock())
 
         result = await asaas_mod.process_asaas_webhook(
             pool=None,  # type: ignore
@@ -120,12 +120,11 @@ class TestWebhookEventProcessing:
         from whatsapp_langchain.shared import asaas as asaas_mod
 
         monkeypatch.setattr(
-            asaas_mod, "_resolve_empresa_from_event",
+            asaas_mod,
+            "_resolve_empresa_from_event",
             AsyncMock(return_value=None),
         )
-        monkeypatch.setattr(
-            asaas_mod, "_log_billing_event", AsyncMock(return_value=99)
-        )
+        monkeypatch.setattr(asaas_mod, "_log_billing_event", AsyncMock(return_value=99))
 
         result = await asaas_mod.process_asaas_webhook(
             pool=None,  # type: ignore

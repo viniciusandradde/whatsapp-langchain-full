@@ -143,7 +143,7 @@ async def update_tag(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            UPDATE tag SET {', '.join(sets)}
+            UPDATE tag SET {", ".join(sets)}
              WHERE id = %s AND empresa_id = %s
              RETURNING id, nome, cor, descricao, ativo,
                        created_at, updated_at
