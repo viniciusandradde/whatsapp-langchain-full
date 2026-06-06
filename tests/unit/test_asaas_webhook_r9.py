@@ -91,3 +91,34 @@ def test_webhook_5xx_on_processing_error(monkeypatch):
         json={"event": "PAYMENT_CONFIRMED", "payment": {}},
     )
     assert resp.status_code == 503, resp.text
+
+
+async def test_get_asaas_effective_empty_key_disabled(monkeypatch):
+    """API key vazia/whitespace NÃO conta como configurado (bug: chamava Asaas
+    com token vazio → 401 access_token_not_found, que o front mostrava como
+    'Sessão expirada')."""
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(asaas, "get_platform_config", AsyncMock(return_value=None))
+    monkeypatch.setattr(settings, "asaas_api_key", SecretStr("   "))
+
+    cfg = await asaas.get_asaas_effective(object())
+    assert cfg["enabled"] is False
+    assert cfg["source"] == "none"
+
+
+async def test_get_asaas_effective_real_env_key_enabled(monkeypatch):
+    """API key real no env → enabled, source=env, key strip-ada."""
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(asaas, "get_platform_config", AsyncMock(return_value=None))
+    monkeypatch.setattr(settings, "asaas_api_key", SecretStr(" $aact_real "))
+
+    cfg = await asaas.get_asaas_effective(object())
+    assert cfg["enabled"] is True
+    assert cfg["source"] == "env"
+    assert cfg["api_key"] == "$aact_real"

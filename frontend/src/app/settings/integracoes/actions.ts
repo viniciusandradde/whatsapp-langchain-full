@@ -226,7 +226,11 @@ export async function saveAsaasConfigAction(payload: {
 export async function testAsaasAction(): Promise<TestResult> {
   try {
     const r = await testAsaasConnection();
-    return { ok: r.ok, mensagem: `Conta Asaas: ${r.conta}` };
+    if (r.ok) return { ok: true, mensagem: `Conta Asaas: ${r.conta}` };
+    return {
+      ok: false,
+      mensagem: r.erro || "Falha ao validar a credencial Asaas.",
+    };
   } catch (e) {
     return { ok: false, mensagem: toError(e) };
   }

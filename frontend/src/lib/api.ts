@@ -2129,9 +2129,10 @@ export async function saveAsaasConfig(payload: {
 
 export async function testAsaasConnection(): Promise<{
   ok: boolean;
-  conta: string;
+  conta?: string;
+  erro?: string;
 }> {
-  return apiFetch<{ ok: boolean; conta: string }>(
+  return apiFetch<{ ok: boolean; conta?: string; erro?: string }>(
     "/api/admin/integracoes/asaas/testar",
     { method: "POST" }
   );

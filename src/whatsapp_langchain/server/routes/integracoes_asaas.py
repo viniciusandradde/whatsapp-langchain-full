@@ -102,12 +102,17 @@ async def put_config(
 
 @router.post("/testar")
 async def testar(user_id: str = Depends(get_user_id_from_request)):
-    """Valida a credencial efetiva chamando GET /myAccount no Asaas."""
+    """Valida a credencial efetiva chamando GET /myAccount no Asaas.
+
+    Retorna SEMPRE 200 com `{ok, conta?, erro?}`. NÃO propaga o status HTTP do
+    Asaas — um 401 do Asaas (key inválida/ausente) NÃO é 401 desta API; se
+    propagasse, o apiFetch do front trataria como "Sessão expirada".
+    """
     await _require_superadmin(user_id)
     pool = await get_pool()
     try:
         client = await AsaasClient.from_pool(pool)
         acc = await client.get_account()
     except AsaasError as e:
-        raise HTTPException(status_code=e.status_code or 502, detail=str(e)) from e
+        return {"ok": False, "erro": str(e)}
     return {"ok": True, "conta": acc.get("name") or acc.get("email") or "Asaas"}

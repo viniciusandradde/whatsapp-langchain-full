@@ -44,26 +44,33 @@ async def get_asaas_effective(pool: AsyncConnectionPool) -> dict[str, Any]:
     a quem não deve — é uso interno do billing/webhook. A UI usa flags derivadas.
     """
     db = await get_platform_config(pool, ASAAS_SLUG)
-    if db and db.get("api_key"):
+    # api_key VAZIA/whitespace = NÃO configurado (env ASAAS_API_KEY="" conta como
+    # SecretStr não-None → não basta checar presença; tem que checar conteúdo).
+    if db and (db.get("api_key") or "").strip():
         environment = (db.get("environment") or "sandbox").strip().lower()
         return {
             "enabled": True,
-            "api_key": db["api_key"],
+            "api_key": (db.get("api_key") or "").strip(),
             "environment": environment,
             "base_url": _base_url_for(environment),
-            "webhook_token": db.get("webhook_token") or "",
+            "webhook_token": (db.get("webhook_token") or "").strip(),
             "success_url": db.get("success_url") or "",
             "cancel_url": db.get("cancel_url") or "",
             "source": "db",
         }
-    if settings.asaas_enabled:
+    env_key = (
+        settings.asaas_api_key.get_secret_value().strip()
+        if settings.asaas_api_key
+        else ""
+    )
+    if env_key:
         return {
             "enabled": True,
-            "api_key": settings.asaas_api_key.get_secret_value(),  # type: ignore[union-attr]
+            "api_key": env_key,
             "environment": settings.asaas_environment,
             "base_url": settings.asaas_base_url,
             "webhook_token": (
-                settings.asaas_webhook_token.get_secret_value()
+                settings.asaas_webhook_token.get_secret_value().strip()
                 if settings.asaas_webhook_token
                 else ""
             ),
