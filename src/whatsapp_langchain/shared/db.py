@@ -73,7 +73,9 @@ async def _acquire_advisory_lock(conn: AsyncConnection, lock_id: int) -> None:
     """Adquire advisory lock sem deixar transação ociosa bloqueando DDL concorrente."""
     while True:
         cursor = await conn.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-        locked = (await cursor.fetchone())[0]
+        lock_row = await cursor.fetchone()
+        assert lock_row is not None  # SELECT escalar sempre retorna 1 row
+        locked = lock_row[0]
         await conn.commit()
         if locked:
             return
@@ -143,21 +145,15 @@ class _RlsAwarePool:
                         await conn.rollback()
                     # Em autocommit (IDLE) ou transação ativa válida
                     # (INTRANS), SET vai funcionar.
-                    await conn.execute(
-                        "SELECT set_config('app.empresa_id', '', false)"
-                    )
-                    await conn.execute(
-                        "SELECT set_config('app.bypass_rls', '', false)"
-                    )
+                    await conn.execute("SELECT set_config('app.empresa_id', '', false)")
+                    await conn.execute("SELECT set_config('app.bypass_rls', '', false)")
                 except Exception as exc:
                     # Último recurso: marca conn como inválida pro pool
                     # descartar. Sem isso, conn fica com context vazado.
                     logger.warning(
                         "rls_context_cleanup_failed",
                         error=str(exc),
-                        tx_status=str(getattr(
-                            conn.info, "transaction_status", "?"
-                        )),
+                        tx_status=str(getattr(conn.info, "transaction_status", "?")),
                     )
                     try:
                         await conn.close()  # pool reabre uma nova
@@ -289,18 +285,14 @@ async def with_empresa_context(
         ValueError: se empresa_id None E bypass_rls=False.
     """
     if empresa_id is None and not bypass_rls:
-        raise ValueError(
-            "with_empresa_context requer empresa_id ou bypass_rls=True."
-        )
+        raise ValueError("with_empresa_context requer empresa_id ou bypass_rls=True.")
 
     async with db_pool.connection() as conn:
         async with conn.transaction():
             # SET LOCAL não aceita parameter binding em psycopg; usa
             # set_config(name, value, is_local) que aceita.
             if bypass_rls:
-                await conn.execute(
-                    "SELECT set_config('app.bypass_rls', 'true', true)"
-                )
+                await conn.execute("SELECT set_config('app.bypass_rls', 'true', true)")
             else:
                 await conn.execute(
                     "SELECT set_config('app.empresa_id', %s, true)",

@@ -131,6 +131,7 @@ async def save_avaliacao(
         )
     except Exception as exc:
         import structlog as _structlog
+
         _structlog.get_logger().warning(
             "langfuse_nps_score_failed",
             atendimento_id=atendimento_id,
@@ -243,8 +244,7 @@ async def set_aguardando_avaliacao(
     """Marca o atendimento como aguardando nota (após enviar pesquisa CSAT)."""
     async with pool.connection() as conn:
         await conn.execute(
-            "UPDATE atendimento SET aguardando_avaliacao_at = NOW() "
-            "WHERE id = %s",
+            "UPDATE atendimento SET aguardando_avaliacao_at = NOW() WHERE id = %s",
             (atendimento_id,),
         )
         await conn.commit()
@@ -269,9 +269,7 @@ async def set_aguardando_comentario(
         await conn.commit()
 
 
-async def clear_flags(
-    pool: AsyncConnectionPool, atendimento_id: int
-) -> None:
+async def clear_flags(pool: AsyncConnectionPool, atendimento_id: int) -> None:
     """Limpa ambas as flags (após capturar comentário ou expirar)."""
     async with pool.connection() as conn:
         await conn.execute(
@@ -309,10 +307,7 @@ async def trigger_csat_se_ativo(
         config = await get_empresa_csat_config(pool, empresa_id)
         if config is None:
             return False
-        pergunta = (
-            config["pergunta"]
-            + "\n\nResponda com um número de *0* a *10*."
-        )
+        pergunta = config["pergunta"] + "\n\nResponda com um número de *0* a *10*."
         await send_system_outbound(
             pool,
             atendimento_id=atendimento_id,

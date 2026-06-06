@@ -181,9 +181,7 @@ class TestRlsIsolation:
             rows = await cur.fetchall()
         ids = {r[0] for r in rows}
         assert empresas["a"] in ids
-        assert empresas["b"] not in ids, (
-            f"VAZAMENTO RLS: empresa A viu hook da B {ids}"
-        )
+        assert empresas["b"] not in ids, f"VAZAMENTO RLS: empresa A viu hook da B {ids}"
 
     async def test_context_empresa_b_filtra_so_b(
         self, pool_app: AsyncConnectionPool, empresas: dict[str, int]
@@ -197,9 +195,7 @@ class TestRlsIsolation:
             rows = await cur.fetchall()
         ids = {r[0] for r in rows}
         assert empresas["b"] in ids
-        assert empresas["a"] not in ids, (
-            f"VAZAMENTO RLS: empresa B viu hook da A {ids}"
-        )
+        assert empresas["a"] not in ids, f"VAZAMENTO RLS: empresa B viu hook da A {ids}"
 
     async def test_bypass_rls_ve_tudo(
         self, pool_app: AsyncConnectionPool, empresas: dict[str, int]
@@ -267,9 +263,7 @@ class TestRlsIsolation:
                 f"({cur.rowcount} rows)"
             )
 
-    async def test_role_app_eh_nobypassrls(
-        self, pool_app: AsyncConnectionPool
-    ):
+    async def test_role_app_eh_nobypassrls(self, pool_app: AsyncConnectionPool):
         """Sanidade: role app NÃO tem rolbypassrls (senão tests são farsa)."""
         async with pool_app.connection() as conn:
             cur = await conn.execute(
@@ -284,9 +278,7 @@ class TestRlsIsolation:
         assert row[1] is False, "chat_nexus_app não pode ter BYPASSRLS"
         assert row[2] is False, "chat_nexus_app não pode ser SUPERUSER"
 
-    async def test_with_empresa_context_requer_arg(
-        self, pool: AsyncConnectionPool
-    ):
+    async def test_with_empresa_context_requer_arg(self, pool: AsyncConnectionPool):
         """Sanidade: chamar sem empresa_id e sem bypass → ValueError."""
         with pytest.raises(ValueError, match="empresa_id ou bypass_rls"):
             async with with_empresa_context(pool, None) as _:

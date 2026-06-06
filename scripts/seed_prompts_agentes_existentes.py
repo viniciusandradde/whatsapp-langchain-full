@@ -587,9 +587,7 @@ async def seed_prompts(
             sql_update += " WHERE id = %s"
             args.append(agente_id)
             await conn.execute(sql_update, tuple(args))  # type: ignore[arg-type]
-            print(
-                f"  ✓ {slug:30s} (id={agente_id}, prompt {len(cfg['prompt'])} chars)"
-            )
+            print(f"  ✓ {slug:30s} (id={agente_id}, prompt {len(cfg['prompt'])} chars)")
             updated += 1
 
         if not dry_run:

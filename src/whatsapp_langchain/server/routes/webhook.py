@@ -163,6 +163,7 @@ async def webhook_twilio(
     conexao_id = conexao.id
     # Sprint A.2 — seta context RLS após resolver empresa via conexao.
     from whatsapp_langchain.shared.rls_context import set_request_context
+
     set_request_context(empresa_id)
     # Override por query (Studio dev) ganha do default da conexão.
     requested_agent = agent or conexao.default_agent_id

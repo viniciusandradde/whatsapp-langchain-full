@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import logging
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
+
+from langchain_core.runnables import RunnableConfig
 
 from whatsapp_langchain.workflows.runner import WorkflowRunner
 
@@ -86,7 +88,9 @@ async def get_workflow_state_snapshot(
     if runner is None:
         return None
 
-    config = {"configurable": {"thread_id": f"wf:{atendimento_id}"}}
+    config = cast(
+        RunnableConfig, {"configurable": {"thread_id": f"wf:{atendimento_id}"}}
+    )
     snapshot = await runner._graph.aget_state(config)
     if not snapshot.values:
         return None
@@ -134,11 +138,7 @@ async def get_workflow_state_snapshot(
     except Exception as exc:  # noqa: BLE001
         logger.warning("workflow_state_events_load_failed err=%s", exc)
 
-    is_terminal = (
-        bool(snapshot.values)
-        and not snapshot.next
-        and not snapshot.tasks
-    )
+    is_terminal = bool(snapshot.values) and not snapshot.next and not snapshot.tasks
 
     return {
         "atendimento_id": atendimento_id,

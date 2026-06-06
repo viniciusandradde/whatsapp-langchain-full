@@ -74,8 +74,7 @@ MENU_PRINCIPAL = {
         "ask_nome": {
             "type": "ask_text",
             "prompt": (
-                "Obrigado pela confiança! "
-                "Para agilizar, digite seu Nome Completo:"
+                "Obrigado pela confiança! Para agilizar, digite seu Nome Completo:"
             ),
             "save_as": "nome_cliente",
             "validate_with": "min_len:2",
@@ -575,8 +574,7 @@ MENU_EXAMES = {
         "boas_vindas": {
             "type": "send_messages",
             "messages": [
-                "Você está na Central de Diagnósticos e Exames "
-                "(Laboratório e Imagem).",
+                "Você está na Central de Diagnósticos e Exames (Laboratório e Imagem).",
             ],
             "next": "menu",
         },
@@ -801,8 +799,7 @@ MENU_EXAMES = {
                 "CPF: {{vars.cpf_paciente}} | Ação: {{vars.acao_agenda}}"
             ),
             "message_to_client": (
-                "Solicitação enviada. Um atendente vai confirmar a "
-                "alteração na agenda."
+                "Solicitação enviada. Um atendente vai confirmar a alteração na agenda."
             ),
             "next": "__end__",
         },
@@ -866,8 +863,7 @@ MENU_TESOURARIA = {
         "pag_data": {
             "type": "ask_text",
             "prompt": (
-                "Confirme a Data de Nascimento do Paciente ou "
-                "Responsável (DD/MM/AAAA):"
+                "Confirme a Data de Nascimento do Paciente ou Responsável (DD/MM/AAAA):"
             ),
             "save_as": "data_nasc_fin",
             "validate_with": "data_br",
@@ -1163,8 +1159,7 @@ MENU_ORCAMENTOS = {
         "status_protocolo": {
             "type": "ask_text",
             "prompt": (
-                "Se você já tem um Número de Protocolo, digite abaixo "
-                "(ou 'Não tenho'):"
+                "Se você já tem um Número de Protocolo, digite abaixo (ou 'Não tenho'):"
             ),
             "save_as": "protocolo_orcamento",
             "validate_with": "min_len:1",
@@ -1231,8 +1226,7 @@ MENU_PORTARIA = {
         "menu": {
             "type": "ask_choice",
             "prompt": (
-                "Você está na Portaria e Recepção Central. "
-                "Selecione o assunto:"
+                "Você está na Portaria e Recepção Central. Selecione o assunto:"
             ),
             "choices": [
                 {
@@ -1265,16 +1259,14 @@ MENU_PORTARIA = {
                 "Para garantir a segurança e o bem-estar dos pacientes, "
                 "seguimos regras estritas de visitação (horários, "
                 "vestimenta e itens permitidos).",
-                "Acesse o Manual Completo: "
-                "https://hospitalmackenzie.com.br/visitantes",
+                "Acesse o Manual Completo: https://hospitalmackenzie.com.br/visitantes",
             ],
             "next": "vis_cad",
         },
         "vis_cad": {
             "type": "ask_choice",
             "prompt": (
-                "Deseja adiantar seu cadastro de visitante para agilizar "
-                "sua entrada?"
+                "Deseja adiantar seu cadastro de visitante para agilizar sua entrada?"
             ),
             "choices": [
                 {"label": "Sim, quero adiantar", "value": "1", "next": "vis_paciente"},
@@ -1338,8 +1330,7 @@ MENU_PORTARIA = {
         "ach_local": {
             "type": "ask_text",
             "prompt": (
-                "Onde e quando você acha que perdeu? "
-                "(Ex: Recepção, ontem à tarde):"
+                "Onde e quando você acha que perdeu? (Ex: Recepção, ontem à tarde):"
             ),
             "save_as": "local_perda",
             "validate_with": "min_len:3",
@@ -1373,8 +1364,7 @@ MENU_PORTARIA = {
             "messages": [
                 "⚠️ Atenção: Se esta é uma emergência médica, NÃO aguarde "
                 "atendimento por aqui.",
-                "Dirija-se imediatamente à Entrada de Emergência "
-                "(Lateral Esquerda).",
+                "Dirija-se imediatamente à Entrada de Emergência (Lateral Esquerda).",
             ],
             "next": "__end__",
         },
@@ -1391,8 +1381,7 @@ MENU_OUTRAS = {
         "menu": {
             "type": "ask_choice",
             "prompt": (
-                "Você está no Menu de Informações Institucionais. "
-                "Selecione o assunto:"
+                "Você está no Menu de Informações Institucionais. Selecione o assunto:"
             ),
             "choices": [
                 {
@@ -1451,10 +1440,7 @@ MENU_OUTRAS = {
         },
         "cap_dados": {
             "type": "ask_text",
-            "prompt": (
-                "Para qual paciente (nome e quarto) você solicita a "
-                "visita?"
-            ),
+            "prompt": ("Para qual paciente (nome e quarto) você solicita a visita?"),
             "save_as": "solicitacao_capelania",
             "validate_with": "min_len:3",
             "next": "cap_handover",
@@ -1474,8 +1460,7 @@ MENU_OUTRAS = {
                 "Pedido: {{vars.solicitacao_capelania}}"
             ),
             "message_to_client": (
-                "Pedido registrado. Enviaremos ao pastor responsável "
-                "pelo setor."
+                "Pedido registrado. Enviaremos ao pastor responsável pelo setor."
             ),
             "next": "__end__",
         },
@@ -1483,8 +1468,7 @@ MENU_OUTRAS = {
         "rh_resp": {
             "type": "send_messages",
             "messages": [
-                "Ficamos felizes com seu interesse em fazer parte da nossa "
-                "equipe!",
+                "Ficamos felizes com seu interesse em fazer parte da nossa equipe!",
                 "Neste canal, não recebemos arquivos de currículo. Por "
                 "favor, cadastre-se em nosso banco de talentos no site ou "
                 "envie para o e-mail oficial: rh@hospitalmackenzie.com.br",
@@ -1661,10 +1645,7 @@ MENU_OUVIDORIA = {
         # 3. Prontuário
         "pron_solicitante": {
             "type": "ask_choice",
-            "prompt": (
-                "O Prontuário é um documento sigiloso. Quem está "
-                "solicitando?"
-            ),
+            "prompt": ("O Prontuário é um documento sigiloso. Quem está solicitando?"),
             "choices": [
                 {
                     "label": "Sou o Próprio Paciente",
@@ -1681,10 +1662,7 @@ MENU_OUVIDORIA = {
         },
         "pron_dados": {
             "type": "ask_text",
-            "prompt": (
-                "Digite o Nome Completo do Paciente e a Data de "
-                "Nascimento:"
-            ),
+            "prompt": ("Digite o Nome Completo do Paciente e a Data de Nascimento:"),
             "save_as": "dados_paciente_prontuario",
             "validate_with": "min_len:5",
             "next": "pron_formato",

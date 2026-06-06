@@ -18,9 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -33,7 +31,6 @@ from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import close_pool, get_pool
 from whatsapp_langchain.shared.llm import create_chat_model
 
-
 SETORES = ["ti", "hospitalar", "financeiro", "diretoria", "operacional", "outro"]
 MIN_CLUSTER_SIZE = 3
 SIMILARITY_THRESHOLD = 0.78
@@ -43,6 +40,7 @@ MAX_SUGGESTIONS_PER_SETOR = 10
 
 def _cosine(a: list[float], b: list[float]) -> float:
     import math
+
     dot = sum(x * y for x, y in zip(a, b, strict=True))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(x * x for x in b))
@@ -75,7 +73,7 @@ async def embed_all(msgs: list[str]) -> list[list[float]]:
     # Batch de 100 (limite OpenAI)
     all_vecs = []
     for i in range(0, len(msgs), 100):
-        chunk = msgs[i:i + 100]
+        chunk = msgs[i : i + 100]
         vecs = await embedder.aembed_documents(chunk)
         all_vecs.extend(vecs)
         print(f"    embed {i + len(chunk)}/{len(msgs)}")
@@ -159,8 +157,9 @@ async def get_pasta_id_for_setor(pool, setor: str) -> int | None:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--setor", default=None,
-                        help="Apenas um setor (default: todos)")
+    parser.add_argument(
+        "--setor", default=None, help="Apenas um setor (default: todos)"
+    )
     parser.add_argument("--limit", type=int, default=MAX_SUGGESTIONS_PER_SETOR)
     args = parser.parse_args()
 
@@ -178,16 +177,16 @@ async def main() -> int:
             print(f"  msgs: {len(msgs_data)}")
 
             msgs = [m[1] for m in msgs_data]
-            print(f"  embedding...")
+            print("  embedding...")
             vecs = await embed_all(msgs)
-            print(f"  clustering...")
+            print("  clustering...")
             clusters = cluster_greedy(msgs, vecs)
             print(f"  clusters: {len(clusters)} (min size {MIN_CLUSTER_SIZE})")
 
             pasta_id = await get_pasta_id_for_setor(pool, setor)
             print(f"  pasta_id: {pasta_id}")
 
-            top_clusters = clusters[:args.limit]
+            top_clusters = clusters[: args.limit]
             for i, cluster in enumerate(top_clusters):
                 titulo, conteudo = await generate_draft(setor, cluster)
                 async with pool.connection() as conn:
@@ -198,11 +197,19 @@ async def main() -> int:
                            queries_amostra, cluster_size, status)
                         VALUES (%s, %s, %s, %s, %s, %s, 'pending')
                         """,
-                        (999, pasta_id, titulo, conteudo,
-                         cluster[:MAX_QUERIES_PER_CLUSTER], len(cluster)),
+                        (
+                            999,
+                            pasta_id,
+                            titulo,
+                            conteudo,
+                            cluster[:MAX_QUERIES_PER_CLUSTER],
+                            len(cluster),
+                        ),
                     )
                     await conn.commit()
-                print(f"    [{i+1}/{len(top_clusters)}] cluster {len(cluster)} → {titulo[:60]}")
+                print(
+                    f"    [{i + 1}/{len(top_clusters)}] cluster {len(cluster)} → {titulo[:60]}"
+                )
                 total_created += 1
     finally:
         await close_pool()

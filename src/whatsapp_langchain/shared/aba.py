@@ -121,7 +121,7 @@ async def update_aba(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            UPDATE aba SET {', '.join(sets)}
+            UPDATE aba SET {", ".join(sets)}
              WHERE id = %s AND user_id = %s AND ativo = TRUE
              RETURNING id, nome, cor, ordem, ativo, created_at, updated_at
             """,  # type: ignore[arg-type]
@@ -143,9 +143,7 @@ async def update_aba(
     }
 
 
-async def delete_aba(
-    pool: AsyncConnectionPool, *, aba_id: int, user_id: str
-) -> bool:
+async def delete_aba(pool: AsyncConnectionPool, *, aba_id: int, user_id: str) -> bool:
     """Soft delete (ativo=FALSE) + limpa pinning dos atendimentos.
 
     Retorna False se aba não é do user."""

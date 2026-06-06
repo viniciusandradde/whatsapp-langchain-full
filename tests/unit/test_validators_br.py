@@ -16,8 +16,8 @@ from whatsapp_langchain.shared.validators_br import (
     only_digits,
 )
 
-
 # ---- CPF ----
+
 
 class TestCpf:
     def test_cpf_valido_so_digitos(self):
@@ -54,6 +54,7 @@ class TestCpf:
 
 # ---- CNPJ ----
 
+
 class TestCnpj:
     def test_cnpj_valido_so_digitos(self):
         # CNPJ de teste — 11.222.333/0001-81
@@ -81,6 +82,7 @@ class TestCnpj:
 
 # ---- CEP ----
 
+
 class TestCep:
     def test_cep_valido(self):
         assert is_valid_cep("01310100") is True
@@ -101,6 +103,7 @@ class TestCep:
 
 # ---- UF ----
 
+
 class TestUf:
     def test_uf_valido(self):
         assert is_valid_uf("SP") is True
@@ -115,6 +118,7 @@ class TestUf:
 
 
 # ---- only_digits helper ----
+
 
 class TestOnlyDigits:
     def test_strip_mascaras(self):

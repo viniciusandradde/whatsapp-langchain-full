@@ -283,9 +283,7 @@ async def set_default_endpoint(
     pool = await get_pool()
     ok = await set_default_agente(pool, empresa_id, slug)
     if not ok:
-        raise HTTPException(
-            status_code=404, detail="Agente não encontrado ou inativo."
-        )
+        raise HTTPException(status_code=404, detail="Agente não encontrado ou inativo.")
     await record_audit(
         pool,
         empresa_id=empresa_id,

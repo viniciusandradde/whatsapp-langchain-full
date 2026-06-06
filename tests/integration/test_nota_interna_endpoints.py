@@ -29,15 +29,11 @@ def _client() -> TestClient:
 
 class TestSmoke:
     def test_nota_sem_auth_401(self) -> None:
-        resp = _client().post(
-            "/api/atendimentos/1/nota", json={"texto": "x"}
-        )
+        resp = _client().post("/api/atendimentos/1/nota", json={"texto": "x"})
         assert resp.status_code == 401
 
     def test_marcar_lido_sem_auth_401(self) -> None:
-        assert (
-            _client().post("/api/atendimentos/1/marcar-lido").status_code == 401
-        )
+        assert _client().post("/api/atendimentos/1/marcar-lido").status_code == 401
 
 
 # ============================================================================

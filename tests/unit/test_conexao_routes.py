@@ -13,6 +13,13 @@ from whatsapp_langchain.server.dependencies import (
 from whatsapp_langchain.server.main import app
 from whatsapp_langchain.shared.models import Conexao
 
+# Requer Postgres real: cada GET/POST /api/* passa pelo middleware
+# install_admin_rate_limit → enforce_bucket_limit → get_pool(), que tenta
+# conectar no Postgres (host `db:5432`) e TRAVA sem DB. Os helpers de rota são
+# mockados, mas o pool do middleware não. Marca o módulo como docker_demo
+# (gate de CI unit roda sem DB).
+pytestmark = pytest.mark.docker_demo
+
 
 def _conexao(**overrides) -> Conexao:
     now = datetime.now(UTC)

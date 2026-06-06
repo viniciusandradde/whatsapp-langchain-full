@@ -58,9 +58,7 @@ def is_low_value(msg: str) -> bool:
     return False
 
 
-async def analyze_dataset(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> CleanStats:
+async def analyze_dataset(pool: AsyncConnectionPool, empresa_id: int) -> CleanStats:
     """Conta quantas msgs cairiam em cada filtro (dry-run)."""
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -95,9 +93,7 @@ async def analyze_dataset(
     )
 
 
-async def clean_dataset(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> CleanStats:
+async def clean_dataset(pool: AsyncConnectionPool, empresa_id: int) -> CleanStats:
     """Marca status='disabled' nas mensagens de baixo valor.
 
     Idempotente: re-runs não fazem nada nos já desativados.

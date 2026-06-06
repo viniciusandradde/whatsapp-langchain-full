@@ -126,7 +126,8 @@ async def test_upsert_cifra_credenciais_no_api_connection():
         google_email="x@y",
     )
     api_insert = next(
-        c for c in conn.execute.await_args_list
+        c
+        for c in conn.execute.await_args_list
         if "INSERT INTO api_connection" in c.args[0]
     )
     args = api_insert.args[1]
@@ -156,9 +157,7 @@ async def test_refresh_atualiza_ambos():
 @pytest.mark.asyncio
 async def test_update_setting_calendar_id_atualiza_ambos():
     pool, conn = _mock_pool()
-    ok = await update_setting_dual(
-        pool, empresa_id=1, calendar_id="novo_id"
-    )
+    ok = await update_setting_dual(pool, empresa_id=1, calendar_id="novo_id")
     assert ok is True
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
     # api_connection: merge JSONB
@@ -174,11 +173,10 @@ async def test_update_setting_calendar_id_atualiza_ambos():
 async def test_update_setting_aprovador_vazia_string_eh_none():
     """aprovador_telefone='' deve virar NULL (desativa fluxo)."""
     pool, conn = _mock_pool()
-    await update_setting_dual(
-        pool, empresa_id=1, aprovador_telefone=""
-    )
+    await update_setting_dual(pool, empresa_id=1, aprovador_telefone="")
     legacy_update = next(
-        c for c in conn.execute.await_args_list
+        c
+        for c in conn.execute.await_args_list
         if "UPDATE empresa_calendar_config" in c.args[0]
     )
     args = legacy_update.args[1]
@@ -227,7 +225,7 @@ async def test_migrate_skip_empresas_ja_em_api_connection():
     )
 
     # SELECT inicial retorna 2 rows (não-migradas)
-    now = datetime.now(UTC)
+    datetime.now(UTC)
     rows = [
         (10, {"token": "t1"}, "a@b", "primary", "UTC", None, True, "u1"),
         (20, {"token": "t2"}, "c@d", "cal-x", "BRT", "+55", True, "u2"),

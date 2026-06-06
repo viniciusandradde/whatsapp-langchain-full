@@ -72,9 +72,9 @@ class TestFetchPhoneDetails:
         from whatsapp_langchain.shared.config import settings
 
         version = settings.waba_graph_api_version
-        respx_mock.get(
-            f"https://graph.facebook.com/{version}/BAD"
-        ).mock(return_value=httpx.Response(400, json={"error": "invalid"}))
+        respx_mock.get(f"https://graph.facebook.com/{version}/BAD").mock(
+            return_value=httpx.Response(400, json={"error": "invalid"})
+        )
         with pytest.raises(oauth.WabaOAuthError):
             await oauth.fetch_phone_details("tok", "BAD")
 

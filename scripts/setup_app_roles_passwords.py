@@ -40,7 +40,6 @@ import sys
 
 import psycopg
 
-
 ROLES = [
     "chat_nexus_app",
     "chat_nexus_migrator",
@@ -96,9 +95,7 @@ def _apply(database_url: str, passwords: dict[str, str], dry_run: bool) -> None:
                     raise SystemExit(
                         f"❌ {role}: senha contém caractere proibido (';\\\\)."
                     )
-                cur.execute(
-                    f"ALTER ROLE {role} WITH LOGIN PASSWORD '{password}'"
-                )
+                cur.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD '{password}'")
                 print(f"  ✓ {role}: LOGIN habilitado")
             if not dry_run:
                 conn.commit()

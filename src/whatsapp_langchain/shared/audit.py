@@ -34,10 +34,11 @@ inteiro) e calcula diff via comparação de retornos antes/depois.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from fastapi import Request
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
@@ -134,14 +135,18 @@ async def list_audit(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (cláusula WHERE), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             SELECT id, empresa_id, user_id, action, entity_type, entity_id,
                    payload_diff, ip, user_agent, request_id, at
               FROM audit_log
-             WHERE {' AND '.join(where)}
+             WHERE {" AND ".join(where)}
              ORDER BY at DESC
              LIMIT %s OFFSET %s
             """,
+            ),
             tuple(params),
         )
         rows = await cur.fetchall()

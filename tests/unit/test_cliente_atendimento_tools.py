@@ -1,8 +1,8 @@
 """Tests das 8 tools de cliente/atendimento (M5.b.1)."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,7 +12,6 @@ from whatsapp_langchain.shared.models import (
     Cliente,
     ClienteAnotacao,
 )
-
 
 # --- helpers ---
 
@@ -126,9 +125,7 @@ async def test_get_cliente_profile_returns_structured_data():
             ),
         ),
     ):
-        out = await ct.get_cliente_profile.ainvoke(
-            {"runtime": _runtime()}
-        )
+        out = await ct.get_cliente_profile.ainvoke({"runtime": _runtime()})
     assert "nome: João" in out
     assert "email: x@y.com" in out
     assert "tags: vip" in out
@@ -145,9 +142,7 @@ async def test_get_cliente_profile_handles_missing_atendimento():
 async def test_get_cliente_profile_anti_cross_tenant():
     """Atendimento de outra empresa → tool não retorna dados."""
     other_atd = _atendimento(empresa_id=99)  # ≠ runtime.empresa_id=1
-    with patch.object(
-        ct, "get_atendimento_by_id", AsyncMock(return_value=other_atd)
-    ):
+    with patch.object(ct, "get_atendimento_by_id", AsyncMock(return_value=other_atd)):
         out = await ct.get_cliente_profile.ainvoke({"runtime": _runtime()})
     assert "não encontrado" in out
 
@@ -176,9 +171,7 @@ async def test_get_cliente_history_empty():
         patch.object(
             ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
         ),
-        patch.object(
-            ct, "list_atendimentos_by_cliente", AsyncMock(return_value=[])
-        ),
+        patch.object(ct, "list_atendimentos_by_cliente", AsyncMock(return_value=[])),
     ):
         out = await ct.get_cliente_history.ainvoke({"runtime": _runtime()})
     assert "Cliente novo" in out
@@ -194,9 +187,7 @@ async def test_get_cliente_history_caps_limit_at_10():
             ct, "list_atendimentos_by_cliente", AsyncMock(return_value=[])
         ) as mock_list,
     ):
-        await ct.get_cliente_history.ainvoke(
-            {"limit": 50, "runtime": _runtime()}
-        )
+        await ct.get_cliente_history.ainvoke({"limit": 50, "runtime": _runtime()})
     kwargs = mock_list.await_args.kwargs
     assert kwargs["limit"] == 10
 
@@ -324,9 +315,7 @@ async def test_update_cliente_returns_fields_set():
         patch.object(
             ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
         ),
-        patch.object(
-            ct, "update_cliente_partial", AsyncMock(return_value=_cliente())
-        ),
+        patch.object(ct, "update_cliente_partial", AsyncMock(return_value=_cliente())),
     ):
         out = await ct.update_cliente.ainvoke(
             {"nome": "Maria", "email": "m@x.com", "runtime": _runtime()}
@@ -386,52 +375,127 @@ async def test_close_atendimento_normalizes_motivo():
             AsyncMock(return_value=_atendimento(status="resolvido")),
         ) as mock_close,
     ):
-        await ct.close_atendimento.ainvoke(
-            {"motivo": "lixo", "runtime": _runtime()}
-        )
+        await ct.close_atendimento.ainvoke({"motivo": "lixo", "runtime": _runtime()})
     assert mock_close.await_args.args[2] == "resolvido"
 
 
 # --- transfer_to_human ---
 
 
+def _conn_cm_pool() -> MagicMock:
+    """Pool MagicMock cujo `connection()` é um async CM (pra INSERT auditoria
+    + SELECT name do atendente que o transfer_to_human faz inline)."""
+    cur = AsyncMock()
+    cur.fetchone = AsyncMock(return_value=("Atendente Fulano",))
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value=cur)
+    conn.commit = AsyncMock()
+    pool = MagicMock()
+    pool.connection.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.connection.return_value.__aexit__ = AsyncMock(return_value=None)
+    return pool
+
+
+def _transfer_mocks(*, departamento_default_id: int = 3, dep_ativo: bool = True):
+    """Conjunto de patches do grafo de dependências do transfer_to_human
+    (refeito após o tool ganhar departamento determinístico + resumo
+    obrigatório + auto-claim por capacidade + outbound/hook).
+
+    Retorna um context manager `patch.multiple`-like via lista de patchers e
+    os mocks relevantes pra asserção.
+    """
+    agente = MagicMock()
+    agente.departamento_default_id = departamento_default_id
+    dep = MagicMock()
+    dep.id = departamento_default_id
+    dep.nome = "Suporte"
+    dep.ativo = dep_ativo
+    atd_updated = _atendimento(status="aguardando")
+    # complete_triagem devolve Atendimento; alguns campos extras são lidos.
+    atd_updated.protocolo = "ATD-001"
+    atd_updated.prioridade = "alta"
+    atd_updated.classificacao = None
+    atd_updated.sentimento = None
+    atd_updated.cliente_nome = "Cliente X"
+    atd_updated.cliente_telefone = "+5511999"
+    return agente, dep, atd_updated
+
+
 @pytest.mark.asyncio
 async def test_transfer_to_human_adds_tag_and_anotacao():
-    now = datetime.now(UTC)
     new = ClienteAnotacao(
         id=99,
         cliente_id=10,
         user_id="agente:u1",
-        conteudo="[HANDOFF SOLICITADO] cliente reclamando",
-        created_at=now,
+        conteudo="[HANDOFF → Suporte] cliente reclamando",
+        created_at=datetime.now(UTC),
     )
+    agente, dep, atd_updated = _transfer_mocks()
+    pool = _conn_cm_pool()
     with (
+        patch.object(ct, "get_pool", new=AsyncMock(return_value=pool)),
         patch.object(
             ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
+        ),
+        patch.object(ct, "get_agente_by_slug", AsyncMock(return_value=agente)),
+        patch.object(ct, "get_departamento_by_id", AsyncMock(return_value=dep)),
+        patch.object(ct, "complete_triagem", AsyncMock(return_value=atd_updated)),
+        patch.object(ct, "pick_best_atendente", AsyncMock(return_value=None)),
+        patch.object(ct, "claim_atendimento", AsyncMock()),
+        patch.object(ct, "dispatch_event", AsyncMock()),
+        patch(
+            "whatsapp_langchain.shared.outbound.send_system_outbound",
+            new=AsyncMock(),
         ),
         patch.object(ct, "add_tag", AsyncMock()) as mock_tag,
         patch.object(ct, "add_anotacao", AsyncMock(return_value=new)) as mock_anot,
     ):
         out = await ct.transfer_to_human.ainvoke(
-            {"motivo": "cliente reclamando", "runtime": _runtime()}
+            {
+                "motivo": "cliente reclamando",
+                "resumo": "- Cliente X\n- Quer suporte",
+                "runtime": _runtime(),
+            }
         )
-    assert "atendimento humano" in out
+    assert "transferido" in out.lower()
+    assert "Suporte" in out
     assert mock_tag.await_args.args[2] == "handoff"
-    assert "[HANDOFF SOLICITADO]" in mock_anot.await_args.args[3]
+    # Anotação agora carrega o depto resolvido + resumo IA.
+    assert "[HANDOFF → Suporte]" in mock_anot.await_args.args[3]
+    assert "cliente reclamando" in mock_anot.await_args.args[3]
 
 
 @pytest.mark.asyncio
 async def test_transfer_to_human_handles_empty_motivo():
-    now = datetime.now(UTC)
     new = ClienteAnotacao(
-        id=1, cliente_id=10, user_id="agente:u1", conteudo="x", created_at=now
+        id=1,
+        cliente_id=10,
+        user_id="agente:u1",
+        conteudo="x",
+        created_at=datetime.now(UTC),
     )
+    agente, dep, atd_updated = _transfer_mocks()
+    pool = _conn_cm_pool()
     with (
+        patch.object(ct, "get_pool", new=AsyncMock(return_value=pool)),
         patch.object(
             ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
+        ),
+        patch.object(ct, "get_agente_by_slug", AsyncMock(return_value=agente)),
+        patch.object(ct, "get_departamento_by_id", AsyncMock(return_value=dep)),
+        patch.object(ct, "complete_triagem", AsyncMock(return_value=atd_updated)),
+        patch.object(ct, "pick_best_atendente", AsyncMock(return_value=None)),
+        patch.object(ct, "claim_atendimento", AsyncMock()),
+        patch.object(ct, "dispatch_event", AsyncMock()),
+        patch(
+            "whatsapp_langchain.shared.outbound.send_system_outbound",
+            new=AsyncMock(),
         ),
         patch.object(ct, "add_tag", AsyncMock()),
         patch.object(ct, "add_anotacao", AsyncMock(return_value=new)) as mock_anot,
     ):
-        await ct.transfer_to_human.ainvoke({"motivo": "", "runtime": _runtime()})
+        await ct.transfer_to_human.ainvoke(
+            {"motivo": "", "resumo": "- resumo", "runtime": _runtime()}
+        )
+    # motivo vazio → "sem motivo informado" no texto da anotação.
     assert "sem motivo" in mock_anot.await_args.args[3].lower()

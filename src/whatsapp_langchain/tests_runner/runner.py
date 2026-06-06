@@ -82,10 +82,20 @@ _COLS = (
 
 def _row_to_run(row) -> TestRun:
     return TestRun(
-        id=row[0], started_by_user_id=row[1], started_at=row[2],
-        finished_at=row[3], status=row[4], filtro=row[5], total=row[6],
-        passed=row[7], failed=row[8], duration_seconds=row[9], pid=row[10],
-        storage_path=row[11], log_size_bytes=row[12], error_message=row[13],
+        id=row[0],
+        started_by_user_id=row[1],
+        started_at=row[2],
+        finished_at=row[3],
+        status=row[4],
+        filtro=row[5],
+        total=row[6],
+        passed=row[7],
+        failed=row[8],
+        duration_seconds=row[9],
+        pid=row[10],
+        storage_path=row[11],
+        log_size_bytes=row[12],
+        error_message=row[13],
         modo=row[14] if len(row) > 14 and row[14] else "e2e",
         started_by_name=row[15] if len(row) > 15 else None,
     )
@@ -170,11 +180,18 @@ async def _spawn_pytest_async(
         target_dir = "tests/e2e/"
 
     cmd = [
-        sys.executable, "-m", "pytest", target_dir,
+        sys.executable,
+        "-m",
+        "pytest",
+        target_dir,
         f"--alluredir={abs_path}/allure-results",
         f"--junitxml={abs_path}/junit.xml",
-        "-m", "docker_demo", "-v", "--tb=line",
-        "-p", "no:cacheprovider",
+        "-m",
+        "docker_demo",
+        "-v",
+        "--tb=line",
+        "-p",
+        "no:cacheprovider",
     ]
     if filtro:
         cmd.extend(["-k", filtro])
@@ -201,7 +218,9 @@ async def _spawn_pytest_async(
     except Exception as e:
         logger.error("test_runner_spawn_failed", run_id=run_id, error=str(e))
         await _mark_finished(
-            pool, run_id, status="error",
+            pool,
+            run_id,
+            status="error",
             error_message=f"Falha ao iniciar pytest: {e}",
             duration_seconds=0,
         )
@@ -245,24 +264,45 @@ async def _spawn_pytest_async(
     log_size = log_path.stat().st_size if log_path.exists() else 0
 
     await _mark_finished(
-        pool, run_id, status=final_status, total=total, passed=passed,
-        failed=failed, duration_seconds=duration, log_size=log_size,
+        pool,
+        run_id,
+        status=final_status,
+        total=total,
+        passed=passed,
+        failed=failed,
+        duration_seconds=duration,
+        log_size=log_size,
     )
     _write_manifest(
-        abs_path, status=final_status, total=total, passed=passed,
-        failed=failed, duration_seconds=duration, log_size=log_size,
+        abs_path,
+        status=final_status,
+        total=total,
+        passed=passed,
+        failed=failed,
+        duration_seconds=duration,
+        log_size=log_size,
     )
     logger.info(
-        "test_runner_finished", run_id=run_id, status=final_status,
-        total=total, passed=passed, failed=failed, duration_seconds=duration,
+        "test_runner_finished",
+        run_id=run_id,
+        status=final_status,
+        total=total,
+        passed=passed,
+        failed=failed,
+        duration_seconds=duration,
     )
 
 
 async def _generate_allure_html(abs_path: Path) -> None:
     proc = await asyncio.create_subprocess_exec(
-        "allure", "generate", str(abs_path / "allure-results"),
-        "-o", str(abs_path / "allure"), "--clean",
-        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        "allure",
+        "generate",
+        str(abs_path / "allure-results"),
+        "-o",
+        str(abs_path / "allure"),
+        "--clean",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
@@ -271,10 +311,16 @@ async def _generate_allure_html(abs_path: Path) -> None:
 
 
 async def _mark_finished(
-    pool: AsyncConnectionPool, run_id: int, *, status: str,
-    total: int | None = None, passed: int | None = None,
-    failed: int | None = None, duration_seconds: float | None = None,
-    log_size: int = 0, error_message: str | None = None,
+    pool: AsyncConnectionPool,
+    run_id: int,
+    *,
+    status: str,
+    total: int | None = None,
+    passed: int | None = None,
+    failed: int | None = None,
+    duration_seconds: float | None = None,
+    log_size: int = 0,
+    error_message: str | None = None,
 ) -> None:
     async with pool.connection() as conn:
         await conn.execute(
@@ -284,8 +330,16 @@ async def _mark_finished(
             "duration_seconds=COALESCE(%s, duration_seconds), "
             "log_size_bytes=%s, error_message=COALESCE(%s, error_message) "
             "WHERE id=%s",
-            (status, total, passed, failed, duration_seconds, log_size,
-             error_message, run_id),
+            (
+                status,
+                total,
+                passed,
+                failed,
+                duration_seconds,
+                log_size,
+                error_message,
+                run_id,
+            ),
         )
         await conn.commit()
 
@@ -300,7 +354,9 @@ async def kill_run(pool: AsyncConnectionPool, run_id: int) -> bool:
         return True
     except ProcessLookupError:
         await _mark_finished(
-            pool, run_id, status="error",
+            pool,
+            run_id,
+            status="error",
             error_message="Processo terminou inesperadamente",
         )
         return False
@@ -309,9 +365,9 @@ async def kill_run(pool: AsyncConnectionPool, run_id: int) -> bool:
 async def get_run(pool: AsyncConnectionPool, run_id: int) -> TestRun | None:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f'SELECT {_COLS} FROM test_run tr '
+            f"SELECT {_COLS} FROM test_run tr "
             'LEFT JOIN auth."user" u ON u.id = tr.started_by_user_id '
-            'WHERE tr.id = %s',
+            "WHERE tr.id = %s",
             (run_id,),
         )
         row = await cur.fetchone()
@@ -321,9 +377,9 @@ async def get_run(pool: AsyncConnectionPool, run_id: int) -> TestRun | None:
 async def list_runs(pool: AsyncConnectionPool, limit: int = 50) -> list[TestRun]:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f'SELECT {_COLS} FROM test_run tr '
+            f"SELECT {_COLS} FROM test_run tr "
             'LEFT JOIN auth."user" u ON u.id = tr.started_by_user_id '
-            'ORDER BY tr.id DESC LIMIT %s',
+            "ORDER BY tr.id DESC LIMIT %s",
             (limit,),
         )
         rows = await cur.fetchall()

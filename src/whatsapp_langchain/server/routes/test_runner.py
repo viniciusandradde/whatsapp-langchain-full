@@ -156,7 +156,7 @@ async def events_endpoint(
             ) as r:
                 if r.status_code >= 400:
                     yield (
-                        f"event: error\ndata: {{\"status\":{r.status_code}}}\n\n".encode()
+                        f'event: error\ndata: {{"status":{r.status_code}}}\n\n'.encode()
                     )
                     return
                 async for chunk in r.aiter_bytes():

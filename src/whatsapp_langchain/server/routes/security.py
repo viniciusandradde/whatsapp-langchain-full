@@ -12,8 +12,11 @@ email; admin global vê tudo.
 
 from __future__ import annotations
 
+from typing import cast
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from psycopg.abc import QueryNoTemplate as PgQuery
 
 from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
@@ -80,7 +83,10 @@ async def list_login_events(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (cláusula WHERE), valores parametrizados via %s
+            cast(
+                PgQuery,
+                f"""
             SELECT id, user_id, email, event_type, ip_address,
                    user_agent, reason, metadata, created_at
               FROM auth_login_event
@@ -88,6 +94,7 @@ async def list_login_events(
              ORDER BY created_at DESC, id DESC
              LIMIT %s
             """,
+            ),
             params,
         )
         rows = await cur.fetchall()

@@ -15,11 +15,12 @@ Padrão segue `shared/cliente.py` e outros módulos de domínio.
 from __future__ import annotations
 
 import json
-from datetime import datetime, time, timedelta, timezone
-from typing import Final
+from datetime import UTC, datetime, time, timedelta
+from typing import Final, cast
 from zoneinfo import ZoneInfo
 
 import structlog
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.models import Agendamento
@@ -27,9 +28,7 @@ from whatsapp_langchain.shared.models import Agendamento
 logger = structlog.get_logger()
 
 
-VALID_STATUS: Final[frozenset[str]] = frozenset(
-    {"pendente", "confirmado", "cancelado"}
-)
+VALID_STATUS: Final[frozenset[str]] = frozenset({"pendente", "confirmado", "cancelado"})
 
 _SELECT_COLS = (
     "id, empresa_id, calendar_id, user_id_criador, cliente_id, "
@@ -151,13 +150,17 @@ async def list_by_period(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (cláusula WHERE), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             SELECT {_SELECT_COLS}
               FROM agendamento
              WHERE {" AND ".join(where)}
              ORDER BY data_inicio ASC
              LIMIT %s
             """,
+            ),
             params,
         )
         rows = await cur.fetchall()
@@ -217,9 +220,7 @@ async def cancel_local(
     pool: AsyncConnectionPool, agendamento_id: int, empresa_id: int
 ) -> bool:
     """Atalho pra `update_status(... 'cancelado')`."""
-    return await update_status(
-        pool, agendamento_id, empresa_id, status="cancelado"
-    )
+    return await update_status(pool, agendamento_id, empresa_id, status="cancelado")
 
 
 async def get_by_external_id(
@@ -293,12 +294,12 @@ async def validate_request(
 
     # Garante que start/end sejam timezone-aware
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
+        start = start.replace(tzinfo=UTC)
     if end.tzinfo is None:
-        end = end.replace(tzinfo=timezone.utc)
+        end = end.replace(tzinfo=UTC)
 
     # Antecedência mínima
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     minimo = now + timedelta(minutes=regras.antecedencia_minima_minutos)
     if start < minimo:
         return (
@@ -766,7 +767,7 @@ async def notify_gestor(
 
     # Envia via OutboundClient resolvido pelo provider da Conexão
     try:
-        client, _mode = _build_client(ativa.provider, ativa.from_number)
+        client, _mode = await _build_client(pool, ativa)
         msg_id = await client.send_message(cal_config.aprovador_telefone, texto)
         await set_approval_message_id(pool, aprov["aprovacao_id"], msg_id)
         await update_gestor_notificado(pool, agendamento_id)

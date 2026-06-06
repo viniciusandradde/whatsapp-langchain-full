@@ -312,6 +312,7 @@ async def prometheus_middleware(request, call_next):  # type: ignore[no-untyped-
 
     method = request.method
     start = _time.perf_counter()
+    status = "500"  # default p/ caso o finally rode após exceção inesperada
     try:
         response = await call_next(request)
         status = str(response.status_code)

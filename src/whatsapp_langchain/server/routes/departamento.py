@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
@@ -11,8 +12,6 @@ from whatsapp_langchain.server.dependencies import (
     verify_service_token,
 )
 from whatsapp_langchain.shared.db import get_pool
-from pydantic import BaseModel, Field
-
 from whatsapp_langchain.shared.departamento import (
     DuplicateDepartamentoError,
     assign_user_to_departamento,
@@ -41,9 +40,7 @@ async def list_my_departamentos(
     com_users: bool = False,
 ) -> dict[str, list[Departamento]]:
     pool = await get_pool()
-    rows = await list_departamentos(
-        pool, empresa_id, com_users_count=com_users
-    )
+    rows = await list_departamentos(pool, empresa_id, com_users_count=com_users)
     return {"departamentos": rows}
 
 

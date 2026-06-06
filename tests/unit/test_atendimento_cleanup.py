@@ -113,6 +113,7 @@ async def test_cleanup_zumbis_real_executa_update_e_commit():
     )
     # Mock dispatch_event pra não tentar contactar hooks reais
     from unittest.mock import patch
+
     with patch(
         "whatsapp_langchain.shared.hook_dispatcher.dispatch_event",
         new=AsyncMock(),

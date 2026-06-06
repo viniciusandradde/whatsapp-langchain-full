@@ -29,10 +29,11 @@ ainda não migrada em ambiente novo).
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from fastapi import Request
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
@@ -158,7 +159,10 @@ async def list_audit_governanca(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (cláusula WHERE), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             SELECT id, empresa_id, actor_user_id, target_user_id, action,
                    entity_type, entity_id, payload_before, payload_after,
                    request_id, ip_address, user_agent, created_at
@@ -167,6 +171,7 @@ async def list_audit_governanca(
              ORDER BY created_at DESC, id DESC
              LIMIT %s OFFSET %s
             """,
+            ),
             tuple(params),
         )
         rows = await cur.fetchall()

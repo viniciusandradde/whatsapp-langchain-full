@@ -216,9 +216,7 @@ async def delete_conexao_endpoint(
     """Hard delete + CASCADE no token cache."""
     _check_encryption_key()
     pool = await get_pool()
-    ok = await delete_conexao(
-        pool, connection_id=connection_id, empresa_id=empresa_id
-    )
+    ok = await delete_conexao(pool, connection_id=connection_id, empresa_id=empresa_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Conexão não encontrada.")
     return {"ok": True}

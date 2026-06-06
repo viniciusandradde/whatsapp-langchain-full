@@ -80,7 +80,8 @@ async def fetch_correction_candidates(pool, empresa_id: int, days: int) -> list[
         )
         return [
             {
-                "query": r[0], "setor": r[1],
+                "query": r[0],
+                "setor": r[1],
                 "pasta_id": int(r[2][0]) if r[2] else None,
                 "hits": int(r[3]),
                 "outcome": r[4],
@@ -104,16 +105,18 @@ def append_promotions(data: dict, candidates: list[dict], existing: set[str]) ->
         if c["query"].strip().lower() in existing:
             continue
         new_id = f"auto-{c['setor']}-{added + len(data['queries']) + 1}"
-        data["queries"].append({
-            "id": new_id,
-            "setor": c["setor"],
-            "pasta_id": c["pasta_id"],
-            "query": c["query"],
-            "expected_doc_id": None,
-            "must_contain": [],
-            "auto_imported": True,
-            "score_observed": c["score"],
-        })
+        data["queries"].append(
+            {
+                "id": new_id,
+                "setor": c["setor"],
+                "pasta_id": c["pasta_id"],
+                "query": c["query"],
+                "expected_doc_id": None,
+                "must_contain": [],
+                "auto_imported": True,
+                "score_observed": c["score"],
+            }
+        )
         existing.add(c["query"].strip().lower())
         added += 1
     return added
@@ -126,17 +129,19 @@ def append_corrections(data: dict, candidates: list[dict], existing: set[str]) -
         if c["query"].strip().lower() in existing:
             continue
         new_id = f"todo-{c['setor']}-{added + len(data['queries']) + 1}"
-        data["queries"].append({
-            "id": new_id,
-            "setor": c["setor"],
-            "pasta_id": c["pasta_id"],
-            "query": c["query"],
-            "expected_doc_id": None,
-            "must_contain": [],
-            "todo_correction": True,
-            "outcome_observed": c["outcome"],
-            "hits_observed": c["hits"],
-        })
+        data["queries"].append(
+            {
+                "id": new_id,
+                "setor": c["setor"],
+                "pasta_id": c["pasta_id"],
+                "query": c["query"],
+                "expected_doc_id": None,
+                "must_contain": [],
+                "todo_correction": True,
+                "outcome_observed": c["outcome"],
+                "hits_observed": c["hits"],
+            }
+        )
         existing.add(c["query"].strip().lower())
         added += 1
     return added
@@ -146,14 +151,17 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--days", type=int, default=30)
-    parser.add_argument("--empresa-id", type=int,
-                        default=int(os.environ.get("EMPRESA_ID", "1")))
+    parser.add_argument(
+        "--empresa-id", type=int, default=int(os.environ.get("EMPRESA_ID", "1"))
+    )
     args = parser.parse_args()
 
     pool = await get_pool()
     try:
         promotions = await fetch_promotion_candidates(pool, args.empresa_id, args.days)
-        corrections = await fetch_correction_candidates(pool, args.empresa_id, args.days)
+        corrections = await fetch_correction_candidates(
+            pool, args.empresa_id, args.days
+        )
     finally:
         await close_pool()
 

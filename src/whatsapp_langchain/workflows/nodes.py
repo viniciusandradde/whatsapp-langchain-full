@@ -39,6 +39,7 @@ def _pool_from_config(config: RunnableConfig | None) -> Any:
         return None
     return (config.get("configurable") or {}).get("pool")
 
+
 # Map "__end__"/"end" no spec → langgraph END sentinel
 # (usado por ask_choice → Command(goto=...))
 _END_ALIASES = {"__end__", "end", END}
@@ -349,9 +350,7 @@ def make_audit_event_node(spec: dict) -> Callable:
     """
     evento = spec["evento"]
 
-    async def node(
-        state: WorkflowState, config: RunnableConfig | None = None
-    ) -> dict:
+    async def node(state: WorkflowState, config: RunnableConfig | None = None) -> dict:
         from whatsapp_langchain.workflows.audit import log_event
 
         pool = _pool_from_config(config)
@@ -391,9 +390,7 @@ def make_transfer_departamento_node(spec: dict) -> Callable:
         " Em breve um atendente irá te atender.",
     )
 
-    async def node(
-        state: WorkflowState, config: RunnableConfig | None = None
-    ) -> dict:
+    async def node(state: WorkflowState, config: RunnableConfig | None = None) -> dict:
         from whatsapp_langchain.shared.atendimento import (
             transfer_atendimento_to_departamento,
         )
@@ -447,9 +444,7 @@ def make_handover_node(spec: dict) -> Callable:
         "Você está na fila. Em breve um atendente irá te atender.",
     )
 
-    async def node(
-        state: WorkflowState, config: RunnableConfig | None = None
-    ) -> dict:
+    async def node(state: WorkflowState, config: RunnableConfig | None = None) -> dict:
         import json as _json
 
         pool = _pool_from_config(config)
@@ -534,9 +529,7 @@ def make_delegate_to_agent_node(spec: dict) -> Callable:
     agent_slug = spec["agent_slug"]
     message_template = spec.get("message", "")
 
-    async def node(
-        state: WorkflowState, config: RunnableConfig | None = None
-    ) -> dict:
+    async def node(state: WorkflowState, config: RunnableConfig | None = None) -> dict:
         pool = _pool_from_config(config)
         atend_id = state.get("atendimento_id", 0)
 

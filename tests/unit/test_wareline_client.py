@@ -81,9 +81,7 @@ def _fake_pool() -> MagicMock:
 @pytest.mark.asyncio
 @respx.mock
 async def test_buscar_paciente_ok():
-    respx.get(
-        "https://services.test/services/utilitarios-api/pacientes"
-    ).mock(
+    respx.get("https://services.test/services/utilitarios-api/pacientes").mock(
         return_value=Response(
             200,
             json=[
@@ -107,9 +105,9 @@ async def test_buscar_paciente_ok():
 @pytest.mark.asyncio
 @respx.mock
 async def test_buscar_paciente_404_levanta_not_found():
-    respx.get(
-        "https://services.test/services/utilitarios-api/pacientes"
-    ).mock(return_value=Response(404, json={"erro": "nao_encontrado"}))
+    respx.get("https://services.test/services/utilitarios-api/pacientes").mock(
+        return_value=Response(404, json={"erro": "nao_encontrado"})
+    )
     client = WarelineClient(_fake_pool(), empresa_id=1)
     with pytest.raises(WarelineNotFoundError):
         await client.buscar_paciente("99999999999")
@@ -118,9 +116,9 @@ async def test_buscar_paciente_404_levanta_not_found():
 @pytest.mark.asyncio
 @respx.mock
 async def test_buscar_paciente_lista_vazia_levanta_not_found():
-    respx.get(
-        "https://services.test/services/utilitarios-api/pacientes"
-    ).mock(return_value=Response(200, json=[]))
+    respx.get("https://services.test/services/utilitarios-api/pacientes").mock(
+        return_value=Response(200, json=[])
+    )
     client = WarelineClient(_fake_pool(), empresa_id=1)
     with pytest.raises(WarelineNotFoundError):
         await client.buscar_paciente("00000000000")
@@ -132,9 +130,7 @@ async def test_buscar_paciente_lista_vazia_levanta_not_found():
 @pytest.mark.asyncio
 @respx.mock
 async def test_listar_agenda_prestador_ok():
-    respx.get(
-        "https://modulos.test/services/terapias-api/agendas/prestador"
-    ).mock(
+    respx.get("https://modulos.test/services/terapias-api/agendas/prestador").mock(
         return_value=Response(
             200,
             json={
@@ -158,9 +154,7 @@ async def test_listar_agenda_prestador_ok():
         )
     )
     client = WarelineClient(_fake_pool(), empresa_id=1)
-    agendas = await client.listar_agenda_prestador(
-        "003297", "2025-08-01", "2025-08-31"
-    )
+    agendas = await client.listar_agenda_prestador("003297", "2025-08-01", "2025-08-31")
     assert len(agendas) == 1
     assert agendas[0].num_agenda == 5392
     assert agendas[0].prestador.nomeprest == "DR EXEMPLO"
@@ -169,13 +163,11 @@ async def test_listar_agenda_prestador_ok():
 @pytest.mark.asyncio
 @respx.mock
 async def test_listar_agenda_vazia():
-    respx.get(
-        "https://modulos.test/services/terapias-api/agendas/prestador"
-    ).mock(return_value=Response(200, json={"content": [], "totalElements": 0}))
-    client = WarelineClient(_fake_pool(), empresa_id=1)
-    agendas = await client.listar_agenda_prestador(
-        "999999", "2025-08-01", "2025-08-31"
+    respx.get("https://modulos.test/services/terapias-api/agendas/prestador").mock(
+        return_value=Response(200, json={"content": [], "totalElements": 0})
     )
+    client = WarelineClient(_fake_pool(), empresa_id=1)
+    agendas = await client.listar_agenda_prestador("999999", "2025-08-01", "2025-08-31")
     assert agendas == []
 
 
@@ -185,9 +177,7 @@ async def test_listar_agenda_vazia():
 @pytest.mark.asyncio
 @respx.mock
 async def test_criar_agendamento_ok():
-    respx.post(
-        "https://modulos.test/services/terapias-api/agendas"
-    ).mock(
+    respx.post("https://modulos.test/services/terapias-api/agendas").mock(
         return_value=Response(
             200,
             json={
@@ -220,9 +210,9 @@ async def test_criar_agendamento_ok():
 @pytest.mark.asyncio
 @respx.mock
 async def test_5xx_retry_3x_eventualmente_levanta_unavailable():
-    route = respx.get(
-        "https://services.test/services/utilitarios-api/pacientes"
-    ).mock(return_value=Response(503, text="upstream down"))
+    route = respx.get("https://services.test/services/utilitarios-api/pacientes").mock(
+        return_value=Response(503, text="upstream down")
+    )
     client = WarelineClient(_fake_pool(), empresa_id=1)
     # Mock asyncio.sleep pra não esperar de verdade
     import whatsapp_langchain.integrations.wareline.client as client_mod
@@ -248,9 +238,9 @@ async def test_401_invalida_token_e_retenta_1x():
         call_count["n"] += 1
         return Response(401)
 
-    respx.get(
-        "https://services.test/services/utilitarios-api/pacientes"
-    ).mock(side_effect=respond)
+    respx.get("https://services.test/services/utilitarios-api/pacientes").mock(
+        side_effect=respond
+    )
 
     import whatsapp_langchain.integrations.wareline.client as client_mod
 

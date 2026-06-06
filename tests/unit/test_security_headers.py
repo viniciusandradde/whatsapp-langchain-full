@@ -2,7 +2,15 @@
 
 import importlib
 
+import pytest
 from fastapi.testclient import TestClient
+
+# Requer Postgres real: os testes batem em GET /health, que hoje agrega
+# check_db_health() → get_pool() e tenta conectar no Postgres (host `db:5432`),
+# travando sem DB. Marca o módulo como docker_demo (gate de CI unit roda sem
+# DB). Os headers de segurança em si independem de DB, mas o único endpoint
+# exercitado pinga o banco.
+pytestmark = pytest.mark.docker_demo
 
 
 def _build_app(monkeypatch, environment="development"):

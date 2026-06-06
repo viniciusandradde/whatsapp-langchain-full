@@ -88,9 +88,7 @@ async def is_enabled(
     return v is True
 
 
-async def list_flags(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> list[dict]:
+async def list_flags(pool: AsyncConnectionPool, empresa_id: int) -> list[dict]:
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -171,9 +169,7 @@ async def upsert_flag(
     }
 
 
-async def delete_flag(
-    pool: AsyncConnectionPool, empresa_id: int, key: str
-) -> bool:
+async def delete_flag(pool: AsyncConnectionPool, empresa_id: int, key: str) -> bool:
     async with pool.connection() as conn:
         cur = await conn.execute(
             "DELETE FROM feature_flag WHERE empresa_id = %s AND key = %s",

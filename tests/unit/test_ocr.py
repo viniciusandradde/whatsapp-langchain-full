@@ -134,9 +134,7 @@ async def test_ocr_image_raises_on_http_error():
     import httpx as _httpx
 
     fake_response = MagicMock()
-    fake_response.raise_for_status = MagicMock(
-        side_effect=_httpx.HTTPError("500")
-    )
+    fake_response.raise_for_status = MagicMock(side_effect=_httpx.HTTPError("500"))
     fake_client = AsyncMock()
     fake_client.__aenter__.return_value.post = AsyncMock(return_value=fake_response)
 
@@ -183,9 +181,7 @@ async def test_ocr_pdf_pages_skips_empty_results():
         p.save = MagicMock()
     with (
         patch("pdf2image.convert_from_bytes", return_value=fake_pages),
-        patch.object(
-            ocr, "ocr_image_bytes", AsyncMock(side_effect=["", "valid"])
-        ),
+        patch.object(ocr, "ocr_image_bytes", AsyncMock(side_effect=["", "valid"])),
     ):
         out = await ocr.ocr_pdf_pages(b"%PDF-fake")
     assert out == "valid"

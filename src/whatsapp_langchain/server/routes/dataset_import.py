@@ -90,9 +90,7 @@ async def import_dataset(
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError as e:
-        raise HTTPException(
-            status_code=422, detail=f"Encoding inválido: {e}"
-        ) from e
+        raise HTTPException(status_code=422, detail=f"Encoding inválido: {e}") from e
 
     fname = (file.filename or "").lower()
     if fname.endswith(".jsonl") or fname.endswith(".ndjson"):
@@ -157,9 +155,12 @@ async def import_dataset(
                                     COALESCE(%s, NOW()))
                             """,
                             (
-                                empresa_id, agente_slug,
-                                cliente_msg[:1000], agente_resposta[:1500],
-                                csat_int, ts,
+                                empresa_id,
+                                agente_slug,
+                                cliente_msg[:1000],
+                                agente_resposta[:1500],
+                                csat_int,
+                                ts,
                             ),
                         )
                         await conn.commit()
@@ -175,9 +176,13 @@ async def import_dataset(
                     VALUES (%s, %s, %s, %s, %s, %s, 'imported', COALESCE(%s, NOW()))
                     """,
                     (
-                        empresa_id, cliente_msg[:500], agente_slug,
+                        empresa_id,
+                        cliente_msg[:500],
+                        agente_slug,
                         1 if agente_resposta else 0,
-                        None, outcome, ts,
+                        None,
+                        outcome,
+                        ts,
                     ),
                 )
                 await conn.commit()

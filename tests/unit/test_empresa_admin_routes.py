@@ -74,9 +74,7 @@ def test_create_empresa_409_on_duplicate_slug(client):
         "whatsapp_langchain.server.routes.empresa_admin.create_empresa",
         new=AsyncMock(side_effect=Exception("duplicate key value violates unique")),
     ):
-        response = client.post(
-            "/api/empresas", json={"nome": "Acme", "slug": "acme"}
-        )
+        response = client.post("/api/empresas", json={"nome": "Acme", "slug": "acme"})
     assert response.status_code == 409
 
 

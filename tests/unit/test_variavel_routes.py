@@ -95,24 +95,18 @@ def test_create_409_on_duplicate(client):
         "whatsapp_langchain.server.routes.variavel.create_variavel",
         new=AsyncMock(side_effect=DuplicateNomeError("já existe")),
     ):
-        response = client.post(
-            "/api/variaveis", json={"nome": "x", "valor": "y"}
-        )
+        response = client.post("/api/variaveis", json={"nome": "x", "valor": "y"})
     assert response.status_code == 409
 
 
 def test_create_422_on_invalid_nome(client):
     """Nome com hífen quebra o regex `^[a-zA-Z][a-zA-Z0-9_]*$`."""
-    response = client.post(
-        "/api/variaveis", json={"nome": "x-y", "valor": "z"}
-    )
+    response = client.post("/api/variaveis", json={"nome": "x-y", "valor": "z"})
     assert response.status_code == 422
 
 
 def test_create_422_on_nome_starting_with_number(client):
-    response = client.post(
-        "/api/variaveis", json={"nome": "1foo", "valor": "z"}
-    )
+    response = client.post("/api/variaveis", json={"nome": "1foo", "valor": "z"})
     assert response.status_code == 422
 
 

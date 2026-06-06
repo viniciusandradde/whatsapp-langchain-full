@@ -13,7 +13,6 @@ Migração one-shot via endpoint admin converte explicitamente.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Final
 
 import structlog
@@ -30,9 +29,7 @@ LEGACY_ROLE_TO_PERFIL: Final[dict[str, str]] = {
 }
 
 
-async def list_perfis(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> list[dict]:
+async def list_perfis(pool: AsyncConnectionPool, empresa_id: int) -> list[dict]:
     """Lista perfis da empresa com count de permissões + count de users."""
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -114,6 +111,7 @@ async def create_perfil(
             (empresa_id, nome, descricao),
         )
         row = await cur.fetchone()
+        assert row is not None  # INSERT ... RETURNING sempre retorna 1 row
         perfil_id = row[0]
         for codigo in permissoes:
             await conn.execute(

@@ -40,6 +40,10 @@ def _row(
         config or {},
         now,
         now,
+        # índices 10..54 — colunas enrich (Fase 1.A) + Sub-fase B+ (mig 046).
+        # _row_to_cliente lê até row[54]; None é seguro (campos opcionais ou
+        # com fallback `or default`/`or False` no mapeamento).
+        *([None] * 45),
     )
 
 

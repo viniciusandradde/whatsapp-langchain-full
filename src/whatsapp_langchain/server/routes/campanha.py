@@ -142,8 +142,7 @@ async def dispatch_endpoint(
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Campanha em status {out['status']!r} — "
-                "só draft pode ser despachado."
+                f"Campanha em status {out['status']!r} — só draft pode ser despachado."
             ),
         )
     camp_lib.schedule_dispatch(pool, empresa_id, camp_id)

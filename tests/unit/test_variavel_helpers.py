@@ -57,9 +57,7 @@ def _mock_pool(*results, rowcount: int = 1, multi: bool = False, fetchall=None):
 
 def test_render_simple_substitution():
     ctx = {"empresa.nome": "VSA Tech", "data.hoje": "2026-05-02"}
-    out = variavel.render_template(
-        "Olá da {{empresa.nome}} hoje ({{data.hoje}})!", ctx
-    )
+    out = variavel.render_template("Olá da {{empresa.nome}} hoje ({{data.hoje}})!", ctx)
     assert out == "Olá da VSA Tech hoje (2026-05-02)!"
 
 
@@ -114,9 +112,7 @@ async def test_create_returns_variavel():
     out = await variavel.create_variavel(
         pool,
         1,
-        VariavelAmbienteInput(
-            nome="suporte_email", valor="x@y.com"
-        ),
+        VariavelAmbienteInput(nome="suporte_email", valor="x@y.com"),
         user_id="u",
     )
     assert out.nome == "suporte_email"
@@ -216,10 +212,12 @@ async def test_build_render_context_assembles_namespaces():
 @pytest.mark.asyncio
 async def test_build_render_context_inclui_cliente_quando_atendimento():
     cur = AsyncMock()
-    # 3 fetchone (empresa, [fetchall vars], cliente) + fetchall (vars)
+    # 3 fetchone (empresa, menu_chatbot, cliente) + fetchall (vars).
+    # A 2ª query é o lookup de menu.* (menu_chatbot) — None = sem menu ativo.
     cur.fetchone = AsyncMock(
         side_effect=[
             ("Empresa", "e", None, "free"),
+            None,  # menu_chatbot ativo (nenhum)
             ("João", "+5511999999999", "joao@x.com", "12345"),
         ]
     )

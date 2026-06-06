@@ -64,9 +64,7 @@ async def test_create_departamento_raises_on_duplicate():
 @pytest.mark.asyncio
 async def test_update_departamento_returns_none_when_missing():
     pool, _, _ = _mock_pool(None)
-    out = await dep.update_departamento(
-        pool, 1, 99, DepartamentoInput(nome="X")
-    )
+    out = await dep.update_departamento(pool, 1, 99, DepartamentoInput(nome="X"))
     assert out is None
 
 

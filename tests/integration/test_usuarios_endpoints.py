@@ -24,7 +24,6 @@ from fastapi.testclient import TestClient
 
 from .helpers import API_BASE_URL, get_admin_api_headers, get_db_url
 
-
 # ============================================================================
 # Smoke (TestClient — sem DB)
 # ============================================================================
@@ -284,9 +283,7 @@ class TestE2E:
         self, db_url: str, empresa_id: int, admin_user_id: str
     ) -> None:
         h = _h(admin_user_id, empresa_id)
-        r = httpx.post(
-            f"{API_BASE_URL}/api/usuarios", json={}, headers=h, timeout=10
-        )
+        r = httpx.post(f"{API_BASE_URL}/api/usuarios", json={}, headers=h, timeout=10)
         assert r.status_code == 422, r.text
 
     def test_perfil_de_outra_empresa_422(
@@ -387,9 +384,7 @@ class TestE2E:
         assert r.status_code == 422, r.text
 
         # DELETE → 204; depois GET → 404
-        r = httpx.delete(
-            f"{API_BASE_URL}/api/usuarios/{uid}", headers=h, timeout=10
-        )
+        r = httpx.delete(f"{API_BASE_URL}/api/usuarios/{uid}", headers=h, timeout=10)
         assert r.status_code == 204, r.text
         r = httpx.get(f"{API_BASE_URL}/api/usuarios/{uid}", headers=h, timeout=10)
         assert r.status_code == 404, r.text

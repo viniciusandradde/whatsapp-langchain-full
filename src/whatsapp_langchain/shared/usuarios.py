@@ -555,8 +555,7 @@ async def resolve_user_names(
     with empresa_scope(None, bypass=True):
         async with pool.connection() as conn:
             cur = await conn.execute(
-                'SELECT id, COALESCE(name, email) FROM auth."user" '
-                "WHERE id = ANY(%s)",
+                'SELECT id, COALESCE(name, email) FROM auth."user" WHERE id = ANY(%s)',
                 (ids,),
             )
             rows = await cur.fetchall()

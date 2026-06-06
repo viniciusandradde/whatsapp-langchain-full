@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -27,7 +28,6 @@ from whatsapp_langchain.shared.catalogo import (
     update_modelo_llm,
 )
 from whatsapp_langchain.shared.db import get_pool
-
 
 # =====================================================================
 # modelo_llm
@@ -76,9 +76,7 @@ async def list_modelos_endpoint(
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
     pool = await get_pool()
-    items = await list_modelos_llm(
-        pool, empresa_id, tipo=tipo, only_active=only_active
-    )
+    items = await list_modelos_llm(pool, empresa_id, tipo=tipo, only_active=only_active)
     return {"items": [m.to_dict() for m in items]}
 
 
@@ -116,9 +114,13 @@ async def create_modelo_endpoint(
         janela_contexto=body.janela_contexto,
     )
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="modelo_llm.create", entity_type="modelo_llm",
-        entity_id=str(out.id), payload_diff={"after": out.to_dict()},
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="modelo_llm.create",
+        entity_type="modelo_llm",
+        entity_id=str(out.id),
+        payload_diff={"after": out.to_dict()},
         request=request,
     )
     return out.to_dict()
@@ -135,7 +137,9 @@ async def update_modelo_endpoint(
 ) -> dict:
     pool = await get_pool()
     before = await get_modelo_llm(pool, modelo_id)
-    if before is None or (before.empresa_id is not None and before.empresa_id != empresa_id):
+    if before is None or (
+        before.empresa_id is not None and before.empresa_id != empresa_id
+    ):
         raise HTTPException(status_code=404, detail="Modelo não encontrado.")
     if before.empresa_id is None:
         raise HTTPException(
@@ -147,8 +151,11 @@ async def update_modelo_endpoint(
     if out is None:
         raise HTTPException(status_code=404, detail="Modelo não encontrado.")
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="modelo_llm.update", entity_type="modelo_llm",
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="modelo_llm.update",
+        entity_type="modelo_llm",
         entity_id=str(modelo_id),
         payload_diff=diff_dicts(before.to_dict(), out.to_dict()),
         request=request,
@@ -166,7 +173,9 @@ async def delete_modelo_endpoint(
 ) -> None:
     pool = await get_pool()
     before = await get_modelo_llm(pool, modelo_id)
-    if before is None or (before.empresa_id is not None and before.empresa_id != empresa_id):
+    if before is None or (
+        before.empresa_id is not None and before.empresa_id != empresa_id
+    ):
         raise HTTPException(status_code=404, detail="Modelo não encontrado.")
     if before.empresa_id is None:
         raise HTTPException(
@@ -176,10 +185,14 @@ async def delete_modelo_endpoint(
     if not ok:
         raise HTTPException(status_code=404, detail="Modelo não encontrado.")
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="modelo_llm.delete", entity_type="modelo_llm",
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="modelo_llm.delete",
+        entity_type="modelo_llm",
         entity_id=str(modelo_id),
-        payload_diff={"before": before.to_dict()}, request=request,
+        payload_diff={"before": before.to_dict()},
+        request=request,
     )
 
 
@@ -258,15 +271,25 @@ async def create_mcp_endpoint(
 ) -> dict:
     pool = await get_pool()
     out = await create_mcp_server(
-        pool, empresa_id,
-        nome=body.nome, tipo_conexao=body.tipo_conexao, descricao=body.descricao,
-        url=body.url, comando=body.comando, args=body.args, headers=body.headers,
+        pool,
+        empresa_id,
+        nome=body.nome,
+        tipo_conexao=body.tipo_conexao,
+        descricao=body.descricao,
+        url=body.url,
+        comando=body.comando,
+        args=body.args,
+        headers=body.headers,
         user_id=user_id,
     )
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="mcp_server.create", entity_type="mcp_server",
-        entity_id=str(out.id), payload_diff={"after": out.to_dict()},
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="mcp_server.create",
+        entity_type="mcp_server",
+        entity_id=str(out.id),
+        payload_diff={"after": out.to_dict()},
         request=request,
     )
     return out.to_dict()
@@ -291,8 +314,11 @@ async def update_mcp_endpoint(
     if out is None:
         raise HTTPException(status_code=404, detail="MCP server não encontrado.")
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="mcp_server.update", entity_type="mcp_server",
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="mcp_server.update",
+        entity_type="mcp_server",
         entity_id=str(mcp_id),
         payload_diff=diff_dicts(before.to_dict(), out.to_dict()),
         request=request,
@@ -316,10 +342,14 @@ async def delete_mcp_endpoint(
     if not ok:
         raise HTTPException(status_code=404, detail="MCP server não encontrado.")
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="mcp_server.delete", entity_type="mcp_server",
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="mcp_server.delete",
+        entity_type="mcp_server",
         entity_id=str(mcp_id),
-        payload_diff={"before": before.to_dict()}, request=request,
+        payload_diff={"before": before.to_dict()},
+        request=request,
     )
 
 
@@ -338,7 +368,7 @@ async def test_mcp_endpoint(
     valida manualmente no shell). Marca como inactive + mensagem.
     Atualiza status + ultimo_teste_at + ultimo_erro no DB.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     import httpx
 
@@ -379,8 +409,11 @@ async def test_mcp_endpoint(
         await conn.commit()
 
     await record_audit(
-        pool, empresa_id=empresa_id, user_id=user_id,
-        action="mcp_server.test", entity_type="mcp_server",
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="mcp_server.test",
+        entity_type="mcp_server",
         entity_id=str(mcp_id),
         payload_diff={"resultado": novo_status, "erro": erro_msg},
         request=request,
@@ -390,5 +423,5 @@ async def test_mcp_endpoint(
         "ok": novo_status == "active",
         "status": novo_status,
         "erro": erro_msg,
-        "tested_at": datetime.now(timezone.utc).isoformat(),
+        "tested_at": datetime.now(UTC).isoformat(),
     }

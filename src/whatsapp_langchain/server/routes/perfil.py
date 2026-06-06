@@ -74,10 +74,7 @@ class AssignPerfilInput(BaseModel):
 async def list_permissoes() -> dict:
     """Catálogo canônico de permissões (read-only, do código)."""
     return {
-        "items": [
-            {"codigo": c, "descricao": d, "modulo": m}
-            for c, d, m in CATALOGO
-        ]
+        "items": [{"codigo": c, "descricao": d, "modulo": m} for c, d, m in CATALOGO]
     }
 
 
@@ -245,9 +242,7 @@ async def unassign_perfil_endpoint(
         pool, empresa_id=empresa_id, user_id=target_user_id, perfil_id=perfil_id
     )
     if not ok:
-        raise HTTPException(
-            status_code=404, detail="User não tinha esse perfil."
-        )
+        raise HTTPException(status_code=404, detail="User não tinha esse perfil.")
 
 
 # ---- Migração legacy (one-shot) ----
