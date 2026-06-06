@@ -381,6 +381,19 @@ class Settings(BaseSettings):
                 "origem. Ex: FRONTEND_ORIGINS=https://chat.vsanexus.com"
             )
 
+        # RLS enforcement — em produção o runtime DEVE conectar como
+        # chat_nexus_app (NOBYPASSRLS). Sem DATABASE_URL_APP, get_pool() cai no
+        # fallback para database_url (superuser), o RLS fica INERTE e o
+        # isolamento multi-tenant passa a depender 100% do código da aplicação
+        # — qualquer query que confie só no RLS vira vazamento cross-tenant.
+        if self.is_production and not self.database_url_app.strip():
+            raise ValueError(
+                "Production requer DATABASE_URL_APP apontando para o role "
+                "chat_nexus_app (NOBYPASSRLS). Sem ele o runtime conecta como "
+                "superuser e o RLS fica INERTE (risco de vazamento cross-tenant). "
+                "Ver docs/RLS_OPERATIONS.md."
+            )
+
         # Sprint D hardening — webhook signature obrigatória se provider real
         twilio_mode = self.resolved_twilio_outbound_mode
         if (

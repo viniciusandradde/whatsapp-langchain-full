@@ -64,6 +64,31 @@ class TestRuntimeSettingsValidation:
             environment="production",
             internal_service_token="x" * MIN_PRODUCTION_SECRET_LENGTH,
             validate_twilio_signature=True,
+            database_url_app="postgresql://chat_nexus_app:pw@db:5432/app",
+            evolution_outbound_mode="mock",
+        )
+
+        settings.validate_runtime_settings()
+
+    def test_rejects_missing_database_url_app_in_production(self):
+        """Production exige DATABASE_URL_APP — sem ele o RLS fica inerte."""
+        settings = Settings(
+            environment="production",
+            internal_service_token="x" * MIN_PRODUCTION_SECRET_LENGTH,
+            validate_twilio_signature=True,
+            database_url_app="",
+            evolution_outbound_mode="mock",
+        )
+
+        with pytest.raises(ValueError, match="DATABASE_URL_APP"):
+            settings.validate_runtime_settings()
+
+    def test_accepts_empty_database_url_app_in_development(self):
+        """Dev local aceita database_url_app vazio (RLS inerte é ok local)."""
+        settings = Settings(
+            environment="development",
+            internal_service_token="token-local",
+            database_url_app="",
         )
 
         settings.validate_runtime_settings()
@@ -72,6 +97,9 @@ class TestRuntimeSettingsValidation:
 def test_validate_runtime_fails_when_signature_disabled_in_prod(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("DATABASE_URL_APP", "postgresql://chat_nexus_app:pw@db:5432/app")
+    monkeypatch.setenv("TWILIO_OUTBOUND_MODE", "real")
+    monkeypatch.setenv("EVOLUTION_OUTBOUND_MODE", "mock")
     monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "false")
     from whatsapp_langchain.shared.config import Settings
 
@@ -83,6 +111,8 @@ def test_validate_runtime_fails_when_signature_disabled_in_prod(monkeypatch):
 def test_validate_runtime_passes_when_signature_enabled_in_prod(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("DATABASE_URL_APP", "postgresql://chat_nexus_app:pw@db:5432/app")
+    monkeypatch.setenv("EVOLUTION_OUTBOUND_MODE", "mock")
     monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
     monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
@@ -109,6 +139,8 @@ def test_validate_runtime_fails_when_frontend_origins_empty_in_prod(monkeypatch)
 def test_validate_runtime_passes_when_frontend_origins_set_in_prod(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
+    monkeypatch.setenv("DATABASE_URL_APP", "postgresql://chat_nexus_app:pw@db:5432/app")
+    monkeypatch.setenv("EVOLUTION_OUTBOUND_MODE", "mock")
     monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
     monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")

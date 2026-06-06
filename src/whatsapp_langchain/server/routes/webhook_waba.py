@@ -10,6 +10,7 @@ Não usa verify_service_token — Meta não envia esse header.
 from __future__ import annotations
 
 import base64
+import hmac
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -80,7 +81,7 @@ async def waba_webhook_verify(
         if settings.waba_webhook_verify_token
         else ""
     )
-    if not expected or token != expected:
+    if not expected or not hmac.compare_digest(token or "", expected):
         logger.warning(
             "waba_webhook_verify_failed", token_received_len=len(token or "")
         )
@@ -100,8 +101,10 @@ async def waba_webhook_post(
 ) -> dict[str, str]:
     """Recebe mensagens + atualizações de status de templates.
 
-    Sempre retorna 200 (Meta retenta agressivamente em erros). Validação
-    de signature falha → log warning + 200 (não dá pra forçar Meta a desistir).
+    Retorna 200 no happy path. Assinatura inválida/ausente → 200 com status
+    `rejected` (não dá pra forçar Meta a desistir de payload forjado). Mas
+    FALHA de enfileiramento → 5xx, pra Meta retentar e não perder a mensagem do
+    cliente (idempotência por message_id evita duplicar na redelivery).
     """
     body = await request.body()
 
@@ -121,8 +124,11 @@ async def waba_webhook_post(
                 body_size=len(body),
                 production=settings.is_production,
             )
-            if settings.is_production:
-                return {"status": "rejected_no_signature"}
+            # Assinatura ausente com app_secret configurado = SEMPRE rejeita
+            # (independente de is_production). Antes só rejeitava em prod, o que
+            # deixava staging / env com ENVIRONMENT != 'production' aceitar
+            # webhook WABA forjado sem HMAC (injeção de mensagem/empresa).
+            return {"status": "rejected_no_signature"}
         elif not verify_signature(body, x_hub_signature_256, app_secret):
             logger.warning("waba_webhook_signature_invalid", body_size=len(body))
             return {"status": "rejected"}
@@ -139,6 +145,7 @@ async def waba_webhook_post(
     from whatsapp_langchain.shared.rls_context import set_request_context
 
     inbound_messages = parse_inbound(payload)
+    enqueue_failed = False
     for msg in inbound_messages:
         conexao = await get_conexao_by_waba_phone_id(pool, msg.waba_phone_id)
         if conexao is None:
@@ -171,7 +178,12 @@ async def waba_webhook_post(
                 media_type=msg.media_mime_type,
             )
         except Exception as exc:
+            # NÃO engolir: marca falha e ao final retorna 5xx pra Meta retentar
+            # (antes retornava 200 e a mensagem do cliente era perdida pra
+            # sempre numa falha transitória de DB). O enqueue é idempotente por
+            # message_id (ON CONFLICT DO NOTHING), então a redelivery é segura.
             logger.exception("waba_webhook_enqueue_failed", error=str(exc))
+            enqueue_failed = True
 
     # Updates de template status
     template_updates = parse_template_status_updates(payload)
@@ -208,5 +220,10 @@ async def waba_webhook_post(
             event=event,
             new_status=new_status,
         )
+
+    if enqueue_failed:
+        # 5xx → Meta redelivera o webhook inteiro; idempotência por message_id
+        # garante que os inbound já enfileirados não dupliquem.
+        raise HTTPException(status_code=503, detail="enqueue failed; retry")
 
     return {"status": "received", "inbound_count": str(len(inbound_messages))}

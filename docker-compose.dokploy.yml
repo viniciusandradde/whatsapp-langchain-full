@@ -32,6 +32,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
+      # RLS enforcement — runtime conecta como chat_nexus_app (NOBYPASSRLS).
+      # Setar no painel Dokploy com a URL+senha do role (docs/RLS_OPERATIONS.md).
+      # OBRIGATÓRIO em produção: validate_runtime_settings() faz fail-fast se
+      # vazio (sem isso o app cai no superuser e o RLS fica inerte).
+      DATABASE_URL_APP: ${DATABASE_URL_APP:-}
       LOG_JSON: "true"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -55,6 +60,9 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
+      # RLS enforcement — ver nota no serviço `api`. Worker também roda como
+      # chat_nexus_app e envolve cada mensagem em empresa_scope().
+      DATABASE_URL_APP: ${DATABASE_URL_APP:-}
       LOG_JSON: "true"
     depends_on:
       - db

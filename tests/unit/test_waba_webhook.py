@@ -150,6 +150,29 @@ def test_parse_inbound_ignora_payload_diferente():
     assert msgs == []
 
 
+def test_waba_post_rejects_missing_signature_outside_production(monkeypatch):
+    """R18: com META_APP_SECRET configurado, assinatura AUSENTE é rejeitada
+    mesmo fora de produção.
+
+    Antes só rejeitava quando is_production — staging / env com
+    ENVIRONMENT != 'production' aceitava webhook WABA forjado sem HMAC.
+    """
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.server.main import app
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(settings, "meta_app_secret", SecretStr("test-secret"))
+    monkeypatch.setattr(settings, "environment", "development")
+
+    resp = TestClient(app).post(
+        "/webhook/waba", json={"object": "whatsapp_business_account"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "rejected_no_signature"}
+
+
 def test_parse_template_status_updates_extrai_evento():
     payload = {
         "object": "whatsapp_business_account",
