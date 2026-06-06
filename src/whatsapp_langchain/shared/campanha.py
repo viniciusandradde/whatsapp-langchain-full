@@ -494,17 +494,23 @@ async def _mark_finished(
         await conn.commit()
 
 
+# Refs fortes pras tasks de dispatch — sem isso o GC pode coletar a task no
+# meio da campanha (o event loop só guarda referência fraca; asyncio docs).
+_BG_TASKS: set[asyncio.Task] = set()
+
+
 def schedule_dispatch(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int
 ) -> asyncio.Task:
     """Agenda dispatch em background via asyncio.create_task. Retorna
     a Task pra logging — endpoint não precisa await."""
     task = asyncio.create_task(_dispatch_loop(pool, empresa_id, camp_id))
-    task.add_done_callback(
-        lambda t: logger.error(
-            "campanha_dispatch_task_crashed", error=str(t.exception())
-        )
-        if t.exception()
-        else None
-    )
+    _BG_TASKS.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _BG_TASKS.discard(t)
+        if t.exception() is not None:
+            logger.error("campanha_dispatch_task_crashed", error=str(t.exception()))
+
+    task.add_done_callback(_on_done)
     return task

@@ -45,6 +45,10 @@ HOOK_USER_AGENT = "NexusChatAI-Webhook/1.0"
 HOOK_MAX_ATTEMPTS = 3
 HOOK_BACKOFF_SECONDS = (1.0, 5.0, 25.0)
 
+# Refs fortes pras tasks fire-and-forget — sem isso o event loop só guarda
+# referência FRACA e o GC pode coletar a task no meio da entrega (asyncio docs).
+_BG_TASKS: set[asyncio.Task] = set()
+
 
 def _is_success(status_code: int | None, error: str | None) -> bool:
     """Tentativa é sucesso quando não tem error e status_code < 400."""
@@ -259,7 +263,9 @@ async def dispatch_event(
         return
 
     for h in hooks:
-        # create_task evita bloquear o caller. As tarefas vivem dentro do
-        # event loop até terminarem; se o processo cair antes, a entrega
-        # é perdida — esperado num MVP fire-and-forget.
-        asyncio.create_task(_deliver(pool, h, evento, payload))
+        # create_task evita bloquear o caller. Ref forte em _BG_TASKS pra o GC
+        # não cancelar a entrega no meio (se o processo cair antes, a entrega é
+        # perdida — esperado num MVP fire-and-forget; retry/DLQ cobre o resto).
+        task = asyncio.create_task(_deliver(pool, h, evento, payload))
+        _BG_TASKS.add(task)
+        task.add_done_callback(_BG_TASKS.discard)
