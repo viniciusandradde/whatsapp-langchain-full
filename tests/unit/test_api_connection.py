@@ -54,8 +54,10 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
 # ---------- providers catalog ----------
 
 
-def test_catalogo_tem_4_providers():
-    assert set(PROVIDERS.keys()) == {"wareline", "google_calendar", "asaas", "custom"}
+def test_catalogo_tem_3_providers():
+    # Asaas foi REMOVIDO do catálogo Wareline (2026-05-22): virou integração
+    # GLOBAL do SaaS (UI /billing + env vars), não mais por-empresa.
+    assert set(PROVIDERS.keys()) == {"wareline", "google_calendar", "custom"}
 
 
 def test_providers_validos_modelo_pydantic():
@@ -72,7 +74,6 @@ def test_list_providers_skip_legacy():
     slugs = {p.slug for p in non_legacy}
     assert "wareline" not in slugs
     assert "google_calendar" not in slugs
-    assert "asaas" in slugs
     assert "custom" in slugs
 
 
@@ -80,15 +81,16 @@ def test_get_provider_desconhecido_retorna_none():
     assert get_provider("inexistente-xyz") is None
 
 
-def test_validate_credentials_asaas_requer_access_token():
-    ok, msg = validate_credentials_dict("asaas", {"ambiente": "sandbox"})
+def test_validate_credentials_custom_requer_campos_obrigatorios():
+    # custom exige base_url + auth_method (campos required do FieldSpec).
+    ok, msg = validate_credentials_dict("custom", {"token": "x"})
     assert not ok
-    assert msg is not None and "Access Token" in msg
+    assert msg is not None and "obrigatórios" in msg
 
 
-def test_validate_credentials_asaas_ok():
+def test_validate_credentials_custom_ok():
     ok, msg = validate_credentials_dict(
-        "asaas", {"access_token": "x", "ambiente": "sandbox"}
+        "custom", {"base_url": "https://api.x.com", "auth_method": "bearer"}
     )
     assert ok
     assert msg is None
@@ -108,11 +110,11 @@ async def test_list_conexoes_enriquece_com_provider_info():
     now = datetime.now(UTC)
     row = (
         42,
-        "asaas",
-        "Asaas Prod",
-        "https://api.asaas.com/v3",
-        "api_key",
-        {"ambiente": "producao"},
+        "custom",
+        "Minha API",
+        "https://api.exemplo.com",
+        "bearer",
+        {"auth_method": "bearer"},
         True,
         None,
         None,
@@ -123,8 +125,8 @@ async def test_list_conexoes_enriquece_com_provider_info():
     pool, _ = _mock_pool([row])
     out = await list_conexoes(pool, empresa_id=1)
     assert len(out) == 1
-    assert out[0]["provider_nome"] == "Asaas"
-    assert out[0]["provider_icone"] == "Receipt"
+    assert out[0]["provider_nome"] == "API customizada"
+    assert out[0]["provider_icone"] == "Plug"
 
 
 # ---------- create_conexao ----------
@@ -169,23 +171,30 @@ async def test_create_conexao_credenciais_incompletas_rejeita():
         await create_conexao(
             pool,
             empresa_id=1,
-            provider_slug="asaas",
+            provider_slug="custom",
             label="X",
-            credentials={"ambiente": "sandbox"},  # falta access_token
+            credentials={"token": "x"},  # falta base_url + auth_method
         )
 
 
 @pytest.mark.asyncio
-async def test_create_conexao_asaas_ok():
-    # INSERT returna id, depois SELECT pro safe_view
+async def test_create_conexao_cifra_credenciais_sensiveis():
+    # INSERT returna id, depois SELECT pro safe_view. Asaas saiu do catálogo,
+    # então exercitamos o mesmo path de cifragem com o provider `custom`.
     now = datetime.now(UTC)
     safe_view_row = (
         99,
-        "asaas",
-        "Asaas Test",
-        "https://api.asaas.com/v3",
-        "api_key",
-        encrypt_dict({"access_token": "tk", "ambiente": "sandbox"}),
+        "custom",
+        "Minha API",
+        "https://api.exemplo.com",
+        "bearer",
+        encrypt_dict(
+            {
+                "base_url": "https://api.exemplo.com",
+                "auth_method": "bearer",
+                "token": "tk",
+            }
+        ),
         {},
         True,
         None,
@@ -198,13 +207,17 @@ async def test_create_conexao_asaas_ok():
     out = await create_conexao(
         pool,
         empresa_id=1,
-        provider_slug="asaas",
-        label="Asaas Test",
-        credentials={"access_token": "tk", "ambiente": "sandbox"},
+        provider_slug="custom",
+        label="Minha API",
+        credentials={
+            "base_url": "https://api.exemplo.com",
+            "auth_method": "bearer",
+            "token": "tk",
+        },
     )
     assert out["id"] == 99
     # Credenciais sensíveis vêm mascaradas
-    assert out["credentials"]["access_token"] == "••••••••"
+    assert out["credentials"]["token"] == "••••••••"
     # Verifica que INSERT recebeu credenciais CIFRADAS
     insert_call = next(
         c
@@ -212,7 +225,7 @@ async def test_create_conexao_asaas_ok():
         if "INSERT INTO api_connection" in c.args[0]
     )
     args_insert = insert_call.args[1]
-    # access_token plaintext NÃO pode estar nos args
+    # token plaintext NÃO pode estar nos args
     assert "tk" not in args_insert
     # Pelo menos um arg deve ser Fernet (começa com gAAAAA)
     assert any(isinstance(a, str) and a.startswith("gAAAAA") for a in args_insert)
@@ -289,16 +302,20 @@ async def test_update_conexao_404_se_outra_empresa():
 async def test_update_conexao_patch_password_invalida_cache():
     """Quando credentials_patch muda, deve DELETE no token cache."""
     now = datetime.now(UTC)
-    initial_creds = encrypt_dict({"access_token": "old", "ambiente": "sandbox"})
-    select_row = ("asaas", initial_creds, "https://api.asaas.com/v3")
+    initial_creds = encrypt_dict(
+        {"base_url": "https://api.x.com", "auth_method": "bearer", "token": "old"}
+    )
+    select_row = ("custom", initial_creds, "https://api.x.com")
     update_row = (1,)
     safe_view_row = (
         1,
-        "asaas",
-        "Asaas",
-        "https://api.asaas.com/v3",
-        "api_key",
-        encrypt_dict({"access_token": "new", "ambiente": "sandbox"}),
+        "custom",
+        "Minha API",
+        "https://api.x.com",
+        "bearer",
+        encrypt_dict(
+            {"base_url": "https://api.x.com", "auth_method": "bearer", "token": "new"}
+        ),
         {},
         True,
         None,
@@ -312,7 +329,7 @@ async def test_update_conexao_patch_password_invalida_cache():
         pool,
         connection_id=1,
         empresa_id=1,
-        credentials_patch={"access_token": "new"},
+        credentials_patch={"token": "new"},
     )
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
     # Deve ter DELETE no token cache

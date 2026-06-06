@@ -212,10 +212,12 @@ async def test_build_render_context_assembles_namespaces():
 @pytest.mark.asyncio
 async def test_build_render_context_inclui_cliente_quando_atendimento():
     cur = AsyncMock()
-    # 3 fetchone (empresa, [fetchall vars], cliente) + fetchall (vars)
+    # 3 fetchone (empresa, menu_chatbot, cliente) + fetchall (vars).
+    # A 2ª query é o lookup de menu.* (menu_chatbot) — None = sem menu ativo.
     cur.fetchone = AsyncMock(
         side_effect=[
             ("Empresa", "e", None, "free"),
+            None,  # menu_chatbot ativo (nenhum)
             ("João", "+5511999999999", "joao@x.com", "12345"),
         ]
     )

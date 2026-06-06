@@ -86,8 +86,9 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
 
 @pytest.mark.asyncio
 async def test_open_or_attach_inserts_when_no_open_row():
-    # SELECT FOR UPDATE → None, INSERT → row
-    pool, conn = _mock_pool(None, _row(id_=10, status="aguardando"))
+    # SELECT FOR UPDATE → None, CSAT pendente SELECT → None, INSERT → row
+    # (a 2ª SELECT é o lookup de CSAT pendente — Fix A prod 2026-06-01)
+    pool, conn = _mock_pool(None, None, _row(id_=10, status="aguardando"))
     out, was_created = await open_or_attach_atendimento(
         pool, 1, 5, 7, agente="vsa_tech"
     )

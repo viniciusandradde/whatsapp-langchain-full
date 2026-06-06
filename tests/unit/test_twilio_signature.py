@@ -91,6 +91,12 @@ def mock_db(monkeypatch):
             "whatsapp_langchain.server.routes.webhook.get_conexao_by_from_number",
             side_effect=fake_lookup,
         ),
+        # A.6 — webhook resolve agente via tabela agente_ia antes do catálogo.
+        # None força o fallback pro catálogo (resolved_agent = agent da query).
+        patch(
+            "whatsapp_langchain.server.routes.webhook.resolve_agente_runtime",
+            new=AsyncMock(return_value=None),
+        ),
         patch(
             "whatsapp_langchain.server.routes.webhook.upsert_cliente",
             new=AsyncMock(return_value=_default_cliente()),

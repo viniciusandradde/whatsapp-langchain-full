@@ -38,59 +38,72 @@ def mock_pool():
 
 
 def lock_cursor():
-    """Cursor para pg_advisory_xact_lock (primeira chamada em todas as operações)."""
+    """Cursor para pg_advisory_xact_lock (segunda chamada em todas as operações)."""
+    return AsyncMock()
+
+
+def setconfig_cursor():
+    """Cursor para set_config (RLS context — primeira chamada, Sprint A.2.3)."""
     return AsyncMock()
 
 
 def setup_no_existing(conn):
     """Configura mock para: nenhuma mensagem existente (INSERT novo).
 
-    Ordem de executes: [lock, SELECT, INSERT].
+    Ordem de executes: [set_config, lock, SELECT, INSERT].
     """
     select_cursor = AsyncMock()
     select_cursor.fetchone = AsyncMock(return_value=None)
     insert_cursor = AsyncMock()
     insert_cursor.fetchone = AsyncMock(return_value=(42,))
 
-    conn.execute = AsyncMock(side_effect=[lock_cursor(), select_cursor, insert_cursor])
+    conn.execute = AsyncMock(
+        side_effect=[setconfig_cursor(), lock_cursor(), select_cursor, insert_cursor]
+    )
 
 
 def setup_existing_text(conn, existing_id=10, existing_body="Oi"):
     """Configura mock para: mensagem de texto existente (debounce).
 
-    Ordem de executes: [lock, SELECT, UPDATE].
+    Ordem de executes: [set_config, lock, SELECT, UPDATE].
     """
     select_cursor = AsyncMock()
     select_cursor.fetchone = AsyncMock(return_value=(existing_id, existing_body))
     update_cursor = AsyncMock()
 
-    conn.execute = AsyncMock(side_effect=[lock_cursor(), select_cursor, update_cursor])
+    conn.execute = AsyncMock(
+        side_effect=[setconfig_cursor(), lock_cursor(), select_cursor, update_cursor]
+    )
 
 
 def setup_media_no_pending(conn, new_id=50):
     """Configura mock para mídia: nenhum texto pendente para flush.
 
-    Ordem de executes: [lock, UPDATE(flush), INSERT].
+    Ordem de executes: [set_config, lock, UPDATE(flush), INSERT].
     """
     flush_cursor = AsyncMock()
     flush_cursor.rowcount = 0
     insert_cursor = AsyncMock()
     insert_cursor.fetchone = AsyncMock(return_value=(new_id,))
 
-    conn.execute = AsyncMock(side_effect=[lock_cursor(), flush_cursor, insert_cursor])
+    conn.execute = AsyncMock(
+        side_effect=[setconfig_cursor(), lock_cursor(), flush_cursor, insert_cursor]
+    )
 
 
 def setup_media_with_pending(conn, new_id=50, flushed_count=1):
     """Configura mock para mídia: texto pendente que será flushed.
 
-    Ordem de executes: [lock, UPDATE(flush), INSERT].
+    Ordem de executes: [set_config, lock, UPDATE(flush), INSERT].
     """
     flush_cursor = AsyncMock()
     flush_cursor.rowcount = flushed_count
     insert_cursor = AsyncMock()
     insert_cursor.fetchone = AsyncMock(return_value=(new_id,))
 
-    conn.execute = AsyncMock(side_effect=[lock_cursor(), flush_cursor, insert_cursor])
+    conn.execute = AsyncMock(
+        side_effect=[setconfig_cursor(), lock_cursor(), flush_cursor, insert_cursor]
+    )
 
 
 class TestTextDebounce:
@@ -126,10 +139,10 @@ class TestTextDebounce:
         assert result.is_buffered is True
         assert result.message_id == 10
 
-        # calls[0]=lock, calls[1]=SELECT, calls[2]=UPDATE
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT, calls[3]=UPDATE
         calls = conn.execute.call_args_list
-        update_sql = calls[2][0][0]
-        update_params = calls[2][0][1]
+        update_sql = calls[3][0][0]
+        update_params = calls[3][0][1]
         assert "incoming_message" in update_sql
         assert "process_after" in update_sql
         # Body concatenado com \n
@@ -148,9 +161,9 @@ class TestTextDebounce:
         )
 
         assert result.is_buffered is True
-        # calls[0]=lock, calls[1]=SELECT, calls[2]=UPDATE
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT, calls[3]=UPDATE
         calls = conn.execute.call_args_list
-        update_params = calls[2][0][1]
+        update_params = calls[3][0][1]
         assert update_params[0] == "Oi\nTudo bem?\nComo vai?"
 
     async def test_text_debounce_resets_timer(self, mock_pool):
@@ -166,9 +179,9 @@ class TestTextDebounce:
             buffer_seconds=3.0,
         )
 
-        # calls[0]=lock, calls[1]=SELECT, calls[2]=UPDATE
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT, calls[3]=UPDATE
         calls = conn.execute.call_args_list
-        update_sql = calls[2][0][0]
+        update_sql = calls[3][0][0]
         assert "process_after = %s" in update_sql
 
     async def test_select_only_text_messages(self, mock_pool):
@@ -183,9 +196,9 @@ class TestTextDebounce:
             body="Texto",
         )
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_sql = calls[1][0][0]
+        select_sql = calls[2][0][0]
         assert "media_url IS NULL" in select_sql
 
     async def test_text_insert_has_null_media(self, mock_pool):
@@ -200,9 +213,9 @@ class TestTextDebounce:
             body="Texto puro",
         )
 
-        # calls[0]=lock, calls[1]=SELECT, calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT, calls[3]=INSERT
         calls = conn.execute.call_args_list
-        insert_params = calls[2][0][1]
+        insert_params = calls[3][0][1]
         # Ordem do INSERT (M3): empresa_id, conexao_id, atendimento_id,
         # message_id, phone, to, agent, thread, body, media_url, media_type,
         # process_after.
@@ -233,9 +246,9 @@ class TestMediaNoDebounce:
         assert result.is_buffered is False
         assert result.message_id == 50
 
-        # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush), calls[3]=INSERT
         calls = conn.execute.call_args_list
-        insert_sql = calls[2][0][0]
+        insert_sql = calls[3][0][0]
         assert "process_after" in insert_sql
         assert "NOW()" in insert_sql
 
@@ -253,11 +266,11 @@ class TestMediaNoDebounce:
             media_type="image/jpeg",
         )
 
-        # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush), calls[3]=INSERT
         calls = conn.execute.call_args_list
-        assert len(calls) == 3
-        flush_sql = calls[1][0][0]
-        insert_sql = calls[2][0][0]
+        assert len(calls) == 4
+        flush_sql = calls[2][0][0]
+        insert_sql = calls[3][0][0]
         assert "UPDATE" in flush_sql  # flush
         assert "INSERT" in insert_sql  # insert direto
 
@@ -275,9 +288,9 @@ class TestMediaNoDebounce:
             media_type="image/jpeg",
         )
 
-        # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush), calls[3]=INSERT
         calls = conn.execute.call_args_list
-        insert_params = calls[2][0][1]
+        insert_params = calls[3][0][1]
         # Mesma ordem do texto, sem process_after (mídia usa NOW() inline).
         assert insert_params[0] == 1
         assert insert_params[1] is None  # conexao_id
@@ -304,10 +317,10 @@ class TestMediaFlushPendingText:
             media_type="image/jpeg",
         )
 
-        # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush), calls[3]=INSERT
         calls = conn.execute.call_args_list
-        flush_sql = calls[1][0][0]
-        flush_params = calls[1][0][1]
+        flush_sql = calls[2][0][0]
+        flush_params = calls[2][0][1]
 
         # SQL de flush: process_after = NOW() apenas para texto pendente
         assert "SET process_after = NOW()" in flush_sql
@@ -331,9 +344,9 @@ class TestMediaFlushPendingText:
             media_type="audio/ogg",
         )
 
-        # calls[0]=lock, calls[1]=UPDATE(flush)
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush)
         calls = conn.execute.call_args_list
-        flush_params = calls[1][0][1]
+        flush_params = calls[2][0][1]
         assert flush_params == ("+5511111111111", "bot_a")
 
     async def test_no_pending_text_skips_flush_log(self, mock_pool):
@@ -367,9 +380,9 @@ class TestMediaFlushPendingText:
             media_type="image/jpeg",
         )
 
-        # calls[0]=lock, calls[1]=UPDATE(flush)
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush)
         calls = conn.execute.call_args_list
-        flush_sql = calls[1][0][0]
+        flush_sql = calls[2][0][0]
         # Flush restringe a texto: media_url IS NULL impede alterar mídia queued
         assert "media_url IS NULL" in flush_sql
 
@@ -389,9 +402,9 @@ class TestAgentIsolation:
             body="Olá bot B",
         )
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_params = calls[1][0][1]
+        select_params = calls[2][0][1]
         # O SELECT filtra por agent_id
         assert select_params[1] == "bot_b"
 
@@ -407,9 +420,9 @@ class TestAgentIsolation:
             body="Teste",
         )
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_sql = calls[1][0][0]
+        select_sql = calls[2][0][0]
         assert "agent_id = %s" in select_sql
 
 
@@ -428,9 +441,9 @@ class TestPhoneIsolation:
             body="Olá",
         )
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_params = calls[1][0][1]
+        select_params = calls[2][0][1]
         # O SELECT filtra por phone_number
         assert select_params[0] == "+5522222222222"
 
@@ -450,9 +463,9 @@ class TestDebounceWithRetry:
             body="Texto",
         )
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_sql = calls[1][0][0]
+        select_sql = calls[2][0][0]
         assert "status = 'queued'" in select_sql
 
     async def test_debounce_only_future_process_after(self, mock_pool):
@@ -467,9 +480,9 @@ class TestDebounceWithRetry:
             body="Texto",
         )
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_sql = calls[1][0][0]
+        select_sql = calls[2][0][0]
         assert "process_after > NOW()" in select_sql
 
     async def test_debounce_ignores_processing_messages(self, mock_pool):
@@ -507,14 +520,14 @@ class TestSequentialTextThenMedia:
             media_type="image/jpeg",
         )
 
-        # calls[0]=lock, calls[1]=UPDATE(flush), calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=UPDATE(flush), calls[3]=INSERT
         calls = conn.execute.call_args_list
-        assert len(calls) == 3
+        assert len(calls) == 4
 
-        flush_sql = calls[1][0][0]
+        flush_sql = calls[2][0][0]
         assert "SET process_after = NOW()" in flush_sql
 
-        insert_sql = calls[2][0][0]
+        insert_sql = calls[3][0][0]
         assert "INSERT" in insert_sql
         assert result.message_id == 51
 
@@ -534,9 +547,9 @@ class TestSequentialTextThenMedia:
 
         assert result.is_buffered is False
 
-        # calls[0]=lock, calls[1]=SELECT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT
         calls = conn.execute.call_args_list
-        select_sql = calls[1][0][0]
+        select_sql = calls[2][0][0]
         assert "media_url IS NULL" in select_sql
 
 
@@ -555,9 +568,9 @@ class TestThreadIdGeneration:
             body="Olá",
         )
 
-        # calls[0]=lock, calls[1]=SELECT, calls[2]=INSERT
+        # calls[0]=set_config, calls[1]=lock, calls[2]=SELECT, calls[3]=INSERT
         calls = conn.execute.call_args_list
-        insert_params = calls[2][0][1]
+        insert_params = calls[3][0][1]
         # thread_id na index 7 — empresa_id [0], conexao_id [1], atendimento_id [2].
         assert insert_params[7] == "+5511999999999:vsa_tech"
 
@@ -566,7 +579,7 @@ class TestAdvisoryLock:
     """Concorrência protegida por pg_advisory_xact_lock."""
 
     async def test_lock_called_before_any_operation(self, mock_pool):
-        """Advisory lock é a primeira chamada dentro da transação."""
+        """Advisory lock vem logo após o set_config do RLS context."""
         pool, conn = mock_pool
         setup_no_existing(conn)
 
@@ -577,8 +590,9 @@ class TestAdvisoryLock:
             body="Olá",
         )
 
+        # calls[0]=set_config (RLS), calls[1]=lock
         calls = conn.execute.call_args_list
-        lock_sql = calls[0][0][0]
+        lock_sql = calls[1][0][0]
         assert "pg_advisory_xact_lock" in lock_sql
 
     async def test_lock_uses_deterministic_key(self, mock_pool):
@@ -596,7 +610,7 @@ class TestAdvisoryLock:
         )
 
         calls = conn.execute.call_args_list
-        lock_key = calls[0][0][1][0]
+        lock_key = calls[1][0][1][0]
 
         # Calcula o esperado
         thread_id = "+5511999999999:assistant"
@@ -622,7 +636,7 @@ class TestAdvisoryLock:
         )
 
         calls = conn.execute.call_args_list
-        lock_key = calls[0][0][1][0]
+        lock_key = calls[1][0][1][0]
 
         # Lock de outro phone deve ser diferente
         other_thread = "+5511999999999:assistant"
@@ -647,8 +661,9 @@ class TestAdvisoryLock:
             media_type="image/jpeg",
         )
 
+        # calls[0]=set_config, calls[1]=lock
         calls = conn.execute.call_args_list
-        lock_sql = calls[0][0][0]
+        lock_sql = calls[1][0][0]
         assert "pg_advisory_xact_lock" in lock_sql
 
 
@@ -680,9 +695,9 @@ class TestMultiMediaIdempotency:
         )
         calls_after_first = conn.execute.call_args_list[:]
 
-        # calls: lock, UPDATE(flush com rowcount=1), INSERT
-        assert len(calls_after_first) == 3
-        flush_sql_1 = calls_after_first[1][0][0]
+        # calls: set_config, lock, UPDATE(flush com rowcount=1), INSERT
+        assert len(calls_after_first) == 4
+        flush_sql_1 = calls_after_first[2][0][0]
         assert "SET process_after = NOW()" in flush_sql_1
         assert result1.is_buffered is False
         assert result1.message_id == 51
@@ -700,17 +715,17 @@ class TestMultiMediaIdempotency:
         )
         calls_after_second = conn.execute.call_args_list[:]
 
-        # calls: lock, UPDATE(flush no-op com rowcount=0), INSERT
-        assert len(calls_after_second) == 3
-        flush_sql_2 = calls_after_second[1][0][0]
+        # calls: set_config, lock, UPDATE(flush no-op com rowcount=0), INSERT
+        assert len(calls_after_second) == 4
+        flush_sql_2 = calls_after_second[2][0][0]
         assert "SET process_after = NOW()" in flush_sql_2  # mesmo SQL
         assert result2.is_buffered is False
         assert result2.message_id == 52
 
         # As duas mídias são inseridas com media_url distintas (index 9
         # após inclusão de empresa_id [0], conexao_id [1], atendimento_id [2]).
-        insert_params_1 = calls_after_first[2][0][1]
-        insert_params_2 = calls_after_second[2][0][1]
+        insert_params_1 = calls_after_first[3][0][1]
+        insert_params_2 = calls_after_second[3][0][1]
         assert insert_params_1[9] == "https://example.com/img0.jpg"
         assert insert_params_2[9] == "https://example.com/img1.jpg"
 
@@ -745,5 +760,5 @@ class TestMultiMediaIdempotency:
         assert result2.message_id == 61
         assert result2.is_buffered is False
 
-        # Cada chamada faz 3 executes: lock, flush(no-op), insert
-        assert conn.execute.call_count == 3
+        # Cada chamada faz 4 executes: set_config, lock, flush(no-op), insert
+        assert conn.execute.call_count == 4

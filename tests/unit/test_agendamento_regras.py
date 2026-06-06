@@ -12,10 +12,28 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from whatsapp_langchain.shared import agendamento, agendamento_regras
+
+_TZ_SP = ZoneInfo("America/Sao_Paulo")
+
+
+def _future_local(*, isoweekday: int, hour: int, minute: int = 0) -> datetime:
+    """Retorna um datetime UTC que, em horário de São Paulo, cai no dia da
+    semana e hora pedidos, sempre no futuro (≥ 3 dias à frente) pra nunca
+    esbarrar na antecedência mínima (60 min) — mantendo os testes estáveis no
+    tempo independentemente da data de execução.
+    """
+    base = datetime.now(_TZ_SP) + timedelta(days=3)
+    # Avança até bater o dia da semana ISO desejado.
+    delta = (isoweekday - base.isoweekday()) % 7
+    target = (base + timedelta(days=delta)).replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    )
+    return target.astimezone(UTC)
 
 
 @pytest.fixture
@@ -168,8 +186,8 @@ async def test_validate_rejects_sabado_dom(
         "get",
         AsyncMock(return_value=patch_regras_default()),
     )
-    # Sábado 2026-05-09 às 10h SP (= 13h UTC)
-    sab = datetime(2026, 5, 9, 13, 0, tzinfo=UTC)
+    # Sábado às 10h SP (fora dos dias permitidos seg-sex)
+    sab = _future_local(isoweekday=6, hour=10)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=sab, end=sab + timedelta(hours=1)
     )
@@ -180,13 +198,14 @@ async def test_validate_rejects_sabado_dom(
 async def test_validate_rejects_dia_bloqueado(
     patch_regras_default, patch_calendar_config, monkeypatch
 ):
+    # Sexta no futuro às 14h SP, marcada como bloqueada.
+    bloq = _future_local(isoweekday=5, hour=14)
+    data_iso = bloq.astimezone(_TZ_SP).date().isoformat()
     monkeypatch.setattr(
         agendamento_regras,
         "get",
-        AsyncMock(return_value=patch_regras_default(dias_bloqueados=["2026-05-08"])),
+        AsyncMock(return_value=patch_regras_default(dias_bloqueados=[data_iso])),
     )
-    # Sexta 2026-05-08 (dia bloqueado)
-    bloq = datetime(2026, 5, 8, 14, 0, tzinfo=UTC)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=bloq, end=bloq + timedelta(hours=1)
     )
@@ -202,8 +221,8 @@ async def test_validate_rejects_fora_horario(
         "get",
         AsyncMock(return_value=patch_regras_default()),
     )
-    # Quinta 2026-05-07 às 22h SP (= 01h UTC dia 8) — fora janela 08-18
-    fora = datetime(2026, 5, 8, 1, 0, tzinfo=UTC)
+    # Quinta no futuro às 22h SP — fora janela 08-18
+    fora = _future_local(isoweekday=4, hour=22)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=fora, end=fora + timedelta(hours=1)
     )
@@ -219,8 +238,8 @@ async def test_validate_aceita_horario_valido(
         "get",
         AsyncMock(return_value=patch_regras_default()),
     )
-    # Quinta 2026-05-07 às 14h SP (= 17h UTC) — dentro de tudo
-    ok = datetime(2026, 5, 7, 17, 0, tzinfo=UTC)
+    # Quinta no futuro às 14h SP — dentro de tudo
+    ok = _future_local(isoweekday=4, hour=14)
     valido, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=ok, end=ok + timedelta(hours=1)
     )
