@@ -8,6 +8,7 @@ Uso:
 """
 
 import asyncio
+import contextlib
 
 import structlog
 
@@ -22,10 +23,41 @@ from whatsapp_langchain.shared.db import (
     run_migrations,
 )
 from whatsapp_langchain.shared.observability import setup_logging
+from whatsapp_langchain.shared.queue import renew_lease
 from whatsapp_langchain.worker.consumer import claim_next_message
 from whatsapp_langchain.worker.processor import process_message
 
 logger = structlog.get_logger()
+
+
+async def _lease_heartbeat(pool, message) -> None:
+    """Renova o lease enquanto a mensagem é processada (R7).
+
+    IA + mídia + guardrails podem ultrapassar LEASE_SECONDS; sem renovar, o
+    lease expira e outro worker reivindica a MESMA mensagem (claim reclama rows
+    `processing` com lease vencido) → o agente roda 2x e o cliente recebe a
+    resposta DUPLICADA em deploy multi-worker. Renova a cada ~lease/3
+    (best-effort: falha de DB tenta de novo no próximo tick). Se perder a
+    propriedade do lease (outro worker já assumiu — fence por attempts), para de
+    renovar.
+    """
+    interval = max(5, settings.lease_seconds // 3)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            still_owner = await renew_lease(
+                pool, message.id, message.attempts, settings.lease_seconds
+            )
+        except Exception:
+            logger.exception("lease_renew_failed", message_id=message.id)
+            continue
+        if not still_owner:
+            logger.warning(
+                "lease_lost_during_processing",
+                message_id=message.id,
+                attempts=message.attempts,
+            )
+            return
 
 
 async def main() -> None:
@@ -122,12 +154,22 @@ async def main() -> None:
                 # mensagens de empresas diferentes processadas pelo mesmo
                 # worker.
                 with empresa_scope(empresa_id=message.empresa_id):
-                    await process_message(
-                        message,
-                        pool,
-                        checkpointer=checkpointer,
-                        store=store,
-                    )
+                    # R7: heartbeat renova o lease em background enquanto a IA
+                    # processa, pra IA lenta (>lease) não disparar reclaim +
+                    # resposta duplicada. Criado DENTRO do empresa_scope pra
+                    # herdar o contextvar de RLS (renova com app.empresa_id set).
+                    heartbeat = asyncio.create_task(_lease_heartbeat(pool, message))
+                    try:
+                        await process_message(
+                            message,
+                            pool,
+                            checkpointer=checkpointer,
+                            store=store,
+                        )
+                    finally:
+                        heartbeat.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await heartbeat
             except (KeyboardInterrupt, asyncio.CancelledError):
                 raise
             except Exception:
