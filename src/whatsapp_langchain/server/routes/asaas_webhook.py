@@ -34,12 +34,13 @@ async def webhook_asaas(
     request: Request,
     asaas_access_token: str | None = Header(default=None),
 ):
-    """Recebe webhook do Asaas. Valida token, processa, retorna 200.
+    """Recebe webhook do Asaas. Valida token, processa.
 
-    Sempre retorna 200 (até em erros não-fatais) — Asaas retenta com
-    backoff se receber não-2xx, e queremos evitar ciclo de retry pra
-    bugs de aplicação. Erros vão pro structlog + billing_event_log
-    pra retry manual.
+    200 no happy path e em casos não-retentáveis (JSON inválido, cliente
+    desconhecido, evento duplicado). Em FALHA de processamento (ex.: DB
+    transitório) retorna 5xx pra Asaas RETENTAR — antes engolia o erro com 200
+    e a confirmação de pagamento era perdida. O reprocessamento é seguro porque
+    process_asaas_webhook é idempotente por dedup_key (R9).
     """
     if not settings.asaas_webhook_token:
         logger.error("asaas_webhook_token_missing_in_config")
@@ -72,5 +73,8 @@ async def webhook_asaas(
             event_type=event.get("event"),
             error=str(exc),
         )
-        # 200 mesmo em erro pra não causar retry loop — log captura tudo
-        return {"status": "error", "message": str(exc)[:200]}
+        # 5xx → Asaas retenta. Antes retornava 200 e a confirmação de pagamento
+        # era PERDIDA numa falha transitória. Seguro: dedup_key torna o
+        # reprocessamento idempotente. Asaas tem backoff + limite de tentativas,
+        # então um bug determinístico não vira loop infinito.
+        raise HTTPException(status_code=503, detail="processing failed; retry") from exc
