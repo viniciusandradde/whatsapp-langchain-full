@@ -17,10 +17,71 @@ import structlog
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.integrations.asaas import AsaasClient, AsaasError
+from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.plano_limits import clear_plano_cache
+from whatsapp_langchain.shared.platform_config import get_platform_config
 from whatsapp_langchain.shared.rls_context import empresa_scope
 
 logger = structlog.get_logger()
+
+# slug da config global Asaas em platform_integration_config (mig 117)
+ASAAS_SLUG = "asaas"
+
+
+def _base_url_for(environment: str) -> str:
+    return (
+        "https://api.asaas.com/v3"
+        if environment.strip().lower() == "production"
+        else "https://api-sandbox.asaas.com/v3"
+    )
+
+
+async def get_asaas_effective(pool: AsyncConnectionPool) -> dict[str, Any]:
+    """Config Asaas EFETIVA: DB (platform_integration_config) primeiro, env fallback.
+
+    Retorna `{enabled, api_key, environment, base_url, webhook_token,
+    success_url, cancel_url, source}` (`source` ∈ db|env|none). Sem expor secrets
+    a quem não deve — é uso interno do billing/webhook. A UI usa flags derivadas.
+    """
+    db = await get_platform_config(pool, ASAAS_SLUG)
+    if db and db.get("api_key"):
+        environment = (db.get("environment") or "sandbox").strip().lower()
+        return {
+            "enabled": True,
+            "api_key": db["api_key"],
+            "environment": environment,
+            "base_url": _base_url_for(environment),
+            "webhook_token": db.get("webhook_token") or "",
+            "success_url": db.get("success_url") or "",
+            "cancel_url": db.get("cancel_url") or "",
+            "source": "db",
+        }
+    if settings.asaas_enabled:
+        return {
+            "enabled": True,
+            "api_key": settings.asaas_api_key.get_secret_value(),  # type: ignore[union-attr]
+            "environment": settings.asaas_environment,
+            "base_url": settings.asaas_base_url,
+            "webhook_token": (
+                settings.asaas_webhook_token.get_secret_value()
+                if settings.asaas_webhook_token
+                else ""
+            ),
+            "success_url": settings.asaas_success_url,
+            "cancel_url": settings.asaas_cancel_url,
+            "source": "env",
+        }
+    return {
+        "enabled": False,
+        "api_key": "",
+        "environment": "sandbox",
+        "base_url": _base_url_for("sandbox"),
+        "webhook_token": "",
+        "success_url": "",
+        "cancel_url": "",
+        "source": "none",
+    }
+
 
 # ---------------------------------------------------------------------
 # Customers
@@ -60,7 +121,7 @@ async def create_or_get_asaas_customer(
             status_code=400,
         )
 
-    client = AsaasClient()
+    client = await AsaasClient.from_pool(pool)
     # Idempotência: procura por external_reference primeiro
     existing = await client.list_customers_by_external_ref(str(empresa_id))
     if existing:
@@ -135,7 +196,7 @@ async def create_subscription_for_plano(
     existing_sub = await _get_existing_subscription(pool, empresa_id)
     if existing_sub:
         try:
-            await AsaasClient().cancel_subscription(existing_sub)
+            await (await AsaasClient.from_pool(pool)).cancel_subscription(existing_sub)
             logger.info(
                 "asaas_old_subscription_cancelled",
                 empresa_id=empresa_id,
@@ -150,7 +211,7 @@ async def create_subscription_for_plano(
 
     # Cria nova subscription (próximo dia útil como vencimento)
     next_due = (date.today() + timedelta(days=1)).isoformat()
-    client = AsaasClient()
+    client = await AsaasClient.from_pool(pool)
     sub = await client.create_subscription(
         customer=customer_id,
         value=valor,
@@ -230,7 +291,7 @@ async def cancel_active_subscription(
         }
 
     try:
-        await AsaasClient().cancel_subscription(sub_id)
+        await (await AsaasClient.from_pool(pool)).cancel_subscription(sub_id)
     except AsaasError as exc:
         logger.warning(
             "asaas_subscription_cancel_failed",
