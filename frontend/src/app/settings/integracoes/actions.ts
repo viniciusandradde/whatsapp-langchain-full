@@ -13,8 +13,10 @@ import {
   getWarelineConfig,
   listApiConnections,
   type ProviderSpec,
+  saveAsaasConfig,
   saveWarelineConfig,
   testApiConnection,
+  testAsaasConnection,
   testWarelineConnection,
   updateApiConnection,
   updateGoogleCalendarConfig,
@@ -200,5 +202,32 @@ export async function deleteApiConnectionAction(
     return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Asaas (config global da plataforma — superadmin) ---
+
+export async function saveAsaasConfigAction(payload: {
+  environment?: string;
+  api_key?: string;
+  webhook_token?: string;
+  success_url?: string;
+  cancel_url?: string;
+}): Promise<Result> {
+  try {
+    await saveAsaasConfig(payload);
+    revalidatePath("/settings/integracoes");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function testAsaasAction(): Promise<TestResult> {
+  try {
+    const r = await testAsaasConnection();
+    return { ok: r.ok, mensagem: `Conta Asaas: ${r.conta}` };
+  } catch (e) {
+    return { ok: false, mensagem: toError(e) };
   }
 }

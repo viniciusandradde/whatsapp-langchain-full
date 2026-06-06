@@ -26,7 +26,6 @@ from whatsapp_langchain.shared.asaas import (
     create_subscription_for_plano,
     list_transacoes,
 )
-from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import is_admin_of
 
@@ -39,13 +38,18 @@ router = APIRouter(
 )
 
 
-def _ensure_asaas_enabled() -> None:
-    if not settings.asaas_enabled:
+async def _ensure_asaas_enabled() -> None:
+    # Config efetiva: DB (UI/superadmin) primeiro, env como fallback.
+    from whatsapp_langchain.shared.asaas import get_asaas_effective
+
+    pool = await get_pool()
+    cfg = await get_asaas_effective(pool)
+    if not cfg["enabled"]:
         raise HTTPException(
             status_code=503,
             detail=(
-                "Integração ASAAS não configurada (ASAAS_API_KEY ausente). "
-                "Contate o admin."
+                "Integração Asaas não configurada. Configure em Integrações → "
+                "Asaas (superadmin) ou em env vars."
             ),
         )
 
@@ -74,7 +78,7 @@ async def checkout(
     Retorna URL de pagamento Asaas (invoiceUrl). UI redireciona user.
     Plano só ativa após webhook PAYMENT_CONFIRMED.
     """
-    _ensure_asaas_enabled()
+    await _ensure_asaas_enabled()
     await _require_admin(empresa_id, user_id)
 
     pool = await get_pool()
@@ -119,7 +123,7 @@ async def cancel(
     user_id: str = Depends(get_user_id_from_request),
 ):
     """Cancela subscription ativa. Plano vira free imediatamente."""
-    _ensure_asaas_enabled()
+    await _ensure_asaas_enabled()
     await _require_admin(empresa_id, user_id)
 
     pool = await get_pool()

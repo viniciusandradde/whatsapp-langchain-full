@@ -40,23 +40,44 @@ class TestSmokeBillingEndpoints:
 
 
 class TestSmokeAsaasWebhook:
-    def test_webhook_sem_token_401(self) -> None:
-        resp = _client().post(
-            "/webhook/asaas",
-            json={"event": "PAYMENT_CONFIRMED"},
-        )
-        # 503 se ASAAS_WEBHOOK_TOKEN não está configurado (dev test);
-        # 401 se está configurado mas token errado
-        assert resp.status_code in (401, 503), resp.text
+    # O webhook resolve o token efetivo (DB>env) via get_asaas_effective — mockado
+    # aqui pra não tocar Postgres (em prod o DB é rápido; sem DB no teste travaria).
+    @staticmethod
+    def _patch_resolver(monkeypatch, webhook_token: str):
+        from unittest.mock import AsyncMock
 
-    def test_webhook_token_errado_401(self) -> None:
-        # Se token configurado, request com token errado dá 401
+        from whatsapp_langchain.server.routes import asaas_webhook as wh
+
+        monkeypatch.setattr(wh, "get_pool", AsyncMock(return_value=object()))
+        monkeypatch.setattr(
+            wh,
+            "get_asaas_effective",
+            AsyncMock(return_value={"webhook_token": webhook_token}),
+        )
+
+    def test_webhook_sem_token_401(self, monkeypatch) -> None:
+        self._patch_resolver(monkeypatch, "tok-configurado")
+        resp = _client().post("/webhook/asaas", json={"event": "PAYMENT_CONFIRMED"})
+        assert resp.status_code == 401, resp.text
+
+    def test_webhook_token_errado_401(self, monkeypatch) -> None:
+        self._patch_resolver(monkeypatch, "tok-configurado")
         resp = _client().post(
             "/webhook/asaas",
             headers={"asaas-access-token": "valor-errado"},
             json={"event": "PAYMENT_CONFIRMED"},
         )
-        assert resp.status_code in (401, 503), resp.text
+        assert resp.status_code == 401, resp.text
+
+    def test_webhook_sem_config_503(self, monkeypatch) -> None:
+        # Sem token configurado (nem DB nem env) → 503.
+        self._patch_resolver(monkeypatch, "")
+        resp = _client().post(
+            "/webhook/asaas",
+            headers={"asaas-access-token": "qualquer"},
+            json={"event": "PAYMENT_CONFIRMED"},
+        )
+        assert resp.status_code == 503, resp.text
 
 
 class TestAsaasClientConfig:
@@ -80,7 +101,7 @@ class TestAsaasClientConfig:
         from whatsapp_langchain.shared.config import Settings
 
         s_sandbox = Settings(asaas_environment="sandbox")
-        assert s_sandbox.asaas_base_url == "https://sandbox.asaas.com/api/v3"
+        assert s_sandbox.asaas_base_url == "https://api-sandbox.asaas.com/v3"
 
         s_prod = Settings(asaas_environment="production")
         assert s_prod.asaas_base_url == "https://api.asaas.com/v3"

@@ -20,8 +20,7 @@ import hmac
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from whatsapp_langchain.shared.asaas import process_asaas_webhook
-from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.asaas import get_asaas_effective, process_asaas_webhook
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -42,14 +41,17 @@ async def webhook_asaas(
     e a confirmação de pagamento era perdida. O reprocessamento é seguro porque
     process_asaas_webhook é idempotente por dedup_key (R9).
     """
-    if not settings.asaas_webhook_token:
+    # Token efetivo: DB (UI/superadmin) primeiro, env como fallback.
+    pool = await get_pool()
+    cfg = await get_asaas_effective(pool)
+    expected = cfg["webhook_token"]
+    if not expected:
         logger.error("asaas_webhook_token_missing_in_config")
         raise HTTPException(
             status_code=503,
-            detail="ASAAS_WEBHOOK_TOKEN não configurado no servidor.",
+            detail="Webhook token Asaas não configurado (UI ou env).",
         )
 
-    expected = settings.asaas_webhook_token.get_secret_value()
     if not asaas_access_token or not hmac.compare_digest(asaas_access_token, expected):
         logger.warning(
             "asaas_webhook_invalid_token",
@@ -62,8 +64,6 @@ async def webhook_asaas(
     except Exception as exc:  # noqa: BLE001
         logger.warning("asaas_webhook_bad_json", error=str(exc))
         return {"status": "bad_json"}
-
-    pool = await get_pool()
     try:
         result = await process_asaas_webhook(pool, event)
         return {"status": "ok", **result}

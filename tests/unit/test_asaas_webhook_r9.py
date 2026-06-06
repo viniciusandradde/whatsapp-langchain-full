@@ -70,14 +70,15 @@ async def test_dedup_key_sintetizada_sem_event_id(monkeypatch):
 def test_webhook_5xx_on_processing_error(monkeypatch):
     """Falha de processamento → 503 (Asaas retenta), não 200 (perda silenciosa)."""
     from fastapi.testclient import TestClient
-    from pydantic import SecretStr
 
     from whatsapp_langchain.server.main import app
     from whatsapp_langchain.server.routes import asaas_webhook as wh
-    from whatsapp_langchain.shared.config import settings
 
-    monkeypatch.setattr(settings, "asaas_webhook_token", SecretStr("tok"))
     monkeypatch.setattr(wh, "get_pool", AsyncMock(return_value=object()))
+    # token efetivo vem do resolver (DB>env) — mock retorna token configurado
+    monkeypatch.setattr(
+        wh, "get_asaas_effective", AsyncMock(return_value={"webhook_token": "tok"})
+    )
 
     async def boom(pool, event):
         raise RuntimeError("db transient down")

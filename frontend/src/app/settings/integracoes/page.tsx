@@ -2,13 +2,17 @@ import { Plug } from "lucide-react";
 
 import {
   type ApiConnection,
+  type AsaasConfigStatus,
+  getAsaasConfig,
   getGoogleCalendarConfig,
   getWarelineConfig,
+  isMyAdmin,
   listApiConnections,
 } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { ApiConnectionsSection } from "./api-connections-section";
+import { AsaasCard } from "./asaas-card";
 import { WarelineCard } from "./wareline-card";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +58,15 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
       e instanceof Error ? e.message : "Erro desconhecido ao carregar config.";
   }
 
+  // Asaas é config GLOBAL da plataforma — só superadmin vê/edita.
+  let isSuper = false;
+  let asaasConfig: AsaasConfigStatus | null = null;
+  const me = await isMyAdmin().catch(() => ({ is_superadmin: false }));
+  isSuper = me.is_superadmin;
+  if (isSuper) {
+    asaasConfig = await getAsaasConfig().catch(() => null);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
@@ -78,6 +91,7 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
         </div>
       )}
 
+      {isSuper && asaasConfig && <AsaasCard initialConfig={asaasConfig} />}
       <WarelineCard initialConfig={warelineConfig} />
       <ApiConnectionsSection
         initialConnections={apiConnections}

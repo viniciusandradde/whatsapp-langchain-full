@@ -42,15 +42,45 @@ class AsaasError(Exception):
 class AsaasClient:
     """Wrap mínimo da API Asaas v3."""
 
-    def __init__(self, *, timeout_seconds: float = 30.0):
-        if not settings.asaas_enabled:
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout_seconds: float = 30.0,
+    ):
+        # Config explícita (vinda do resolver DB>env) tem prioridade; sem ela,
+        # cai em settings (env) — compat com chamadas legadas.
+        if api_key is None or base_url is None:
+            if not settings.asaas_enabled:
+                raise AsaasError(
+                    "ASAAS_API_KEY não configurado. Configure na UI "
+                    "(Integrações → Asaas) ou em env vars.",
+                    status_code=503,
+                )
+            api_key = api_key or settings.asaas_api_key.get_secret_value()  # type: ignore[union-attr]
+            base_url = base_url or settings.asaas_base_url
+        self._key = api_key
+        self._base = base_url
+        self._timeout = timeout_seconds
+
+    @classmethod
+    async def from_pool(cls, pool, *, timeout_seconds: float = 30.0) -> AsaasClient:
+        """Constrói o client com a config EFETIVA (DB primeiro, env fallback)."""
+        # Import tardio evita ciclo (shared.asaas importa AsaasClient).
+        from whatsapp_langchain.shared.asaas import get_asaas_effective
+
+        cfg = await get_asaas_effective(pool)
+        if not cfg["enabled"]:
             raise AsaasError(
-                "ASAAS_API_KEY não configurado. Setar em env vars + redeploy.",
+                "Asaas não configurado (nem na UI nem em env vars).",
                 status_code=503,
             )
-        self._key = settings.asaas_api_key.get_secret_value()  # type: ignore[union-attr]
-        self._base = settings.asaas_base_url
-        self._timeout = timeout_seconds
+        return cls(
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"],
+            timeout_seconds=timeout_seconds,
+        )
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -150,6 +180,10 @@ class AsaasClient:
         if external_reference:
             body["externalReference"] = external_reference
         return await self._request("POST", "/customers", json=body)
+
+    async def get_account(self) -> dict:
+        """GET /myAccount — valida a API key (usado pelo 'testar' da config UI)."""
+        return await self._request("GET", "/myAccount")
 
     async def get_customer(self, customer_id: str) -> dict:
         return await self._request("GET", f"/customers/{customer_id}")
