@@ -138,7 +138,7 @@ async def list_audit(
             SELECT id, empresa_id, user_id, action, entity_type, entity_id,
                    payload_diff, ip, user_agent, request_id, at
               FROM audit_log
-             WHERE {' AND '.join(where)}
+             WHERE {" AND ".join(where)}
              ORDER BY at DESC
              LIMIT %s OFFSET %s
             """,

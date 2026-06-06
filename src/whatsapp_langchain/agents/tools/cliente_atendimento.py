@@ -26,11 +26,13 @@ from whatsapp_langchain.shared.agente import get_agente_by_slug
 from whatsapp_langchain.shared.atendente import pick_best_atendente
 from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
-    close_atendimento as _close_atendimento,
     complete_triagem,
     get_atendimento_by_id,
     list_atendimentos_by_cliente,
     set_classificacao,
+)
+from whatsapp_langchain.shared.atendimento import (
+    close_atendimento as _close_atendimento,
 )
 from whatsapp_langchain.shared.cliente import (
     add_anotacao,

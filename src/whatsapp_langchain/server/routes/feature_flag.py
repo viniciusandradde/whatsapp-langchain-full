@@ -81,9 +81,7 @@ async def upsert_endpoint(
         action="feature_flag.upsert",
         entity_type="feature_flag",
         entity_id=key,
-        payload_diff={
-            "after": {"value": body.value, "ativo": body.ativo}
-        },
+        payload_diff={"after": {"value": body.value, "ativo": body.ativo}},
     )
     return out
 

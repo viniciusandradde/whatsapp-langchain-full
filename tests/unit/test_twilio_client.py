@@ -374,11 +374,13 @@ class TestSendMessageWithMedia:
         )
         captured = respx_mock.calls.last.request
         parsed = parse_qs(captured.content.decode())
-        assert sorted(parsed["MediaUrl"]) == sorted([
-            "https://cdn.example.com/1.jpg",
-            "https://cdn.example.com/2.jpg",
-            "https://cdn.example.com/3.jpg",
-        ])
+        assert sorted(parsed["MediaUrl"]) == sorted(
+            [
+                "https://cdn.example.com/1.jpg",
+                "https://cdn.example.com/2.jpg",
+                "https://cdn.example.com/3.jpg",
+            ]
+        )
 
     async def test_rejects_more_than_10_media_urls(self, client):
         with pytest.raises(ValueError, match="máximo 10"):
@@ -432,6 +434,7 @@ class TestSendTemplate:
         assert parsed["ContentSid"] == ["HXb5b62575e6e4ff6129ad7c8efe1f983e"]
         # ContentVariables vai como JSON string
         import json as _json
+
         assert _json.loads(parsed["ContentVariables"][0]) == {"1": "12/1", "2": "3pm"}
         # Sem Body no template
         assert "Body" not in parsed

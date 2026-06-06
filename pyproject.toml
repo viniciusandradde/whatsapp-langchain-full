@@ -70,12 +70,18 @@ dev = [
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Sub-projetos / didáticos / scratch não fazem parte do source lintado.
+extend-exclude = ["docs", "webscap", "patch"]
 
 [tool.ruff.format]
 quote-style = "double"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+# E501 (linha > 88): o formatter já cuida do comprimento de código; sobra só em
+# comentários/docstrings/strings que ele não quebra — ruído, não bug.
+# E402 (import fora do topo): há imports tardios intencionais (lazy/condicional).
+ignore = ["E501", "E402"]
 
 [tool.pyright]
 pythonVersion = "3.11"

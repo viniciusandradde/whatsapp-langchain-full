@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -103,14 +102,23 @@ async def registrar_execucao(
                         %s::text[], %s, %s, %s::jsonb, %s)
                 RETURNING id
                 """,
-                (empresa_id, atendimento_id, agente_ia_id,
-                 modelo_provedor, modelo_nome,
-                 tokens_input, tokens_output, tokens_cached,
-                 Decimal(str(custo_total)) if custo_total is not None else None,
-                 duracao_ms, list(tools_chamadas or []),
-                 status, erro_msg,
-                 json.dumps(metadata or {}),
-                 langfuse_trace_id),
+                (
+                    empresa_id,
+                    atendimento_id,
+                    agente_ia_id,
+                    modelo_provedor,
+                    modelo_nome,
+                    tokens_input,
+                    tokens_output,
+                    tokens_cached,
+                    Decimal(str(custo_total)) if custo_total is not None else None,
+                    duracao_ms,
+                    list(tools_chamadas or []),
+                    status,
+                    erro_msg,
+                    json.dumps(metadata or {}),
+                    langfuse_trace_id,
+                ),
             )
             row = await cur.fetchone()
             await conn.commit()
@@ -144,9 +152,7 @@ async def acrescentar_consumo(
         logger.warning("ia_budget_update_failed", error=str(exc))
 
 
-async def get_budget_atual(
-    pool: AsyncConnectionPool, empresa_id: int
-) -> dict | None:
+async def get_budget_atual(pool: AsyncConnectionPool, empresa_id: int) -> dict | None:
     """Retorna budget do mês atual ou None se não configurado.
 
     Estrutura: {limite_usd, consumo_usd, acao_estouro, alerta_pct,

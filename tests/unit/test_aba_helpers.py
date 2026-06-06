@@ -97,9 +97,7 @@ async def test_create_aba_inserts_and_returns_row():
 @pytest.mark.asyncio
 async def test_update_aba_partial_descricao_only():
     pool, conn = _mock_pool(_aba_row(id_=5, nome="Renomeada"))
-    out = await update_aba(
-        pool, aba_id=5, user_id="u", descricao="Renomeada"
-    )
+    out = await update_aba(pool, aba_id=5, user_id="u", descricao="Renomeada")
     assert out is not None
     assert out["descricao"] == "Renomeada"
     sql = conn.execute.await_args.args[0]
@@ -134,12 +132,8 @@ async def test_delete_aba_soft_and_unsets_atendimentos():
     ok = await delete_aba(pool, aba_id=1, user_id="u")
     assert ok is True
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
-    assert any(
-        "UPDATE aba SET ativo = FALSE" in s for s in sql_calls
-    )
-    assert any(
-        "UPDATE atendimento SET aba_id = NULL" in s for s in sql_calls
-    )
+    assert any("UPDATE aba SET ativo = FALSE" in s for s in sql_calls)
+    assert any("UPDATE atendimento SET aba_id = NULL" in s for s in sql_calls)
 
 
 @pytest.mark.asyncio

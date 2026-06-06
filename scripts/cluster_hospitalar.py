@@ -32,8 +32,14 @@ from whatsapp_langchain.shared.db import close_pool, get_pool
 from whatsapp_langchain.shared.llm import create_chat_model
 
 SLUGS = [
-    "atendimento", "atendimento-cliente", "agendamentos", "exames",
-    "orcamento", "ouvidoria", "rh-recrutamento-selecao", "tesouraria",
+    "atendimento",
+    "atendimento-cliente",
+    "agendamentos",
+    "exames",
+    "orcamento",
+    "ouvidoria",
+    "rh-recrutamento-selecao",
+    "tesouraria",
 ]
 MIN_CLUSTER_SIZE = 3
 SIMILARITY_THRESHOLD = 0.78
@@ -55,6 +61,7 @@ PASTA_BY_SLUG = {
 
 def _cosine(a: list[float], b: list[float]) -> float:
     import math
+
     dot = sum(x * y for x, y in zip(a, b, strict=True))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(x * x for x in b))
@@ -86,7 +93,7 @@ async def embed_all(msgs: list[str]) -> list[list[float]]:
     )
     out = []
     for i in range(0, len(msgs), 100):
-        chunk = msgs[i:i + 100]
+        chunk = msgs[i : i + 100]
         out.extend(await embedder.aembed_documents(chunk))
         print(f"    embed {i + len(chunk)}/{len(msgs)}", flush=True)
     return out
@@ -164,10 +171,13 @@ async def get_pasta_id(pool, empresa_id: int, slug: str) -> int | None:
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--empresa-id", type=int, default=999)
-    parser.add_argument("--slug", default=None,
-                        help="Apenas um slug (default: todos)")
-    parser.add_argument("--top", type=int, default=DEFAULT_TOP_N,
-                        help="Top-N clusters por slug a virar sugestão")
+    parser.add_argument("--slug", default=None, help="Apenas um slug (default: todos)")
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=DEFAULT_TOP_N,
+        help="Top-N clusters por slug a virar sugestão",
+    )
     args = parser.parse_args()
 
     slugs = [args.slug] if args.slug else SLUGS
@@ -183,9 +193,9 @@ async def main() -> int:
                 continue
             print(f"  msgs: {len(msgs)}", flush=True)
 
-            print(f"  embedding...", flush=True)
+            print("  embedding...", flush=True)
             vecs = await embed_all(msgs)
-            print(f"  clustering...", flush=True)
+            print("  clustering...", flush=True)
             clusters = cluster_greedy(msgs, vecs)
             print(f"  clusters: {len(clusters)}", flush=True)
 
@@ -212,7 +222,7 @@ async def main() -> int:
                 for q in (r[1] or [])[:3]:
                     existing_queries.add(q.strip().lower()[:100])
 
-            top_clusters = clusters[:args.top]
+            top_clusters = clusters[: args.top]
             skipped = 0
             for i, cluster in enumerate(top_clusters):
                 titulo, conteudo = await generate_draft(slug, cluster)
@@ -220,12 +230,18 @@ async def main() -> int:
                 title_lower = titulo.strip().lower()
                 if title_lower in existing_titles:
                     skipped += 1
-                    print(f"    [{i+1}/{len(top_clusters)}] SKIP dup-title → {titulo[:60]}", flush=True)
+                    print(
+                        f"    [{i + 1}/{len(top_clusters)}] SKIP dup-title → {titulo[:60]}",
+                        flush=True,
+                    )
                     continue
                 new_q = {q.strip().lower()[:100] for q in cluster[:3]}
                 if len(new_q & existing_queries) >= 2:
                     skipped += 1
-                    print(f"    [{i+1}/{len(top_clusters)}] SKIP dup-queries → {titulo[:60]}", flush=True)
+                    print(
+                        f"    [{i + 1}/{len(top_clusters)}] SKIP dup-queries → {titulo[:60]}",
+                        flush=True,
+                    )
                     continue
                 # Add ao set imediatamente
                 existing_titles.add(title_lower)
@@ -239,13 +255,25 @@ async def main() -> int:
                            queries_amostra, cluster_size, status)
                         VALUES (%s, %s, %s, %s, %s, %s, 'pending')
                         """,
-                        (args.empresa_id, pasta_id, titulo, conteudo,
-                         cluster[:MAX_PER_CLUSTER], len(cluster)),
+                        (
+                            args.empresa_id,
+                            pasta_id,
+                            titulo,
+                            conteudo,
+                            cluster[:MAX_PER_CLUSTER],
+                            len(cluster),
+                        ),
                     )
                     await conn.commit()
-                print(f"    [{i+1}/{len(top_clusters)}] cluster_size={len(cluster)} → {titulo[:60]}", flush=True)
+                print(
+                    f"    [{i + 1}/{len(top_clusters)}] cluster_size={len(cluster)} → {titulo[:60]}",
+                    flush=True,
+                )
             if skipped > 0:
-                print(f"    skipped {skipped} duplicates (preservou trabalho do admin)", flush=True)
+                print(
+                    f"    skipped {skipped} duplicates (preservou trabalho do admin)",
+                    flush=True,
+                )
                 total_created += 1
     finally:
         await close_pool()

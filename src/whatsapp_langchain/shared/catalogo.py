@@ -14,7 +14,6 @@ from typing import Any
 
 from psycopg_pool import AsyncConnectionPool
 
-
 # ============================================================================
 # modelo_llm
 # ============================================================================
@@ -44,10 +43,14 @@ class ModeloLLM:
             "descricao": self.descricao,
             "tipo": self.tipo,
             "custo_input_mtok": (
-                float(self.custo_input_mtok) if self.custo_input_mtok is not None else None
+                float(self.custo_input_mtok)
+                if self.custo_input_mtok is not None
+                else None
             ),
             "custo_output_mtok": (
-                float(self.custo_output_mtok) if self.custo_output_mtok is not None else None
+                float(self.custo_output_mtok)
+                if self.custo_output_mtok is not None
+                else None
             ),
             "janela_contexto": self.janela_contexto,
             "ativo": self.ativo,
@@ -92,9 +95,7 @@ async def list_modelos_llm(
     return [_row_to_modelo(r) for r in rows]
 
 
-async def get_modelo_llm(
-    pool: AsyncConnectionPool, modelo_id: int
-) -> ModeloLLM | None:
+async def get_modelo_llm(pool: AsyncConnectionPool, modelo_id: int) -> ModeloLLM | None:
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"SELECT {_MODELO_COLS} FROM modelo_llm WHERE id = %s",
@@ -125,8 +126,16 @@ async def create_modelo_llm(
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {_MODELO_COLS}
             """,
-            (empresa_id, provedor, nome, descricao, tipo,
-             custo_input_mtok, custo_output_mtok, janela_contexto),
+            (
+                empresa_id,
+                provedor,
+                nome,
+                descricao,
+                tipo,
+                custo_input_mtok,
+                custo_output_mtok,
+                janela_contexto,
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -238,8 +247,7 @@ async def list_mcp_servers(
         where += " AND ativo = TRUE"
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {_MCP_COLS} FROM mcp_server "
-            f"WHERE {where} ORDER BY nome",
+            f"SELECT {_MCP_COLS} FROM mcp_server WHERE {where} ORDER BY nome",
             (empresa_id,),
         )
         rows = await cur.fetchall()
@@ -251,8 +259,7 @@ async def get_mcp_server(
 ) -> McpServer | None:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {_MCP_COLS} FROM mcp_server "
-            f"WHERE empresa_id = %s AND id = %s",
+            f"SELECT {_MCP_COLS} FROM mcp_server WHERE empresa_id = %s AND id = %s",
             (empresa_id, mcp_id),
         )
         row = await cur.fetchone()
@@ -281,8 +288,17 @@ async def create_mcp_server(
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
             RETURNING {_MCP_COLS}
             """,
-            (empresa_id, nome, descricao, tipo_conexao, url, comando, args,
-             json.dumps(headers or {}), user_id),
+            (
+                empresa_id,
+                nome,
+                descricao,
+                tipo_conexao,
+                url,
+                comando,
+                args,
+                json.dumps(headers or {}),
+                user_id,
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -297,8 +313,7 @@ async def update_mcp_server(
     **fields: Any,
 ) -> McpServer | None:
     # PATCH parcial — None = limpar. Ver docs/dev/PATCH_PATTERN.md.
-    READONLY = {"id", "empresa_id", "created_at", "updated_at",
-                "created_by_user_id"}
+    READONLY = {"id", "empresa_id", "created_at", "updated_at", "created_by_user_id"}
     sets: list[str] = []
     params: list = []
     for k, v in fields.items():

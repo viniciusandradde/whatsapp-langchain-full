@@ -80,9 +80,7 @@ async def test_log_event_grava_e_commita():
 async def test_log_event_levanta_em_type_invalido():
     pool, _ = _mock_pool()
     with pytest.raises(LGPDEventTypeError):
-        await log_event(
-            pool, empresa_id=1, event_type="invento_qualquer"
-        )
+        await log_event(pool, empresa_id=1, event_type="invento_qualquer")
 
 
 @pytest.mark.asyncio
@@ -173,8 +171,16 @@ async def test_list_events_aplica_filtros():
     pool, conn = _mock_pool(
         [
             (
-                1, 5, 100, 50, "saude_atendimento_cliente", "u1",
-                "cpf_collected", {"motivo": "2via"}, "1.2.3.4", now,
+                1,
+                5,
+                100,
+                50,
+                "saude_atendimento_cliente",
+                "u1",
+                "cpf_collected",
+                {"motivo": "2via"},
+                "1.2.3.4",
+                now,
             )
         ]
     )

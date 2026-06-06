@@ -85,9 +85,7 @@ async def test_create_tag_insert_e_retorna_dict():
 @pytest.mark.asyncio
 async def test_update_tag_partial_apenas_nome():
     pool, conn = _mock_pool(_tag_row(id_=5, nome="Renomeada"))
-    out = await update_tag(
-        pool, tag_id=5, empresa_id=1, nome="Renomeada"
-    )
+    out = await update_tag(pool, tag_id=5, empresa_id=1, nome="Renomeada")
     assert out is not None
     sql = conn.execute.await_args.args[0]
     assert "UPDATE tag SET nome = %s" in sql
@@ -135,9 +133,7 @@ async def test_list_tags_de_atendimento_ordena_por_data():
         (2, "Urgente", "#000", None, None, True, now),  # aplicada por IA
     ]
     pool, conn = _mock_pool(rows)
-    out = await list_tags_de_atendimento(
-        pool, atendimento_id=100, empresa_id=1
-    )
+    out = await list_tags_de_atendimento(pool, atendimento_id=100, empresa_id=1)
     assert len(out) == 2
     assert out[0]["aplicado_por_user_id"] == "user-x"
     assert out[1]["aplicado_por_ia"] is True
@@ -191,9 +187,7 @@ async def test_apply_tags_skip_se_listas_vazias():
 @pytest.mark.asyncio
 async def test_list_atendimento_ids_com_tags_or():
     pool, conn = _mock_pool([(10,), (20,), (30,)])
-    out = await list_atendimento_ids_com_tags(
-        pool, empresa_id=1, tag_ids=[1, 2, 3]
-    )
+    out = await list_atendimento_ids_com_tags(pool, empresa_id=1, tag_ids=[1, 2, 3])
     assert out == [10, 20, 30]
     sql = conn.execute.await_args.args[0]
     assert "DISTINCT atendimento_id" in sql
@@ -220,8 +214,6 @@ async def test_apply_tags_marca_aplicado_por_ia():
         aplicado_por_ia=True,
     )
     # INSERT inclui aplicado_por_ia
-    insert_call = next(
-        c for c in conn.execute.await_args_list if "INSERT" in c.args[0]
-    )
+    insert_call = next(c for c in conn.execute.await_args_list if "INSERT" in c.args[0])
     # Args do INSERT: (atendimento_id, empresa_id, user_id, por_ia, list, empresa_id)
     assert insert_call.args[1][3] is True

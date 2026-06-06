@@ -163,7 +163,9 @@ async def extract_document(
         if not text:
             return "[Documento sem texto extraível.]"
         if len(text) > _MAX_DOC_CHARS:
-            return text[:_MAX_DOC_CHARS] + f"\n\n[...truncado em {_MAX_DOC_CHARS} chars]"
+            return (
+                text[:_MAX_DOC_CHARS] + f"\n\n[...truncado em {_MAX_DOC_CHARS} chars]"
+            )
         return text
     except Exception as exc:
         logger.warning("extract_document_failed", error=str(exc))
@@ -190,7 +192,9 @@ async def summarize_document(
     if not media_url:
         return "[ERRO: Nenhum documento anexado nesse turno.]"
 
-    raw = await extract_document.ainvoke({}, config={"configurable": {"media_url": media_url}})
+    raw = await extract_document.ainvoke(
+        {}, config={"configurable": {"media_url": media_url}}
+    )
     if raw.startswith("[ERRO") or raw.startswith("[Documento"):
         return raw
     focus_clean = (focus or "").strip()[:_MAX_FOCUS_CHARS]

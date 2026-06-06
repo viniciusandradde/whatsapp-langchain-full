@@ -15,7 +15,7 @@ Padrão segue `shared/cliente.py` e outros módulos de domínio.
 from __future__ import annotations
 
 import json
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from typing import Final
 from zoneinfo import ZoneInfo
 
@@ -27,9 +27,7 @@ from whatsapp_langchain.shared.models import Agendamento
 logger = structlog.get_logger()
 
 
-VALID_STATUS: Final[frozenset[str]] = frozenset(
-    {"pendente", "confirmado", "cancelado"}
-)
+VALID_STATUS: Final[frozenset[str]] = frozenset({"pendente", "confirmado", "cancelado"})
 
 _SELECT_COLS = (
     "id, empresa_id, calendar_id, user_id_criador, cliente_id, "
@@ -217,9 +215,7 @@ async def cancel_local(
     pool: AsyncConnectionPool, agendamento_id: int, empresa_id: int
 ) -> bool:
     """Atalho pra `update_status(... 'cancelado')`."""
-    return await update_status(
-        pool, agendamento_id, empresa_id, status="cancelado"
-    )
+    return await update_status(pool, agendamento_id, empresa_id, status="cancelado")
 
 
 async def get_by_external_id(
@@ -293,12 +289,12 @@ async def validate_request(
 
     # Garante que start/end sejam timezone-aware
     if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
+        start = start.replace(tzinfo=UTC)
     if end.tzinfo is None:
-        end = end.replace(tzinfo=timezone.utc)
+        end = end.replace(tzinfo=UTC)
 
     # Antecedência mínima
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     minimo = now + timedelta(minutes=regras.antecedencia_minima_minutos)
     if start < minimo:
         return (

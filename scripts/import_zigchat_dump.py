@@ -190,8 +190,7 @@ def iter_atendimentos(file_path: Path) -> Iterator[dict]:
     """Stream parser — yields cada atendimento sem carregar tudo na RAM."""
     with file_path.open("rb") as f:
         # ijson.items('atendimentos.item') itera elementos do array `atendimentos`
-        for atendimento in ijson.items(f, "atendimentos.item"):
-            yield atendimento
+        yield from ijson.items(f, "atendimentos.item")
 
 
 async def fetch_already_imported_ids(pool, empresa_id: int) -> set[int]:

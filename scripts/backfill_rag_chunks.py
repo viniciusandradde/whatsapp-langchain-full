@@ -27,7 +27,6 @@ from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import close_pool, get_pool
 from whatsapp_langchain.shared.observability import setup_logging
 
-
 logger = structlog.get_logger()
 
 

@@ -169,9 +169,7 @@ async def list_dlq(
     """
     pool = await get_pool()
     try:
-        items = await list_dead_letter(
-            pool, empresa_id, status=status, limit=limit
-        )
+        items = await list_dead_letter(pool, empresa_id, status=status, limit=limit)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     return {"items": items}

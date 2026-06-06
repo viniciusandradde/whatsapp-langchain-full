@@ -1,8 +1,8 @@
 """Tests das 8 tools de cliente/atendimento (M5.b.1)."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,7 +12,6 @@ from whatsapp_langchain.shared.models import (
     Cliente,
     ClienteAnotacao,
 )
-
 
 # --- helpers ---
 
@@ -126,9 +125,7 @@ async def test_get_cliente_profile_returns_structured_data():
             ),
         ),
     ):
-        out = await ct.get_cliente_profile.ainvoke(
-            {"runtime": _runtime()}
-        )
+        out = await ct.get_cliente_profile.ainvoke({"runtime": _runtime()})
     assert "nome: João" in out
     assert "email: x@y.com" in out
     assert "tags: vip" in out
@@ -145,9 +142,7 @@ async def test_get_cliente_profile_handles_missing_atendimento():
 async def test_get_cliente_profile_anti_cross_tenant():
     """Atendimento de outra empresa → tool não retorna dados."""
     other_atd = _atendimento(empresa_id=99)  # ≠ runtime.empresa_id=1
-    with patch.object(
-        ct, "get_atendimento_by_id", AsyncMock(return_value=other_atd)
-    ):
+    with patch.object(ct, "get_atendimento_by_id", AsyncMock(return_value=other_atd)):
         out = await ct.get_cliente_profile.ainvoke({"runtime": _runtime()})
     assert "não encontrado" in out
 
@@ -176,9 +171,7 @@ async def test_get_cliente_history_empty():
         patch.object(
             ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
         ),
-        patch.object(
-            ct, "list_atendimentos_by_cliente", AsyncMock(return_value=[])
-        ),
+        patch.object(ct, "list_atendimentos_by_cliente", AsyncMock(return_value=[])),
     ):
         out = await ct.get_cliente_history.ainvoke({"runtime": _runtime()})
     assert "Cliente novo" in out
@@ -194,9 +187,7 @@ async def test_get_cliente_history_caps_limit_at_10():
             ct, "list_atendimentos_by_cliente", AsyncMock(return_value=[])
         ) as mock_list,
     ):
-        await ct.get_cliente_history.ainvoke(
-            {"limit": 50, "runtime": _runtime()}
-        )
+        await ct.get_cliente_history.ainvoke({"limit": 50, "runtime": _runtime()})
     kwargs = mock_list.await_args.kwargs
     assert kwargs["limit"] == 10
 
@@ -324,9 +315,7 @@ async def test_update_cliente_returns_fields_set():
         patch.object(
             ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
         ),
-        patch.object(
-            ct, "update_cliente_partial", AsyncMock(return_value=_cliente())
-        ),
+        patch.object(ct, "update_cliente_partial", AsyncMock(return_value=_cliente())),
     ):
         out = await ct.update_cliente.ainvoke(
             {"nome": "Maria", "email": "m@x.com", "runtime": _runtime()}
@@ -386,9 +375,7 @@ async def test_close_atendimento_normalizes_motivo():
             AsyncMock(return_value=_atendimento(status="resolvido")),
         ) as mock_close,
     ):
-        await ct.close_atendimento.ainvoke(
-            {"motivo": "lixo", "runtime": _runtime()}
-        )
+        await ct.close_atendimento.ainvoke({"motivo": "lixo", "runtime": _runtime()})
     assert mock_close.await_args.args[2] == "resolvido"
 
 

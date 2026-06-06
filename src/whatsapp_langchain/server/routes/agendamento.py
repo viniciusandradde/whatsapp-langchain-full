@@ -11,7 +11,7 @@ do agente (`calendar_create_event`, `calendar_cancel_event`).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -57,14 +57,12 @@ async def list_agendamentos(
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict[str, list[Agendamento]]:
     """Lista agendamentos da empresa cuja `data_inicio ∈ [inicio, fim]`."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     inicio_use = inicio or (now - timedelta(days=7))
     fim_use = fim or (now + timedelta(days=30))
 
     if inicio_use > fim_use:
-        raise HTTPException(
-            status_code=422, detail="`inicio` deve ser <= `fim`."
-        )
+        raise HTTPException(status_code=422, detail="`inicio` deve ser <= `fim`.")
 
     try:
         items = await list_by_period(

@@ -39,9 +39,7 @@ async def list_pastas_endpoint(
     com_docs: bool = False,
 ) -> dict:
     pool = await get_pool()
-    items = await pasta_lib.list_pastas(
-        pool, empresa_id, com_docs_count=com_docs
-    )
+    items = await pasta_lib.list_pastas(pool, empresa_id, com_docs_count=com_docs)
     return {"items": items}
 
 
@@ -128,9 +126,7 @@ async def move_doc_to_pasta(
     pool = await get_pool()
     target = None if pasta_id == 0 else pasta_id
     try:
-        ok = await pasta_lib.move_documento(
-            pool, empresa_id, doc_id, pasta_id=target
-        )
+        ok = await pasta_lib.move_documento(pool, empresa_id, doc_id, pasta_id=target)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     if not ok:

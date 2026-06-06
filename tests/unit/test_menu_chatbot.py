@@ -67,30 +67,36 @@ class TestAcaoTipos:
 
 
 class TestParseNumeroOpcao:
-    @pytest.mark.parametrize("entrada,esperado", [
-        ("1", 1),
-        ("2", 2),
-        ("9", 9),
-        ("10", 10),
-        ("99", 99),
-        (" 1 ", 1),
-        ("01", 1),
-        ("  3  ", 3),
-    ])
+    @pytest.mark.parametrize(
+        "entrada,esperado",
+        [
+            ("1", 1),
+            ("2", 2),
+            ("9", 9),
+            ("10", 10),
+            ("99", 99),
+            (" 1 ", 1),
+            ("01", 1),
+            ("  3  ", 3),
+        ],
+    )
     def test_aceita_numeros_validos(self, entrada, esperado):
         assert parse_numero_opcao(entrada) == esperado
 
-    @pytest.mark.parametrize("entrada", [
-        "",
-        "abc",
-        "0",       # 0 não é opção válida
-        "100",     # mais de 2 dígitos
-        "1 2",     # múltiplos números
-        "1.",      # com pontuação
-        "x",
-        "menu",
-        "1 hora",  # número embarcado em texto
-    ])
+    @pytest.mark.parametrize(
+        "entrada",
+        [
+            "",
+            "abc",
+            "0",  # 0 não é opção válida
+            "100",  # mais de 2 dígitos
+            "1 2",  # múltiplos números
+            "1.",  # com pontuação
+            "x",
+            "menu",
+            "1 hora",  # número embarcado em texto
+        ],
+    )
     def test_rejeita_invalidos(self, entrada):
         assert parse_numero_opcao(entrada) is None
 

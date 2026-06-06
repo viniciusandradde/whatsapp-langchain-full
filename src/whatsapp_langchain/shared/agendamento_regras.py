@@ -11,7 +11,7 @@ Quando empresa não tem row, retorna defaults sensatos (08-18, seg-sex,
 from __future__ import annotations
 
 import json
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from typing import Final
 
 import structlog
@@ -79,7 +79,7 @@ async def get(pool: AsyncConnectionPool, empresa_id: int) -> AgendamentoRegras:
 
     if row is None:
         # Defaults virtuais sem persistir
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return AgendamentoRegras(
             empresa_id=empresa_id,
             hora_inicio=DEFAULTS["hora_inicio"],
@@ -136,9 +136,7 @@ async def upsert(
             else current.dias_semana_permitidos
         ),
         "dias_bloqueados": (
-            dias_bloqueados
-            if dias_bloqueados is not None
-            else current.dias_bloqueados
+            dias_bloqueados if dias_bloqueados is not None else current.dias_bloqueados
         ),
         "requer_aprovacao": (
             requer_aprovacao

@@ -56,7 +56,7 @@ async def get_my_status(
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
-            'SELECT atendente_status, atendente_status_at, atendente_max_paralelos '
+            "SELECT atendente_status, atendente_status_at, atendente_max_paralelos "
             'FROM auth."user" WHERE id = %s',
             (user_id,),
         )

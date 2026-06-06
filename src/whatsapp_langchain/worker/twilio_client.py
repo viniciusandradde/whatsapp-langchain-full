@@ -82,8 +82,7 @@ class TwilioClient:
     ):
         if delivery_mode not in {"real", "mock"}:
             raise ValueError(
-                "delivery_mode deve ser 'real' ou 'mock', "
-                f"recebido: {delivery_mode}"
+                f"delivery_mode deve ser 'real' ou 'mock', recebido: {delivery_mode}"
             )
 
         if delivery_mode == "real":
@@ -375,9 +374,7 @@ class TwilioClient:
             return False
 
 
-def split_message_body(
-    body: str, limit: int = TWILIO_MESSAGE_BODY_LIMIT
-) -> list[str]:
+def split_message_body(body: str, limit: int = TWILIO_MESSAGE_BODY_LIMIT) -> list[str]:
     """Divide mensagens longas em partes seguras para a API do Twilio.
 
     O Twilio rejeita corpos acima de 1600 caracteres no WhatsApp. A estratégia

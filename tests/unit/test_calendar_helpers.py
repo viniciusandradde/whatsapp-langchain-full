@@ -64,7 +64,9 @@ def fake_pool():
 # ---------------------------------------------------------------------------
 
 
-async def test_list_calendars_returns_normalized_dicts(monkeypatch, patched_resolve, fake_pool):
+async def test_list_calendars_returns_normalized_dicts(
+    monkeypatch, patched_resolve, fake_pool
+):
     """Itens do Google viram dicts com keys padronizadas."""
     google_items = [
         {
@@ -100,7 +102,9 @@ async def test_list_calendars_returns_normalized_dicts(monkeypatch, patched_reso
     assert out[1]["description"] == "Equipe vendas"
 
 
-async def test_list_calendars_empty_returns_empty_list(monkeypatch, patched_resolve, fake_pool):
+async def test_list_calendars_empty_returns_empty_list(
+    monkeypatch, patched_resolve, fake_pool
+):
     fake_service = MagicMock()
     fake_service.calendarList.return_value.list.return_value.execute.return_value = {}
     monkeypatch.setattr(
@@ -161,9 +165,7 @@ async def test_set_active_calendar_404_raises_friendly_error(
     )
 
     with pytest.raises(CalendarIntegrationError, match="não encontrado"):
-        await calendar_integration.set_active_calendar(
-            fake_pool, 1, "naoexiste@x.com"
-        )
+        await calendar_integration.set_active_calendar(fake_pool, 1, "naoexiste@x.com")
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +173,9 @@ async def test_set_active_calendar_404_raises_friendly_error(
 # ---------------------------------------------------------------------------
 
 
-async def test_list_events_passes_kwargs_to_google(monkeypatch, patched_resolve, fake_pool):
+async def test_list_events_passes_kwargs_to_google(
+    monkeypatch, patched_resolve, fake_pool
+):
     fake_service = MagicMock()
     fake_service.events.return_value.list.return_value.execute.return_value = {
         "items": []
@@ -198,7 +202,9 @@ async def test_list_events_passes_kwargs_to_google(monkeypatch, patched_resolve,
     )
 
 
-async def test_list_events_normalizes_event_shape(monkeypatch, patched_resolve, fake_pool):
+async def test_list_events_normalizes_event_shape(
+    monkeypatch, patched_resolve, fake_pool
+):
     fake_service = MagicMock()
     fake_service.events.return_value.list.return_value.execute.return_value = {
         "items": [

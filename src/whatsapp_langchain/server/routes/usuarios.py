@@ -206,9 +206,7 @@ async def atividade_endpoint(
         target_user_id=user_id,
         limit=min(max(limit, 1), 200),
     )
-    nomes = await resolve_user_names(
-        pool, [e["actor_user_id"] for e in eventos]
-    )
+    nomes = await resolve_user_names(pool, [e["actor_user_id"] for e in eventos])
     for e in eventos:
         e["actor_nome"] = nomes.get(e["actor_user_id"])
     return {"items": eventos}

@@ -130,9 +130,7 @@ class TestJornadasMultiSetor:
                     )
                     allure.dynamic.parameter("geval_score", score["score"])
                     geval_pass = score["score"] >= score["threshold"]
-                    allure.dynamic.label(
-                        "geval", "pass" if geval_pass else "fail"
-                    )
+                    allure.dynamic.label("geval", "pass" if geval_pass else "fail")
                     if not geval_pass and os.getenv("GEVAL_BLOCKING"):
                         pytest.fail(
                             f"[QualidadeRespostaAgente] score "

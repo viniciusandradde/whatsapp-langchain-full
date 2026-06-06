@@ -85,9 +85,7 @@ async def health_queue() -> JSONResponse:
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
-            await conn.execute(
-                "SELECT set_config('app.bypass_rls', 'true', false)"
-            )
+            await conn.execute("SELECT set_config('app.bypass_rls', 'true', false)")
             cur = await conn.execute(
                 """
                 SELECT status, COUNT(*)
@@ -143,9 +141,7 @@ async def health_agent() -> JSONResponse:
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
-            await conn.execute(
-                "SELECT set_config('app.bypass_rls', 'true', false)"
-            )
+            await conn.execute("SELECT set_config('app.bypass_rls', 'true', false)")
             cur = await conn.execute(
                 """
                 SELECT EXTRACT(EPOCH FROM NOW() - MAX(processed_at))
@@ -203,9 +199,7 @@ async def health_workers() -> JSONResponse:
     pool = await get_pool()
     try:
         async with pool.connection() as conn:
-            await conn.execute(
-                "SELECT set_config('app.bypass_rls', 'true', false)"
-            )
+            await conn.execute("SELECT set_config('app.bypass_rls', 'true', false)")
             cur = await conn.execute(
                 """
                 SELECT COUNT(DISTINCT id)

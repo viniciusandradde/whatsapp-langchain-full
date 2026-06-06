@@ -194,9 +194,7 @@ async def wareline_criar_agendamento(
         resp = await client.criar_agendamento(payload)
         if resp.status != "SUCESSO":
             return f"[FALHA: {resp.mensagem}]"
-        cod_ag = (
-            resp.dados.get("cod_agendamento") if resp.dados else None
-        )
+        cod_ag = resp.dados.get("cod_agendamento") if resp.dados else None
         return json.dumps(
             {
                 "ok": True,

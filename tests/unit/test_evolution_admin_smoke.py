@@ -26,12 +26,8 @@ async def test_provision_instance_webhook_inclui_apikey_header(monkeypatch):
     monkeypatch.setattr(settings, "evolution_admin_url", "https://evo.test/api")
     from pydantic import SecretStr
 
-    monkeypatch.setattr(
-        settings, "evolution_global_api_key", SecretStr("TEST_KEY_123")
-    )
-    monkeypatch.setattr(
-        settings, "evolution_api_key", SecretStr("TEST_KEY_123")
-    )
+    monkeypatch.setattr(settings, "evolution_global_api_key", SecretStr("TEST_KEY_123"))
+    monkeypatch.setattr(settings, "evolution_api_key", SecretStr("TEST_KEY_123"))
 
     with respx.mock(base_url="https://evo.test/api") as mock:
         mock.post("/instance/create").mock(

@@ -19,10 +19,6 @@ import structlog
 from langchain_core.messages import HumanMessage
 from psycopg_pool import AsyncConnectionPool
 
-from whatsapp_langchain.shared.base_conhecimento import (
-    _embed,
-    _vector_literal,
-)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.llm import create_chat_model
@@ -31,7 +27,9 @@ logger = structlog.get_logger()
 
 
 DRAFT_MODEL = "openai/gpt-4o-mini"
-SIMILARITY_THRESHOLD = 0.75  # cosine — queries com similaridade >= entram no mesmo cluster
+SIMILARITY_THRESHOLD = (
+    0.75  # cosine — queries com similaridade >= entram no mesmo cluster
+)
 MIN_CLUSTER_SIZE = 2  # cluster precisa ter ≥ 2 queries pra virar sugestão
 MAX_QUERIES_PER_CLUSTER = 20
 DAYS_LOOKBACK = 7
@@ -169,9 +167,7 @@ async def _cluster_queries(misses: list[QueryMiss]) -> list[Cluster]:
 async def _generate_draft(cluster: Cluster) -> tuple[str, str]:
     """Gera (titulo, conteudo) via LLM a partir das queries do cluster."""
     queries_block = "\n".join(f"- {q}" for q in cluster.queries[:10])
-    sector = (
-        f" do setor {cluster.agente_slug}" if cluster.agente_slug else ""
-    )
+    sector = f" do setor {cluster.agente_slug}" if cluster.agente_slug else ""
     prompt = f"""Você é especialista em criar FAQ pra atendimento ao cliente.
 
 Os clientes fizeram as perguntas abaixo{sector} e o agente NÃO encontrou
@@ -198,7 +194,8 @@ Saída APENAS o JSON, sem markdown."""
     try:
         response = await llm.ainvoke([HumanMessage(content=prompt)])
         content = (
-            response.content if isinstance(response.content, str)
+            response.content
+            if isinstance(response.content, str)
             else str(response.content)
         ).strip()
         # Remove markdown fences se vier
@@ -317,7 +314,10 @@ async def run_learner(
                 VALUES (%s, %s, %s, %s, %s, %s, 'pending')
                 """,
                 (
-                    empresa_id, pasta_id, titulo, conteudo,
+                    empresa_id,
+                    pasta_id,
+                    titulo,
+                    conteudo,
                     cluster.queries[:MAX_QUERIES_PER_CLUSTER],
                     len(cluster.queries),
                 ),

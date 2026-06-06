@@ -25,10 +25,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from whatsapp_langchain.shared.db import close_pool, get_pool
 
-
 SETORES = [
-    "atendimento", "atendimento-cliente", "agendamentos", "exames",
-    "orcamento", "ouvidoria", "rh-recrutamento-selecao", "tesouraria",
+    "atendimento",
+    "atendimento-cliente",
+    "agendamentos",
+    "exames",
+    "orcamento",
+    "ouvidoria",
+    "rh-recrutamento-selecao",
+    "tesouraria",
 ]
 
 
@@ -71,26 +76,31 @@ async def main() -> int:
         for setor in SETORES:
             top = await fetch_top(pool, args.empresa, setor, args.top_n)
             for i, item in enumerate(top, 1):
-                queries.append({
-                    "id": f"radio-{setor}-{i}",
-                    "setor": setor,
-                    "agente_slug": item["agente_slug"],
-                    "query": item["query"],
-                    "expected_doc_id": None,
-                    "must_contain": [],
-                    "real_response": item["expected_resposta"][:300],
-                    "source": "radio_corporativo_sandbox",
-                })
+                queries.append(
+                    {
+                        "id": f"radio-{setor}-{i}",
+                        "setor": setor,
+                        "agente_slug": item["agente_slug"],
+                        "query": item["query"],
+                        "expected_doc_id": None,
+                        "must_contain": [],
+                        "real_response": item["expected_resposta"][:300],
+                        "source": "radio_corporativo_sandbox",
+                    }
+                )
             print(f"  {setor}: {len(top)} items")
     finally:
         await close_pool()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    out = {"queries": queries, "metadata": {
-        "source": "Sprint R.5 — extraído do dump 3m sandbox empresa 999",
-        "total": len(queries),
-        "setores": SETORES,
-    }}
+    out = {
+        "queries": queries,
+        "metadata": {
+            "source": "Sprint R.5 — extraído do dump 3m sandbox empresa 999",
+            "total": len(queries),
+            "setores": SETORES,
+        },
+    }
     with args.output.open("w") as f:
         yaml.safe_dump(out, f, allow_unicode=True, sort_keys=False, width=200)
     print(f"\nWrote {args.output} ({len(queries)} queries)")

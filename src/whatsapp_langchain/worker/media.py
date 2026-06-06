@@ -11,17 +11,17 @@ from __future__ import annotations
 import base64  # noqa: F401  — preservado caso outros call-sites legacy importem
 from dataclasses import dataclass
 
-import httpx
 import structlog
 from langchain_core.messages import HumanMessage
 
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.midia_processing import (
-    _audio_format_from_media_type,  # re-export pra compat
-    _extract_text,  # re-export
     _media_kind,  # re-export
-    chat_completion_media as _chat_completion_media,
+)
+from whatsapp_langchain.shared.midia_processing import (
     describe_image_bytes as _describe_image,
+)
+from whatsapp_langchain.shared.midia_processing import (
     transcribe_audio_bytes as _transcribe_audio,
 )
 
@@ -69,6 +69,7 @@ async def download_media(url: str) -> bytes:
     from whatsapp_langchain.shared.midia_processing import (
         download_media as _shared_download,
     )
+
     body, _ctype = await _shared_download(url)
     return body
 
@@ -190,11 +191,17 @@ async def preprocess_incoming_message(
             # Trunca em ~10k chars no input pro agente — ele pode chamar
             # extract_document tool pra texto completo se precisar.
             if len(doc_text) > 10_000:
-                doc_text = doc_text[:10_000] + "\n[... documento truncado, use tool extract_document pro texto completo]"
+                doc_text = (
+                    doc_text[:10_000]
+                    + "\n[... documento truncado, use tool extract_document pro texto completo]"
+                )
 
             parts = [
                 p
-                for p in [body.strip(), f"[Conteúdo do documento ({media_type})]:\n{doc_text}"]
+                for p in [
+                    body.strip(),
+                    f"[Conteúdo do documento ({media_type})]:\n{doc_text}",
+                ]
                 if p
             ]
             normalized = "\n".join(parts)

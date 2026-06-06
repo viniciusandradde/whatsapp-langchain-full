@@ -521,9 +521,7 @@ async def import_templates(
 
     if is_twilio:
         if not (settings.twilio_account_sid and settings.twilio_auth_token):
-            raise HTTPException(
-                status_code=400, detail="Credenciais Twilio ausentes."
-            )
+            raise HTTPException(status_code=400, detail="Credenciais Twilio ausentes.")
         try:
             remote = await twilio_content.list_remote_contents(
                 settings.twilio_account_sid, settings.twilio_auth_token

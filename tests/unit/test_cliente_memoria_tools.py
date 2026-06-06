@@ -87,9 +87,7 @@ async def test_read_returns_relevant_memorias():
 
 @pytest.mark.asyncio
 async def test_read_handles_missing_atendimento():
-    with patch.object(
-        cm_tools, "get_atendimento_by_id", AsyncMock(return_value=None)
-    ):
+    with patch.object(cm_tools, "get_atendimento_by_id", AsyncMock(return_value=None)):
         out = await cm_tools.read_cliente_memoria.ainvoke(
             {"query": "x", "runtime": _runtime()}
         )
@@ -100,9 +98,7 @@ async def test_read_handles_missing_atendimento():
 async def test_read_anti_cross_tenant():
     """Atendimento de outra empresa → não retorna dados."""
     other = _atendimento(empresa_id=99)
-    with patch.object(
-        cm_tools, "get_atendimento_by_id", AsyncMock(return_value=other)
-    ):
+    with patch.object(cm_tools, "get_atendimento_by_id", AsyncMock(return_value=other)):
         out = await cm_tools.read_cliente_memoria.ainvoke(
             {"query": "x", "runtime": _runtime()}
         )
@@ -115,9 +111,7 @@ async def test_read_returns_empty_msg_when_no_results():
         patch.object(
             cm_tools, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
         ),
-        patch.object(
-            cm_tools.memoria, "search_relevant", AsyncMock(return_value=[])
-        ),
+        patch.object(cm_tools.memoria, "search_relevant", AsyncMock(return_value=[])),
     ):
         out = await cm_tools.read_cliente_memoria.ainvoke(
             {"query": "x", "runtime": _runtime()}

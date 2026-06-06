@@ -11,12 +11,12 @@ O.4 só roda quando RAG fraco + resposta tem fatos verificáveis.
 """
 
 from whatsapp_langchain.shared.guardrails.input_filter import (
-    check_input,
     InputFilterResult,
+    check_input,
 )
 from whatsapp_langchain.shared.guardrails.pii_redactor import (
-    redact_pii,
     PIIRedactResult,
+    redact_pii,
 )
 
 __all__ = [

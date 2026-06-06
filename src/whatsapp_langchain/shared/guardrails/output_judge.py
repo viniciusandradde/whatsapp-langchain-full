@@ -53,7 +53,7 @@ _TRANSFER_RE = re.compile(
 
 @dataclass(frozen=True)
 class JudgeResult:
-    skipped: bool          # heurística decidiu não verificar
+    skipped: bool  # heurística decidiu não verificar
     safe: bool
     reason: str | None
     cached: bool
@@ -83,7 +83,11 @@ def should_judge(
         return False, "response_too_short"
     if _is_transfer_response(response):
         return False, "transfer_response"
-    if rag_hits > 0 and rag_top_score is not None and rag_top_score >= RAG_SCORE_THRESHOLD:
+    if (
+        rag_hits > 0
+        and rag_top_score is not None
+        and rag_top_score >= RAG_SCORE_THRESHOLD
+    ):
         return False, "rag_grounded"
     if not _has_verifiable_facts(response):
         return False, "no_verifiable_facts"
@@ -132,7 +136,8 @@ async def judge_output(
 
     ctx_block = (
         f"Contexto disponível (base de conhecimento):\n{rag_context}\n\n"
-        if rag_context else "Contexto disponível: nenhum (RAG vazio).\n\n"
+        if rag_context
+        else "Contexto disponível: nenhum (RAG vazio).\n\n"
     )
 
     prompt = f"""Você é um juiz que avalia se uma resposta de um agente de IA \
@@ -156,9 +161,10 @@ Responda APENAS uma palavra: SAFE ou UNSAFE"""
         llm = create_chat_model(model=JUDGE_MODEL, temperature=0.0, max_tokens=10)
         result = await llm.ainvoke([HumanMessage(content=prompt)])
         verdict = (
-            result.content if isinstance(result.content, str)
-            else str(result.content)
-        ).strip().upper()
+            (result.content if isinstance(result.content, str) else str(result.content))
+            .strip()
+            .upper()
+        )
         safe = verdict.startswith("SAFE")
         _cache[cache_key] = (safe, now)
         if not safe:

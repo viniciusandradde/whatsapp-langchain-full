@@ -251,9 +251,7 @@ async def create_departamento(
         # Valida que parent existe e é da mesma empresa (evita leak cross-tenant)
         parent = await get_departamento_by_id(pool, empresa_id, data.parent_id)
         if parent is None:
-            raise ValueError(
-                f"parent_id={data.parent_id} não existe nessa empresa"
-            )
+            raise ValueError(f"parent_id={data.parent_id} não existe nessa empresa")
     try:
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -293,15 +291,11 @@ async def update_departamento(
             raise ValueError("parent_id não pode ser o próprio departamento")
         descendants = await get_descendant_ids(pool, empresa_id, [dep_id])
         if data.parent_id in descendants:
-            raise ValueError(
-                "parent_id é descendente — criaria ciclo"
-            )
+            raise ValueError("parent_id é descendente — criaria ciclo")
         # Garante que parent existe + mesma empresa
         parent = await get_departamento_by_id(pool, empresa_id, data.parent_id)
         if parent is None:
-            raise ValueError(
-                f"parent_id={data.parent_id} não existe nessa empresa"
-            )
+            raise ValueError(f"parent_id={data.parent_id} não existe nessa empresa")
     try:
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -337,8 +331,7 @@ async def delete_departamento(
 ) -> bool:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "DELETE FROM departamento "
-            "WHERE id = %s AND empresa_id = %s",
+            "DELETE FROM departamento WHERE id = %s AND empresa_id = %s",
             (dep_id, empresa_id),
         )
     return (cur.rowcount or 0) > 0

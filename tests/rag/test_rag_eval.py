@@ -48,7 +48,9 @@ async def _run_query(qa: dict, mode: str, empresa_id: int) -> dict:
     started = datetime.utcnow()
     try:
         results = await search_relevant(
-            pool, empresa_id, qa["query"],
+            pool,
+            empresa_id,
+            qa["query"],
             pasta_ids=pasta_ids,
             mode=mode,
             rerank=True,
@@ -70,15 +72,12 @@ async def _run_query(qa: dict, mode: str, empresa_id: int) -> dict:
 
     expected = qa.get("expected_doc_id")
     hit_at_1 = bool(results and expected and results[0].documento.id == expected)
-    hit_at_5 = bool(
-        expected and any(r.documento.id == expected for r in results[:5])
-    )
+    hit_at_5 = bool(expected and any(r.documento.id == expected for r in results[:5]))
 
     must_contain = qa.get("must_contain") or []
     snippets_blob = " ".join(r.chunk_conteudo for r in results[:3]).lower()
     must_pass = (
-        all(s.lower() in snippets_blob for s in must_contain)
-        if must_contain else True
+        all(s.lower() in snippets_blob for s in must_contain) if must_contain else True
     )
 
     if expected is None:

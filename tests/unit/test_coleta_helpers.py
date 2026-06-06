@@ -76,14 +76,16 @@ def test_normalize_perguntas_propaga_defaults():
 
 
 def _make_perguntas() -> list[dict]:
-    return normalize_perguntas([
-        {"label": "Qual seu CPF?", "save_as": "cpf", "validate_with": "cpf"},
-        {
-            "label": "Obrigado, agora telefone?",
-            "save_as": "telefone",
-            "validate_with": "telefone_br",
-        },
-    ])
+    return normalize_perguntas(
+        [
+            {"label": "Qual seu CPF?", "save_as": "cpf", "validate_with": "cpf"},
+            {
+                "label": "Obrigado, agora telefone?",
+                "save_as": "telefone",
+                "validate_with": "telefone_br",
+            },
+        ]
+    )
 
 
 def test_make_estado_inicial():
@@ -153,14 +155,16 @@ def test_validar_e_processar_vazio_obrigatorio():
 
 
 def test_validar_e_processar_retry_message_customizado():
-    perguntas = normalize_perguntas([
-        {
-            "label": "CPF",
-            "save_as": "cpf",
-            "validate_with": "cpf",
-            "retry_message": "Por favor digite o CPF correto, sem letras.",
-        },
-    ])
+    perguntas = normalize_perguntas(
+        [
+            {
+                "label": "CPF",
+                "save_as": "cpf",
+                "validate_with": "cpf",
+                "retry_message": "Por favor digite o CPF correto, sem letras.",
+            },
+        ]
+    )
     estado = make_estado_inicial(1, perguntas)
     ok, erro, _ = validar_e_processar(estado, "abc")
     assert not ok
@@ -168,9 +172,11 @@ def test_validar_e_processar_retry_message_customizado():
 
 
 def test_validar_e_processar_nao_obrigatorio_aceita_vazio():
-    perguntas = normalize_perguntas([
-        {"label": "Comentário?", "save_as": "comentario", "obrigatorio": False},
-    ])
+    perguntas = normalize_perguntas(
+        [
+            {"label": "Comentário?", "save_as": "comentario", "obrigatorio": False},
+        ]
+    )
     estado = make_estado_inicial(1, perguntas)
     ok, erro, novo = validar_e_processar(estado, "")
     assert ok

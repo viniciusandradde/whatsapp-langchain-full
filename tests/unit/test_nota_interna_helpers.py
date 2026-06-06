@@ -56,8 +56,7 @@ async def test_create_nota_interna_resolve_metadados_e_insere_done():
     assert "'done'" in insert_sql
     assert "TRUE" in insert_sql  # interna
     assert any(
-        "UPDATE atendimento" in s and "last_message_at = NOW()" in s
-        for s in sql_calls
+        "UPDATE atendimento" in s and "last_message_at = NOW()" in s for s in sql_calls
     )
 
 
@@ -107,9 +106,7 @@ async def test_get_ultima_visualizacao_none_se_nunca_abriu():
 @pytest.mark.asyncio
 async def test_count_unread_para_user():
     pool, conn = _mock_pool([(10, 3), (20, 1)])
-    out = await count_unread_para_user(
-        pool, atendimento_ids=[10, 20, 30], user_id="u"
-    )
+    out = await count_unread_para_user(pool, atendimento_ids=[10, 20, 30], user_id="u")
     assert out == {10: 3, 20: 1}  # 30 sem msg → não aparece
     sql = conn.execute.await_args.args[0]
     assert "LEFT JOIN atendimento_visualizacao" in sql

@@ -97,9 +97,10 @@ def test_atendimento_eh_triagem_so() -> None:
     """Atendimento genérico NÃO resolve — só triagem e transfere."""
     p = PROMPTS_POR_SLUG["atendimento"]["prompt"]
     assert "NÃO TENTA RESOLVER" in p
-    assert "transferir_para_departamento" in PROMPTS_POR_SLUG[
-        "atendimento"
-    ]["tools_enabled"]
+    assert (
+        "transferir_para_departamento"
+        in PROMPTS_POR_SLUG["atendimento"]["tools_enabled"]
+    )
 
 
 def test_agendamentos_inclui_urgencias_clinicas() -> None:
@@ -134,9 +135,10 @@ def test_tesouraria_nao_cancela_boleto() -> None:
 def test_rh_lgpd_dados_so_pra_selecao() -> None:
     p = PROMPTS_POR_SLUG["rh-recrutamento-selecao"]["prompt"]
     assert "LGPD" in p
-    assert "listar_vagas_abertas" in PROMPTS_POR_SLUG[
-        "rh-recrutamento-selecao"
-    ]["tools_enabled"]
+    assert (
+        "listar_vagas_abertas"
+        in PROMPTS_POR_SLUG["rh-recrutamento-selecao"]["tools_enabled"]
+    )
 
 
 def test_exames_nao_interpreta_resultado() -> None:

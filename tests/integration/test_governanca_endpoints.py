@@ -21,9 +21,7 @@ def test_get_member_perfis_sem_auth_401():
 
 
 def test_put_member_perfis_sem_auth_401():
-    resp = _client().put(
-        "/api/empresas/1/membros/abc/perfis", json={"perfil_ids": [1]}
-    )
+    resp = _client().put("/api/empresas/1/membros/abc/perfis", json={"perfil_ids": [1]})
     assert resp.status_code == 401
 
 

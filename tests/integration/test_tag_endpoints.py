@@ -41,14 +41,10 @@ class TestSmoke:
         assert _client().get("/api/tags").status_code == 401
 
     def test_post_tag_sem_auth_401(self) -> None:
-        assert (
-            _client().post("/api/tags", json={"nome": "X"}).status_code == 401
-        )
+        assert _client().post("/api/tags", json={"nome": "X"}).status_code == 401
 
     def test_patch_tag_sem_auth_401(self) -> None:
-        assert (
-            _client().patch("/api/tags/1", json={"nome": "Y"}).status_code == 401
-        )
+        assert _client().patch("/api/tags/1", json={"nome": "Y"}).status_code == 401
 
     def test_delete_tag_sem_auth_401(self) -> None:
         assert _client().delete("/api/tags/1").status_code == 401
@@ -361,9 +357,7 @@ class TestE2E:
         assert tag_ids_db == [tag1["id"]]
 
         # --- 12. DELETE /tags/{id} CASCADE em atendimento_tag
-        r = httpx.delete(
-            f"{API_BASE_URL}/api/tags/{tag1['id']}", headers=h, timeout=5
-        )
+        r = httpx.delete(f"{API_BASE_URL}/api/tags/{tag1['id']}", headers=h, timeout=5)
         assert r.status_code == 200, r.text
         with psycopg.connect(db_url) as conn:
             with conn.cursor() as cur:
@@ -377,9 +371,7 @@ class TestE2E:
                 )
 
         # --- 13. DELETE tag inexistente → 404
-        r = httpx.delete(
-            f"{API_BASE_URL}/api/tags/999999", headers=h, timeout=5
-        )
+        r = httpx.delete(f"{API_BASE_URL}/api/tags/999999", headers=h, timeout=5)
         assert r.status_code == 404
 
         # --- 14. PATCH tag inexistente → 404
@@ -519,4 +511,6 @@ class TestE2EIsolamento:
         finally:
             with psycopg.connect(db_url, autocommit=True) as conn:
                 with conn.cursor() as cur:
-                    cur.execute("DELETE FROM empresa WHERE id IN (%s, %s)", (emp_a, emp_b))
+                    cur.execute(
+                        "DELETE FROM empresa WHERE id IN (%s, %s)", (emp_a, emp_b)
+                    )

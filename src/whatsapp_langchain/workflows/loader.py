@@ -134,11 +134,7 @@ async def get_workflow_state_snapshot(
     except Exception as exc:  # noqa: BLE001
         logger.warning("workflow_state_events_load_failed err=%s", exc)
 
-    is_terminal = (
-        bool(snapshot.values)
-        and not snapshot.next
-        and not snapshot.tasks
-    )
+    is_terminal = bool(snapshot.values) and not snapshot.next and not snapshot.tasks
 
     return {
         "atendimento_id": atendimento_id,

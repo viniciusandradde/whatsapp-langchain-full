@@ -549,9 +549,7 @@ async def waba_embedded_signup(
 
     # 2) detalhes do phone (display_phone_number + verified_name)
     try:
-        phone = await waba_oauth.fetch_phone_details(
-            access_token, body.phone_number_id
-        )
+        phone = await waba_oauth.fetch_phone_details(access_token, body.phone_number_id)
     except waba_oauth.WabaOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

@@ -247,9 +247,7 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
 
 @pytest.mark.asyncio
 async def test_list_atendimentos_by_cliente_filters_empresa_e_cliente():
-    pool, conn = _mock_pool(
-        [_row_with_cliente(id_=10), _row_with_cliente(id_=11)]
-    )
+    pool, conn = _mock_pool([_row_with_cliente(id_=10), _row_with_cliente(id_=11)])
     out = await list_atendimentos_by_cliente(pool, 1, 5)
     assert [a.id for a in out] == [10, 11]
     sql = conn.execute.await_args.args[0]

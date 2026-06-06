@@ -38,9 +38,7 @@ class TestSmoke:
         )
 
     def test_test_sem_auth_401(self) -> None:
-        assert (
-            _client().post("/api/integracoes/1/testar").status_code == 401
-        )
+        assert _client().post("/api/integracoes/1/testar").status_code == 401
 
 
 _RUN = uuid.uuid4().hex[:8]
@@ -179,9 +177,7 @@ class TestE2E:
         assert "asaas" in slugs and "custom" in slugs
 
         # 2) GET — vazio
-        r = httpx.get(
-            f"{API_BASE_URL}/api/integracoes", headers=h, timeout=5
-        )
+        r = httpx.get(f"{API_BASE_URL}/api/integracoes", headers=h, timeout=5)
         assert r.status_code == 200, r.text
         assert r.json()["items"] == []
 
@@ -222,9 +218,7 @@ class TestE2E:
                 assert f"$aact_e2e_{_RUN}" not in row[0]
 
         # 5) GET lista mostra a conexão
-        r = httpx.get(
-            f"{API_BASE_URL}/api/integracoes", headers=h, timeout=5
-        )
+        r = httpx.get(f"{API_BASE_URL}/api/integracoes", headers=h, timeout=5)
         items = r.json()["items"]
         assert any(c["id"] == conn_id for c in items)
 
@@ -274,9 +268,7 @@ class TestE2E:
         assert r.status_code == 200
 
         # 10) GET — sumiu
-        r = httpx.get(
-            f"{API_BASE_URL}/api/integracoes", headers=h, timeout=5
-        )
+        r = httpx.get(f"{API_BASE_URL}/api/integracoes", headers=h, timeout=5)
         assert not any(c["id"] == conn_id for c in r.json()["items"])
 
     def test_create_provider_legacy_rejeita_422(

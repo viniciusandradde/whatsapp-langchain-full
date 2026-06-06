@@ -56,12 +56,8 @@ class ColetaPergunta(BaseModel):
     def _save_as_slug(cls, v: str) -> str:
         v = v.strip()
         if not v.replace("_", "").isalnum() or not v[0].isalpha():
-            raise ValueError(
-                "save_as deve ser slug [a-z][a-z0-9_]* (começa com letra)"
-            )
-        if v in _RESERVED_KEYS or any(
-            v.startswith(p) for p in _RESERVED_PREFIXES
-        ):
+            raise ValueError("save_as deve ser slug [a-z][a-z0-9_]* (começa com letra)")
+        if v in _RESERVED_KEYS or any(v.startswith(p) for p in _RESERVED_PREFIXES):
             raise ValueError(
                 f"save_as '{v}' é reservado "
                 f"(não use prefixos cliente_/empresa_/data_/var_)"
@@ -80,7 +76,13 @@ class ColetaPergunta(BaseModel):
         # validate_input retorna ok=True silenciosamente, então testamos
         # padrões conhecidos manualmente.
         known = {
-            "cpf", "cnpj", "cep", "uf", "data_br", "telefone_br", "email",
+            "cpf",
+            "cnpj",
+            "cep",
+            "uf",
+            "data_br",
+            "telefone_br",
+            "email",
         }
         prefix = v.split(":", 1)[0]
         if prefix not in known and prefix not in ("min_len", "max_len", "regex"):
@@ -163,9 +165,7 @@ def avancar_resposta(estado: dict, save_as: str, valor: str) -> dict:
     return novo
 
 
-def make_resumo_final(
-    estado: dict, item_label: str | None = None
-) -> dict:
+def make_resumo_final(estado: dict, item_label: str | None = None) -> dict:
     """Constrói o payload pra atendimento.coleta_resumo quando wizard termina."""
     perguntas = estado.get("perguntas") or []
     respostas = estado.get("respostas") or {}
@@ -188,9 +188,7 @@ def make_resumo_final(
     }
 
 
-def validar_e_processar(
-    estado: dict, texto: str
-) -> tuple[bool, str | None, dict]:
+def validar_e_processar(estado: dict, texto: str) -> tuple[bool, str | None, dict]:
     """Valida o texto contra a pergunta atual.
 
     Returns:

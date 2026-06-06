@@ -67,7 +67,8 @@ async def create_or_get_asaas_customer(
         asaas_id = existing[0]["id"]
         logger.info(
             "asaas_customer_found_existing",
-            empresa_id=empresa_id, asaas_customer_id=asaas_id,
+            empresa_id=empresa_id,
+            asaas_customer_id=asaas_id,
         )
     else:
         created = await client.create_customer(
@@ -78,7 +79,8 @@ async def create_or_get_asaas_customer(
         asaas_id = created["id"]
         logger.info(
             "asaas_customer_created",
-            empresa_id=empresa_id, asaas_customer_id=asaas_id,
+            empresa_id=empresa_id,
+            asaas_customer_id=asaas_id,
         )
 
     # Persiste (bypass — empresa não tem RLS própria mas mantém pattern)
@@ -136,12 +138,14 @@ async def create_subscription_for_plano(
             await AsaasClient().cancel_subscription(existing_sub)
             logger.info(
                 "asaas_old_subscription_cancelled",
-                empresa_id=empresa_id, subscription_id=existing_sub,
+                empresa_id=empresa_id,
+                subscription_id=existing_sub,
             )
         except AsaasError as exc:
             logger.warning(
                 "asaas_old_subscription_cancel_failed",
-                empresa_id=empresa_id, error=str(exc),
+                empresa_id=empresa_id,
+                error=str(exc),
             )
 
     # Cria nova subscription (próximo dia útil como vencimento)
@@ -184,7 +188,9 @@ async def create_subscription_for_plano(
                         'asaas', %s, %s)
                 """,
                 (
-                    empresa_id, plano_id, valor,
+                    empresa_id,
+                    plano_id,
+                    valor,
                     asaas_payment_id,
                     f"Assinatura {plano_nome} — vencimento {next_due}",
                 ),
@@ -195,7 +201,8 @@ async def create_subscription_for_plano(
         "asaas_subscription_created",
         empresa_id=empresa_id,
         subscription_id=subscription_id,
-        plano=plano_slug, valor=valor,
+        plano=plano_slug,
+        valor=valor,
     )
     return {
         "subscription_id": subscription_id,
@@ -227,7 +234,8 @@ async def cancel_active_subscription(
     except AsaasError as exc:
         logger.warning(
             "asaas_subscription_cancel_failed",
-            empresa_id=empresa_id, error=str(exc),
+            empresa_id=empresa_id,
+            error=str(exc),
         )
         # Continua o downgrade local mesmo se Asaas falhou — manual sync depois
 
@@ -245,7 +253,8 @@ async def cancel_active_subscription(
     clear_plano_cache(empresa_id)
     logger.info(
         "asaas_subscription_cancelled",
-        empresa_id=empresa_id, subscription_id=sub_id,
+        empresa_id=empresa_id,
+        subscription_id=sub_id,
     )
     return {"status": "cancelled", "subscription_id": sub_id}
 
@@ -293,9 +302,7 @@ async def process_asaas_webhook(
     payment_id = payment.get("id")
 
     # Resolve empresa via customer_id ou subscription_id
-    empresa_id = await _resolve_empresa_from_event(
-        pool, customer_id, subscription_id
-    )
+    empresa_id = await _resolve_empresa_from_event(pool, customer_id, subscription_id)
 
     # SEMPRE registra log (audit append-only)
     log_id = await _log_billing_event(
@@ -311,7 +318,8 @@ async def process_asaas_webhook(
     if empresa_id is None:
         logger.warning(
             "asaas_webhook_unknown_customer",
-            customer_id=customer_id, subscription_id=subscription_id,
+            customer_id=customer_id,
+            subscription_id=subscription_id,
             event_type=event_type,
         )
         return {"processado": False, "reason": "unknown_customer"}
@@ -321,23 +329,17 @@ async def process_asaas_webhook(
     transacao_id: int | None = None
 
     if event_type in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
-        transacao_id = await _mark_transacao_paga(
-            pool, empresa_id, payment_id
-        )
+        transacao_id = await _mark_transacao_paga(pool, empresa_id, payment_id)
         # Atualiza plano da empresa baseado no plano da subscription Asaas
         await _ativar_plano_pos_pagamento(pool, empresa_id, subscription_id)
         action_taken = "plano_ativado"
 
     elif event_type == "PAYMENT_OVERDUE":
-        transacao_id = await _mark_transacao_vencida(
-            pool, empresa_id, payment_id
-        )
+        transacao_id = await _mark_transacao_vencida(pool, empresa_id, payment_id)
         action_taken = "marcado_pendente"
 
     elif event_type == "PAYMENT_REFUNDED":
-        transacao_id = await _mark_transacao_estornada(
-            pool, empresa_id, payment_id
-        )
+        transacao_id = await _mark_transacao_estornada(pool, empresa_id, payment_id)
         # Reverte plano pra free
         with empresa_scope(None, bypass=True):
             async with pool.connection() as conn:
@@ -369,8 +371,10 @@ async def process_asaas_webhook(
 
     logger.info(
         "asaas_webhook_processed",
-        event_type=event_type, empresa_id=empresa_id,
-        action_taken=action_taken, transacao_id=transacao_id,
+        event_type=event_type,
+        empresa_id=empresa_id,
+        action_taken=action_taken,
+        transacao_id=transacao_id,
     )
     return {
         "processado": True,
@@ -430,8 +434,14 @@ async def _log_billing_event(
                 VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                 RETURNING id
                 """,
-                (event_type, asaas_payment_id, asaas_customer_id,
-                 asaas_subscription_id, empresa_id, _json.dumps(payload)),
+                (
+                    event_type,
+                    asaas_payment_id,
+                    asaas_customer_id,
+                    asaas_subscription_id,
+                    empresa_id,
+                    _json.dumps(payload),
+                ),
             )
             row = await cur.fetchone()
             await conn.commit()
@@ -534,8 +544,7 @@ async def _ativar_plano_pos_pagamento(
     with empresa_scope(None, bypass=True):
         async with pool.connection() as conn:
             await conn.execute(
-                "UPDATE empresa SET plano = %s, updated_at = NOW() "
-                "WHERE id = %s",
+                "UPDATE empresa SET plano = %s, updated_at = NOW() WHERE id = %s",
                 (plano_slug, empresa_id),
             )
             await conn.commit()

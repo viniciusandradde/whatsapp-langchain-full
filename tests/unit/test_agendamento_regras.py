@@ -10,7 +10,7 @@ Cobre:
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -40,15 +40,15 @@ def fake_pool_with_regras():
     cur = MagicMock()
     cur.fetchone = AsyncMock(
         return_value=(
-            time(9, 0),                                 # hora_inicio
-            time(17, 0),                                # hora_fim
-            30,                                         # antecedencia_minima_minutos
-            0,                                          # intervalo_entre_minutos
-            [1, 2, 3, 4, 5],                            # dias_semana_permitidos
-            ["2026-05-09"],                             # dias_bloqueados (sexta)
-            False,                                      # requer_aprovacao
-            datetime(2026, 5, 1, tzinfo=timezone.utc),  # created_at
-            datetime(2026, 5, 1, tzinfo=timezone.utc),  # updated_at
+            time(9, 0),  # hora_inicio
+            time(17, 0),  # hora_fim
+            30,  # antecedencia_minima_minutos
+            0,  # intervalo_entre_minutos
+            [1, 2, 3, 4, 5],  # dias_semana_permitidos
+            ["2026-05-09"],  # dias_bloqueados (sexta)
+            False,  # requer_aprovacao
+            datetime(2026, 5, 1, tzinfo=UTC),  # created_at
+            datetime(2026, 5, 1, tzinfo=UTC),  # updated_at
         )
     )
     conn.execute = AsyncMock(return_value=cur)
@@ -93,7 +93,7 @@ def patch_regras_default(monkeypatch):
     from whatsapp_langchain.shared.models import AgendamentoRegras
 
     def _build(**overrides):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         defaults = {
             "empresa_id": 1,
             "hora_inicio": "08:00",
@@ -127,12 +127,15 @@ def patch_calendar_config(monkeypatch):
     return fake
 
 
-async def test_validate_rejects_inicio_apos_fim(patch_regras_default, patch_calendar_config, monkeypatch):
+async def test_validate_rejects_inicio_apos_fim(
+    patch_regras_default, patch_calendar_config, monkeypatch
+):
     monkeypatch.setattr(
-        agendamento_regras, "get",
+        agendamento_regras,
+        "get",
         AsyncMock(return_value=patch_regras_default()),
     )
-    later = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+    later = datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     earlier = later - timedelta(hours=1)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=later, end=earlier
@@ -141,28 +144,32 @@ async def test_validate_rejects_inicio_apos_fim(patch_regras_default, patch_cale
     assert "Início" in motivo
 
 
-async def test_validate_rejects_antecedencia_curta(patch_regras_default, patch_calendar_config, monkeypatch):
+async def test_validate_rejects_antecedencia_curta(
+    patch_regras_default, patch_calendar_config, monkeypatch
+):
     monkeypatch.setattr(
-        agendamento_regras, "get",
+        agendamento_regras,
+        "get",
         AsyncMock(return_value=patch_regras_default()),
     )
     # Daqui a 10 min — falha pq antecedência mín é 60 min
-    soon = datetime.now(timezone.utc) + timedelta(minutes=10)
+    soon = datetime.now(UTC) + timedelta(minutes=10)
     end = soon + timedelta(hours=1)
-    ok, motivo = await agendamento.validate_request(
-        MagicMock(), 1, start=soon, end=end
-    )
+    ok, motivo = await agendamento.validate_request(MagicMock(), 1, start=soon, end=end)
     assert not ok
     assert "Antecedência" in motivo
 
 
-async def test_validate_rejects_sabado_dom(patch_regras_default, patch_calendar_config, monkeypatch):
+async def test_validate_rejects_sabado_dom(
+    patch_regras_default, patch_calendar_config, monkeypatch
+):
     monkeypatch.setattr(
-        agendamento_regras, "get",
+        agendamento_regras,
+        "get",
         AsyncMock(return_value=patch_regras_default()),
     )
     # Sábado 2026-05-09 às 10h SP (= 13h UTC)
-    sab = datetime(2026, 5, 9, 13, 0, tzinfo=timezone.utc)
+    sab = datetime(2026, 5, 9, 13, 0, tzinfo=UTC)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=sab, end=sab + timedelta(hours=1)
     )
@@ -170,13 +177,16 @@ async def test_validate_rejects_sabado_dom(patch_regras_default, patch_calendar_
     assert "sáb" in motivo.lower() or "sab" in motivo.lower()
 
 
-async def test_validate_rejects_dia_bloqueado(patch_regras_default, patch_calendar_config, monkeypatch):
+async def test_validate_rejects_dia_bloqueado(
+    patch_regras_default, patch_calendar_config, monkeypatch
+):
     monkeypatch.setattr(
-        agendamento_regras, "get",
+        agendamento_regras,
+        "get",
         AsyncMock(return_value=patch_regras_default(dias_bloqueados=["2026-05-08"])),
     )
     # Sexta 2026-05-08 (dia bloqueado)
-    bloq = datetime(2026, 5, 8, 14, 0, tzinfo=timezone.utc)
+    bloq = datetime(2026, 5, 8, 14, 0, tzinfo=UTC)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=bloq, end=bloq + timedelta(hours=1)
     )
@@ -184,13 +194,16 @@ async def test_validate_rejects_dia_bloqueado(patch_regras_default, patch_calend
     assert "bloqueado" in motivo.lower()
 
 
-async def test_validate_rejects_fora_horario(patch_regras_default, patch_calendar_config, monkeypatch):
+async def test_validate_rejects_fora_horario(
+    patch_regras_default, patch_calendar_config, monkeypatch
+):
     monkeypatch.setattr(
-        agendamento_regras, "get",
+        agendamento_regras,
+        "get",
         AsyncMock(return_value=patch_regras_default()),
     )
     # Quinta 2026-05-07 às 22h SP (= 01h UTC dia 8) — fora janela 08-18
-    fora = datetime(2026, 5, 8, 1, 0, tzinfo=timezone.utc)
+    fora = datetime(2026, 5, 8, 1, 0, tzinfo=UTC)
     ok, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=fora, end=fora + timedelta(hours=1)
     )
@@ -198,13 +211,16 @@ async def test_validate_rejects_fora_horario(patch_regras_default, patch_calenda
     assert "08:00" in motivo or "fora" in motivo.lower()
 
 
-async def test_validate_aceita_horario_valido(patch_regras_default, patch_calendar_config, monkeypatch):
+async def test_validate_aceita_horario_valido(
+    patch_regras_default, patch_calendar_config, monkeypatch
+):
     monkeypatch.setattr(
-        agendamento_regras, "get",
+        agendamento_regras,
+        "get",
         AsyncMock(return_value=patch_regras_default()),
     )
     # Quinta 2026-05-07 às 14h SP (= 17h UTC) — dentro de tudo
-    ok = datetime(2026, 5, 7, 17, 0, tzinfo=timezone.utc)
+    ok = datetime(2026, 5, 7, 17, 0, tzinfo=UTC)
     valido, motivo = await agendamento.validate_request(
         MagicMock(), 1, start=ok, end=ok + timedelta(hours=1)
     )

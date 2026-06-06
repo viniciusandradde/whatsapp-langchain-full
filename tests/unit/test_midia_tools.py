@@ -90,7 +90,12 @@ class TestExtractDocument:
         with (
             patch(
                 "whatsapp_langchain.agents.tools.midia.download_media",
-                new=AsyncMock(return_value=(b"PK\x03\x04...", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+                new=AsyncMock(
+                    return_value=(
+                        b"PK\x03\x04...",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )
+                ),
             ),
             patch(
                 "whatsapp_langchain.agents.tools.midia.extract_text",
@@ -144,7 +149,8 @@ class TestSummarizeDocument:
 
         with (
             patch.object(
-                extract_document, "ainvoke",
+                extract_document,
+                "ainvoke",
                 new=AsyncMock(return_value="Texto longo do documento"),
             ),
             patch(
@@ -167,7 +173,8 @@ class TestSummarizeDocument:
 
         with (
             patch.object(
-                extract_document, "ainvoke",
+                extract_document,
+                "ainvoke",
                 new=AsyncMock(return_value="Conteúdo X"),
             ),
             patch(
@@ -182,7 +189,8 @@ class TestSummarizeDocument:
 
     async def test_propaga_erro_da_extract(self):
         with patch.object(
-            extract_document, "ainvoke",
+            extract_document,
+            "ainvoke",
             new=AsyncMock(return_value="[ERRO: download falhou]"),
         ):
             r = await summarize_document.ainvoke({"document_url": "https://x/d.pdf"})

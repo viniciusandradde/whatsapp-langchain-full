@@ -139,7 +139,12 @@ async def test_create_conexao_provider_legacy_rejeita():
             empresa_id=1,
             provider_slug="wareline",  # legacy
             label="X",
-            credentials={"username": "x", "password": "y", "client_id": "z", "client_secret": "w"},
+            credentials={
+                "username": "x",
+                "password": "y",
+                "client_id": "z",
+                "client_secret": "w",
+            },
         )
     assert "legacy" in str(exc_info.value).lower()
 
@@ -202,7 +207,9 @@ async def test_create_conexao_asaas_ok():
     assert out["credentials"]["access_token"] == "••••••••"
     # Verifica que INSERT recebeu credenciais CIFRADAS
     insert_call = next(
-        c for c in conn.execute.await_args_list if "INSERT INTO api_connection" in c.args[0]
+        c
+        for c in conn.execute.await_args_list
+        if "INSERT INTO api_connection" in c.args[0]
     )
     args_insert = insert_call.args[1]
     # access_token plaintext NÃO pode estar nos args
@@ -221,7 +228,13 @@ async def test_create_conexao_custom_auth_type_resolvido_de_creds():
         "Minha API",
         "https://api.exemplo.com",
         "bearer",  # auth_type resolvido
-        encrypt_dict({"base_url": "https://api.exemplo.com", "auth_method": "bearer", "token": "tk"}),
+        encrypt_dict(
+            {
+                "base_url": "https://api.exemplo.com",
+                "auth_method": "bearer",
+                "token": "tk",
+            }
+        ),
         {},
         True,
         None,
@@ -268,9 +281,7 @@ async def test_get_credenciais_decrypted_none_se_inexistente():
 @pytest.mark.asyncio
 async def test_update_conexao_404_se_outra_empresa():
     pool, _ = _mock_pool(None)
-    out = await update_conexao(
-        pool, connection_id=1, empresa_id=99, label="X"
-    )
+    out = await update_conexao(pool, connection_id=1, empresa_id=99, label="X")
     assert out is None
 
 
@@ -305,9 +316,7 @@ async def test_update_conexao_patch_password_invalida_cache():
     )
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
     # Deve ter DELETE no token cache
-    assert any(
-        "DELETE FROM api_connection_token_cache" in s for s in sql_calls
-    )
+    assert any("DELETE FROM api_connection_token_cache" in s for s in sql_calls)
 
 
 # ---------- delete + record_test_result ----------
@@ -330,9 +339,7 @@ async def test_delete_conexao_404():
 @pytest.mark.asyncio
 async def test_record_test_result_ok_zera_erro():
     pool, conn = _mock_pool()
-    await record_test_result(
-        pool, connection_id=1, ok=True, mensagem=None
-    )
+    await record_test_result(pool, connection_id=1, ok=True, mensagem=None)
     args = conn.execute.await_args.args[1]
     assert args == (True, None, 1)
 
@@ -340,8 +347,6 @@ async def test_record_test_result_ok_zera_erro():
 @pytest.mark.asyncio
 async def test_record_test_result_erro_grava_mensagem():
     pool, conn = _mock_pool()
-    await record_test_result(
-        pool, connection_id=1, ok=False, mensagem="rede caiu"
-    )
+    await record_test_result(pool, connection_id=1, ok=False, mensagem="rede caiu")
     args = conn.execute.await_args.args[1]
     assert args == (False, "rede caiu", 1)
