@@ -97,6 +97,9 @@ from whatsapp_langchain.server.routes.horario import (
 from whatsapp_langchain.server.routes.integracoes_api import (
     router as integracoes_api_router,
 )
+from whatsapp_langchain.server.routes.integracoes_asaas import (
+    router as integracoes_asaas_router,
+)
 from whatsapp_langchain.server.routes.integracoes_wareline import (
     router as integracoes_wareline_router,
 )
@@ -355,6 +358,7 @@ app.include_router(aba_router)
 app.include_router(tag_router)
 app.include_router(integracoes_wareline_router)
 app.include_router(integracoes_api_router)
+app.include_router(integracoes_asaas_router)
 app.include_router(lgpd_router)
 app.include_router(modelo_mensagem_router)
 app.include_router(hook_router)

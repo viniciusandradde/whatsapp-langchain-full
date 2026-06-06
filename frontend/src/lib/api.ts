@@ -2099,6 +2099,44 @@ export async function deleteWarelineConfig(): Promise<{ ok: boolean }> {
   });
 }
 
+// --- Asaas (billing GLOBAL da plataforma — superadmin) ---
+export interface AsaasConfigStatus {
+  configurado: boolean;
+  source: "db" | "env" | "none";
+  environment: string;
+  tem_api_key: boolean;
+  tem_webhook_token: boolean;
+  success_url: string;
+  cancel_url: string;
+}
+
+export async function getAsaasConfig(): Promise<AsaasConfigStatus> {
+  return apiFetch<AsaasConfigStatus>("/api/admin/integracoes/asaas");
+}
+
+export async function saveAsaasConfig(payload: {
+  environment?: string;
+  api_key?: string;
+  webhook_token?: string;
+  success_url?: string;
+  cancel_url?: string;
+}): Promise<{ status: string; source: string }> {
+  return apiFetch<{ status: string; source: string }>(
+    "/api/admin/integracoes/asaas",
+    { method: "PUT", body: payload }
+  );
+}
+
+export async function testAsaasConnection(): Promise<{
+  ok: boolean;
+  conta: string;
+}> {
+  return apiFetch<{ ok: boolean; conta: string }>(
+    "/api/admin/integracoes/asaas/testar",
+    { method: "POST" }
+  );
+}
+
 // --- Sprint Conector API genérico (api_connection) ---
 
 export interface ProviderFieldSpec {

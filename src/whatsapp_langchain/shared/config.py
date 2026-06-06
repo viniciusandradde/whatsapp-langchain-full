@@ -128,7 +128,7 @@ class Settings(BaseSettings):
 
     # --- Sprint B — ASAAS billing (cobrança recorrente) ---
     # API key gerada em asaas.com → Configurações → API. Em sandbox usa
-    # https://sandbox.asaas.com/api/v3, em prod https://api.asaas.com/v3.
+    # https://api-sandbox.asaas.com/v3, em prod https://api.asaas.com/v3.
     # Sem essas vars, rotas /api/billing/* respondem 503 e quota-card
     # esconde botão Upgrade.
     asaas_api_key: SecretStr | None = None
@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     def asaas_base_url(self) -> str:
         if self.asaas_environment.strip().lower() == "production":
             return "https://api.asaas.com/v3"
-        return "https://sandbox.asaas.com/api/v3"
+        return "https://api-sandbox.asaas.com/v3"
 
     # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
     # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
