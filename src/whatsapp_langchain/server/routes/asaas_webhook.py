@@ -15,6 +15,8 @@ Eventos esperados (mais usados):
 
 from __future__ import annotations
 
+import hmac
+
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
 
@@ -47,7 +49,7 @@ async def webhook_asaas(
         )
 
     expected = settings.asaas_webhook_token.get_secret_value()
-    if asaas_access_token != expected:
+    if not asaas_access_token or not hmac.compare_digest(asaas_access_token, expected):
         logger.warning(
             "asaas_webhook_invalid_token",
             provided=bool(asaas_access_token),

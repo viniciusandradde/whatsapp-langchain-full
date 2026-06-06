@@ -15,6 +15,8 @@ Validação opcional do header `apikey` quando
 `EVOLUTION_VALIDATE_APIKEY=true` — obrigatório em produção.
 """
 
+import hmac
+
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 
@@ -162,7 +164,7 @@ async def webhook_evolution(
             if settings.evolution_api_key is not None
             else ""
         )
-        if not expected or apikey != expected:
+        if not expected or not apikey or not hmac.compare_digest(apikey, expected):
             logger.warning(
                 "evolution_webhook_invalid_apikey",
                 provided=bool(apikey),

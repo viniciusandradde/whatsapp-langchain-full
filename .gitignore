@@ -76,3 +76,6 @@ docs/agente/explorer_*.png
 
 # Scraping local
 webscap/
+
+# Claude Code — settings locais por máquina
+.claude/settings.local.json

@@ -154,12 +154,50 @@ async def trace_link_for_atendimento(
     return {"provider": provider, "thread_id": thread_id, "trace_url": trace_url}
 
 
+async def _empresa_thread_ids(
+    empresa_id: int, thread_id: str | None
+) -> set[str] | None:
+    """`thread_id`s (`phone:agent`) que pertencem à empresa, via `message_queue`.
+
+    Escopo multi-tenant OBRIGATÓRIO: o store de observabilidade (Langfuse/
+    LangSmith) é único por instância, então sem este filtro o endpoint vazaria
+    traces — e os telefones de cliente embutidos no `thread_id` — de OUTROS
+    tenants. Quando um `thread_id` específico é pedido, valida o pertencimento e
+    retorna `None` (→ resposta vazia) se não for da empresa.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        if thread_id is not None:
+            cur = await conn.execute(
+                "SELECT 1 FROM message_queue "
+                "WHERE empresa_id = %s AND phone_number || ':' || agent_id = %s "
+                "LIMIT 1",
+                (empresa_id, thread_id),
+            )
+            return {thread_id} if await cur.fetchone() else None
+        cur = await conn.execute(
+            "SELECT DISTINCT phone_number || ':' || agent_id "
+            "FROM message_queue "
+            "WHERE empresa_id = %s "
+            "AND phone_number IS NOT NULL AND agent_id IS NOT NULL",
+            (empresa_id,),
+        )
+        return {r[0] for r in await cur.fetchall()}
+
+
 @router.get("")
 async def list_traces(
     limit: int = Query(default=20, ge=1, le=100),
     thread_id: str | None = Query(default=None),
+    empresa_id: int = Depends(get_empresa_context),
 ) -> dict[str, list[TraceInfo]]:
-    """Lista os traces mais recentes do provider ativo (Langfuse > LangSmith)."""
+    """Lista traces recentes do provider ativo (Langfuse > LangSmith), ESCOPADOS
+    pela empresa do usuário.
+
+    Só retorna traces cujo `thread_id` (`phone:agent`) pertence à empresa — o
+    store é global por instância, então filtrar por tenant é obrigatório pra não
+    vazar dados (incl. telefones) de outras empresas.
+    """
     provider = _active_provider()
     if provider is None:
         raise HTTPException(
@@ -170,24 +208,30 @@ async def list_traces(
             ),
         )
 
+    allowed = await _empresa_thread_ids(empresa_id, thread_id)
+    if not allowed:
+        return {"traces": []}
+
+    # Busca uma janela maior e filtra pelos thread_ids da empresa (os N mais
+    # recentes do store podem pertencer a outros tenants).
+    fetch = min(limit * 5, 500)
+
     if provider == "langfuse":
-        raw = await asyncio.to_thread(langfuse_client.list_traces, limit, thread_id)
+        raw = await asyncio.to_thread(langfuse_client.list_traces, fetch, thread_id)
         traces = [_lf_to_trace_info(t) for t in raw]
-        logger.debug("traces_listed", provider=provider, count=len(traces))
+        traces = [t for t in traces if t.thread_id in allowed][:limit]
+        logger.debug(
+            "traces_listed", provider=provider, count=len(traces), empresa_id=empresa_id
+        )
         return {"traces": traces}
 
-    # Fallback LangSmith — filtro de thread é client-side.
+    # Fallback LangSmith — filtro client-side.
     api_key = settings.langchain_api_key.get_secret_value()  # type: ignore[union-attr]
     project = settings.langchain_project
-    fetch = limit if not thread_id else min(limit * 5, 500)
     runs = await asyncio.to_thread(_fetch_runs, api_key, project, fetch)
-    if thread_id:
-        runs = [
-            r
-            for r in runs
-            if (r.extra or {}).get("metadata", {}).get("thread_id") == thread_id
-        ]
-    runs = runs[:limit]
     traces = [_to_trace_info(r) for r in runs]
-    logger.debug("traces_listed", provider=provider, count=len(traces))
+    traces = [t for t in traces if t.thread_id in allowed][:limit]
+    logger.debug(
+        "traces_listed", provider=provider, count=len(traces), empresa_id=empresa_id
+    )
     return {"traces": traces}

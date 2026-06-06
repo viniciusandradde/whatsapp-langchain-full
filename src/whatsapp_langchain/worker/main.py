@@ -104,29 +104,38 @@ async def main() -> None:
 
     try:
         while True:
-            # Claim roda SEM context (precisa ver toda a fila, multi-tenant).
-            # Quando A.2.6 trocar DATABASE_URL pra chat_nexus_app
-            # (NOBYPASSRLS), claim vai precisar de bypass: ver A.2.6.
-            message = await claim_next_message(pool, settings.lease_seconds)
+            try:
+                # Claim roda SEM context (precisa ver toda a fila, multi-tenant).
+                # Quando A.2.6 trocar DATABASE_URL pra chat_nexus_app
+                # (NOBYPASSRLS), claim vai precisar de bypass: ver A.2.6.
+                message = await claim_next_message(pool, settings.lease_seconds)
 
-            if message is None:
+                if message is None:
+                    await asyncio.sleep(settings.poll_interval_seconds)
+                    continue
+
+                # Sprint A.2.5: seta RLS context da empresa da msg antes
+                # de processar. Qualquer pool.connection() dentro de
+                # process_message (helpers shared/*.py, agente IA tools,
+                # checkpointer, store) herda app.empresa_id automaticamente
+                # via _RlsAwarePool wrapper. Garante isolamento entre
+                # mensagens de empresas diferentes processadas pelo mesmo
+                # worker.
+                with empresa_scope(empresa_id=message.empresa_id):
+                    await process_message(
+                        message,
+                        pool,
+                        checkpointer=checkpointer,
+                        store=store,
+                    )
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                raise
+            except Exception:
+                # Falha transitória (DB caiu, claim/mark_failed lançou, etc.)
+                # NÃO pode derrubar o consumo da fila inteira. Loga e segue com
+                # backoff; a msg em 'processing' é reclaimável após a lease.
+                logger.exception("worker_loop_iteration_error")
                 await asyncio.sleep(settings.poll_interval_seconds)
-                continue
-
-            # Sprint A.2.5: seta RLS context da empresa da msg antes
-            # de processar. Qualquer pool.connection() dentro de
-            # process_message (helpers shared/*.py, agente IA tools,
-            # checkpointer, store) herda app.empresa_id automaticamente
-            # via _RlsAwarePool wrapper. Garante isolamento entre
-            # mensagens de empresas diferentes processadas pelo mesmo
-            # worker.
-            with empresa_scope(empresa_id=message.empresa_id):
-                await process_message(
-                    message,
-                    pool,
-                    checkpointer=checkpointer,
-                    store=store,
-                )
 
     except KeyboardInterrupt:
         logger.info("worker_interrupted")

@@ -8,12 +8,57 @@ permitir uso DENTRO do grafo do agente via tools (`agents/tools/midia.py`).
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import ipaddress
+import socket
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from whatsapp_langchain.shared.config import settings
+
+# Auth Twilio (API Key) só é anexada para hosts da Twilio — evita vazar a
+# credencial pra um destino arbitrário num redirect malicioso.
+_TWILIO_AUTH_HOST_SUFFIX = "twilio.com"
+_MAX_MEDIA_REDIRECTS = 5
+
+
+def _host_is_public(host: str) -> bool:
+    """True se TODOS os IPs do host são públicos (anti-SSRF).
+
+    Bloqueia loopback, privados, link-local (169.254.x — metadata cloud!),
+    reservados, multicast e unspecified. Faz DNS resolve (bloqueante; chamar
+    via asyncio.to_thread).
+    """
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def _validate_media_url(url: str) -> str:
+    """Valida scheme http(s) + host público. Retorna o host. Levanta ValueError."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"scheme de mídia não permitido: {parsed.scheme!r}")
+    host = parsed.hostname or ""
+    if not host or not _host_is_public(host):
+        raise ValueError(f"host de mídia não permitido (privado/interno): {host!r}")
+    return host
 
 
 def _audio_format_from_media_type(media_type: str) -> str:
@@ -79,18 +124,35 @@ async def download_media(url: str) -> tuple[bytes, str | None]:
             return base64.b64decode(payload), mime
         # data URL plain (raro) — return as bytes
         from urllib.parse import unquote
+
         return unquote(payload).encode("utf-8"), mime
 
-    auth = (
-        (settings.twilio_api_key_sid, settings.twilio_api_key_secret)
-        if settings.twilio_api_key_sid
-        else None
-    )
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, auth=auth, follow_redirects=True, timeout=30.0)
-        response.raise_for_status()
-        ctype = response.headers.get("content-type", "").split(";")[0].strip() or None
-        return response.content, ctype
+    # SSRF guard: segue redirects MANUALMENTE, validando cada hop (Twilio
+    # MediaUrl redireciona pra S3, então não dá pra desligar redirect). A auth
+    # Twilio só vai pra hosts *.twilio.com — nunca vaza pro alvo de um redirect.
+    current = url
+    async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
+        for _ in range(_MAX_MEDIA_REDIRECTS):
+            host = await asyncio.to_thread(_validate_media_url, current)
+            auth = (
+                (settings.twilio_api_key_sid, settings.twilio_api_key_secret)
+                if settings.twilio_api_key_sid
+                and host.endswith(_TWILIO_AUTH_HOST_SUFFIX)
+                else None
+            )
+            response = await client.get(current, auth=auth)
+            if response.is_redirect:
+                loc = response.headers.get("location")
+                if not loc:
+                    response.raise_for_status()
+                current = urljoin(current, loc)
+                continue
+            response.raise_for_status()
+            ctype = (
+                response.headers.get("content-type", "").split(";")[0].strip() or None
+            )
+            return response.content, ctype
+        raise ValueError("mídia: muitos redirects")
 
 
 async def download_evolution_media_b64(
@@ -120,7 +182,9 @@ async def download_evolution_media_b64(
         return None
     url = f"{base}/chat/getBase64FromMediaMessage/{instance}"
     payload: dict = {
-        "message": {"key": {"id": message_key_id, "remoteJid": remote_jid, "fromMe": False}},
+        "message": {
+            "key": {"id": message_key_id, "remoteJid": remote_jid, "fromMe": False}
+        },
         "convertToMp4": convert_to_mp4,
     }
     try:
@@ -141,9 +205,7 @@ async def download_evolution_media_b64(
         return None
 
 
-async def chat_completion_media(
-    messages: list[dict], model: str | None = None
-) -> str:
+async def chat_completion_media(messages: list[dict], model: str | None = None) -> str:
     """Executa chamada multimodal no OpenRouter usando modelo de mídia."""
     api_key = settings.openrouter_api_key
     if not api_key:
@@ -168,7 +230,9 @@ async def chat_completion_media(
 
 
 async def describe_image_bytes(
-    media_bytes: bytes, media_type: str, model: str | None = None,
+    media_bytes: bytes,
+    media_type: str,
+    model: str | None = None,
     focus: str | None = None,
 ) -> str:
     """Descreve imagem (ou responde pergunta direcionada via `focus`).
