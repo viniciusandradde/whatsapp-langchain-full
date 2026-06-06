@@ -207,7 +207,10 @@ class Settings(BaseSettings):
 
     # --- Worker ---
     poll_interval_seconds: float = 1.0
-    lease_seconds: int = 60
+    # R7: teto realista do pipeline (IA + mídia + guardrails) — o worker renova
+    # o lease em background (heartbeat) enquanto processa, mas um teto maior
+    # reduz a janela de reclaim caso uma renovação falhe.
+    lease_seconds: int = 180
     max_attempts: int = 3
 
     # --- Media ---

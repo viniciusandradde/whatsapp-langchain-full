@@ -368,6 +368,42 @@ async def claim_next(
         return message
 
 
+async def renew_lease(
+    pool: AsyncConnectionPool,
+    message_id: int,
+    attempts: int,
+    lease_seconds: int,
+) -> bool:
+    """Renova o lease de uma mensagem em processamento (R7 — fencing de lease).
+
+    Estende `lease_until` enquanto o worker ainda processa, pra que uma
+    invocação longa do agente (> lease: IA + mídia + guardrails) NÃO dispare
+    reclaim por outro worker — o que geraria resposta DUPLICADA ao cliente em
+    deploy multi-worker. O fence por `attempts` garante que só o dono atual do
+    claim renova: se outro worker já reivindicou (attempts incrementado pelo
+    claim dele), o UPDATE não afeta nenhuma linha e retornamos False.
+
+    Returns:
+        True se renovou (ainda é o dono do lease); False se perdeu (reclaimado).
+    """
+    async with pool.connection() as conn:
+        cursor = await conn.execute(
+            """
+            UPDATE message_queue
+            SET lease_until = NOW() + make_interval(secs => %s),
+                updated_at = NOW()
+            WHERE id = %s
+              AND attempts = %s
+              AND status = 'processing'
+            RETURNING id
+            """,
+            (lease_seconds, message_id, attempts),
+        )
+        row = await cursor.fetchone()
+        await conn.commit()
+    return row is not None
+
+
 async def mark_done(
     pool: AsyncConnectionPool,
     message_id: int,
