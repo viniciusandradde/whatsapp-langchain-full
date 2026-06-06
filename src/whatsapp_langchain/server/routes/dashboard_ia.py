@@ -280,6 +280,7 @@ async def upsert_budget_endpoint(
         )
         row = await cur.fetchone()
         await conn.commit()
+    assert row is not None  # INSERT ... RETURNING sempre retorna 1 row
     await record_audit(
         pool,
         empresa_id=empresa_id,

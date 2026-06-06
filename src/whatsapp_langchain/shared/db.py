@@ -73,7 +73,9 @@ async def _acquire_advisory_lock(conn: AsyncConnection, lock_id: int) -> None:
     """Adquire advisory lock sem deixar transação ociosa bloqueando DDL concorrente."""
     while True:
         cursor = await conn.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-        locked = (await cursor.fetchone())[0]
+        lock_row = await cursor.fetchone()
+        assert lock_row is not None  # SELECT escalar sempre retorna 1 row
+        locked = lock_row[0]
         await conn.commit()
         if locked:
             return

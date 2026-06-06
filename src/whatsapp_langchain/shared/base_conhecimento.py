@@ -519,7 +519,10 @@ async def _llm_rerank(
     try:
         model = create_chat_model(model=RERANKER_MODEL, temperature=0.0)
         response = await model.ainvoke(prompt)
+        # response.content pode ser str ou list[str|dict] (LangChain) — normaliza p/ str.
         raw = response.content if hasattr(response, "content") else str(response)
+        if not isinstance(raw, str):
+            raw = str(raw)
         # LLM às vezes embrulha em ```json — limpa.
         cleaned = raw.strip()
         if cleaned.startswith("```"):

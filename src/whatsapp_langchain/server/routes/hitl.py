@@ -184,6 +184,7 @@ async def events_stream(
                 (empresa_id,),
             )
             row = await cur.fetchone()
+        assert row is not None  # COUNT(*) sempre retorna 1 row
         snapshot = {"pending_count": int(row[0] or 0)}
         yield f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
 
@@ -193,11 +194,11 @@ async def events_stream(
                 await conn.set_autocommit(True)
                 await conn.execute("LISTEN acao_pendente_change")
                 while True:
-                    notif = await conn.notifies(timeout=25.0)
-                    if not notif:
-                        yield ": heartbeat\n\n"
-                        continue
-                    for n in notif:
+                    # notifies() é um async generator: cede cada Notify até o
+                    # timeout expirar. Se nada chegou na janela, manda heartbeat.
+                    received = False
+                    async for n in conn.notifies(timeout=25.0):
+                        received = True
                         try:
                             payload = json.loads(n.payload)
                         except json.JSONDecodeError:
@@ -205,6 +206,8 @@ async def events_stream(
                         if payload.get("empresa_id") != empresa_id:
                             continue
                         yield f"event: change\ndata: {json.dumps(payload)}\n\n"
+                    if not received:
+                        yield ": heartbeat\n\n"
         except asyncio.CancelledError:
             return
         except Exception as e:

@@ -41,7 +41,7 @@ class QueryMiss:
     query_text: str
     pasta_ids: list[int]
     agente_slug: str | None
-    embedding: list[float] | None  # populado lazy
+    embedding: list[float] | None = None  # populado lazy
 
 
 @dataclass

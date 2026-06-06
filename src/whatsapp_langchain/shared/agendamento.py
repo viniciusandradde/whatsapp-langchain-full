@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, time, timedelta
-from typing import Final
+from typing import Final, cast
 from zoneinfo import ZoneInfo
 
 import structlog
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.models import Agendamento
@@ -149,13 +150,17 @@ async def list_by_period(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (cláusula WHERE), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             SELECT {_SELECT_COLS}
               FROM agendamento
              WHERE {" AND ".join(where)}
              ORDER BY data_inicio ASC
              LIMIT %s
             """,
+            ),
             params,
         )
         rows = await cur.fetchall()
@@ -762,7 +767,7 @@ async def notify_gestor(
 
     # Envia via OutboundClient resolvido pelo provider da Conexão
     try:
-        client, _mode = _build_client(ativa.provider, ativa.from_number)
+        client, _mode = await _build_client(pool, ativa)
         msg_id = await client.send_message(cal_config.aprovador_telefone, texto)
         await set_approval_message_id(pool, aprov["aprovacao_id"], msg_id)
         await update_gestor_notificado(pool, agendamento_id)

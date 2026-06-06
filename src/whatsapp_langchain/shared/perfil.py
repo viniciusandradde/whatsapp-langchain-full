@@ -111,6 +111,7 @@ async def create_perfil(
             (empresa_id, nome, descricao),
         )
         row = await cur.fetchone()
+        assert row is not None  # INSERT ... RETURNING sempre retorna 1 row
         perfil_id = row[0]
         for codigo in permissoes:
             await conn.execute(

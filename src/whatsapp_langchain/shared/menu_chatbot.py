@@ -18,9 +18,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import structlog
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
@@ -306,11 +307,15 @@ async def update_menu(
     params.extend([empresa_id, menu_id])
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"""
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"""
             UPDATE menu_chatbot SET {", ".join(sets)}
              WHERE empresa_id = %s AND id = %s
             RETURNING {_MENU_COLS}
             """,
+            ),
             tuple(params),
         )
         row = await cur.fetchone()
@@ -477,8 +482,12 @@ async def update_item(
     params.append(item_id)
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"UPDATE menu_item SET {', '.join(sets)} WHERE id = %s "
-            f"RETURNING {_ITEM_COLS}",
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"UPDATE menu_item SET {', '.join(sets)} WHERE id = %s "
+                f"RETURNING {_ITEM_COLS}",
+            ),
             tuple(params),
         )
         row = await cur.fetchone()

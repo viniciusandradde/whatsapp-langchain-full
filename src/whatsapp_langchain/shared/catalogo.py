@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
+from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
 # ============================================================================
@@ -161,8 +162,12 @@ async def update_modelo_llm(
     params.append(modelo_id)
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"UPDATE modelo_llm SET {', '.join(sets)} WHERE id = %s "
-            f"RETURNING {_MODELO_COLS}",
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"UPDATE modelo_llm SET {', '.join(sets)} WHERE id = %s "
+                f"RETURNING {_MODELO_COLS}",
+            ),
             tuple(params),
         )
         row = await cur.fetchone()
@@ -331,9 +336,13 @@ async def update_mcp_server(
     params.extend([empresa_id, mcp_id])
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"UPDATE mcp_server SET {', '.join(sets)} "
-            f"WHERE empresa_id = %s AND id = %s "
-            f"RETURNING {_MCP_COLS}",
+            # query dinâmica (colunas do SET), valores parametrizados via %s
+            cast(
+                Query,
+                f"UPDATE mcp_server SET {', '.join(sets)} "
+                f"WHERE empresa_id = %s AND id = %s "
+                f"RETURNING {_MCP_COLS}",
+            ),
             tuple(params),
         )
         row = await cur.fetchone()

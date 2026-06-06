@@ -445,6 +445,7 @@ async def _log_billing_event(
             )
             row = await cur.fetchone()
             await conn.commit()
+    assert row is not None  # INSERT ... RETURNING sempre retorna 1 row
     return int(row[0])
 
 
