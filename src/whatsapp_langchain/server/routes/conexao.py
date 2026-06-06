@@ -25,6 +25,7 @@ from whatsapp_langchain.server.dependencies import (
     verify_service_token,
 )
 from whatsapp_langchain.server.dependencies_plano import require_plano_limit
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     get_credentials_decrypted,
@@ -521,6 +522,7 @@ async def waba_embedded_signup(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _quota: None = Depends(require_plano_limit("conexoes")),
+    _perm: None = Depends(require_permission("integracao.manage")),
 ) -> Conexao:
     """Finaliza o Embedded Signup do FB SDK.
 
@@ -950,6 +952,7 @@ async def send_template_endpoint(
     body: SendTemplateInput,
     request: Request,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("integracao.manage")),
 ) -> SendTemplateResponse:
     """Envia template HSM via Twilio Content API.
 
