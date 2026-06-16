@@ -433,7 +433,7 @@
           "3",
           "4"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -441,9 +441,10 @@
             "description": "Implementar o router FastAPI para captura server-side de contatos via Evolution API, utilizando BackgroundTasks para processamento assíncrono e retornando CapturaResponse com lote_id e status.",
             "dependencies": [],
             "details": "Criar arquivo `src/whatsapp_langchain/server/routes/captura_evolution.py` com:\n\n1. **Router base**: `APIRouter(prefix=\"/api/conexoes/{conexao_id}/captura\", tags=[\"captura\"])`\n\n2. **Pydantic models**:\n   - `CapturaResponse(lote_id: str, status: Literal['queued','processing','done'], total_capturados: int | None, total_pulados: int | None)`\n\n3. **Endpoint POST /contatos**:\n   - Parâmetros: `conexao_id: int`, `background_tasks: BackgroundTasks`, `ctx: EmpresaContext = Depends(verify_api_key)`, `pool = Depends(get_pool)`\n   - Validar conexão existe e `provider == 'evolution'` (HTTPException 404 se não)\n   - Chamar `criar_captura_lote(pool, empresa_id, conexao_id, tipo='contatos', user_id)` para auditoria\n   - Adicionar `capturar_contatos_evolution` ao `background_tasks`\n   - Retornar `CapturaResponse(lote_id, status='queued')`\n\n4. **Helper `get_conexao`**: Query para buscar conexão por id + empresa_id (RLS)\n\n5. **Registrar router** em `server/main.py` junto aos demais\n\nSeguir padrão de dependencies.py com `verify_api_key` retornando `ApiKeyContext` e chamando `set_request_context(empresa_id)` antes de INSERTs.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestSmoke: `POST /api/conexoes/1/captura/contatos` sem header Authorization → assert 401. TestUnit: Mock `get_conexao` retornando `None` → assert 404. TestUnit: Mock conexão com `provider='twilio'` → assert 404 'Conexão Evolution não encontrada'.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:19:11.351Z"
           },
           {
             "id": 2,
@@ -453,9 +454,10 @@
               1
             ],
             "details": "Criar arquivo `src/whatsapp_langchain/shared/captura.py` com:\n\n1. **Função `criar_captura_lote`**:\n   - INSERT em `captura_lote` com `empresa_id, conexao_id, tipo, user_id, origem='server'`\n   - Retorna UUID do lote criado\n\n2. **Função `capturar_contatos_evolution`** (background task):\n   - Instanciar `EvolutionClient.from_conexao(conexao)`\n   - Chamar `client.fetch_contacts()` (Task 19)\n   - Para cada contato:\n     ```sql\n     INSERT INTO contato_capturado \n       (empresa_id, captura_lote_id, wa_jid, wa_lid, nome, push_name, is_business, verified_name, profile_pic_url, origem)\n     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'server')\n     ON CONFLICT (empresa_id, wa_jid) DO UPDATE SET\n       nome = COALESCE(EXCLUDED.nome, contato_capturado.nome),\n       push_name = COALESCE(EXCLUDED.push_name, contato_capturado.push_name),\n       profile_pic_url = EXCLUDED.profile_pic_url,\n       visto_ultima_vez_at = NOW()\n     ```\n   - Contabilizar `capturados` e `pulados_dup`\n   - UPDATE `captura_lote SET total_capturados, total_pulados_duplicado, finished_at=NOW()`\n\n3. **Tratamento de erros**:\n   - Try/except em `fetch_contacts` e loop de insert\n   - Em caso de falha: UPDATE `captura_lote SET error_message, finished_at=NOW()`\n   - Re-raise para logging\n\n4. **Normalização** via helper `normalize_capturado(raw_contact) -> dict`:\n   - `wa_jid` obrigatório\n   - `telefone` extraído apenas de `@s.whatsapp.net` (E.164)\n   - `is_business` derivado de `verifiedName != null`",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestUnit: Mock EvolutionClient.fetch_contacts retornando lista de 5 contatos → assert 5 INSERTs. TestIdempotent: Executar 2x com mesmo wa_jid → assert 1 row com dados atualizados (UPDATE path). TestError: Mock fetch_contacts lançando Exception → assert captura_lote.error_message preenchido e finished_at setado.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:19:16.465Z"
           },
           {
             "id": 3,
@@ -466,9 +468,10 @@
               2
             ],
             "details": "Adicionar ao `captura_evolution.py`:\n\n1. **Endpoint POST /grupos**:\n   - Mesma estrutura de validação do /contatos\n   - Criar lote com `tipo='grupo'`\n   - Chamar `capturar_grupos_evolution` em background\n\n2. **Função `capturar_grupos_evolution` em shared/captura.py**:\n   - `client.fetch_groups()` retorna lista com `wa_jid, name, description, participantes_count`\n   - Para cada grupo:\n     ```sql\n     INSERT INTO grupo (empresa_id, captura_lote_id, wa_group_id, nome, descricao, participantes_count, conexao_id, tipo)\n     VALUES (...)\n     ON CONFLICT (empresa_id, wa_group_id) DO UPDATE SET nome=EXCLUDED.nome, descricao=EXCLUDED.descricao, ...\n     ```\n   - Retorna lista de `grupo_id` inseridos/atualizados\n\n3. **Captura de membros em cascata**:\n   - Para cada grupo capturado, chamar `capturar_membros_grupo(pool, conexao, grupo_id, lote_id)` em sequência (ou paralelo limitado)\n   - `client.fetch_group_participants(wa_group_id)` retorna membros\n   - INSERT em `grupo_membro (grupo_id, wa_jid, telefone, is_admin)` com ON CONFLICT update\n\n4. **Rate limiting** para API Evolution:\n   - Adicionar delay entre requests de participantes (ex: 500ms)\n   - Ou usar semáforo `asyncio.Semaphore(3)` para paralelismo controlado\n\n5. **Atualização do lote**:\n   - Contar total de grupos + membros\n   - UPDATE `captura_lote SET total_capturados, total_pulados_*, finished_at=NOW()`",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestE2E: Mock Evolution com 2 grupos, 3 membros cada → assert 2 rows em grupo + 6 rows em grupo_membro. TestDedupe: Capturar mesmo grupo 2x → assert 1 row com updated_at atualizado. TestCascade: Grupo com membros duplicados em contato_capturado → assert relacionamento correto via wa_jid.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:19:21.713Z"
           },
           {
             "id": 4,
@@ -478,9 +481,10 @@
               1
             ],
             "details": "Adicionar ao `captura_evolution.py`:\n\n1. **Endpoint GET /lotes/{lote_id}**:\n   - Parâmetros: `lote_id: str`, `ctx: EmpresaContext`, `pool`\n   - Chamar `get_captura_lote(pool, lote_id, empresa_id)`\n   - HTTPException 404 se lote não encontrado ou não pertence à empresa\n\n2. **Função `get_captura_lote` em shared/captura.py**:\n   ```sql\n   SELECT id, tipo, origem, status, total_capturados, \n          total_pulados_invalido, total_pulados_duplicado,\n          error_message, created_at, finished_at\n   FROM captura_lote\n   WHERE id = $1 AND empresa_id = $2\n   ```\n\n3. **Lógica de status derivado**:\n   - `status = 'done'` se `finished_at IS NOT NULL AND error_message IS NULL`\n   - `status = 'error'` se `finished_at IS NOT NULL AND error_message IS NOT NULL`\n   - `status = 'processing'` se `finished_at IS NULL`\n\n4. **Response model estendido** `CapturaResponse`:\n   - Adicionar campos opcionais: `error_message: str | None`, `created_at: datetime`, `finished_at: datetime | None`\n\n5. **Endpoint auxiliar GET /lotes** (lista paginada):\n   - Listar últimos N lotes da empresa para histórico\n   - Parâmetros: `tipo: str | None`, `limit: int = 20`, `offset: int = 0`\n   - Ordenar por `created_at DESC`",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestLoteStatus: Criar lote sem finished_at → GET retorna status='processing'. TestLoteDone: Criar lote com finished_at e sem error → status='done'. TestLoteError: Criar lote com error_message → status='error' e error_message visível. TestRLS: Lote da empresa A não visível para empresa B (404).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:19:26.733Z"
           },
           {
             "id": 5,
@@ -493,11 +497,13 @@
               4
             ],
             "details": "Criar `tests/integration/test_captura_evolution.py` seguindo padrão do repo:\n\n1. **TestSmoke** (TestClient, sem DB):\n   ```python\n   def test_captura_contatos_requires_auth(client):\n       r = client.post('/api/conexoes/1/captura/contatos')\n       assert r.status_code == 401\n   \n   def test_captura_grupos_requires_auth(client):\n       r = client.post('/api/conexoes/1/captura/grupos')\n       assert r.status_code == 401\n   ```\n\n2. **TestE2E** (`@pytest.mark.docker_demo`):\n   - Fixtures `scope='module'`: criar empresa, user, conexão Evolution fake\n   - `_RUN = uuid.uuid4().hex[:8]` para isolamento\n   - Mock `EvolutionClient.fetch_contacts` retornando lista fixa\n   - Happy path:\n     1. POST /captura/contatos → assert lote_id e status='queued'\n     2. Aguardar background task (poll /lotes/{id} ou sleep)\n     3. Assert contato_capturado populado com wa_jid corretos\n     4. Assert captura_lote.status='done'\n\n3. **TestIdempotent**:\n   - Capturar mesmo contato 2x com push_name diferente\n   - Assert 1 row em contato_capturado\n   - Assert push_name atualizado (último valor)\n   - Assert visto_ultima_vez_at incrementado\n\n4. **TestE2EIsolamento** (RLS):\n   - Criar 2 empresas com conexões Evolution\n   - Capturar contatos na empresa A\n   - GET /lotes da empresa B → lista vazia ou 404\n   - Query direto contato_capturado com empresa_id B → 0 rows\n\n5. **Fixtures e helpers**:\n   - `get_admin_api_headers()` com X-User-Id, X-Empresa-Id, Bearer token\n   - Teardown CASCADE para limpar dados de teste\n   - Mock patch de `EvolutionClient` via pytest-mock/monkeypatch",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Meta-test: Rodar suite completa com `uv run pytest tests/integration/test_captura_evolution.py -v` e assert 0 failures. Coverage: Assert cobertura ≥80% para shared/captura.py e routes/captura_evolution.py. Performance: Happy path deve completar em <5s com mock.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:19:31.743Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:19:31.743Z"
       },
       {
         "id": "6",
@@ -878,9 +884,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:14:52.437Z",
+      "lastModified": "2026-06-16T21:19:31.743Z",
       "taskCount": 11,
-      "completedCount": 4,
+      "completedCount": 5,
       "tags": [
         "disparador"
       ]
