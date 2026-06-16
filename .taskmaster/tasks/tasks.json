@@ -515,7 +515,7 @@
         "dependencies": [
           "3"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -523,9 +523,10 @@
             "description": "Adicionar colunas intervalo_min_ms/intervalo_max_ms na tabela campanha com constraint de validação (min <= max) e coluna variaveis JSONB em campanha_destinatario. Migrar dados existentes de intervalo_ms para o novo formato min/max.",
             "dependencies": [],
             "details": "Criar arquivo db/migrations/120_campanha_jitter.sql contendo: 1) ALTER TABLE campanha ADD COLUMN intervalo_min_ms INT DEFAULT 300 e intervalo_max_ms INT DEFAULT 800; 2) ADD CONSTRAINT chk_intervalo_valido CHECK (intervalo_min_ms <= intervalo_max_ms); 3) UPDATE para migrar campanhas existentes usando GREATEST(intervalo_ms - 200, 100) como min e intervalo_ms + 200 como max; 4) ALTER TABLE campanha_destinatario ADD COLUMN variaveis JSONB DEFAULT '{}'. Testar migration em banco local antes de commitar.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verificar manualmente aplicando migration em banco local: 1) Criar campanha com intervalo_ms=500, aplicar migration, assert intervalo_min_ms=300 e intervalo_max_ms=700; 2) Tentar inserir campanha com min > max → deve falhar por constraint; 3) Verificar coluna variaveis existe em campanha_destinatario com default {}.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:22:27.689Z"
           },
           {
             "id": 2,
@@ -535,9 +536,10 @@
               1
             ],
             "details": "Em shared/campanha.py: 1) Adicionar import random no topo; 2) No início do _dispatch_loop, buscar config da campanha incluindo intervalo_min_ms e intervalo_max_ms via query SQL; 3) Usar defaults min_ms=300 e max_ms=800 se valores forem None; 4) Substituir o asyncio.sleep fixo por delay_ms = random.uniform(min_ms, max_ms) seguido de await asyncio.sleep(delay_ms / 1000.0); 5) Manter verificação de abort após cada sleep; 6) Atualizar a query que busca destinatário para incluir a coluna variaveis no RETURNING.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestJitter: Mockar asyncio.sleep com side_effect que registra delays. Rodar loop com 100 iterações (mock destinatários), assert todos os delays estão entre min e max configurados. Verificar distribuição uniforme (não todos iguais).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:22:32.642Z"
           },
           {
             "id": 3,
@@ -547,9 +549,10 @@
               1
             ],
             "details": "Em shared/campanha.py, implementar async def _resolve_template_vars(pool, template, cliente_id, variaveis) que: 1) Se cliente_id existe, busca nome/email/telefone da tabela cliente; 2) Cria cliente_data com nome, primeiro_nome (split()[0]), email, telefone; 3) Faz merge all_vars = {**cliente_data, **variaveis} para que variaveis do destinatário sobrescrevam; 4) Usa re.sub com regex r'\\{\\{([^}]+)\\}\\}' para substituir cada {{var}} pelo valor em all_vars ou string vazia se não existir; 5) Integrar chamada no _dispatch_loop passando dest['variaveis'] e dest['cliente_id'].",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestVariaveis unitário: 1) Template '{{nome}}' com cliente.nome='João' → 'João'; 2) Template '{{primeiro_nome}}' com cliente.nome='João Silva' → 'João'; 3) Template '{{custom}}' com variaveis={'custom':'XYZ'} → 'XYZ'; 4) variaveis={'nome':'Override'} sobrescreve cliente.nome; 5) Template '{{inexistente}}' → string vazia.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:22:37.839Z"
           },
           {
             "id": 4,
@@ -560,11 +563,13 @@
               3
             ],
             "details": "Criar tests/unit/test_campanha_jitter.py com: 1) TestJitter - mock asyncio.sleep, rodar _dispatch_loop com min=200 max=500, coletar todos delays, assert min <= delay <= max para cada um; 2) TestAbort - criar campanha, iniciar loop em background, marcar como abortada via UPDATE, assert loop termina sem processar todos destinatários; 3) TestResolveTemplateVars - testar função isolada com todos cenários de prioridade (variaveis > cliente > fallback); 4) TestMigration - em test_migrations.py verificar constraint rejeita min > max. Marcar testes que precisam de banco como @pytest.mark.docker_demo.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Executar pytest tests/unit/test_campanha_jitter.py -v para validar todos os cenários. Para testes de integração com banco real, usar make test-demo após subir stack Docker. Verificar cobertura com pytest --cov=shared/campanha.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:22:42.939Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:22:42.939Z"
       },
       {
         "id": "7",
@@ -884,9 +889,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:19:31.743Z",
+      "lastModified": "2026-06-16T21:22:42.939Z",
       "taskCount": 11,
-      "completedCount": 5,
+      "completedCount": 6,
       "tags": [
         "disparador"
       ]
