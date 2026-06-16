@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { UserPlus, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -18,8 +18,8 @@ import type { ContatoCapturado } from "@/lib/api";
 
 import { listContatosAction, promoverContatosAction } from "../actions";
 
-export function ContatosClient() {
-  const [contatos, setContatos] = useState<ContatoCapturado[]>([]);
+export function ContatosClient({ initial }: { initial: ContatoCapturado[] }) {
+  const [contatos, setContatos] = useState<ContatoCapturado[]>(initial);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -30,10 +30,6 @@ export function ContatosClient() {
     if (r.ok) setContatos(r.data);
     else setErro(r.error);
   }
-
-  useEffect(() => {
-    void carregar();
-  }, []);
 
   function toggle(id: number) {
     setSel((prev) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -24,8 +24,8 @@ import {
 
 const SCOPES = ["capture", "dispatch", "templates"] as const;
 
-export function ApiKeysClient() {
-  const [keys, setKeys] = useState<DisparadorApiKey[]>([]);
+export function ApiKeysClient({ initial }: { initial: DisparadorApiKey[] }) {
+  const [keys, setKeys] = useState<DisparadorApiKey[]>(initial);
   const [erro, setErro] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [scopes, setScopes] = useState<string[]>(["capture"]);
@@ -37,10 +37,6 @@ export function ApiKeysClient() {
     if (r.ok) setKeys(r.data);
     else setErro(r.error);
   }
-
-  useEffect(() => {
-    void carregar();
-  }, []);
 
   function criar() {
     setErro(null);
