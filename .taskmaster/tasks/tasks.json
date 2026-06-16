@@ -297,7 +297,7 @@
         "dependencies": [
           "1"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -305,9 +305,10 @@
             "description": "Migration SQL criando tabela captura_lote com campos de auditoria (empresa_id, conexao_id, tipo, origem_id, contadores, timestamps), constraints CHECK para tipo válido, e políticas RLS tenant-based usando rls_empresa_id(). Segue padrão das migrations 096-103 do projeto.",
             "dependencies": [],
             "details": "Arquivo: db/migrations/119_captura_schema.sql (parte 1). Criar tabela captura_lote com: id UUID PK gen_random_uuid(), empresa_id BIGINT NOT NULL FK empresa ON DELETE CASCADE, conexao_id BIGINT NOT NULL FK conexao, tipo VARCHAR(20) CHECK IN ('contatos','grupo','comunidade'), origem_id VARCHAR(100), contadores total_capturados/pulados_invalido/pulados_duplicado INT DEFAULT 0, started_at/finished_at/created_at TIMESTAMPTZ, error_message TEXT, created_by_user_id UUID FK auth.user. Habilitar RLS: ALTER TABLE captura_lote ENABLE ROW LEVEL SECURITY; ALTER TABLE captura_lote FORCE ROW LEVEL SECURITY; CREATE POLICY captura_lote_tenant ON captura_lote USING (empresa_id = rls_empresa_id()). Criar índice idx_captura_lote_empresa ON captura_lote(empresa_id).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verificar que migration roda sem erro. Testar constraint CHECK rejeitando tipo='invalido'. Testar FK CASCADE deletando empresa e verificando que captura_lote é removido.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:11:23.894Z"
           },
           {
             "id": 2,
@@ -317,9 +318,10 @@
               1
             ],
             "details": "Continuar em 119_captura_schema.sql. Criar tabela contato_capturado: id UUID PK, empresa_id BIGINT NOT NULL FK empresa CASCADE, captura_lote_id UUID FK captura_lote, wa_jid VARCHAR(50) NOT NULL (formato @s.whatsapp.net), wa_lid VARCHAR(50) (formato @lid), telefone VARCHAR(20), nome/push_name VARCHAR(200), is_business BOOLEAN DEFAULT FALSE, verified_name VARCHAR(200), profile_pic_url TEXT, origem VARCHAR(50) NOT NULL DEFAULT 'extension' CHECK IN ('extension','server','manual'), origem_grupo_id UUID FK grupo, promovido_cliente_id BIGINT FK cliente, promovido_at TIMESTAMPTZ, created_at TIMESTAMPTZ. UNIQUE (empresa_id, wa_jid). Índices: idx_contato_capturado_empresa(empresa_id), idx_contato_capturado_wa_jid(wa_jid), idx_contato_capturado_nao_promovido(empresa_id) WHERE promovido_cliente_id IS NULL. RLS policy usando rls_empresa_id().",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Testar INSERT + ON CONFLICT DO UPDATE para atualizar nome/push_name mantendo wa_jid. Testar UNIQUE constraint rejeitando duplicata na mesma empresa. Testar que empresas diferentes podem ter mesmo wa_jid. Testar índice parcial nao_promovido com EXPLAIN ANALYZE.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:11:29.000Z"
           },
           {
             "id": 3,
@@ -329,9 +331,10 @@
               1
             ],
             "details": "Continuar em 119_captura_schema.sql. Tabela grupo: id UUID PK, empresa_id BIGINT NOT NULL FK empresa CASCADE, conexao_id BIGINT NOT NULL FK conexao, wa_jid VARCHAR(100) NOT NULL (formato @g.us ou @newsletter), tipo VARCHAR(20) CHECK IN ('grupo','comunidade') DEFAULT 'grupo', nome VARCHAR(200), descricao TEXT, invite_link VARCHAR(200), total_membros INT DEFAULT 0, somos_admin/restrict/announce BOOLEAN DEFAULT FALSE, created_at/updated_at TIMESTAMPTZ. UNIQUE (empresa_id, wa_jid). Tabela grupo_membro: id UUID PK, grupo_id UUID NOT NULL FK grupo CASCADE, wa_jid VARCHAR(50) NOT NULL, wa_lid VARCHAR(50), is_admin/is_superadmin BOOLEAN DEFAULT FALSE, capturado_at TIMESTAMPTZ. UNIQUE (grupo_id, wa_jid). Índices: idx_grupo_empresa(empresa_id), idx_grupo_membro_wa_jid(wa_jid). RLS grupo: USING (empresa_id = rls_empresa_id()). RLS grupo_membro com subquery: USING (grupo_id IN (SELECT id FROM grupo WHERE empresa_id = rls_empresa_id())).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Testar CASCADE: deletar grupo e verificar que grupo_membro é removido. Testar RLS grupo_membro: com contexto empresa A, não deve ver membros de grupos da empresa B. Testar que subquery RLS funciona corretamente com EXPLAIN ANALYZE verificando uso de índice.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:11:34.365Z"
           },
           {
             "id": 4,
@@ -343,11 +346,13 @@
               3
             ],
             "details": "Arquivo: tests/integration/test_captura_schema.py. TestSmoke (sem DB): verificar que migration file existe e é SQL válido. TestE2E (@pytest.mark.docker_demo, psycopg real): criar fixture empresa/conexao com _RUN=uuid[:8] para isolamento. Testar: (1) migration roda com make migrate; (2) INSERT em captura_lote com tipo válido/inválido; (3) INSERT contato_capturado + upsert ON CONFLICT DO UPDATE SET nome=EXCLUDED.nome, push_name=EXCLUDED.push_name; (4) CASCADE empresa→captura_lote→contato_capturado; (5) CASCADE grupo→grupo_membro. TestE2EIsolamento: criar empresa A e B, inserir dados em ambas, SET rls.empresa_id = A, verificar que SELECT retorna apenas dados de A. Testar RLS grupo_membro via subquery. Teardown com CASCADE delete da empresa fixture.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Rodar com DATABASE_URL=postgresql://postgres:postgres@localhost:5434/whatsapp_langchain INTERNAL_SERVICE_TOKEN=dev-token-change-in-production uv run pytest tests/integration/test_captura_schema.py -v. Verificar cobertura de todos os cenários: migration, constraints, RLS isolation, CASCADE, upsert.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:11:39.893Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:11:39.893Z"
       },
       {
         "id": "4",
@@ -868,9 +873,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:06:38.286Z",
+      "lastModified": "2026-06-16T21:11:39.894Z",
       "taskCount": 11,
-      "completedCount": 2,
+      "completedCount": 3,
       "tags": [
         "disparador"
       ]
