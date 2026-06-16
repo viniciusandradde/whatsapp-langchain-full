@@ -136,6 +136,19 @@ class TestCapturaSmoke:
         r = self._client().post("/api/captura/promover", json={"contato_ids": [1]})
         assert r.status_code == 401, r.text
 
+    def test_ext_ingest_contatos_sem_apikey_401(self) -> None:
+        r = self._client().post(
+            "/api/captura/contatos",
+            json={"contatos": [{"wa_jid": "5511@s.whatsapp.net"}]},
+        )
+        assert r.status_code == 401, r.text
+
+    def test_ext_ingest_grupos_sem_apikey_401(self) -> None:
+        r = self._client().post(
+            "/api/captura/grupos", json={"grupos": [{"wa_group_id": "12@g.us"}]}
+        )
+        assert r.status_code == 401, r.text
+
 
 # ============================================================================
 # E2E da camada de captura (docker_demo — usa pool da app + empresa_scope)

@@ -876,7 +876,7 @@
           "7",
           "8"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -884,9 +884,10 @@
             "description": "Criar o documento principal de referência do módulo Disparador seguindo os padrões de documentação do projeto (ver docs/ARCHITECTURE.md, docs/NPS.md como referência). Incluir: visão geral, diagrama de arquitetura ASCII, schema de dados (campanha, campanha_destinatario, waba_template), endpoints de API com exemplos curl funcionais, mecanismos anti-ban (intervalo_ms, abort detection), opt-out handling, HSM templates, limites por plano e troubleshooting.",
             "dependencies": [],
             "details": "## Estrutura do documento\n\n1. **Visão Geral** — descrição do módulo, casos de uso suportados\n2. **Arquitetura** — diagrama ASCII do fluxo: Frontend → FastAPI → PostgreSQL → Background dispatch → Evolution/WABA/Twilio\n3. **Schema de Dados** — tabelas campanha (mig 034, 051, 113), campanha_destinatario, waba_template com colunas principais e constraints\n4. **API Reference** — endpoints com request/response exemplos:\n   - GET/POST /api/campanhas\n   - POST /api/campanhas/{id}/dispatch (202 Accepted)\n   - POST /api/campanhas/{id}/abort\n   - GET /api/campanhas/{id}/destinatarios\n5. **Anti-Ban** — intervalo_ms (default 500), batch de 50, abort detection, rate limits por provider\n6. **HSM Templates** — workflow WABA/Twilio, variáveis {{nome}}, status flow (LOCAL→APPROVED)\n7. **Compliance/Opt-Out** — limitações atuais documentadas\n8. **Troubleshooting** — erros comuns, verificação de status\n\n## Validações\n- Todos os exemplos curl devem funcionar contra ambiente local (make api)\n- Links internos para docs/EVOLUTION.md, docs/WABA_SETUP.md\n- Linguagem: pt-BR conforme padrão do projeto",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Outro desenvolvedor consegue seguir a documentação e fazer um disparo de teste sem perguntas extras; 2. Todos os exemplos curl funcionam contra staging (make api); 3. Links internos não estão quebrados (verificar com script ou manualmente); 4. Revisor valida que schema e endpoints correspondem ao código atual",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:40:07.006Z"
           },
           {
             "id": 2,
@@ -896,18 +897,20 @@
               1
             ],
             "details": "## Estrutura do documento\n\n1. **Overview** — propósito da extensão, integração com API\n2. **Setup de Desenvolvimento**\n   - Pré-requisitos (Node.js, Chrome Developer Mode)\n   - Clone, build, load unpacked\n3. **Arquitetura da Extensão**\n   - `background.ts` — service worker, gerencia chamadas API\n   - `content.ts` — injeção no WhatsApp Web, acesso a window.Store\n   - `popup.tsx` — UI de configuração da API key\n4. **Autenticação**\n   - Formato da API key: nxs_<empresa_hex>_<32chars>\n   - Armazenamento em chrome.storage.local\n   - NUNCA usar query params\n5. **Exemplos de Código**\n   - Fetch para /api/disparador/captura/contatos\n   - Payload com wa_jid, nome, is_business\n   - Tratamento de erros (401, 429, etc)\n6. **Segurança**\n   - Content Security Policy restritivo\n   - Validação de origem\n   - Proteção contra XSS\n7. **Troubleshooting**\n   - API key expired/invalid\n   - CORS errors\n   - WhatsApp Web updates\n\n## Validações\n- Exemplos JavaScript funcionam em ambiente de teste\n- Referência cruzada com docs/DISPARADOR.md",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Desenvolvedor frontend consegue configurar extensão seguindo o guia; 2. Exemplos de código JavaScript funcionam quando copiados; 3. Links para DISPARADOR.md funcionam; 4. Seção de segurança cobre OWASP top 10 relevantes para extensões",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:40:12.025Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:40:12.025Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:36:53.663Z",
+      "lastModified": "2026-06-16T21:40:12.025Z",
       "taskCount": 11,
-      "completedCount": 8,
+      "completedCount": 9,
       "tags": [
         "disparador"
       ]
