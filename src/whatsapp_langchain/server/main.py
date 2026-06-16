@@ -36,6 +36,7 @@ from whatsapp_langchain.server.routes.agendamento_regras import (
     router as agendamento_regras_router,
 )
 from whatsapp_langchain.server.routes.agente import router as agente_router
+from whatsapp_langchain.server.routes.api_keys import router as api_keys_router
 from whatsapp_langchain.server.routes.asaas_webhook import (
     router as asaas_webhook_router,
 )
@@ -51,14 +52,11 @@ from whatsapp_langchain.server.routes.billing import router as billing_router
 from whatsapp_langchain.server.routes.calendar_integration import (
     router as calendar_integration_router,
 )
-from whatsapp_langchain.server.routes.api_keys import router as api_keys_router
 from whatsapp_langchain.server.routes.campanha import router as campanha_router
 from whatsapp_langchain.server.routes.captura import router as captura_router
 from whatsapp_langchain.server.routes.captura_evolution import (
     router as captura_evolution_router,
 )
-from whatsapp_langchain.server.routes.disparador import router as disparador_router
-from whatsapp_langchain.server.routes.disparo import router as disparo_router
 from whatsapp_langchain.server.routes.catalogo import (
     router_mcp as mcp_router,
 )
@@ -82,6 +80,8 @@ from whatsapp_langchain.server.routes.dataset_import import (
 from whatsapp_langchain.server.routes.departamento import (
     router as departamento_router,
 )
+from whatsapp_langchain.server.routes.disparador import router as disparador_router
+from whatsapp_langchain.server.routes.disparo import router as disparo_router
 from whatsapp_langchain.server.routes.empresa_admin import (
     router as empresa_admin_router,
 )
