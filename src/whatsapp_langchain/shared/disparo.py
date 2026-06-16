@@ -92,6 +92,7 @@ async def _limite_plano(pool: AsyncConnectionPool, empresa_id: int) -> int | Non
 class PreviewResultado(BaseModel):
     total_bruto: int
     count_duplicado: int
+    count_opt_out: int
     count_invalido: int
     total_disponivel: int
     amostra: list[str]
@@ -122,6 +123,14 @@ async def preview_disparo(
             normalizados.append(norm)
     count_duplicado = total_bruto - len(normalizados)
 
+    # Filtra a lista de supressão (opt-out) — compliance anti-ban.
+    from whatsapp_langchain.shared.opt_out import telefones_suprimidos
+
+    suprimidos = await telefones_suprimidos(pool, empresa_id, normalizados)
+    if suprimidos:
+        normalizados = [p for p in normalizados if p not in suprimidos]
+    count_opt_out = len(suprimidos)
+
     # Validação opcional via Evolution (onWhatsApp/exists).
     count_invalido = 0
     validos = normalizados
@@ -145,6 +154,7 @@ async def preview_disparo(
     return PreviewResultado(
         total_bruto=total_bruto,
         count_duplicado=count_duplicado,
+        count_opt_out=count_opt_out,
         count_invalido=count_invalido,
         total_disponivel=len(validos),
         amostra=validos[:PREVIEW_AMOSTRA_MAX],

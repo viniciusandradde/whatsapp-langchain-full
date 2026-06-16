@@ -349,6 +349,30 @@ def _jitter_delay_s(min_ms: int | None, max_ms: int | None) -> float:
     return random.uniform(lo, hi) / 1000.0
 
 
+# Mínimo de tentativas antes do kill-switch poder agir (evita abortar por uma
+# falha isolada no começo).
+KILL_SWITCH_MIN_AMOSTRA = 20
+
+
+def _should_kill_switch(
+    enviados: int,
+    falhas: int,
+    pct: int | None,
+    *,
+    min_amostra: int = KILL_SWITCH_MIN_AMOSTRA,
+) -> bool:
+    """True se a taxa de falha estourou o limite (sinal de lista ruim/ban).
+
+    Só age depois de uma amostra mínima de tentativas. ``pct`` None/<=0 desliga.
+    """
+    if not pct or pct <= 0:
+        return False
+    tentados = enviados + falhas
+    if tentados < min_amostra:
+        return False
+    return (falhas / tentados) * 100 > pct
+
+
 async def _dispatch_loop(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int
 ) -> None:
@@ -393,13 +417,15 @@ async def _dispatch_loop(
     # Faixa de jitter anti-ban (fallback pro intervalo_ms fixo legado).
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT intervalo_min_ms, intervalo_max_ms FROM campanha WHERE id = %s",
+            "SELECT intervalo_min_ms, intervalo_max_ms, kill_switch_pct "
+            "FROM campanha WHERE id = %s",
             (camp_id,),
         )
         jrow = await cur.fetchone()
     fixo = camp["intervalo_ms"]
     min_ms = (jrow[0] if jrow else None) or fixo
     max_ms = (jrow[1] if jrow else None) or fixo
+    kill_pct = jrow[2] if jrow else None
 
     # Marca como running
     async with pool.connection() as conn:
@@ -520,6 +546,26 @@ async def _dispatch_loop(
             if delay_s > 0:
                 await asyncio.sleep(delay_s)
 
+        # Kill-switch: aborta se a taxa de falha estourar o limite (lista ruim
+        # / número comprometido). Checa por batch pra reagir cedo.
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT enviados, falhas FROM campanha WHERE id = %s",
+                (camp_id,),
+            )
+            krow = await cur.fetchone()
+        if krow and _should_kill_switch(krow[0], krow[1], kill_pct):
+            await _mark_finished(
+                pool,
+                camp_id,
+                "aborted",
+                reason=f"kill-switch: falhas {krow[1]}/{krow[0] + krow[1]} > {kill_pct}%",
+            )
+            log.warning(
+                "campanha_kill_switch", enviados=krow[0], falhas=krow[1], pct=kill_pct
+            )
+            return
+
 
 async def _mark_finished(
     pool: AsyncConnectionPool, camp_id: int, status: str, *, reason: str | None = None
@@ -529,11 +575,13 @@ async def _mark_finished(
             """
             UPDATE campanha
                SET status = %s, finished_at = NOW(), updated_at = NOW(),
+                   aborted_reason = COALESCE(%s, aborted_reason),
                    descricao = COALESCE(descricao, '') || COALESCE(%s, '')
              WHERE id = %s
             """,
             (
                 status,
+                reason,
                 f"\n[motivo: {reason}]" if reason else None,
                 camp_id,
             ),

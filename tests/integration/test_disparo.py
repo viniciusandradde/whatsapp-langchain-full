@@ -27,6 +27,18 @@ class TestPreviewSmoke:
         )
         assert r.status_code == 401, r.text
 
+    def test_opt_out_list_sem_auth_401(self) -> None:
+        assert self._client().get("/api/disparador/opt-out").status_code == 401
+
+    def test_opt_out_add_sem_auth_401(self) -> None:
+        r = self._client().post(
+            "/api/disparador/opt-out", json={"telefone": "+5511999999999"}
+        )
+        assert r.status_code == 401, r.text
+
+    def test_opt_out_delete_sem_auth_401(self) -> None:
+        assert self._client().delete("/api/disparador/opt-out/1").status_code == 401
+
 
 @pytest.mark.docker_demo
 class TestPreviewResolver:

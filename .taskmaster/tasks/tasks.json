@@ -666,7 +666,7 @@
           "3",
           "6"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -674,9 +674,10 @@
             "description": "Criar migration SQL que adiciona tabela disparador_opt_out para lista de supressão com campos wa_jid, empresa_id, motivo e origem, além das colunas kill_switch_pct e aborted_reason na tabela campanha.",
             "dependencies": [],
             "details": "A migration deve:\n1. Criar tabela disparador_opt_out com: id UUID PK, empresa_id BIGINT FK → empresa(id) CASCADE, wa_jid VARCHAR(50) NOT NULL, telefone VARCHAR(20), motivo VARCHAR(50) DEFAULT 'user_request' (valores: user_request|bounce|complaint), origem VARCHAR(50) (campanha_id, manual, webhook), created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE (empresa_id, wa_jid)\n2. Criar índices idx_opt_out_empresa e idx_opt_out_wa_jid para performance\n3. Habilitar RLS: ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY, policy opt_out_tenant USING (empresa_id = rls_empresa_id())\n4. ALTER TABLE campanha ADD COLUMN kill_switch_pct INT DEFAULT 30 (threshold de falha em %)\n5. ALTER TABLE campanha ADD COLUMN aborted_reason VARCHAR(100) (motivo do abort quando kill-switch dispara)\n\nSeguir padrão das migrations existentes (numeração 121, comentários descritivos).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Validar migration aplicando em banco de teste: verificar tabela criada com constraints corretas, índices existentes, RLS ativo, e colunas kill_switch_pct/aborted_reason presentes na campanha com defaults corretos.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:33:24.219Z"
           },
           {
             "id": 2,
@@ -686,9 +687,10 @@
               1
             ],
             "details": "Em worker/main.py, antes do roteamento para agente em process_message:\n1. Definir STOP_KEYWORDS = {'stop', 'parar', 'sair', 'cancelar', 'remover', 'unsubscribe'} (case insensitive)\n2. Criar função _check_opt_out_request(pool, message: dict) -> bool que:\n   - Extrai body.strip().lower() da mensagem\n   - Se body está em STOP_KEYWORDS:\n     a) INSERT na disparador_opt_out com empresa_id, wa_jid (formato '{phone}@s.whatsapp.net'), telefone, motivo='user_request', origem='webhook'\n     b) ON CONFLICT (empresa_id, wa_jid) DO NOTHING (idempotente)\n     c) Enviar mensagem de confirmação via outbound_client: 'Você foi removido da nossa lista de mensagens. Não receberá mais comunicações promocionais.'\n     d) Retornar True para abortar processamento normal\n3. Chamar _check_opt_out_request no início de process_message, antes de qualquer roteamento\n4. Se retornar True, marcar mensagem como done e não continuar para agente",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestOptOutSTOP: enviar webhook com body='STOP' → assert row criada em disparador_opt_out, assert mensagem de confirmação enviada via mock outbound_client, assert mensagem não chegou ao agente. TestOptOutPARAR: mesmas validações para variantes pt-BR (parar, sair, cancelar).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:33:29.260Z"
           },
           {
             "id": 3,
@@ -698,9 +700,10 @@
               1
             ],
             "details": "No módulo de dispatch de campanhas (provavelmente shared/disparador.py ou similar):\n1. No início de _dispatch_loop, inicializar contadores: total_tentativas = 0, total_falhas = 0\n2. Após cada envio, incrementar total_tentativas, e se não success incrementar total_falhas\n3. Após amostra mínima (total_tentativas >= 10), calcular taxa_falha_pct = (total_falhas / total_tentativas) * 100\n4. Se taxa_falha_pct > campanha.kill_switch_pct:\n   - Chamar _abort_campanha(pool, campanha_id, reason=f'Kill-switch: {taxa_falha_pct:.1f}% de falhas')\n   - Log warning com structlog: 'campanha_aborted_kill_switch', campanha_id, taxa_falha\n   - Break do loop\n5. Implementar _abort_campanha(pool, campanha_id, reason):\n   - UPDATE campanha SET status='aborted', aborted_reason=reason, finished_at=NOW()\n   - UPDATE campanha_destinatario SET status='cancelado' WHERE campanha_id=? AND status='pendente'\n6. Carregar kill_switch_pct da campanha no config no início do dispatch",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestKillSwitch: configurar campanha com kill_switch_pct=30, mock envios para 5 de 10 falharem (50%) → assert campanha.status='aborted', assert campanha.aborted_reason contém 'Kill-switch', assert destinatários pendentes marcados como 'cancelado'. TestKillSwitchBelowThreshold: 2 de 10 falham (20%) com threshold 30% → assert campanha continua.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:33:34.573Z"
           },
           {
             "id": 4,
@@ -710,9 +713,10 @@
               1
             ],
             "details": "Em server/routes/disparador.py ou criar routes/opt_out.py:\n1. GET /api/opt-out (listar_opt_outs):\n   - Dependency: verify_api_key (Task 17)\n   - Query params: limit (default 100), offset (default 0)\n   - SELECT wa_jid, telefone, motivo, origem, created_at FROM disparador_opt_out WHERE empresa_id = ctx.empresa_id ORDER BY created_at DESC LIMIT/OFFSET\n   - Retornar {'items': [dict(r) for r in rows]}\n2. POST /api/opt-out (adicionar_opt_out):\n   - Body: telefones: list[str]\n   - Para cada tel: normalizar com normalize_phone(), formatar wa_jid = f'{normalized}@s.whatsapp.net'\n   - INSERT com motivo='manual', origem='api', ON CONFLICT DO NOTHING\n   - Retornar {'added': len(telefones)}\n3. DELETE /api/opt-out/{wa_jid} (remover_opt_out):\n   - wa_jid como path param (URL encoded se necessário)\n   - DELETE FROM disparador_opt_out WHERE empresa_id=? AND wa_jid=?\n   - Retornar {'deleted': True/False baseado no rowcount}\n4. Validar permissões via dependency verify_api_key e RLS por empresa_id",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestSmoke: GET /opt-out sem auth → 401. TestE2E: POST /opt-out com lista de telefones → listar via GET, assert telefones presentes. TestDelete: DELETE /opt-out/{wa_jid} → GET novamente, assert telefone removido. TestIsolamento: empresa A adiciona opt-out, empresa B não consegue ver/deletar.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:33:39.624Z"
           },
           {
             "id": 5,
@@ -724,11 +728,13 @@
               4
             ],
             "details": "Criar tests/integration/test_opt_out_compliance.py seguindo padrão TestSmoke/TestE2E do projeto:\n1. TestSmoke (TestClient, sem DB):\n   - Test endpoints /opt-out existem e exigem auth (401 sem token)\n2. TestE2E (@pytest.mark.docker_demo):\n   - test_opt_out_stop_keyword: simular webhook com body='STOP' → assert row em disparador_opt_out, assert resposta automática enviada\n   - test_opt_out_parar_variantes: testar 'parar', 'sair', 'cancelar' → mesmo comportamento\n   - test_kill_switch_trigger: criar campanha com kill_switch_pct=30, 10 destinatários, mock 5 falhas → assert campanha aborted\n   - test_kill_switch_below_threshold: 2 falhas de 10 com threshold 30% → campanha completa\n   - test_campanha_filtra_opt_out: adicionar telefone ao opt-out, criar campanha com esse destinatário → assert não enviado (status 'filtrado' ou similar)\n   - test_crud_opt_out: criar→listar→deletar opt-out via API\n3. Fixtures isoladas por módulo com _RUN = uuid.uuid4().hex[:8], cleanup CASCADE no teardown\n4. Mock do outbound_client para não enviar mensagens reais",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Rodar suite com pytest -v tests/integration/test_opt_out_compliance.py. Validar cobertura de captura automática (keywords), kill-switch (threshold), filtro em campanhas, e CRUD de opt-out. Todos os testes devem passar antes de marcar Task 23 como completa.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:33:44.789Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:33:44.789Z"
       },
       {
         "id": "9",
@@ -895,9 +901,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:28:30.554Z",
+      "lastModified": "2026-06-16T21:33:44.790Z",
       "taskCount": 11,
-      "completedCount": 7,
+      "completedCount": 8,
       "tags": [
         "disparador"
       ]
