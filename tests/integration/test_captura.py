@@ -29,8 +29,8 @@ class TestCapturaSchema:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
-                (f"capt-{_RUN}",),
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"capt-{_RUN}", f"capt-{_RUN}"),
             ).fetchone()
             assert row is not None
             eid = row[0]
@@ -162,8 +162,8 @@ class TestCapturaUpsertPromocao:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
-                (f"capt-up-{_RUN}",),
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"capt-up-{_RUN}", f"capt-up-{_RUN}"),
             ).fetchone()
             assert row is not None
             eid = row[0]

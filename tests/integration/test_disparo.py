@@ -47,8 +47,8 @@ class TestPreviewResolver:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
-                (f"prev-{_RUN}",),
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"prev-{_RUN}", f"prev-{_RUN}"),
             ).fetchone()
             assert row is not None
             eid = row[0]
@@ -60,7 +60,9 @@ class TestPreviewResolver:
         from whatsapp_langchain.shared.db import get_pool
         from whatsapp_langchain.shared.disparo import OrigemConfig, preview_disparo
 
-        tel = f"+5511{_RUN[:7]}"
+        # telefone só-dígitos (raw == normalizado); _RUN é hex (tem letras).
+        _digits = ("".join(c for c in _RUN if c.isdigit()) + "0000000")[:7]
+        tel = f"+5511{_digits}"
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
             # dois contatos com MESMO telefone (jids diferentes) → dedup
             conn.execute(

@@ -78,8 +78,8 @@ class TestE2E:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
-                (f"disp-a-{_RUN}",),
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"disp-a-{_RUN}", f"disp-a-{_RUN}"),
             ).fetchone()
             assert row is not None
             eid = row[0]
@@ -92,8 +92,8 @@ class TestE2E:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
-                (f"disp-b-{_RUN}",),
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"disp-b-{_RUN}", f"disp-b-{_RUN}"),
             ).fetchone()
             assert row is not None
             eid = row[0]
@@ -111,7 +111,8 @@ class TestE2E:
                     (empresa_id, label, key_prefix, key_hash, scopes)
                 VALUES (%s, %s, %s, %s, ARRAY['capture','dispatch'])
                 """,
-                (empresa_id, f"e2e-{_RUN}", prefix, key_hash),
+                # label único por chave (UNIQUE empresa_id,label) — usa o prefixo
+                (empresa_id, f"e2e-{prefix}", prefix, key_hash),
             )
         return plain
 
@@ -171,8 +172,8 @@ class TestApiKeysCrud:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
-                (f"akcrud-{_RUN}",),
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"akcrud-{_RUN}", f"akcrud-{_RUN}"),
             ).fetchone()
             assert row is not None
             eid = row[0]
