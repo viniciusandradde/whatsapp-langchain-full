@@ -364,7 +364,7 @@
         "dependencies": [
           "3"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -372,9 +372,10 @@
             "description": "Adicionar método check_numbers() ao EvolutionClient que valida se números têm WhatsApp ativo. O método deve processar listas grandes em chunks de 50 números por request para respeitar limites da API Evolution.",
             "dependencies": [],
             "details": "Implementar em worker/evolution_client.py:\n\n1. Criar TypedDict WhatsAppNumber com campos: wa_jid (str), exists (bool), is_business (bool | None), verified_name (str | None)\n\n2. Implementar check_numbers(phones: list[str], chunk_size: int = 50) -> list[WhatsAppNumber]:\n   - Dividir lista de phones em chunks de chunk_size\n   - Para cada chunk: normalizar telefones via _normalize_phone(), POST para /chat/whatsappNumbers/{instance}\n   - Parsear resposta: extrair 'participants' e mapear para WhatsAppNumber\n   - Concatenar resultados de todos os chunks\n\n3. Adicionar helper _normalize_phone() se não existir (remover tudo exceto dígitos)\n\n4. Tratar erros HTTP com raise_for_status() e logging apropriado",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestUnit: Mock httpx.AsyncClient, simular resposta Evolution com 3 participantes, assert parsing correto dos campos. TestChunking: Passar 100 phones com chunk_size=50, assert exatamente 2 requests feitos via mock. TestEmpty: Lista vazia retorna lista vazia sem request.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:14:36.831Z"
           },
           {
             "id": 2,
@@ -384,9 +385,10 @@
               1
             ],
             "details": "Implementar em worker/evolution_client.py:\n\n1. Criar TypedDict Contact: wa_jid, wa_lid (| None), name (| None), push_name (| None), is_business (bool), verified_name (| None), profile_pic_url (| None)\n\n2. Criar TypedDict Group: wa_jid, name, description (| None), invite_link (| None), total_members (int), is_admin (bool), restrict (bool), announce (bool)\n\n3. Implementar fetch_contacts() -> list[Contact]:\n   - POST /chat/findContacts/{instance} com body vazio\n   - Mapear resposta JSON para lista de Contact\n   - Campos: id→wa_jid, lid→wa_lid, name, pushName→push_name, isBusiness→is_business, verifiedName→verified_name, imgUrl→profile_pic_url\n\n4. Implementar fetch_groups(get_participants: bool = False) -> list[Group]:\n   - GET /group/fetchAllGroups/{instance}?getParticipants={bool}\n   - Mapear: id→wa_jid, subject→name, desc→description, inviteCode→invite_link, len(participants)→total_members, iamAdmin→is_admin",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestFetchContacts: Mock resposta com 5 contatos, assert todos campos mapeados corretamente incluindo campos opcionais None. TestFetchGroups: Mock lista 3 grupos, assert is_admin parsed de iamAdmin. TestGroupsWithParticipants: get_participants=True, assert param na URL e total_members calculado.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:14:42.014Z"
           },
           {
             "id": 3,
@@ -397,9 +399,10 @@
               2
             ],
             "details": "Implementar em worker/evolution_client.py:\n\n1. Criar TypedDict GroupMember: wa_jid (str), wa_lid (str | None), is_admin (bool), is_superadmin (bool)\n\n2. Implementar fetch_group_participants(group_jid: str) -> list[GroupMember]:\n   - GET /group/participants/{instance}?groupJid={jid}\n   - Extrair 'participants' da resposta\n   - Mapear: id→wa_jid, lid→wa_lid, admin=='admin'→is_admin, admin=='superadmin'→is_superadmin\n   - Validar group_jid não vazio antes do request\n\n3. Implementar health() -> dict:\n   - GET /instance/connectionState/{instance}\n   - Retornar JSON completo da resposta (state, status, etc)\n   - Útil para verificar se instância está conectada antes de disparos\n\n4. Adicionar docstrings com exemplos de resposta da Evolution API para documentação",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestFetchParticipants: Mock grupo com 10 membros (2 admin, 1 superadmin, 7 normais), assert contagem correta de cada tipo. TestHealth: Mock estado 'open', assert dict retornado contém 'state'. TestGroupJidInvalido: group_jid vazio levanta ValueError antes de request.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:14:47.136Z"
           },
           {
             "id": 4,
@@ -411,11 +414,13 @@
               3
             ],
             "details": "Criar tests/unit/test_evolution_client_capture.py:\n\n1. Fixture pytest com mock httpx.AsyncClient usando resptest ou pytest-httpx\n\n2. TestCheckNumbers: \n   - test_check_numbers_single_chunk: 30 phones, 1 request\n   - test_check_numbers_multiple_chunks: 120 phones, 3 requests\n   - test_check_numbers_empty: lista vazia → lista vazia\n   - test_check_numbers_parsing: validar todos campos WhatsAppNumber\n\n3. TestFetchContacts/TestFetchGroups:\n   - test_fetch_contacts_parsing: campos opcionais None\n   - test_fetch_groups_admin_parsing: iamAdmin=true/false\n   - test_fetch_groups_with_participants: param na URL\n\n4. TestGroupParticipants/TestHealth:\n   - test_fetch_participants_roles: admin/superadmin/normal\n   - test_health_returns_state: dict com 'state'\n\n5. Criar tests/integration/test_evolution_live.py:\n   - @pytest.mark.skipif(not os.getenv('EVOLUTION_LIVE_TESTS')) para todos\n   - Fixture com instância real via EVOLUTION_API_URL + EVOLUTION_API_KEY\n   - test_live_health: assert state == 'open' ou skip se offline",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Executar 'make test' para rodar testes unitários com mocks (devem passar em CI sem Evolution). Executar 'EVOLUTION_LIVE_TESTS=1 uv run pytest tests/integration/test_evolution_live.py -v' para testes live (requer Evolution rodando). Cobertura mínima 90% dos novos métodos.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:14:52.437Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:14:52.437Z"
       },
       {
         "id": "5",
@@ -873,9 +878,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:11:39.894Z",
+      "lastModified": "2026-06-16T21:14:52.437Z",
       "taskCount": 11,
-      "completedCount": 3,
+      "completedCount": 4,
       "tags": [
         "disparador"
       ]

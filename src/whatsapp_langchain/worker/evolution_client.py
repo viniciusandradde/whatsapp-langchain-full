@@ -20,6 +20,7 @@ Uso:
 """
 
 import uuid
+from typing import TypedDict
 
 import httpx
 import structlog
@@ -30,6 +31,52 @@ logger = structlog.get_logger()
 
 EVOLUTION_SEND_TEXT_PATH = "/message/sendText/{instance}"
 EVOLUTION_SEND_PRESENCE_PATH = "/chat/sendPresence/{instance}"
+# Captura (Task 4) — endpoints REST da Evolution usados server-side.
+EVOLUTION_CHECK_NUMBERS_PATH = "/chat/whatsappNumbers/{instance}"
+EVOLUTION_FIND_CONTACTS_PATH = "/chat/findContacts/{instance}"
+EVOLUTION_FETCH_GROUPS_PATH = "/group/fetchAllGroups/{instance}"
+EVOLUTION_GROUP_PARTICIPANTS_PATH = "/group/participants/{instance}"
+EVOLUTION_CONNECTION_STATE_PATH = "/instance/connectionState/{instance}"
+# Quantos números validar por request em check_numbers (evita payload gigante).
+EVOLUTION_CHECK_NUMBERS_CHUNK = 50
+
+
+class WhatsAppNumber(TypedDict):
+    """Resultado de validação de um número (onWhatsApp/exists)."""
+
+    wa_jid: str
+    telefone: str | None
+    exists: bool
+
+
+class CapturedContact(TypedDict):
+    """Contato cru retornado pelo store da Evolution (antes de normalizar)."""
+
+    wa_jid: str
+    push_name: str | None
+    name: str | None
+    is_business: bool
+    verified_name: str | None
+
+
+class CapturedGroup(TypedDict):
+    """Grupo cru retornado por fetchAllGroups."""
+
+    wa_group_id: str
+    nome: str | None
+    descricao: str | None
+    invite_link: str | None
+    participantes_count: int
+    somos_admin: bool
+
+
+class CapturedGroupMember(TypedDict):
+    """Membro de grupo (wa_jid pode ser @s.whatsapp.net ou @lid)."""
+
+    wa_jid: str
+    is_admin: bool
+
+
 # Mesmo limite seguro do Twilio — Evolution não documenta corte rígido,
 # mas mantemos splitting universal pra evitar truncamento server-side.
 EVOLUTION_MESSAGE_BODY_LIMIT = 1600
@@ -69,6 +116,18 @@ def normalize_to_number(to: str) -> str:
         cleaned = cleaned[len("whatsapp:") :]
     cleaned = cleaned.lstrip("+")
     return "".join(c for c in cleaned if c.isdigit())
+
+
+def phone_from_jid(jid: str) -> str | None:
+    """Extrai telefone E.164 de um JID `@s.whatsapp.net`; None para `@lid`.
+
+    Membros multi-device vêm como `<lid>@lid` sem telefone derivável — nesse
+    caso retornamos None (o wa_jid continua sendo a identidade primária).
+    """
+    if not jid or "@s.whatsapp.net" not in jid:
+        return None
+    digits = "".join(c for c in jid.split("@", 1)[0] if c.isdigit())
+    return f"+{digits}" if digits else None
 
 
 class EvolutionClient:
@@ -286,3 +345,164 @@ class EvolutionClient:
                 error=str(exc),
             )
             return False
+
+    # ------------------------------------------------------------------
+    # Captura server-side (Task 4) — leitura do store da Evolution.
+    # ------------------------------------------------------------------
+
+    def _capture_url(self, path: str) -> str:
+        return f"{self.api_url}{path.format(instance=self.instance_name)}"
+
+    async def check_numbers(
+        self, phones: list[str], chunk_size: int = EVOLUTION_CHECK_NUMBERS_CHUNK
+    ) -> list[WhatsAppNumber]:
+        """Valida quais números têm WhatsApp (onWhatsApp/exists), em lotes.
+
+        Usado pelo resolver do disparo (Task 6) pra marcar inválidos ANTES de
+        enviar — disparar pra muitos números mortos acelera ban. Em mock, assume
+        que todos existem (não bloqueia testes locais).
+        """
+        if self.delivery_mode == "mock":
+            return [
+                WhatsAppNumber(
+                    wa_jid=f"{normalize_to_number(p)}@s.whatsapp.net",
+                    telefone=f"+{normalize_to_number(p)}",
+                    exists=True,
+                )
+                for p in phones
+            ]
+        out: list[WhatsAppNumber] = []
+        async with httpx.AsyncClient() as http:
+            for i in range(0, len(phones), chunk_size):
+                chunk = [normalize_to_number(p) for p in phones[i : i + chunk_size]]
+                resp = await http.post(
+                    self._capture_url(EVOLUTION_CHECK_NUMBERS_PATH),
+                    headers={"apikey": self.api_key},
+                    json={"numbers": chunk},
+                    timeout=30.0,
+                )
+                if not resp.is_success:
+                    raise EvolutionSendError(resp.status_code, resp.text[:500])
+                for item in resp.json() or []:
+                    jid = item.get("jid") or ""
+                    out.append(
+                        WhatsAppNumber(
+                            wa_jid=jid,
+                            telefone=item.get("number") or phone_from_jid(jid),
+                            exists=bool(item.get("exists")),
+                        )
+                    )
+        return out
+
+    async def fetch_contacts(self) -> list[CapturedContact]:
+        """Lista contatos do store (POST /chat/findContacts). Mock → []."""
+        if self.delivery_mode == "mock":
+            return []
+        async with httpx.AsyncClient() as http:
+            resp = await http.post(
+                self._capture_url(EVOLUTION_FIND_CONTACTS_PATH),
+                headers={"apikey": self.api_key},
+                json={},
+                timeout=60.0,
+            )
+            if not resp.is_success:
+                raise EvolutionSendError(resp.status_code, resp.text[:500])
+            data = resp.json() or []
+        out: list[CapturedContact] = []
+        for c in data:
+            jid = c.get("id") or c.get("remoteJid") or ""
+            if not jid:
+                continue
+            verified = c.get("verifiedName")
+            out.append(
+                CapturedContact(
+                    wa_jid=jid,
+                    push_name=c.get("pushName"),
+                    name=c.get("name"),
+                    is_business=verified is not None,
+                    verified_name=verified,
+                )
+            )
+        return out
+
+    async def fetch_groups(self, get_participants: bool = True) -> list[CapturedGroup]:
+        """Lista grupos (GET /group/fetchAllGroups). Mock → []."""
+        if self.delivery_mode == "mock":
+            return []
+        params = {"getParticipants": "true" if get_participants else "false"}
+        async with httpx.AsyncClient() as http:
+            resp = await http.get(
+                self._capture_url(EVOLUTION_FETCH_GROUPS_PATH),
+                headers={"apikey": self.api_key},
+                params=params,
+                timeout=60.0,
+            )
+            if not resp.is_success:
+                raise EvolutionSendError(resp.status_code, resp.text[:500])
+            data = resp.json() or []
+        out: list[CapturedGroup] = []
+        for g in data:
+            jid = g.get("id") or ""
+            if not jid:
+                continue
+            parts = g.get("participants") or []
+            invite_code = g.get("inviteCode")
+            out.append(
+                CapturedGroup(
+                    wa_group_id=jid,
+                    nome=g.get("subject"),
+                    descricao=g.get("desc") or g.get("description"),
+                    invite_link=(
+                        f"https://chat.whatsapp.com/{invite_code}"
+                        if invite_code
+                        else None
+                    ),
+                    participantes_count=int(g.get("size") or len(parts)),
+                    somos_admin=False,
+                )
+            )
+        return out
+
+    async def fetch_group_participants(
+        self, group_jid: str
+    ) -> list[CapturedGroupMember]:
+        """Lista membros de um grupo (GET /group/participants). Mock → []."""
+        if self.delivery_mode == "mock":
+            return []
+        async with httpx.AsyncClient() as http:
+            resp = await http.get(
+                self._capture_url(EVOLUTION_GROUP_PARTICIPANTS_PATH),
+                headers={"apikey": self.api_key},
+                params={"groupJid": group_jid},
+                timeout=60.0,
+            )
+            if not resp.is_success:
+                raise EvolutionSendError(resp.status_code, resp.text[:500])
+            data = resp.json()
+        parts = data.get("participants") if isinstance(data, dict) else data
+        out: list[CapturedGroupMember] = []
+        for p in parts or []:
+            jid = p.get("id") or ""
+            if not jid:
+                continue
+            out.append(
+                CapturedGroupMember(
+                    wa_jid=jid,
+                    is_admin=p.get("admin") in ("admin", "superadmin"),
+                )
+            )
+        return out
+
+    async def health(self) -> dict:
+        """Estado da conexão (GET /instance/connectionState). Mock → aberto."""
+        if self.delivery_mode == "mock":
+            return {"state": "open", "mock": True}
+        async with httpx.AsyncClient() as http:
+            resp = await http.get(
+                self._capture_url(EVOLUTION_CONNECTION_STATE_PATH),
+                headers={"apikey": self.api_key},
+                timeout=10.0,
+            )
+            if not resp.is_success:
+                raise EvolutionSendError(resp.status_code, resp.text[:500])
+            return resp.json()
