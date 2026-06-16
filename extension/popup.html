@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 320px; font: 13px system-ui, sans-serif; margin: 0; }
+      header { padding: 10px 12px; background: #075e54; color: #fff; font-weight: 600; }
+      .tabs { display: flex; border-bottom: 1px solid #ddd; }
+      .tab { flex: 1; padding: 8px; text-align: center; cursor: pointer; color: #555; }
+      .tab.active { color: #075e54; border-bottom: 2px solid #075e54; font-weight: 600; }
+      .panel { display: none; padding: 12px; }
+      .panel.active { display: block; }
+      button { width: 100%; padding: 9px; margin: 4px 0; border: 0; border-radius: 6px;
+        background: #075e54; color: #fff; font-weight: 600; cursor: pointer; }
+      button.sec { background: #eee; color: #333; }
+      #log { margin-top: 8px; padding: 8px; background: #f6f6f6; border-radius: 6px;
+        min-height: 36px; white-space: pre-wrap; font-size: 12px; }
+      a { color: #075e54; }
+      .warn { font-size: 11px; color: #b00; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>Nexus Disparador</header>
+    <div class="tabs">
+      <div class="tab active" data-tab="wpp">Captura (WPP)</div>
+      <div class="tab" data-tab="oficial">API Oficial</div>
+    </div>
+
+    <div class="panel active" id="panel-wpp">
+      <button id="btn-contatos">Capturar contatos</button>
+      <button id="btn-grupos">Capturar grupos + membros</button>
+      <div id="log">Abra o WhatsApp Web e aguarde carregar.</div>
+      <div class="warn">
+        ⚠️ Capturar/disparar de sessão pessoal pode violar os Termos do WhatsApp
+        e banir o número. Use com consentimento (LGPD).
+      </div>
+    </div>
+
+    <div class="panel" id="panel-oficial">
+      <p>A captura/Disparo pelo <b>canal oficial (WABA)</b> é feita pelo painel
+        do ChatNexus (Conexões → Embedded Signup) e Campanhas → Templates.</p>
+      <button class="sec" id="btn-options">Configurar API key / backend</button>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
