@@ -1,0 +1,572 @@
+{
+  "executive_summary": "O plano aprovado está arquiteturalmente correto na PLATAFORMA (staging contato_capturado, RLS self-enroll por migration, verify_api_key + set_request_context, reuso de campanha/_dispatch_loop, API key hasheada por empresa superior ao ?key= dos tutoriais), mas foi escrito sob premissa FALSA — declara nas linhas 17-19 que \"docs/Baileys não existe\". A pasta existe e contém o produto-fonte real: whatsapp-api-nodejs (tutorial 20/4918a, salman0ansari) com ~25 rotas REST (/instance,/message,/group,/misc), o frontend de disparo (ZDGText.js/ZDGFile.js), screenshots da extensão comercial \"Disparador PRO\" (docs/Baileys/fotos/) e planilhas que provam o produto-promessa (extrair telefones de membros de grupo → disparar). Cruzar com a fonte revela 7 lacunas que mudam o plano: (1) ANTI-BAN — o produto usa JITTER ALEATÓRIO min/max por destinatário (randomIntFromInterval) + validação onWhatsApp antes de cada envio + presença composing; nosso _dispatch_loop usa intervalo FIXO (linha 359/473-474) sem validação — pior que o tutorial, é assinatura de bot; o plano herda isso (\"_dispatch_loop NÃO muda\"), o gap mais material. (2) IDENTIDADE = JID, NÃO TELEFONE — membros modernos vêm como @lid sem telefone; o UNIQUE (grupo_id, telefone) os PERDE; nosso cliente.whatsapp_lid (mig 046) já reconhece isso. (3) MEMBROS NÃO SÃO GRÁTIS — getAllGroups() só lista chats @g.us sem participantes; membros exigem fetch separado pesado → captura assíncrona, não síncrona. (4) VARIÁVEIS POR DESTINATÁRIO — placeholders [field1..N] do CSV; nosso _resolve_template_vars (linha 304) só faz {{nome}}; falta JSONB variaveis em campanha_destinatario. (5) PREPARAR→ENVIAR — a UI real valida/conta (e mostra total disponível para upsell \"100 de 1210\") antes de comprometer; o plano vai direto draft→running. (6) MÍDIA POR URL — nativa no tutorial (sendUrlMediaFile), mais barata que upload local + gotcha rewrite /uploads. (7) COMPLIANCE — falta opt-out, warmup, quiet hours, kill-switch. Recomendo inverter ordem (Evolution antes do scraping, testável em CI), migs de jitter+variáveis+validação, e fixar a verdade técnica de mensagens ricas (botões clicáveis só WABA; \"pagamento\" do tutorial = WhatsApp Pay e NÃO PIX). A extensão deve reusar o modal de QR (connections/evolution-qr-modal.tsx) e o Embedded Signup WABA já entregue. Verifiquei no repo: evolution_client.py só tem send_message+send_typing (falta todo o resto); _dispatch_loop usa intervalo_s fixo; _resolve_template_vars só troca {{nome}}; migration mais recente confirmada = 117.",
+  "architecture_deltas": [
+    {
+      "change": "Substituir o intervalo FIXO do _dispatch_loop por JITTER aleatorio: colunas intervalo_min_ms/intervalo_max_ms em campanha e delay = random.uniform(min,max)/1000 por destinatario (fallback intervalo_ms quando min==max). Default Evolution 3000-8000ms.",
+      "rationale": "O produto-fonte (ZDGText.js:82-87 randomIntFromInterval + ZDGFile.js:61-65) usa jitter como anti-ban PRIMARIO; cadencia regular e assinatura de bot. O plano afirma _dispatch_loop NAO muda (linhas 77/197) e 500ms fixo (linha 228) = 7200 msg/h num numero novo = ban quase certo. Confirmado no repo: campanha.py:359 usa intervalo_s fixo, :473-474 asyncio.sleep(intervalo_s).",
+      "affects": "src/whatsapp_langchain/shared/campanha.py (_dispatch_loop linha 359/473-474) + db/migrations/120"
+    },
+    {
+      "change": "wa_jid como IDENTIDADE PRIMARIA: UNIQUE de contato_capturado vira (empresa_id, wa_jid), telefone NULLABLE; +wa_lid; grupo_membro ganha wa_jid NOT NULL + telefone NULLABLE, UNIQUE (grupo_id, wa_jid).",
+      "rationale": "Membros multi-device aparecem como @lid sem telefone derivavel; store da Baileys keyeia por JID (botzdg_chat_upsert.js:63). O UNIQUE (grupo_id, telefone) do plano (mig 119) perde membros so-LID. cliente.whatsapp_lid (mig 046) ja reconhece o modelo.",
+      "affects": "db/migrations/119 (contato_capturado, grupo_membro) + shared/captura.py"
+    },
+    {
+      "change": "Captura de MEMBROS de grupo como lote ASSINCRONO dedicado (captura_lote tipo=grupo_membros, status processando->concluido/parcial), separado de grupos; fetch separado por grupo (groupMetadata) com cap+paginacao+background task.",
+      "rationale": "getAllGroups()=chats.filter(@g.us) NAO traz participantes (instance.js:427); o repo admite no group.route.js que sem store might not work. Membros = 2o round-trip pesado; store hidrata em minutos (chats.set). O plano (slice 4 sincrono no MVP) subestima.",
+      "affects": "worker/evolution_client.py (fetch_group_participants) + server/routes/captura_evolution.py + db/migrations/119"
+    },
+    {
+      "change": "Validacao onWhatsApp/exists ANTES do disparo: EvolutionClient.check_numbers (POST /chat/whatsappNumbers) no RESOLVER do create (batch), marca invalidos falhou sem gastar envio; coluna wa_existe+validado_at. Skip WABA.",
+      "rationale": "TODO envio Baileys chama verifyId->onWhatsApp antes (instance.js:232-246); numeros raspados sao sujos; disparar para inexistentes acelera ban. normalize_phone (campanha.py:41) so faz regex, nunca valida existencia. Anti-ban n1 ausente no plano.",
+      "affects": "worker/evolution_client.py + shared/campanha.py (resolver) + db/migrations/121"
+    },
+    {
+      "change": "Coluna variaveis JSONB em campanha_destinatario + _resolve_template_vars estendido (mescla variaveis por-destinatario do CSV sobre template_variaveis, [field1..N]/{{var}}, {{nome}} retrocompat).",
+      "rationale": "A UI real usa placeholders posicionais por coluna do CSV (chrome_DvZZ3ZnirH.png). _resolve_template_vars (campanha.py:304-316) so troca {{nome}} pelo primeiro nome. Sem JSONB por destinatario, campanhas personalizadas por CSV - funcao central do produto - sao impossiveis.",
+      "affects": "shared/campanha.py (_resolve_template_vars linha 304) + db/migrations/120"
+    },
+    {
+      "change": "Endpoint PREVIEW (POST /api/disparador/preview): resolve origem, retorna {count_valido, count_invalido, sample, total_disponivel}; so entao front habilita ENVIAR.",
+      "rationale": "A UI real (chrome_DvZZ3ZnirH.png) tem Preparar (verde) + ENVIAR (cinza, so habilita apos Preparar); modais expoem total mesmo truncado (100 de 1210) como upsell. O plano vai direto draft->running sem preview nem total_disponivel.",
+      "affects": "server/routes/disparador.py + server/routes/captura.py + frontend create"
+    },
+    {
+      "change": "Inverter ordem: captura via Evolution (slice 4 do plano) ANTES do scraping (slice 3); Evolution reusa EvolutionClient, roda em CI com mock e valida staging+promote+membros; scraping e o artefato mais fragil (ToS, QA manual).",
+      "rationale": "Captura Evolution e mais barata, testavel e prova o cano de dados antes do scraper fragil. Derisca o build conforme foco em 1 modulo por vez.",
+      "affects": "sequencia de build do plano + tests/integration/test_disparador_*.py"
+    },
+    {
+      "change": "MIDIA POR URL para Evolution (send_media_url) em vez de carregar bytes; upload local + DISPARADOR_MEDIA_DIR + mount /uploads/disparador como secundario/WABA.",
+      "rationale": "O tutorial envia midia por URL nativamente (instance.js:263-277 sendUrlMediaFile; ZDGFile.js). Evolution aceita URL. O plano escolheu upload local que arrasta o gotcha rewrite /uploads (INTERNAL_API_URL congelado em build) - citado pelo proprio plano como risco.",
+      "affects": "worker/evolution_client.py + server/routes/disparador.py + compose"
+    },
+    {
+      "change": "Camada COMPLIANCE/anti-ban estrutural: disparador_opt_out (filtro no resolver + captura STOP no worker); caps por provider; warmup escalonado; quiet hours (08h-20h default); kill-switch (auto-abort se falhas/enviados>30%).",
+      "rationale": "ToS/ban e P0 estrutural e o plano so mitiga com intervalo 500ms + avisos. Denuncias sao o gatilho n1 de ban. WABA e a rota sustentavel para volume - gating empurra volume para WABA.",
+      "affects": "shared/campanha.py + shared/plano_limits.py + worker (process_message) + db/migrations"
+    },
+    {
+      "change": "Fixar VERDADE TECNICA de mensagens ricas e gatear por provider: botao/lista clicavel so WABA (NAO Evolution/pessoal, deprecado ~2022); pagamento tutorial = requestPaymentMessage (WhatsApp Pay) != PIX (PIX real = BR Code+QR); cartao = imagem+caption+botoes != vCard. Implementar send_reaction (unico recurso rico em conta pessoal).",
+      "rationale": "Aulas 4910/4925/4927/4914 pinam @adiwajshing/baileys 4.0-4.4 (descontinuado); botoes interativos bloqueados em conta pessoal. Replicar literal entrega feature que nao renderiza. Header promete PIX, listas com botoes, 21 midias - Premium so viavel em WABA. Reacao (POST /message/sendReaction) e o unico portavel.",
+      "affects": "docs/plano + shared/outbound.py + worker/evolution_client.py"
+    }
+  ],
+  "feature_inventory": [
+    {
+      "feature": "empresa_api_key (nxs_<eid>_<32hex> + key_hash sha256 + scopes + revoked_at)",
+      "source": "PRD + auth-token (contra-exemplo keyCheck.js)",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "verify_api_key (HTTPBearer auto_error=False, 401/403) + set_request_context",
+      "source": "PRD + dependencies.py verify_service_token L113-155",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Status auth 401/403 NUNCA 500 + compare timing-safe sobre o HASH + lookup por key_prefix",
+      "source": "auth-token (anti-padrao botzdgpost.js 500)",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "expires_at + rotacao de API key + rate-limit por key",
+      "source": "auth-token",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "contato_capturado (staging) dedup idempotente",
+      "source": "PRD",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "wa_jid identidade primaria + wa_lid + telefone NULLABLE (membros so-LID)",
+      "source": "captura-grupos + cliente.whatsapp_lid mig 046",
+      "priority": "P0",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "grupo + grupo_membro (wa_jid, is_admin)",
+      "source": "PRD + app-grupo.js",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "grupo.invite_link + grupo.tipo (grupo|comunidade)",
+      "source": "captura-grupos (folder 171) + screenshots",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "is_business derivado de verifiedName!=null + push_name opcional",
+      "source": "captura-grupos (shape store)",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "Captura via extensao Chrome (POST /api/captura/*)",
+      "source": "PRD",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Captura server-side Evolution (findContacts/fetchAllGroups)",
+      "source": "PRD + rest-api + nodeback",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "fetch_group_participants como lote ASSINCRONO separado, NAO inline",
+      "source": "backend-arch + plano-cross (getAllGroups sem participantes)",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "check_numbers (POST /chat/whatsappNumbers) onWhatsApp/exists",
+      "source": "rest-api + disparo-massa + sessao-antiban",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Health da conexao (/instance/info + /misc/getStatus) p/ Testar conexao",
+      "source": "rest-api + screenshots",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "getWhatsAppId/normalizador unico de JID (@s.whatsapp.net vs @g.us)",
+      "source": "rest-api + backend-arch (instance.js:227-246)",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "captura_lote (auditoria) + contador pulados por invalido",
+      "source": "PRD + screenshots",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "total_disponivel mesmo truncado (upsell 100 de 1210)",
+      "source": "screenshots (chrome_KUc91Q1e5o)",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "contatos-unicos (dedup cross-grupo DISTINCT wa_jid) = LEADS UNICOS",
+      "source": "captura-grupos (HISTORICO_GRUPOx.xlsx)",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Promover contato_capturado -> cliente (bulk)",
+      "source": "PRD",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Resolver de destinatarios no create (manual|grupos|contatos|janela_24h|segmento)",
+      "source": "PRD",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Disparo em massa reusando _dispatch_loop",
+      "source": "PRD + disparo-massa",
+      "priority": "P0",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "JITTER aleatorio intervalo_min_ms/max_ms por destinatario",
+      "source": "disparo-massa + screenshots + sessao-antiban",
+      "priority": "P0",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "Variaveis por-destinatario (variaveis JSONB) + [field1..N]",
+      "source": "screenshots + disparo-massa",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "Preparar->ENVIAR (POST /preview: count/invalidos/total)",
+      "source": "screenshots",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Presenca composing antes do envio",
+      "source": "disparo-massa + rich-messages",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Midia por URL (send_media_url) caminho nativo Evolution",
+      "source": "disparo-massa + plano-cross",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "Midia por upload local (secundario)",
+      "source": "PRD",
+      "priority": "P2",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Opt-out/supressao (disparador_opt_out + STOP no worker)",
+      "source": "sessao-antiban",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Warmup escalonado de numero novo",
+      "source": "sessao-antiban",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Quiet hours + kill-switch (auto-abort falhas>30%)",
+      "source": "sessao-antiban",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Caps por provider (Evolution baixo vs WABA tier)",
+      "source": "sessao-antiban + plano_limits",
+      "priority": "P1",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "send_reaction (POST /message/sendReaction) unico rico em conta pessoal",
+      "source": "rich-messages (botzdgreactions.js)",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Botoes/listas via WABA (interactive/template), NAO Evolution",
+      "source": "rich-messages (deprecado conta pessoal)",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "PIX real (BR Code EMV+QR) via send_media, NAO requestPaymentMessage",
+      "source": "rich-messages (aula 4927 = WhatsApp Pay)",
+      "priority": "P3",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Inbound trata templateButtonReplyMessage.selectedId E buttonsResponseMessage.selectedButtonId",
+      "source": "rich-messages",
+      "priority": "P3",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "API Oficial WABA: criar/listar/sync templates HSM (reusa waba_templates)",
+      "source": "PRD + screenshots",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Embedded Signup WABA (reusa fluxo existente)",
+      "source": "screenshots + docs/WABA_SETUP.md",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Janela 24h (DISTINCT message_queue 24h)",
+      "source": "PRD",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Aba de canal data-driven por Conexao.provider (+WaVoIP futuro)",
+      "source": "screenshots (3 pilulas)",
+      "priority": "P2",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "Plan gating: disparador/disparador_media/disparador_max_contatos(Free=25)",
+      "source": "PRD",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Permissoes disparador.{capturar,disparar,api_key.manage,template.manage}",
+      "source": "PRD",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Extensao Chrome MV3 (background+content+popup+options+lib/api Bearer)",
+      "source": "PRD + screenshots",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Scraping via hook window.Store (moduleRaid), isolado+versionado",
+      "source": "PRD + captura-grupos",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Extensao aguarda Store.Chat hidratar antes do 1o envio",
+      "source": "captura-grupos + backend-arch",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Reuso modal QR existente (connections/evolution-qr-modal.tsx), polling NAO Socket.IO",
+      "source": "frontend",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "UI de progresso por destinatario (polling campanha_destinatario)",
+      "source": "frontend",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Painel /disparador (api-keys segredo 1x + contatos browser + bulk promover)",
+      "source": "PRD + frontend",
+      "priority": "P1",
+      "plan_status": "coberto"
+    },
+    {
+      "feature": "Aviso ToS/ban BLOQUEANTE (checkbox de aceite) na 1a campanha pessoal",
+      "source": "sessao-antiban + PRD",
+      "priority": "P1",
+      "plan_status": "modificar"
+    },
+    {
+      "feature": "ADR: NAO hospedar nodeback Baileys (RAM+arquivo+key=identidade) incompativel com SaaS/RLS",
+      "source": "backend-arch",
+      "priority": "P2",
+      "plan_status": "novo"
+    },
+    {
+      "feature": "Restore-on-boot + distincao logout(novo QR) vs disconnect(reconectavel)",
+      "source": "sessao-antiban + backend-arch",
+      "priority": "P3",
+      "plan_status": "novo"
+    }
+  ],
+  "sprints": [
+    {
+      "id": "S0",
+      "title": "Fundacao API keys + RLS via API-key (maior risco)",
+      "goal": "Provar que a auth da extensao por API key hasheada isola tenants pelo RLS em ambas as direcoes ANTES de qualquer captura. Ponto unico de falha.",
+      "deliverables": [
+        "mig 118 empresa_api_key (key_prefix 8ch, key_hash sha256, scopes TEXT[], expires_at NULLABLE, last_used_at/ip, revoked_at; UNIQUE (empresa_id,label); unique key_hash WHERE revoked_at IS NULL) + bloco RLS self-enroll",
+        "shared/api_key.py::resolve_api_key (parse nxs_<eid>_<32hex>, sha256, SELECT por key_prefix sob empresa_scope(None,bypass=True), hmac.compare_digest no HASH, bump last_used_at)",
+        "server/dependencies.py::verify_api_key (HTTPBearer auto_error=False; 401/403 NUNCA 500; chama set_request_context) + require_scope",
+        "CRUD /api/disparador/api-keys (criar retorna segredo 1x, listar, revogar) sob verify_service_token",
+        "frontend disparador/api-keys/ (segredo 1x + copy/toast) + Sidebar"
+      ],
+      "dependencies": [],
+      "risks": [
+        "Esquecer set_request_context -> INSERT quebra InsufficientPrivilege",
+        "Esquecer bloco RLS na migration -> vazamento cross-tenant",
+        "Comparar token cru em vez do hash -> timing leak"
+      ],
+      "tests": [
+        "TestSmoke: /api/disparador/api-keys -> 401 sem service token",
+        "TestE2E: criar key -> listar -> revogar; segredo so na criacao",
+        "TestE2EIsolamento (PRIMEIRO): key empresa A NAO le/escreve B; contexto ausente bloqueia; comparar com tabela sem RLS-enroll que vaza"
+      ]
+    },
+    {
+      "id": "S1",
+      "title": "Captura server-side via Evolution -> staging (FUNCAO PRINCIPAL, em CI)",
+      "goal": "Provar o cano completo de captura+staging+dedup+membros via Evolution (mock em CI) ANTES do scraper fragil. Inverte a ordem do plano.",
+      "deliverables": [
+        "mig 119 captura: captura_lote (tipo contatos|grupos|grupo_membros, contadores incl. pulados_invalido, status); contato_capturado (wa_jid IDENTIDADE, wa_lid, telefone NULLABLE, push_name, verified_name, is_business, wa_existe, validado_at, visto_ultima_vez_at; UNIQUE (empresa_id,wa_jid)); grupo (wa_group_id, invite_link, tipo; UNIQUE (empresa_id,wa_group_id)); grupo_membro (wa_jid NOT NULL, telefone NULLABLE, is_admin; UNIQUE (grupo_id,wa_jid)) + RLS em cada",
+        "worker/evolution_client.py: fetch_contacts (POST /chat/findContacts), fetch_groups (GET /group/fetchAllGroups?getParticipants=true), fetch_group_participants, check_numbers (POST /chat/whatsappNumbers), health (/instance/info)",
+        "shared/captura.py: normalize_capturado (telefone so de @s.whatsapp.net, is_business=verifiedName!=null), getWhatsAppId, upserts ON CONFLICT visto_ultima_vez_at=NOW(), promover_contatos->upsert_cliente, membros async via asyncio.create_task+_BG_TASKS+captura_lote.status",
+        "server/routes/captura_evolution.py: POST /api/conexoes/{id}/captura/{contatos|grupos} (service-token+get_empresa_context); membros background task; GET leitura (total_disponivel mesmo truncado) + GET /api/disparador/contatos-unicos (DISTINCT wa_jid cross-grupo)",
+        "frontend disparador/contatos/ read-only (browser, Capturar via Evolution, Promover p/ CRM bulk, push_name vazio->fallback telefone)"
+      ],
+      "dependencies": [
+        "S0"
+      ],
+      "risks": [
+        "Rate limit Evolution em contas grandes -> paginar+cap+background",
+        "Membros so-LID perdidos se chave fosse telefone (resolvido por wa_jid)",
+        "Store nao hidratado -> captura parcial (status=parcial, re-captura idempotente)"
+      ],
+      "tests": [
+        "TestSmoke: /api/conexoes/{id}/captura/* + /contatos-unicos -> 401 sem auth",
+        "TestE2E (docker_demo, EVOLUTION_OUTBOUND_MODE=mock): capturar contatos -> listar -> capturar grupos -> capturar membros (async, poll status) -> promover -> assert cliente; assert membro so-LID com wa_jid e telefone NULL",
+        "TestE2EIsolamento: contatos/grupos da empresa A invisiveis p/ B"
+      ]
+    },
+    {
+      "id": "S2",
+      "title": "Targeting do disparo + JITTER anti-ban + variaveis por destinatario",
+      "goal": "Conectar captura ao disparo: resolver origens, jitter aleatorio, validacao onWhatsApp e variaveis por destinatario. Reusa _dispatch_loop com mudanca minima de sleep.",
+      "deliverables": [
+        "mig 120: campanha += origem_destinatarios CHECK, grupo_ids BIGINT[], captura_filtro JSONB, intervalo_min_ms, intervalo_max_ms; campanha_destinatario += variaveis JSONB",
+        "shared/campanha.py: resolver no create (grupos->grupo_membro telefone NOT NULL; contatos_capturados filtrado; janela_24h->DISTINCT message_queue 24h; valida check_numbers batch p/ Evolution, marca invalidos falhou); _dispatch_loop troca asyncio.sleep fixo por random.uniform(min,max) por destinatario; _resolve_template_vars estendido",
+        "server/routes/disparador.py: POST /api/disparador/preview (count_valido/invalido/sample/total_disponivel); create chama create_campanha; gating count Free<=25 (402)",
+        "frontend create: selector origem, Intervalo min/max (s), Preparar->ENVIAR, progresso por destinatario (polling campanha_destinatario)"
+      ],
+      "dependencies": [
+        "S1"
+      ],
+      "risks": [
+        "check_numbers caro em lote grande -> cap + best-effort",
+        "Resolver/gating rodam no create (fora do loop)",
+        "Jitter mal calibrado ainda banir (default 3-8s Evolution)"
+      ],
+      "tests": [
+        "TestSmoke: /api/disparador/preview + create -> 401 sem auth",
+        "TestE2E (docker_demo, mock): origem=grupos -> preview retorna count+invalidos -> criar -> _dispatch_loop expande campanha_destinatario -> assert variaveis JSONB resolvidas + status por destinatario + jitter (mock conta sleeps)",
+        "TestE2E gating: Free >25 -> 402"
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "Compliance & anti-ban estrutural",
+      "goal": "Tornar o disparo de sessao pessoal o mais seguro possivel - controles do produto-fonte + os que faltam no ecossistema.",
+      "deliverables": [
+        "mig: disparador_opt_out (empresa_id, telefone; UNIQUE) + RLS; campanha += janela_inicio/janela_fim (quiet hours), kill_switch_pct",
+        "shared/campanha.py: resolver exclui suprimidos; _dispatch_loop respeita quiet hours + auto-abort se falhas/enviados>kill_switch_pct (status aborted+reason)",
+        "shared/plano_limits.py: caps por conexao.provider (Evolution cap diario baixo+intervalo grande; WABA por tier) lidos no resolver",
+        "worker (process_message): STOP/descadastro -> INSERT disparador_opt_out",
+        "frontend: aviso ToS/ban BLOQUEANTE (checkbox de aceite) na 1a campanha Evolution; UI opt-out"
+      ],
+      "dependencies": [
+        "S2"
+      ],
+      "risks": [
+        "Opt-out tem que rodar no resolver E em re-disparo de pendentes",
+        "Quiet hours mal modelado bloqueia campanha legitima",
+        "Kill-switch falso-positivo aborta campanha boa"
+      ],
+      "tests": [
+        "TestSmoke: endpoints opt-out -> 401",
+        "TestE2E (docker_demo): telefone no opt-out -> criar campanha com ele -> assert excluido; simular >30% falhas -> assert auto-abort",
+        "TestE2E: worker recebe STOP -> assert INSERT opt-out"
+      ]
+    },
+    {
+      "id": "S4",
+      "title": "API Oficial (WABA templates) + plan gating completo",
+      "goal": "Wire da aba API Oficial (reusa waba_templates + Embedded Signup) e gating Free/Premium. Aba data-driven por provider.",
+      "deliverables": [
+        "mig 121: permissao rows disparador.*; plano.features disparador/disparador_media/disparador_max_contatos(Free=25)",
+        "Reuso waba_templates.py (create/submit/list/sync) gated Premium; GET /api/disparador/janela-24h (DISTINCT message_queue)",
+        "shared/plano_limits.py: tem_feature(disparador) libera modulo; resolver le features[disparador_max_contatos]; disparador_media gateia midia",
+        "frontend: aba de canal data-driven por Conexao.provider; aba API Oficial reusa Embedded Signup + templates; midia via URL ou upload secundario"
+      ],
+      "dependencies": [
+        "S2"
+      ],
+      "risks": [
+        "plano.limite_* NULL=ilimitado -> cap Free via features",
+        "Gating no loop em vez do resolver"
+      ],
+      "tests": [
+        "TestSmoke: /api/disparador/janela-24h + template create -> 401",
+        "TestE2E (docker_demo): Free template create -> 402; Premium cria; origem=janela_24h DISTINCT correto",
+        "TestE2EIsolamento: templates/janela-24h escopados"
+      ]
+    },
+    {
+      "id": "S5",
+      "title": "Extensao Chrome MV3 (scraping real) - quarentena",
+      "goal": "Construir a extensao depois do backend de captura validado. Scraping via hook window.Store, isolado/versionado. QA manual (sem CI).",
+      "deliverables": [
+        "extension/ MV3: manifest (host web.whatsapp.com/* + backend/*); background.ts (chrome.storage API key+URL, POSTs chunked+retry); content/scrape.ts+store-hook.ts (moduleRaid->Store.Contact/Chat/GroupMetadata; seletores/keys isolados + constante de versao + self-test scrape-health; aguarda Store.Chat>0 antes do 1o envio); popup/ (layout vertical unico, abas data-driven; NUMEROS+Validar+Contatos+Grupos+Modelo+Anexar+Intervalo min/max+Preparar->ENVIAR); options/ (Testar conexao via /health); lib/api.ts (Bearer, NUNCA ?key=)",
+        "README.md pt-BR: AVISO ToS/ban + load-unpacked; quarentena (so /api/captura/* scope capture, fora do make ci, zip standalone NAO proxiado /uploads)",
+        "ADR no vault: NAO hospedar nodeback Baileys (RAM+arquivo+key=identidade incompativel SaaS/RLS); conexao nao-oficial via Evolution"
+      ],
+      "dependencies": [
+        "S0",
+        "S1"
+      ],
+      "risks": [
+        "Meta ofusca/rotaciona CSS -> preferir Store, isolar 1 arquivo",
+        "Store eventualmente-consistente -> 1a captura incompleta",
+        "ToS: extensao e o artefato mais exposto"
+      ],
+      "tests": [
+        "QA manual: load unpacked -> web.whatsapp.com logado -> capturar -> ver no painel; scrape-health passa",
+        "Backend coberto por S0/S1 (extensao POSTa contatos sample em CI via curl/httpx)"
+      ]
+    },
+    {
+      "id": "S6",
+      "title": "Mensagens ricas viaveis (reacao + botoes WABA) + verdade tecnica",
+      "goal": "Entregar so o que renderiza: reacao (Evolution) e botoes via WABA. Fixar a verdade tecnica no plano. PIX real fica P3.",
+      "deliverables": [
+        "worker/evolution_client.py: send_reaction (POST /message/sendReaction body {key, reaction}) - unico rico em conta pessoal",
+        "shared/outbound.py: protocol send_buttons/send_reaction opcional por provider (Evolution->reacao; WABA->interactive/template; NotImplemented fallback)",
+        "webhook inbound: trata templateButtonReplyMessage.selectedId E buttonsResponseMessage.selectedButtonId (clique p/ segmentacao)",
+        "docs/plano: secao Mensagens ricas o que da e o que NAO da (botao clicavel so WABA; pagamento=WhatsApp Pay!=PIX; cartao=imagem+caption!=vCard); backlog P3 PIX BR Code (EMV+QR via send_media)"
+      ],
+      "dependencies": [
+        "S4"
+      ],
+      "risks": [
+        "Botoes Baileys deprecados em conta pessoal -> via Evolution = feature quebrada (gatear por provider)",
+        "requestPaymentMessage instavel BR (nao prometer como PIX)"
+      ],
+      "tests": [
+        "TestE2E (docker_demo, mock): send_reaction Evolution -> assert chamada; botoes so WABA",
+        "Smoke: handler inbound parseia ambos shapes de resposta de botao"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "risk": "ToS/ban do WhatsApp (P0 PRODUTO): scraping + disparo de sessao pessoal (Baileys/Evolution = WhatsApp Web nao-oficial) viola os Termos e bane o NUMERO do cliente. Cadencia regular (intervalo fixo do plano) e assinatura de bot; numeros raspados sao sujos; denuncias sao o gatilho n1 de ban.",
+      "severity": "P0",
+      "mitigation": "Jitter aleatorio min/max (S2); validacao onWhatsApp/check_numbers antes do disparo (S2); opt-out + quiet hours + kill-switch + warmup (S3); caps muito menores p/ Evolution vs WABA (S3); aviso ToS BLOQUEANTE com checkbox (S3); empurrar volume para WABA via gating (S4)."
+    },
+    {
+      "risk": "RLS no caminho API-key (P0): esquecer set_request_context em verify_api_key -> todo INSERT de captura quebra com InsufficientPrivilege; esquecer o bloco RLS self-enroll na migration -> vazamento cross-tenant (mig 101 nao pega tabelas novas).",
+      "severity": "P0",
+      "mitigation": "verify_api_key chama set_request_context apos resolver a empresa (igual evolution_webhook.py:317); cada tabela self-enrola RLS na propria migration (template mig 111/112); TestE2EIsolamento PRIMEIRO no S0 (ambas direcoes)."
+    },
+    {
+      "risk": "Identidade por telefone perde membros so-LID (P0 dados): UNIQUE (grupo_id, telefone) e (empresa_id, telefone) do plano quebram p/ membros que so expoem @lid (multi-device, sem telefone), que somem silenciosamente.",
+      "severity": "P0",
+      "mitigation": "wa_jid como identidade primaria (UNIQUE por wa_jid), telefone NULLABLE so de @s.whatsapp.net, wa_lid armazenado. Espelha cliente.whatsapp_lid (mig 046). TestE2E assertando membro so-LID com telefone NULL (S1)."
+    },
+    {
+      "risk": "Dispatcher in-process (P1): _dispatch_loop + _BG_TASKS perde a campanha em restart da API (recipients ficam pendente). Captura aumenta o tamanho das campanhas -> janela de perda maior.",
+      "severity": "P1",
+      "mitigation": "Path reenviar pendentes (re-claim de campanha_destinatario status=pendente); fix duravel (dispatch via message_queue no worker) = divida tecnica fora de escopo, registrada."
+    },
+    {
+      "risk": "Rate limit/latencia Evolution (P1): findContacts/fetchAllGroups e fetch_group_participants (groupMetadata por grupo) pesados em contas grandes; store hidrata em minutos (chats.set) -> 1a captura incompleta.",
+      "severity": "P1",
+      "mitigation": "Captura assincrona por padrao (asyncio.create_task+_BG_TASKS+captura_lote.status); paginacao + cap por chamada; membros como lote dedicado separado; re-captura idempotente (ON CONFLICT)."
+    },
+    {
+      "risk": "Extensao Chrome fragil (P1): Meta ofusca/rotaciona classes CSS e pode quebrar moduleRaid/window.Store; e o artefato mais exposto a ToS.",
+      "severity": "P1",
+      "mitigation": "Hook window.Store > DOM; isolar TODOS seletores/keys num scrape.ts com constante de versao + self-test scrape-health; quarentena (so /api/captura/* scope capture, sem service token, fora do make ci, zip standalone). ADR: nao hospedar nodeback Baileys."
+    },
+    {
+      "risk": "plano.limite_* NULL=ilimitado (P2): usar colunas de limite p/ cap Free daria ilimitado por engano.",
+      "severity": "P2",
+      "mitigation": "Cap Free de 25 via features[disparador_max_contatos] no resolver (HTTPException 402), nunca pelas colunas limite_*. get_plano_info() cache 30s."
+    },
+    {
+      "risk": "Gotcha rewrite /uploads/* do Next (P2): midia via upload local exige mount /uploads/disparador + INTERNAL_API_URL no build (ARG), senao ECONNREFUSED em prod.",
+      "severity": "P2",
+      "mitigation": "Preferir midia por URL (send_media_url) para Evolution - dispensa o mount; upload local so secundario/WABA com ARG correto e volume no compose."
+    },
+    {
+      "risk": "Mensagens ricas que nao renderizam (P2): copiar literalmente payloads de botao/pagamento dos tutoriais (Baileys 4.0-4.4 descontinuado) entrega feature quebrada - botoes interativos bloqueados em conta pessoal; pagamento e WhatsApp Pay (instavel BR), nao PIX.",
+      "severity": "P2",
+      "mitigation": "Gatear por provider (botao/list clicavel so WABA; Evolution so texto+midia+reacao); so send_reaction e portavel; PIX real = BR Code EMV+QR (backlog P3), nunca requestPaymentMessage; secao o que da e o que NAO da no plano."
+    }
+  ],
+  "prd_text": "<context>\n# Overview\n\nO Disparador Nexus incorpora ao ChatNexus um clone funcional do produto comercial \"Disparador\" (extensao Chrome de captura+disparo em massa pelo WhatsApp), integrado ao modulo Campanhas existente. A funcao PRINCIPAL e capturar os contatos, grupos e MEMBROS de grupos do WhatsApp do usuario, trazendo-os para o Nexus, e permitir disparo em massa segmentado por esses dados.\n\nQuem usa: empresas multi-tenant do ChatNexus (operadores de marketing/vendas) que hoje disparam manualmente ou via produtos externos nao-oficiais. Valor: trazer captura + disparo para dentro da plataforma ja governada (RLS por empresa, planos, auditoria), com salvaguardas anti-ban que os produtos externos tem (jitter, validacao de numero) e que o nosso dispatcher atual NAO tem.\n\nFonte canonica do produto: a pasta docs/Baileys/ contem o codigo real do ecossistema que inspirou o produto - o projeto open-source whatsapp-api-nodejs (REST sobre Baileys 4), o frontend de disparo em massa (ZDGText.js/ZDGFile.js), screenshots da extensao comercial \"Disparador PRO\" e planilhas que provam o produto-promessa (extrair telefones de membros de grupo -> disparar). NOTA: o plano original assumiu por engano que essa pasta nao existia; este PRD corrige isso e incorpora os achados.\n\n# Core Features\n\n1. Auth da extensao por API key por empresa - token nxs_<empresa_id>_<32hex>, armazenado como key_hash sha256 (nunca o segredo), com scopes (capture/dispatch/templates), expires_at opcional, rotacao e revoked_at. Superior ao ?key= em querystring dos tutoriais (anti-padrao que vaza em logs). Resolve a empresa pela key e ativa o contexto RLS.\n\n2. Captura para STAGING (nao direto no CRM) - contatos raspados sao sujos (push-name, sem consentimento/LGPD). Caem em contato_capturado (staging) com wa_jid como identidade primaria (telefone derivado/opcional, pois membros multi-device aparecem como @lid sem telefone). O usuario promove os escolhidos para cliente. Grupos e membros tem tabelas proprias.\n\n3. Dois caminhos de captura - (a) extensao Chrome via hook do window.Store do WhatsApp Web; (b) server-side via Evolution API (/chat/findContacts, /group/fetchAllGroups?getParticipants=true). Membros de grupo exigem fetch separado (groupMetadata por grupo), pesado/rate-limited -> captura assincrona com captura_lote.status.\n\n4. Disparo em massa anti-ban - reusa o dispatcher duravel existente (_dispatch_loop, status por destinatario, abort, contadores) mas adiciona o que o produto-fonte tem e nos nao: JITTER aleatorio (intervalo min/max por destinatario, nao fixo), validacao onWhatsApp antes do envio, presenca composing, variaveis por destinatario (placeholders [field1..N] do CSV), e estagio Preparar->ENVIAR (preview com contagem + invalidos).\n\n5. Compliance estrutural - lista de opt-out/supressao (captura STOP no worker), caps diferenciados por provider (Evolution baixo vs WABA por tier), quiet hours, warmup de numero novo, kill-switch automatico, e aviso ToS bloqueante. Volume e empurrado para WABA (rota oficial sustentavel).\n\n6. API Oficial (WABA) - aba que reusa o fluxo de Embedded Signup e os templates HSM ja entregues; origem janela 24h (DISTINCT de message_queue).\n\n7. Gating por plano - Free (25 contatos, so texto) vs Premium (ilimitado, midia, templates). Cap via features[disparador_max_contatos].\n\n# User Experience\n\nPersonas: operador de marketing (cria campanhas, captura listas), admin da empresa (gera/revoga API keys), destinatario final (opt-out).\n\nFluxos-chave:\n- Conectar: reusa o modal de QR existente (connections/evolution-qr-modal.tsx, polling) - nao reimplementar Socket.IO.\n- Capturar: extensao injetada no WhatsApp Web (aguarda o Store hidratar) OU botao Capturar via Evolution no painel -> contatos/grupos/membros caem no staging -> browser em /disparador/contatos/ com Promover p/ CRM e total disponivel mesmo truncado (upsell 100 de 1210).\n- Disparar: create de campanha com selector de origem (manual|grupos|contatos|janela 24h|segmento), campos de intervalo min/max, Preparar (valida/conta, mostra invalidos) -> ENVIAR (so habilita apos Preparar) -> progresso por destinatario via polling.\n- Extensao: layout vertical unico, abas de canal data-driven por Conexao.provider, campos NUMEROS/Validar/Contatos/Grupos/Modelo/Anexar/Intervalo. Bearer header, nunca ?key=.\n</context>\n\n<PRD>\n# Technical Architecture\n\n## Componentes\n- API FastAPI (server/): novos routers captura.py (sob verify_api_key), captura_evolution.py e disparador.py (sob service-token + get_empresa_context); CRUD api-keys. Reusa waba_templates.py.\n- Worker (worker/): evolution_client.py ganha fetch_contacts, fetch_groups, fetch_group_participants, check_numbers, send_media_url, send_reaction, health. Captura de STOP no process_message. NOTA: hoje evolution_client.py so tem send_message+send_typing.\n- Shared: api_key.py (resolucao/hash sob bypass), captura.py (normalizador unico de shape store: telefone so de @s.whatsapp.net, is_business=verifiedName!=null, getWhatsAppId; upserts idempotentes; promocao). campanha.py ganha resolver no create, jitter no loop, variaveis por destinatario, opt-out, quiet hours, kill-switch. plano_limits.py ganha caps por provider.\n- Extensao Chrome MV3 (extension/, dir top-level novo, em quarentena): background SW + content (scrape.ts/store-hook.ts via moduleRaid->window.Store) + popup + options + lib/api.ts (Bearer). Versionada a parte, fora do make ci, zip standalone (NAO proxiada por /uploads).\n- Frontend (frontend/src/app/disparador/): api-keys/, contatos/, e extensao do create de campanhas/. Espelha o padrao actions.ts->@/lib/api->service token.\n\n## Data model (migrations a partir de 118)\n- 118 - empresa_api_key: empresa_id, label, key_prefix (8 chars), key_hash (sha256 hex), scopes TEXT[], expires_at NULLABLE, last_used_at, last_used_ip, revoked_at, created_by_user_id. UNIQUE (empresa_id,label); unique key_hash WHERE revoked_at IS NULL. + bloco RLS self-enroll (ENABLE + FORCE + POLICY tenant_isolation USING/WITH CHECK (_rls_tenant_match(empresa_id)), espelhando mig 111/112).\n- 119 - captura: captura_lote (origem extensao_chrome|evolution_server, conexao_id, api_key_id, tipo contatos|grupos|grupo_membros, total, inseridos, atualizados, pulados_invalido, status processando|concluido|parcial|erro, erro); contato_capturado (empresa_id, wa_jid IDENTIDADE, wa_lid, telefone NULLABLE E.164 so de @s.whatsapp.net, push_name, verified_name, is_business, origem, cliente_id, promovido_at, wa_existe, validado_at, visto_ultima_vez_at; UNIQUE (empresa_id, wa_jid)); grupo (empresa_id, wa_group_id, nome, descricao, participantes_count, invite_link, tipo grupo|comunidade, origem, conexao_id; UNIQUE (empresa_id, wa_group_id)); grupo_membro (grupo_id, empresa_id, wa_jid NOT NULL, telefone NULLABLE, push_name, is_admin; UNIQUE (grupo_id, wa_jid)); + bloco RLS em cada.\n- 120 - estende campanha + variaveis: campanha += origem_destinatarios TEXT DEFAULT manual CHECK (manual|grupos|contatos_capturados|janela_24h|segmento), grupo_ids BIGINT[], captura_filtro JSONB, intervalo_min_ms INT, intervalo_max_ms INT; campanha_destinatario += variaveis JSONB.\n- 121 - permissoes + features + compliance: permissao rows disparador.{capturar,disparar,api_key.manage,template.manage}; plano.features keys disparador (bool), disparador_media (bool), disparador_max_contatos (int Free=25); disparador_opt_out (empresa_id, telefone, origem, created_at; UNIQUE (empresa_id,telefone)) + RLS; campanha += janela_inicio, janela_fim, kill_switch_pct.\n\n## APIs\n- Auth: verify_api_key -> ApiKeyContext(empresa_id, key_id, scopes) - HTTPBearer(auto_error=False); 401 ausente/invalida, 403 require_scope, NUNCA 500; hmac.compare_digest sobre o HASH (nao o segredo); lookup por key_prefix indexado sob empresa_scope(None, bypass=True); chama set_request_context(empresa_id). shared/api_key.py::resolve_api_key. Molde: verify_service_token (dependencies.py:113-155).\n- Captura extensao (Depends(verify_api_key)): POST /api/captura/{contatos|grupos}, POST /api/captura/grupos/{wa_group_id}/membros (batch cap ~2000/req, upsert idempotente, grava captura_lote). Pydantic discrimina contato (@s.whatsapp.net) vs grupo (regex 18 digitos @g.us) com 422 por campo. Persiste JID/telefone CRU; normaliza so na promocao.\n- Captura Evolution (service-token + get_empresa_context): POST /api/conexoes/{id}/captura/{contatos|grupos}; membros como background task (asyncio.create_task+_BG_TASKS, captura_lote.status). GET leitura retorna total_disponivel mesmo truncado pelo gating. GET /api/disparador/contatos-unicos?grupo_ids= (DISTINCT wa_jid cross-grupo = LEADS UNICOS).\n- Disparo: POST /api/disparador/preview (resolve origem -> count_valido, count_invalido, sample, total_disponivel); create chama create_campanha existente; gating count Free<=25 -> 402. GET /api/disparador/janela-24h?conexao_id=.\n- EvolutionClient novos: fetch_contacts (POST /chat/findContacts/{instance}), fetch_groups (GET /group/fetchAllGroups/{instance}?getParticipants=true), fetch_group_participants, check_numbers (POST /chat/whatsappNumbers/{instance}), send_media_url, send_reaction (POST /message/sendReaction/{instance}), health (/instance/info). Padrao: httpx + header apikey + normalize_to_number (ja existente).\n\n## Dispatcher (mudanca minima, duravel ja existente)\n- _dispatch_loop mantem batches de 50, status por destinatario, abort, contadores, _BG_TASKS. Muda: troca asyncio.sleep(intervalo_s) FIXO (linha 473-474) por random.uniform(intervalo_min_ms, intervalo_max_ms)/1000 por destinatario (fallback intervalo_ms quando min==max); respeita quiet hours; auto-abort se falhas/enviados > kill_switch_pct. _resolve_template_vars (linha 304) estendido para mesclar variaveis do destinatario sobre template_variaveis (placeholders [field1..N]/{{var}}, {{nome}} retrocompat). Resolver de origem + validacao check_numbers + filtro opt-out rodam no create (nao no loop).\n\n## Infra/seguranca\n- Cada tabela nova self-enrola RLS na propria migration (mig 101 nao pega novas). set_request_context obrigatorio no caminho API-key. Extensao em quarentena (so /api/captura/* scope capture, sem service token). Midia preferencialmente por URL (evita gotcha rewrite /uploads).\n\n# Development Roadmap\n\n## MVP (escopo entregavel, ordem de derisco)\n- S0 - Fundacao API keys + RLS: mig 118, api_key.py, verify_api_key, CRUD api-keys, painel api-keys/. TestE2EIsolamento PRIMEIRO (caminho de maior risco).\n- S1 - Captura Evolution -> staging (FUNCAO PRINCIPAL, em CI): mig 119, EvolutionClient (fetch_contacts/groups/participants/check_numbers/health), shared/captura.py (normalizador unico, upserts, promocao, membros async), captura_evolution.py, painel contatos/. Antes do scraper (mais barato, testavel com mock).\n- S2 - Targeting + jitter + variaveis: mig 120, resolver no create + validacao onWhatsApp, jitter no loop, variaveis por destinatario, POST /preview, UI do create + progresso.\n\n## Pos-MVP\n- S3 - Compliance/anti-ban estrutural: opt-out, caps por provider, quiet hours, kill-switch, warmup, aviso ToS bloqueante.\n- S4 - API Oficial + gating completo: mig 121, wire waba_templates + Embedded Signup + janela 24h, Free/Premium.\n- S5 - Extensao Chrome (scraping real): extension/ MV3 via window.Store, isolado/versionado, quarentena, README ToS, ADR (nao hospedar nodeback Baileys). QA manual.\n- S6 - Mensagens ricas viaveis: send_reaction (Evolution), botoes via WABA, handler inbound dos 2 shapes de resposta, secao o que da e o que NAO da. Backlog P3: PIX BR Code (EMV+QR), foto de perfil/status.\n\n# Logical Dependency Chain\n1. S0 (API keys + RLS) primeiro - fundacao de auth e ponto unico de falha (isolamento de tenant). Nada de captura sem isso.\n2. S1 (captura Evolution) depende de S0 - prova o cano de dados (staging+dedup+membros+promocao) em CI com mock, ANTES do scraper fragil. Funcao principal, entregavel e visivel (browser de contatos no painel).\n3. S2 (targeting) depende de S1 - conecta os dados capturados ao disparo; entrega a primeira campanha real ponta-a-ponta (origem=grupos -> preview -> envio com jitter).\n4. S3 (compliance) depende de S2 - endurece o disparo ja funcional.\n5. S4 (API Oficial) depende de S2 - reusa o resolver/gating; pode ser paralelo a S3.\n6. S5 (extensao) depende de S0+S1 - o backend de captura tem que existir e estar validado antes do scraper.\n7. S6 (ricas) depende de S4 - botoes precisam do caminho WABA.\n\nCada slice e um vertical entregavel (BE+UI+E2E) que pode ir a producao isolado, respeitando foco em 1 modulo por vez.\n\n# Risks and Mitigations\n- ToS/ban (P0): jitter aleatorio, validacao onWhatsApp, opt-out, quiet hours, kill-switch, warmup, caps por provider, aviso bloqueante, empurrar volume p/ WABA.\n- RLS no caminho API-key (P0): set_request_context em verify_api_key; RLS self-enroll por migration; TestE2EIsolamento primeiro (ambas direcoes).\n- Identidade por telefone perde membros so-LID (P0): wa_jid como chave, telefone NULLABLE; espelha cliente.whatsapp_lid (mig 046).\n- Dispatcher in-process (P1): path reenviar pendentes; fix duravel (worker via message_queue) = divida fora de escopo.\n- Rate limit/latencia Evolution (P1): captura assincrona (captura_lote.status), paginacao, cap, membros como lote dedicado, re-captura idempotente.\n- Extensao fragil (P1): hook Store > DOM, seletores isolados + scrape-health + versao, quarentena, ADR nao-hospedar-nodeback.\n- plano.limite_* NULL=ilimitado (P2): cap Free via features, nao colunas limite.\n- Gotcha /uploads (P2): midia por URL preferencial; upload local secundario com ARG no build.\n- Mensagens ricas que nao renderizam (P2): gatear por provider (botao so WABA); so send_reaction em conta pessoal; pagamento!=PIX.\n\n# Appendix\n\n## Evidencia da fonte (docs/Baileys)\n- REST surface canonica = whatsapp-api-nodejs (tutorial 20/4918a): /instance, /message, /group, /misc (~25 endpoints). Postman collection = contrato de payloads.\n- Anti-ban real: ZDGText.js:82-87 randomIntFromInterval(min,max)+timer (jitter); instance.js:232-246 verifyId->onWhatsApp antes de cada envio; presenca composing.\n- Identidade JID: botzdg_chat_upsert.js:63 Object.values(store.contacts) (keyed por JID); app-grupo.js groupMetadata.participants[].id._serialized + owner; membros multi-device = @lid.\n- getAllGroups()=chats.filter(@g.us) SEM participantes (instance.js:427); group.route.js admite no data store yet.\n- Auth tutorial = ?key= em querystring (keyCheck.js) / segredo hardcoded + status 500 (botzdgpost.js) - anti-padroes; nosso nxs_<eid>_<hex>+sha256+scopes e superior.\n- Screenshots (docs/Baileys/fotos/): 3 abas de canal (WPP Connect|API Oficial|WaVoIP), estagio Preparar->ENVIAR, intervalo range (2-10s), placeholders [field1..N], captura gated com total (100 de 1210), Embedded Signup WABA.\n- Mensagens ricas (aulas 4910/4925/4927/4914, Baileys 4.0-4.4 descontinuado): botoes templateButtons/buttons (deprecados em conta pessoal), requestPaymentMessage (WhatsApp Pay != PIX), reacao reactionMessage (unico portavel).\n\n## Codigo-alvo no repo (verificado)\n- src/whatsapp_langchain/server/dependencies.py (verify_api_key + require_scope; molde verify_service_token linha 113-155).\n- src/whatsapp_langchain/shared/api_key.py, shared/captura.py (novos).\n- src/whatsapp_langchain/worker/evolution_client.py (hoje so send_message L134 + send_typing L222).\n- src/whatsapp_langchain/shared/campanha.py (_dispatch_loop linha 319-475; _resolve_template_vars linha 304-316; normalize_phone linha 41; intervalo_s fixo linha 359/473-474).\n- src/whatsapp_langchain/server/routes/{captura,captura_evolution,disparador}.py (novos).\n- db/migrations/118..121_*.sql (RLS self-enroll obrigatorio; mig mais recente confirmada = 117).\n- extension/** + frontend/src/app/disparador/** (novos); reuso connections/evolution-qr-modal.tsx e waba_templates.\n\n## Testes (modelo tests/integration/test_aba_endpoints.py)\nPor slice: TestSmoke (TestClient, 1 test/endpoint -> 401 sem service token, roda em CI) + TestE2E (@pytest.mark.docker_demo, httpx+psycopg, happy path numerado, fixtures _RUN=uuid.hex[:8], CASCADE teardown) + TestE2EIsolamento (fronteira de tenant). Rodar com DATABASE_URL=postgresql://postgres:postgres@localhost:5434/whatsapp_langchain INTERNAL_SERVICE_TOKEN=dev-token-change-in-production EVOLUTION_OUTBOUND_MODE=mock uv run pytest tests/integration/test_disparador_*.py -v.\n</PRD>"
+}

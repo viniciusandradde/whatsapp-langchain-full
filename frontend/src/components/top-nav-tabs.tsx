@@ -38,6 +38,9 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
     { label: "Clientes", href: "/clientes", requires: "cliente.read" },
     { label: "Agendamentos", href: "/agendamentos", requires: "agendamento.read" },
     { label: "Campanhas", href: "/campanhas", requires: "agendamento.read" },
+    { label: "Disparador", href: "/disparador/contatos", requires: "agendamento.read" },
+    { label: "Grupos (Disp.)", href: "/disparador/grupos", requires: "agendamento.read" },
+    { label: "API keys", href: "/disparador/api-keys", requires: "agendamento.read" },
     { label: "Tags", href: "/tags", requires: "tag.manage" },
   ],
   ia: [

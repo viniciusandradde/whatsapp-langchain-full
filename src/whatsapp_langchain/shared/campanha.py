@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import random
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -301,19 +302,75 @@ async def abort_campanha(
 # ---- Dispatcher background ----
 
 
-def _resolve_template_vars(
-    base: dict | None, cliente_nome: str | None
-) -> dict[str, str]:
-    """Resolve variáveis do template por destinatário.
+def _apply_tokens(
+    text: str, cliente_nome: str | None, variaveis: dict | None = None
+) -> str:
+    """Substitui tokens `{{chave}}` e `[chave]` num texto.
 
-    Substitui o token `{{nome}}` (em qualquer valor) pelo primeiro nome do
-    cliente. Os demais valores ficam estáticos (campaign-level).
+    Contexto: `nome` (primeiro nome do cliente) + as `variaveis` por
+    destinatário (vindas do CSV). Personalização central do disparo.
     """
     primeiro = (cliente_nome or "").strip().split(" ")[0] if cliente_nome else ""
-    out: dict[str, str] = {}
-    for k, v in (base or {}).items():
-        out[str(k)] = str(v).replace("{{nome}}", primeiro)
+    ctx: dict[str, str] = {"nome": primeiro}
+    if variaveis:
+        ctx.update({str(k): str(v) for k, v in variaveis.items()})
+    out = text or ""
+    for ck, cv in ctx.items():
+        out = out.replace("{{" + ck + "}}", cv).replace("[" + ck + "]", cv)
     return out
+
+
+def _resolve_template_vars(
+    base: dict | None, cliente_nome: str | None, variaveis: dict | None = None
+) -> dict[str, str]:
+    """Resolve as variáveis posicionais do template HSM por destinatário.
+
+    Cada valor do template (ex: "Olá {{nome}}") tem seus tokens substituídos
+    pelo contexto do destinatário (nome + `variaveis` do CSV).
+    """
+    return {
+        str(k): _apply_tokens(str(v), cliente_nome, variaveis)
+        for k, v in (base or {}).items()
+    }
+
+
+def _jitter_delay_s(min_ms: int | None, max_ms: int | None) -> float:
+    """Sorteia um atraso (s) entre min e max ms — jitter anti-ban.
+
+    Tolera min>max (troca), valores None/0 (retorna 0). Cadência aleatória
+    imita comportamento humano e dilui o padrão detectável de bot.
+    """
+    lo = min_ms or 0
+    hi = max_ms or 0
+    if hi < lo:
+        lo, hi = hi, lo
+    if hi <= 0:
+        return 0.0
+    return random.uniform(lo, hi) / 1000.0
+
+
+# Mínimo de tentativas antes do kill-switch poder agir (evita abortar por uma
+# falha isolada no começo).
+KILL_SWITCH_MIN_AMOSTRA = 20
+
+
+def _should_kill_switch(
+    enviados: int,
+    falhas: int,
+    pct: int | None,
+    *,
+    min_amostra: int = KILL_SWITCH_MIN_AMOSTRA,
+) -> bool:
+    """True se a taxa de falha estourou o limite (sinal de lista ruim/ban).
+
+    Só age depois de uma amostra mínima de tentativas. ``pct`` None/<=0 desliga.
+    """
+    if not pct or pct <= 0:
+        return False
+    tentados = enviados + falhas
+    if tentados < min_amostra:
+        return False
+    return (falhas / tentados) * 100 > pct
 
 
 async def _dispatch_loop(
@@ -356,7 +413,19 @@ async def _dispatch_loop(
         return
 
     client, _mode = await _build_client(pool, conexao)
-    intervalo_s = max(camp["intervalo_ms"], 0) / 1000.0
+
+    # Faixa de jitter anti-ban (fallback pro intervalo_ms fixo legado).
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT intervalo_min_ms, intervalo_max_ms, kill_switch_pct "
+            "FROM campanha WHERE id = %s",
+            (camp_id,),
+        )
+        jrow = await cur.fetchone()
+    fixo = camp["intervalo_ms"]
+    min_ms = (jrow[0] if jrow else None) or fixo
+    max_ms = (jrow[1] if jrow else None) or fixo
+    kill_pct = jrow[2] if jrow else None
 
     # Marca como running
     async with pool.connection() as conn:
@@ -383,7 +452,7 @@ async def _dispatch_loop(
         async with pool.connection() as conn:
             cur = await conn.execute(
                 """
-                SELECT cd.id, cd.telefone, c.nome
+                SELECT cd.id, cd.telefone, c.nome, cd.variaveis
                   FROM campanha_destinatario cd
                   LEFT JOIN cliente c ON c.id = cd.cliente_id
                  WHERE cd.campanha_id = %s AND cd.status = 'pendente'
@@ -416,7 +485,7 @@ async def _dispatch_loop(
             )
             return
 
-        for dest_id, phone, cliente_nome in batch:
+        for dest_id, phone, cliente_nome, variaveis in batch:
             try:
                 if template_id:
                     res = await send_template_by_id(
@@ -426,13 +495,16 @@ async def _dispatch_loop(
                         to=phone,
                         template_id=template_id,
                         variables=_resolve_template_vars(
-                            camp.get("template_variaveis"), cliente_nome
+                            camp.get("template_variaveis"), cliente_nome, variaveis
                         ),
                     )
                     provider_msg_id = res["provider_message_id"]
                 else:
                     provider_msg_id = await client.send_message(
-                        phone, camp.get("mensagem") or ""
+                        phone,
+                        _apply_tokens(
+                            camp.get("mensagem") or "", cliente_nome, variaveis
+                        ),
                     )
                 async with pool.connection() as conn:
                     await conn.execute(
@@ -470,8 +542,29 @@ async def _dispatch_loop(
                     "campanha_send_failed", dest_id=dest_id, phone=phone, error=err
                 )
 
-            if intervalo_s > 0:
-                await asyncio.sleep(intervalo_s)
+            delay_s = _jitter_delay_s(min_ms, max_ms)
+            if delay_s > 0:
+                await asyncio.sleep(delay_s)
+
+        # Kill-switch: aborta se a taxa de falha estourar o limite (lista ruim
+        # / número comprometido). Checa por batch pra reagir cedo.
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT enviados, falhas FROM campanha WHERE id = %s",
+                (camp_id,),
+            )
+            krow = await cur.fetchone()
+        if krow and _should_kill_switch(krow[0], krow[1], kill_pct):
+            await _mark_finished(
+                pool,
+                camp_id,
+                "aborted",
+                reason=f"kill-switch: falhas {krow[1]}/{krow[0] + krow[1]} > {kill_pct}%",
+            )
+            log.warning(
+                "campanha_kill_switch", enviados=krow[0], falhas=krow[1], pct=kill_pct
+            )
+            return
 
 
 async def _mark_finished(
@@ -482,11 +575,13 @@ async def _mark_finished(
             """
             UPDATE campanha
                SET status = %s, finished_at = NOW(), updated_at = NOW(),
+                   aborted_reason = COALESCE(%s, aborted_reason),
                    descricao = COALESCE(descricao, '') || COALESCE(%s, '')
              WHERE id = %s
             """,
             (
                 status,
+                reason,
                 f"\n[motivo: {reason}]" if reason else None,
                 camp_id,
             ),

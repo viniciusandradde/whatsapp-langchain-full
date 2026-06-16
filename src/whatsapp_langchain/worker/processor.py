@@ -376,6 +376,54 @@ _ENCERRAR_KEYWORDS = frozenset(
 )
 
 
+async def _try_handle_opt_out(
+    message: MessageQueue,
+    pool: AsyncConnectionPool,
+    outbound: OutboundClient,
+) -> bool:
+    """Detecta STOP/PARAR e adiciona o contato à supressão do Disparador.
+
+    Compliance anti-ban: quem pede pra sair entra em `disparador_opt_out` e o
+    resolver de disparo passa a filtrá-lo. Responde a confirmação, marca done e
+    retorna True (não chama agente). Best-effort — falha não derruba o pipeline.
+    """
+    from whatsapp_langchain.shared.campanha import normalize_phone
+    from whatsapp_langchain.shared.opt_out import is_opt_out_request, registrar_opt_out
+
+    if not is_opt_out_request(message.incoming_message):
+        return False
+
+    telefone = normalize_phone(message.phone_number)
+    digits = (telefone or "").lstrip("+")
+    wa_jid = f"{digits}@s.whatsapp.net"
+    try:
+        await registrar_opt_out(
+            pool,
+            message.empresa_id,
+            wa_jid=wa_jid,
+            telefone=telefone,
+            motivo="user_request",
+            origem="webhook",
+        )
+    except Exception as exc:  # noqa: BLE001 — não bloqueia a confirmação
+        logger.warning("opt_out_registrar_falhou", error=str(exc))
+
+    msg = (
+        "Pronto! Você não receberá mais mensagens de divulgação nossas. "
+        "Se mudar de ideia, é só nos chamar. ✅"
+    )
+    try:
+        await outbound.send_message(message.phone_number, msg)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("opt_out_outbound_falhou", error=str(exc))
+
+    await mark_done(
+        pool, message.id, msg, normalized_input=(message.incoming_message or "").strip()
+    )
+    logger.info("opt_out_via_keyword", empresa_id=message.empresa_id)
+    return True
+
+
 async def _try_handle_encerrar_keyword(
     message: MessageQueue,
     pool: AsyncConnectionPool,
@@ -2000,6 +2048,11 @@ async def process_message(
     )
 
     try:
+        # Compliance (Disparador): STOP/PARAR → supressão. Antes de tudo pra
+        # garantir que o pedido de saída sempre tem prioridade.
+        if await _try_handle_opt_out(message, pool, outbound):
+            return
+
         # S4: detecta resposta APROVAR/REJEITAR <token> do gestor ANTES de
         # tudo. Se for, processa a decisão (cria/cancela evento Google),
         # responde, marca done e retorna early (não chama agente).
