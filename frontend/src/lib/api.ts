@@ -2673,6 +2673,123 @@ export async function deletePasta(id: number): Promise<void> {
   await apiFetch<void>(`/api/pastas/${id}`, { method: "DELETE" });
 }
 
+// ── Disparador (API keys, captura, preview) ──────────────────────────────
+
+export interface DisparadorApiKey {
+  id: number;
+  label: string;
+  key_prefix: string;
+  scopes: string[];
+  last_used_at: string | null;
+  revoked_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface DisparadorApiKeyCreated extends DisparadorApiKey {
+  key: string; // segredo completo — exibido UMA vez
+}
+
+export interface ContatoCapturado {
+  id: number;
+  wa_jid: string;
+  telefone: string | null;
+  push_name: string | null;
+  is_business: boolean;
+  origem: string;
+  cliente_id: number | null;
+  promovido_at: string | null;
+  created_at: string;
+}
+
+export interface GrupoCapturado {
+  id: number;
+  wa_group_id: string;
+  nome: string | null;
+  tipo: string;
+  participantes_count: number;
+  invite_link: string | null;
+  created_at: string;
+}
+
+export interface PreviewResultado {
+  total_bruto: number;
+  count_duplicado: number;
+  count_opt_out: number;
+  count_invalido: number;
+  total_disponivel: number;
+  amostra: string[];
+  amostra_truncada: boolean;
+  limite_plano: number | null;
+  excede_plano: boolean;
+}
+
+export async function listApiKeys(): Promise<{ items: DisparadorApiKey[] }> {
+  return apiFetch<{ items: DisparadorApiKey[] }>(`/api/disparador/api-keys`);
+}
+
+export async function createApiKey(body: {
+  label: string;
+  scopes?: string[];
+}): Promise<DisparadorApiKeyCreated> {
+  return apiFetch<DisparadorApiKeyCreated>(`/api/disparador/api-keys`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function revokeApiKey(id: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/disparador/api-keys/${id}/revoke`, {
+    method: "POST",
+  });
+}
+
+export async function getContatosCapturados(): Promise<{
+  items: ContatoCapturado[];
+}> {
+  return apiFetch<{ items: ContatoCapturado[] }>(`/api/captura/contatos`);
+}
+
+export async function getGruposCapturados(): Promise<{
+  items: GrupoCapturado[];
+}> {
+  return apiFetch<{ items: GrupoCapturado[] }>(`/api/captura/grupos`);
+}
+
+export async function promoverContatos(
+  contatoIds: number[]
+): Promise<{ promovidos: number }> {
+  return apiFetch<{ promovidos: number }>(`/api/captura/promover`, {
+    method: "POST",
+    body: { contato_ids: contatoIds },
+  });
+}
+
+export async function capturarViaEvolution(
+  conexaoId: number,
+  tipo: "contatos" | "grupos"
+): Promise<{ lote_id: number; status: string }> {
+  return apiFetch<{ lote_id: number; status: string }>(
+    `/api/conexoes/${conexaoId}/captura/${tipo}`,
+    { method: "POST" }
+  );
+}
+
+export async function previewDisparo(body: {
+  conexao_id?: number;
+  origem: {
+    tipo: "manual" | "grupos" | "contatos" | "janela_24h";
+    grupo_ids?: number[];
+    telefones_manual?: string[];
+  };
+  validar_numeros?: boolean;
+}): Promise<PreviewResultado> {
+  return apiFetch<PreviewResultado>(`/api/disparador/preview`, {
+    method: "POST",
+    body,
+  });
+}
+
 export async function moveDocumentoToPasta(
   docId: number,
   pastaId: number | null

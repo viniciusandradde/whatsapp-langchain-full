@@ -747,7 +747,7 @@
           "5",
           "7"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -755,9 +755,10 @@
             "description": "Implementar a página de listagem de contatos capturados em /disparador/contatos com suporte a seleção múltipla para ações em batch, seguindo o padrão server-first do Next.js App Router.",
             "dependencies": [],
             "details": "## Arquivos a criar:\n\n1. **frontend/src/app/disparador/contatos/page.tsx** (server component):\n   - Usar `export const dynamic = \"force-dynamic\"`\n   - Chamar `requireSession()` para autenticação\n   - Buscar dados via função `getContatosCapturados()` de `lib/api.ts`\n   - Renderizar `ContatosListClient` passando dados iniciais\n\n2. **frontend/src/app/disparador/contatos/contatos-list.tsx** (client component):\n   - Interface `ContatoCapturado` com campos: id, wa_jid, nome, push_name, is_business, origem, promovido_cliente_id, created_at\n   - Usar `<table>` HTML com `<thead>` e `<tbody>` (padrão do projeto, não usa DataTable lib)\n   - Implementar seleção múltipla com checkbox em cada linha e \"selecionar todos\" no header\n   - Estado `selected: string[]` para IDs selecionados\n   - Colunas: Nome (fallback push_name), WhatsApp ID (code), Tipo (Badge business/pessoal), Origem (Badge outline), Status (Badge success=Cliente/secondary=Staging)\n   - Botão \"Capturar do WhatsApp\" no header (chama action de captura)\n   - Botão \"Promover X para Cliente\" aparece quando `selected.length > 0`\n\n3. **frontend/src/app/disparador/contatos/actions.ts**:\n   - `loadContatosAction()` — GET /api/disparador/contatos\n   - `promoverContatosAction(ids: string[])` — POST /api/disparador/contatos/promover\n   - `capturarContatosAction()` — POST /api/disparador/capturar/contatos\n\n4. **frontend/src/lib/api.ts** (adicionar tipos e funções):\n   - Interface `ContatoCapturado`\n   - Interface `ContatosCapturadosResponse { items: ContatoCapturado[] }`\n   - `getContatosCapturados(): Promise<ContatosCapturadosResponse>`\n\n## Padrões a seguir:\n- Usar `useTransition` para loading states\n- Toast de sucesso/erro via `sonner`\n- Classes de input/table do projeto (ver tags-admin.tsx)\n- Badge variants: success, secondary, outline\n\n## Responsividade:\n- Container com `overflow-x-auto` para scroll horizontal em mobile\n- Usar `text-xs` em mobile para caber mais dados",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. **TestSmoke**: Navegar para /disparador/contatos, verificar que página renderiza sem erro 500\n2. **TestTabela**: Assert que tabela exibe colunas corretas (Nome, WhatsApp ID, Tipo, Origem, Status)\n3. **TestSelecao**: Clicar checkbox de 2 contatos, assert botão \"Promover 2 para Cliente\" aparece\n4. **TestSelectAll**: Clicar \"selecionar todos\", assert todos checkboxes marcados",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:43:57.049Z"
           },
           {
             "id": 2,
@@ -767,9 +768,10 @@
               1
             ],
             "details": "## Arquivos a modificar:\n\n1. **frontend/src/app/disparador/contatos/contatos-list.tsx**:\n   - Função `handlePromover()` usando `startTransition`:\n     ```tsx\n     async function handlePromover() {\n       startTransition(async () => {\n         const result = await promoverContatosAction(selected);\n         if (result.ok) {\n           toast.success(`${selected.length} contatos promovidos para clientes`);\n           setSelected([]);\n           // Atualizar lista local: mudar status dos promovidos\n           setContatos(prev => prev.map(c => \n             selected.includes(c.id) \n               ? { ...c, promovido_cliente_id: result.clientes_ids[c.id] }\n               : c\n           ));\n         } else {\n           toast.error(result.error || 'Erro ao promover contatos');\n         }\n       });\n     }\n     ```\n   - Botão com loading state: `disabled={isPending}` e spinner\n   - Após promoção, Badge muda de \"Staging\" (secondary) para \"Cliente\" (success)\n\n2. **frontend/src/app/disparador/contatos/actions.ts**:\n   - `promoverContatosAction` retorna `{ ok: boolean, clientes_ids?: Record<string, number>, error?: string }`\n   - Chamar `apiFetch` com method POST e body `{ ids }`\n\n3. **Validações no cliente**:\n   - Não permitir promover contatos que já são clientes (filtrar da seleção ou desabilitar checkbox)\n   - Mostrar tooltip \"Já é cliente\" em contatos promovidos\n\n## Feedback visual:\n- Botão desabilitado durante request\n- Toast de sucesso com contagem\n- Toast de erro com mensagem do servidor\n- Lista atualiza imediatamente (optimistic ou pós-resposta)\n\n## Edge cases:\n- Promoção parcial (alguns falham): mostrar \"X de Y promovidos\" e listar falhas\n- Timeout: toast de erro + manter seleção para retry",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. **TestPromoverSucesso**: Selecionar contato staging, clicar Promover, assert Badge muda para \"Cliente\" (success)\n2. **TestPromoverToast**: Promover, assert toast de sucesso aparece com contagem correta\n3. **TestPromoverLoading**: Durante request, assert botão está disabled com spinner\n4. **TestPromoverJaCliente**: Contato com promovido_cliente_id não deve ter checkbox ou deve estar desabilitado",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:44:02.153Z"
           },
           {
             "id": 3,
@@ -777,9 +779,10 @@
             "description": "Implementar a página de listagem de grupos capturados com funcionalidade de visualizar membros em um Sheet/Modal lateral.",
             "dependencies": [],
             "details": "## Arquivos a criar:\n\n1. **frontend/src/app/disparador/grupos/page.tsx** (server component):\n   - Estrutura idêntica a contatos/page.tsx\n   - Chamar `getGruposCapturados()` de api.ts\n   - Renderizar `GruposListClient`\n\n2. **frontend/src/app/disparador/grupos/grupos-list.tsx** (client component):\n   - Interfaces:\n     ```tsx\n     interface Grupo {\n       id: string;\n       wa_jid: string;\n       nome: string;\n       tipo: 'grupo' | 'comunidade';\n       total_membros: number;\n       somos_admin: boolean;\n     }\n     interface GrupoMembro {\n       wa_jid: string;\n       is_admin: boolean;\n     }\n     ```\n   - Tabela com colunas: Nome, Tipo (Badge), Membros (count), Admin (✓/-), Ações\n   - Botão \"Ver Membros\" em cada linha\n   - Botão \"Sincronizar Grupos\" no header\n\n3. **Sheet/Modal para membros** (padrão do projeto usa modal inline):\n   ```tsx\n   {selectedGrupo && (\n     <div className=\"fixed inset-0 z-50 flex items-end justify-end bg-black/50\" onClick={() => setSelectedGrupo(null)}>\n       <div className=\"h-full w-full max-w-md bg-background border-l shadow-lg\" onClick={e => e.stopPropagation()}>\n         <div className=\"flex items-center justify-between border-b p-4\">\n           <h2 className=\"text-lg font-semibold\">Membros de {selectedGrupo.nome}</h2>\n           <Button size=\"sm\" variant=\"ghost\" onClick={() => setSelectedGrupo(null)}>\n             <X className=\"h-4 w-4\" />\n           </Button>\n         </div>\n         <div className=\"p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-80px)]\">\n           {loadingMembros ? <Spinner /> : membros.map(m => (\n             <div key={m.wa_jid} className=\"flex justify-between items-center p-2 border rounded\">\n               <code className=\"text-xs\">{m.wa_jid}</code>\n               {m.is_admin && <Badge>Admin</Badge>}\n             </div>\n           ))}\n         </div>\n       </div>\n     </div>\n   )}\n   ```\n\n4. **frontend/src/app/disparador/grupos/actions.ts**:\n   - `loadGruposAction()`\n   - `loadMembrosAction(grupoId: string)`\n   - `capturarGruposAction()`\n\n5. **frontend/src/lib/api.ts** (adicionar):\n   - Interface `Grupo`, `GrupoMembro`\n   - `getGruposCapturados()`, `getGrupoMembros(grupoId)`\n\n## Responsividade:\n- Sheet em mobile ocupa 100% da largura\n- Em desktop, max-w-md (448px)",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. **TestGruposRenderiza**: Navegar para /disparador/grupos, assert tabela com colunas corretas\n2. **TestVerMembros**: Clicar \"Ver Membros\", assert Sheet abre com lista de membros\n3. **TestMembrosAdmin**: Assert membros admin têm Badge \"Admin\"\n4. **TestFecharSheet**: Clicar fora do Sheet ou no X, assert Sheet fecha\n5. **TestSincronizar**: Clicar \"Sincronizar Grupos\", assert loading state + lista atualiza",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:44:07.424Z"
           },
           {
             "id": 4,
@@ -790,12 +793,13 @@
               3
             ],
             "details": "## Arquivos a modificar:\n\n1. **frontend/src/components/sidebar.tsx**:\n   - Adicionar ícones necessários no import de lucide-react:\n     ```tsx\n     import { Send, Users, UserGroup, Ban, Key, Radio } from 'lucide-react';\n     ```\n   - Adicionar grupo \"disparador\" em NAV_GROUPS se usar grupo separado, OU incluir no grupo \"operacao\":\n     ```tsx\n     // Opção 1: Grupo separado\n     { grupo: \"disparador\", href: \"/disparador\", label: \"Disparador\", icon: Radio, requires: \"disparador.read\" },\n     \n     // Opção 2: Dentro do grupo operacao (já existe)\n     // Apenas adicionar no top-nav-tabs\n     ```\n\n2. **frontend/src/components/top-nav-tabs.tsx**:\n   - Adicionar em NAV_TABS_BY_GROUP (grupo apropriado):\n     ```tsx\n     disparador: [\n       { label: \"Campanhas\", href: \"/disparador\", requires: \"disparador.read\" },\n       { label: \"Contatos\", href: \"/disparador/contatos\", requires: \"disparador.read\" },\n       { label: \"Grupos\", href: \"/disparador/grupos\", requires: \"disparador.read\" },\n       { label: \"Supressão\", href: \"/disparador/opt-out\", requires: \"disparador.read\" },\n       { label: \"Chaves API\", href: \"/disparador/api-keys\", requires: \"disparador.write\" },\n     ],\n     ```\n   - Adicionar em GRUPO_PREFIXOS:\n     ```tsx\n     { grupo: \"disparador\", prefixos: [\"/disparador\"] },\n     ```\n\n3. **Permissões RBAC**:\n   - Usar `requires: \"disparador.read\"` para páginas de leitura\n   - Usar `requires: \"disparador.write\"` para API Keys (criação/revogação)\n   - Verificar se permissão \"disparador\" existe no enum de permissões, senão adicionar\n\n4. **Ícones sugeridos** (todos de lucide-react):\n   - Campanhas: `Send`\n   - Contatos: `Users`\n   - Grupos: `UsersRound` (ou `Users`)\n   - Supressão (Opt-out): `Ban` ou `ShieldX`\n   - Chaves API: `Key`\n   - Disparador (grupo): `Radio` ou `Megaphone`\n\n## Mobile:\n- Sidebar mobile (sheet) já suporta os grupos\n- Top-nav-tabs scrollable horizontalmente em mobile\n\n## Testes visuais:\n- Verificar que links aparecem apenas para usuários com permissão\n- Verificar highlight da tab ativa",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. **TestNavegacaoSidebar**: Assert link \"Disparador\" ou grupo aparece no sidebar\n2. **TestTabsDispatcher**: Em /disparador/contatos, assert tabs Campanhas/Contatos/Grupos/Supressão/API Keys visíveis\n3. **TestTabAtiva**: Em /disparador/contatos, assert tab \"Contatos\" está com estilo ativo\n4. **TestPermissao**: Usuário sem \"disparador.read\" não vê o grupo no sidebar\n5. **TestMobile**: Em viewport mobile, tabs são scrolláveis horizontalmente",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:44:12.470Z"
           }
         ],
-        "updatedAt": "2026-06-16T21:36:38.572Z"
+        "updatedAt": "2026-06-16T21:44:12.470Z"
       },
       {
         "id": "10",
@@ -808,7 +812,7 @@
           "1",
           "2"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -843,9 +847,10 @@
               2
             ],
             "details": "1. Criar `frontend/src/app/(dashboard)/disparador/api-keys/page.tsx`\n2. Estado: `keys[]`, `loading`, `creating`, `newKey` (string|null para controlar Dialog), `form` (name, expires_days)\n3. DataTable com colunas: Nome, Prefixo (code), Escopos (Badges), Último Uso, Status (Badge ativa/revogada), Actions\n4. Dialog com dois estados: formulário de criação OU exibição da chave criada\n5. Após criar: mostrar Alert warning 'Esta é a única vez que você verá a chave completa', Input readonly com a chave, Button Copy (navigator.clipboard.writeText + toast 'Copiado!')\n6. Só fechar Dialog após usuário clicar 'Fechar' explicitamente (não onClickOutside)\n7. Botão revogar com confirm() e feedback via toast\n8. Usar `api` client existente (`@/lib/api`) para requests\n9. Loading states adequados nos botões",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestManual: criar chave, verificar que Dialog mostra chave completa, copiar funciona, fechar e verificar que chave não aparece mais. Verificar que revogação desabilita botão de ação.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:44:17.489Z"
           },
           {
             "id": 4,
@@ -856,12 +861,13 @@
               2
             ],
             "details": "1. Criar `tests/integration/test_api_keys_endpoints.py` seguindo padrão canônico (`tests/integration/test_aba_endpoints.py`)\n2. **TestSmoke** (TestClient, sem DB): endpoints existem + exigem auth (401 sem service token)\n3. **TestE2E** (`@pytest.mark.docker_demo`): \n   - `test_01_create_key`: criar, assert resposta contém 'key' iniciando com 'nxs_'\n   - `test_02_list_keys_no_secret`: listar, assert resposta NÃO contém 'key', apenas 'prefix'\n   - `test_03_revoke_key`: revogar, assert `revoked_at` preenchido\n   - `test_04_revoked_key_fails_auth`: usar chave revogada → 401\n   - `test_05_expired_key_fails_auth`: criar com expires_days=0 ou mock clock, usar → 401\n4. **TestE2EIsolamento**: empresa B não vê/revoga keys da empresa A → 404\n5. Fixtures `scope='module'` com cleanup CASCADE\n6. Headers: `get_admin_api_headers()` + `X-User-Id` + `X-Empresa-Id`",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Rodar com `DATABASE_URL=... INTERNAL_SERVICE_TOKEN=dev-token... uv run pytest tests/integration/test_api_keys_endpoints.py -v`. Verificar cobertura de segurança: timing-safe comparison, isolamento multi-tenant.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:44:22.697Z"
           }
         ],
-        "updatedAt": "2026-06-16T21:36:53.663Z"
+        "updatedAt": "2026-06-16T21:44:22.697Z"
       },
       {
         "id": "11",
@@ -908,9 +914,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:40:12.025Z",
+      "lastModified": "2026-06-16T21:44:22.698Z",
       "taskCount": 11,
-      "completedCount": 9,
+      "completedCount": 11,
       "tags": [
         "disparador"
       ]
