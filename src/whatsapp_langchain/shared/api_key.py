@@ -207,3 +207,100 @@ async def resolve_api_key(
         scopes=list(scopes or []),
         rate_limit_per_minute=int(rate_limit or 60),
     )
+
+
+# ---------------------------------------------------------------------------
+# CRUD (Task 10) — gestão de chaves pelo painel (sob empresa_scope/RLS)
+# ---------------------------------------------------------------------------
+
+
+async def create_api_key(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    label: str,
+    scopes: list[str] | None = None,
+    user_id: str | None = None,
+) -> tuple[str, dict]:
+    """Cria uma chave e retorna ``(segredo_plain, metadata)``.
+
+    O segredo só existe aqui — é exibido UMA vez ao usuário; o banco guarda só
+    o hash. ``metadata`` traz os campos não-sensíveis (id, prefix, scopes...).
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    plain, prefix, key_hash = generate_api_key(empresa_id)
+    scopes_norm = normalize_scopes(scopes)
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                INSERT INTO empresa_api_key
+                    (empresa_id, label, key_prefix, key_hash, scopes,
+                     created_by_user_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, created_at
+                """,
+                (empresa_id, label, prefix, key_hash, scopes_norm, user_id),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    assert row is not None
+    meta = {
+        "id": int(row[0]),
+        "label": label,
+        "key_prefix": prefix,
+        "scopes": scopes_norm,
+        "created_at": row[1],
+        "revoked_at": None,
+        "last_used_at": None,
+    }
+    return plain, meta
+
+
+async def list_api_keys(pool: AsyncConnectionPool, empresa_id: int) -> list[dict]:
+    """Lista as chaves da empresa (sem o hash/segredo)."""
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT id, label, key_prefix, scopes, last_used_at, revoked_at,
+                       expires_at, created_at
+                  FROM empresa_api_key WHERE empresa_id = %s
+                 ORDER BY created_at DESC
+                """,
+                (empresa_id,),
+            )
+            rows = await cur.fetchall()
+    keys = [
+        "id",
+        "label",
+        "key_prefix",
+        "scopes",
+        "last_used_at",
+        "revoked_at",
+        "expires_at",
+        "created_at",
+    ]
+    return [dict(zip(keys, r, strict=True)) for r in rows]
+
+
+async def revoke_api_key(
+    pool: AsyncConnectionPool, empresa_id: int, key_id: int
+) -> bool:
+    """Revoga (soft) uma chave. Retorna True se revogou (estava ativa)."""
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                UPDATE empresa_api_key SET revoked_at = NOW()
+                 WHERE id = %s AND empresa_id = %s AND revoked_at IS NULL
+                """,
+                (key_id, empresa_id),
+            )
+            await conn.commit()
+            return cur.rowcount > 0

@@ -747,7 +747,7 @@
           "5",
           "7"
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -794,7 +794,8 @@
             "testStrategy": "1. **TestNavegacaoSidebar**: Assert link \"Disparador\" ou grupo aparece no sidebar\n2. **TestTabsDispatcher**: Em /disparador/contatos, assert tabs Campanhas/Contatos/Grupos/Supressão/API Keys visíveis\n3. **TestTabAtiva**: Em /disparador/contatos, assert tab \"Contatos\" está com estilo ativo\n4. **TestPermissao**: Usuário sem \"disparador.read\" não vê o grupo no sidebar\n5. **TestMobile**: Em viewport mobile, tabs são scrolláveis horizontalmente",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:36:38.572Z"
       },
       {
         "id": "10",
@@ -807,7 +808,7 @@
           "1",
           "2"
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -815,9 +816,10 @@
             "description": "Implementar o router FastAPI com os três endpoints CRUD para gerenciamento de API keys: criação com geração segura de chave, listagem sem expor key_hash, e revogação soft-delete.",
             "dependencies": [],
             "details": "1. Criar arquivo `server/routes/api_keys.py` seguindo padrão dos routers existentes (ex: `atendimento.py`, `usuarios.py`)\n2. Definir modelos Pydantic: `CreateKeyRequest` (name, scopes=['disparador:read','disparador:write'], expires_days), `CreateKeyResponse` (id, key, prefix, name, scopes, expires_at, created_at), `KeyListItem` (sem key completa)\n3. Implementar `POST /api/api-keys`: gerar chave via `generate_api_key()`, extrair prefix, hash com `hash_api_key()`, INSERT em `empresa_api_key` com `empresa_id`, `created_by_user_id` do contexto\n4. Implementar `GET /api/api-keys`: SELECT retornando apenas prefix, NUNCA key_hash ou chave completa\n5. Implementar `POST /api/api-keys/{key_id}/revoke`: UPDATE set `revoked_at = NOW()` com validação de pertencimento à empresa\n6. Usar `get_empresa_context` e `get_pool` como dependencies padrão\n7. Registrar router em `server/main.py`",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestSmoke: cada endpoint existe e exige auth (401 sem token). Verificar que resposta do POST create inclui 'key' mas GET list NÃO inclui.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:36:48.751Z"
           },
           {
             "id": 2,
@@ -827,9 +829,10 @@
               1
             ],
             "details": "1. No `POST /api/api-keys`, retornar o campo `key` com a chave completa gerada ANTES do hash\n2. Armazenar APENAS `key_hash` (SHA-256 ou argon2) no banco - NUNCA a chave original\n3. No `GET /api/api-keys`, retornar apenas `key_prefix` (ex: 'nxs_abc123_') - suficiente para identificação visual\n4. Adicionar comentário explícito no código: '# ÚNICO momento que retorna a chave completa!'\n5. Documentar no endpoint que a chave não pode ser recuperada após criação\n6. Validar que nenhum log registra a chave completa (usar structlog com filtro se necessário)\n7. Considerar adicionar campo `key_preview` na tabela (últimos 4 chars) para UX de identificação",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "TestE2E: criar chave, extrair 'key' da resposta, listar chaves, assert 'key' NÃO aparece em nenhum item da lista. TestUnit: verificar que hash é one-way (não reversível).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:36:53.663Z"
           },
           {
             "id": 3,
@@ -857,7 +860,8 @@
             "testStrategy": "Rodar com `DATABASE_URL=... INTERNAL_SERVICE_TOKEN=dev-token... uv run pytest tests/integration/test_api_keys_endpoints.py -v`. Verificar cobertura de segurança: timing-safe comparison, isolamento multi-tenant.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:36:53.663Z"
       },
       {
         "id": "11",
@@ -901,7 +905,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:33:44.790Z",
+      "lastModified": "2026-06-16T21:36:53.663Z",
       "taskCount": 11,
       "completedCount": 8,
       "tags": [

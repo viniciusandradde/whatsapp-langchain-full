@@ -51,6 +51,7 @@ from whatsapp_langchain.server.routes.billing import router as billing_router
 from whatsapp_langchain.server.routes.calendar_integration import (
     router as calendar_integration_router,
 )
+from whatsapp_langchain.server.routes.api_keys import router as api_keys_router
 from whatsapp_langchain.server.routes.campanha import router as campanha_router
 from whatsapp_langchain.server.routes.captura_evolution import (
     router as captura_evolution_router,
@@ -382,6 +383,7 @@ app.include_router(campanha_router)
 app.include_router(disparador_router)
 app.include_router(disparo_router)
 app.include_router(captura_evolution_router)
+app.include_router(api_keys_router)
 app.include_router(agendamento_regras_router)
 app.include_router(audit_router)
 app.include_router(feature_flag_router)

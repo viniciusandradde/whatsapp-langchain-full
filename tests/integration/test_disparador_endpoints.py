@@ -51,6 +51,16 @@ class TestSmoke:
         )
         assert resp.status_code == 401, resp.text
 
+    def test_api_keys_list_sem_auth_401(self) -> None:
+        assert _client().get("/api/disparador/api-keys").status_code == 401
+
+    def test_api_keys_create_sem_auth_401(self) -> None:
+        r = _client().post("/api/disparador/api-keys", json={"label": "x"})
+        assert r.status_code == 401, r.text
+
+    def test_api_keys_revoke_sem_auth_401(self) -> None:
+        assert _client().post("/api/disparador/api-keys/1/revoke").status_code == 401
+
 
 # ============================================================================
 # E2E (stack real — precisa make up + migração 118)
@@ -150,3 +160,48 @@ class TestE2E:
         )
         assert r.status_code == 200, r.text
         assert r.json()["empresa_id"] == empresa_b
+
+
+@pytest.mark.docker_demo
+class TestApiKeysCrud:
+    """CRUD via camada shared: segredo só na criação, lista sem expor, revoga."""
+
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome) VALUES (%s) RETURNING id",
+                (f"akcrud-{_RUN}",),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_create_list_revoke(self, empresa) -> None:
+        from whatsapp_langchain.shared import api_key as ak
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        plain, meta = await ak.create_api_key(
+            pool, empresa, label=f"chrome-{_RUN}", scopes=["capture", "dispatch"]
+        )
+        assert plain.startswith(f"nxs_{empresa}_")
+        assert meta["scopes"] == ["capture", "dispatch"]
+
+        # a chave resolve e autentica
+        ctx = await ak.resolve_api_key(pool, plain)
+        assert ctx is not None and ctx.empresa_id == empresa
+
+        # listagem não expõe segredo nem hash
+        itens = await ak.list_api_keys(pool, empresa)
+        assert any(i["id"] == meta["id"] for i in itens)
+        assert all("key_hash" not in i and "key" not in i for i in itens)
+
+        # revoga → resolve passa a falhar
+        assert await ak.revoke_api_key(pool, empresa, meta["id"]) is True
+        assert await ak.resolve_api_key(pool, plain) is None
+        # revogar de novo = no-op (já revogada)
+        assert await ak.revoke_api_key(pool, empresa, meta["id"]) is False
