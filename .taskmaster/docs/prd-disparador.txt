@@ -1,0 +1,123 @@
+<context>
+# Overview
+
+O Disparador Nexus incorpora ao ChatNexus um clone funcional do produto comercial "Disparador" (extensao Chrome de captura+disparo em massa pelo WhatsApp), integrado ao modulo Campanhas existente. A funcao PRINCIPAL e capturar os contatos, grupos e MEMBROS de grupos do WhatsApp do usuario, trazendo-os para o Nexus, e permitir disparo em massa segmentado por esses dados.
+
+Quem usa: empresas multi-tenant do ChatNexus (operadores de marketing/vendas) que hoje disparam manualmente ou via produtos externos nao-oficiais. Valor: trazer captura + disparo para dentro da plataforma ja governada (RLS por empresa, planos, auditoria), com salvaguardas anti-ban que os produtos externos tem (jitter, validacao de numero) e que o nosso dispatcher atual NAO tem.
+
+Fonte canonica do produto: a pasta docs/Baileys/ contem o codigo real do ecossistema que inspirou o produto - o projeto open-source whatsapp-api-nodejs (REST sobre Baileys 4), o frontend de disparo em massa (ZDGText.js/ZDGFile.js), screenshots da extensao comercial "Disparador PRO" e planilhas que provam o produto-promessa (extrair telefones de membros de grupo -> disparar). NOTA: o plano original assumiu por engano que essa pasta nao existia; este PRD corrige isso e incorpora os achados.
+
+# Core Features
+
+1. Auth da extensao por API key por empresa - token nxs_<empresa_id>_<32hex>, armazenado como key_hash sha256 (nunca o segredo), com scopes (capture/dispatch/templates), expires_at opcional, rotacao e revoked_at. Superior ao ?key= em querystring dos tutoriais (anti-padrao que vaza em logs). Resolve a empresa pela key e ativa o contexto RLS.
+
+2. Captura para STAGING (nao direto no CRM) - contatos raspados sao sujos (push-name, sem consentimento/LGPD). Caem em contato_capturado (staging) com wa_jid como identidade primaria (telefone derivado/opcional, pois membros multi-device aparecem como @lid sem telefone). O usuario promove os escolhidos para cliente. Grupos e membros tem tabelas proprias.
+
+3. Dois caminhos de captura - (a) extensao Chrome via hook do window.Store do WhatsApp Web; (b) server-side via Evolution API (/chat/findContacts, /group/fetchAllGroups?getParticipants=true). Membros de grupo exigem fetch separado (groupMetadata por grupo), pesado/rate-limited -> captura assincrona com captura_lote.status.
+
+4. Disparo em massa anti-ban - reusa o dispatcher duravel existente (_dispatch_loop, status por destinatario, abort, contadores) mas adiciona o que o produto-fonte tem e nos nao: JITTER aleatorio (intervalo min/max por destinatario, nao fixo), validacao onWhatsApp antes do envio, presenca composing, variaveis por destinatario (placeholders [field1..N] do CSV), e estagio Preparar->ENVIAR (preview com contagem + invalidos).
+
+5. Compliance estrutural - lista de opt-out/supressao (captura STOP no worker), caps diferenciados por provider (Evolution baixo vs WABA por tier), quiet hours, warmup de numero novo, kill-switch automatico, e aviso ToS bloqueante. Volume e empurrado para WABA (rota oficial sustentavel).
+
+6. API Oficial (WABA) - aba que reusa o fluxo de Embedded Signup e os templates HSM ja entregues; origem janela 24h (DISTINCT de message_queue).
+
+7. Gating por plano - Free (25 contatos, so texto) vs Premium (ilimitado, midia, templates). Cap via features[disparador_max_contatos].
+
+# User Experience
+
+Personas: operador de marketing (cria campanhas, captura listas), admin da empresa (gera/revoga API keys), destinatario final (opt-out).
+
+Fluxos-chave:
+- Conectar: reusa o modal de QR existente (connections/evolution-qr-modal.tsx, polling) - nao reimplementar Socket.IO.
+- Capturar: extensao injetada no WhatsApp Web (aguarda o Store hidratar) OU botao Capturar via Evolution no painel -> contatos/grupos/membros caem no staging -> browser em /disparador/contatos/ com Promover p/ CRM e total disponivel mesmo truncado (upsell 100 de 1210).
+- Disparar: create de campanha com selector de origem (manual|grupos|contatos|janela 24h|segmento), campos de intervalo min/max, Preparar (valida/conta, mostra invalidos) -> ENVIAR (so habilita apos Preparar) -> progresso por destinatario via polling.
+- Extensao: layout vertical unico, abas de canal data-driven por Conexao.provider, campos NUMEROS/Validar/Contatos/Grupos/Modelo/Anexar/Intervalo. Bearer header, nunca ?key=.
+</context>
+
+<PRD>
+# Technical Architecture
+
+## Componentes
+- API FastAPI (server/): novos routers captura.py (sob verify_api_key), captura_evolution.py e disparador.py (sob service-token + get_empresa_context); CRUD api-keys. Reusa waba_templates.py.
+- Worker (worker/): evolution_client.py ganha fetch_contacts, fetch_groups, fetch_group_participants, check_numbers, send_media_url, send_reaction, health. Captura de STOP no process_message. NOTA: hoje evolution_client.py so tem send_message+send_typing.
+- Shared: api_key.py (resolucao/hash sob bypass), captura.py (normalizador unico de shape store: telefone so de @s.whatsapp.net, is_business=verifiedName!=null, getWhatsAppId; upserts idempotentes; promocao). campanha.py ganha resolver no create, jitter no loop, variaveis por destinatario, opt-out, quiet hours, kill-switch. plano_limits.py ganha caps por provider.
+- Extensao Chrome MV3 (extension/, dir top-level novo, em quarentena): background SW + content (scrape.ts/store-hook.ts via moduleRaid->window.Store) + popup + options + lib/api.ts (Bearer). Versionada a parte, fora do make ci, zip standalone (NAO proxiada por /uploads).
+- Frontend (frontend/src/app/disparador/): api-keys/, contatos/, e extensao do create de campanhas/. Espelha o padrao actions.ts->@/lib/api->service token.
+
+## Data model (migrations a partir de 118)
+- 118 - empresa_api_key: empresa_id, label, key_prefix (8 chars), key_hash (sha256 hex), scopes TEXT[], expires_at NULLABLE, last_used_at, last_used_ip, revoked_at, created_by_user_id. UNIQUE (empresa_id,label); unique key_hash WHERE revoked_at IS NULL. + bloco RLS self-enroll (ENABLE + FORCE + POLICY tenant_isolation USING/WITH CHECK (_rls_tenant_match(empresa_id)), espelhando mig 111/112).
+- 119 - captura: captura_lote (origem extensao_chrome|evolution_server, conexao_id, api_key_id, tipo contatos|grupos|grupo_membros, total, inseridos, atualizados, pulados_invalido, status processando|concluido|parcial|erro, erro); contato_capturado (empresa_id, wa_jid IDENTIDADE, wa_lid, telefone NULLABLE E.164 so de @s.whatsapp.net, push_name, verified_name, is_business, origem, cliente_id, promovido_at, wa_existe, validado_at, visto_ultima_vez_at; UNIQUE (empresa_id, wa_jid)); grupo (empresa_id, wa_group_id, nome, descricao, participantes_count, invite_link, tipo grupo|comunidade, origem, conexao_id; UNIQUE (empresa_id, wa_group_id)); grupo_membro (grupo_id, empresa_id, wa_jid NOT NULL, telefone NULLABLE, push_name, is_admin; UNIQUE (grupo_id, wa_jid)); + bloco RLS em cada.
+- 120 - estende campanha + variaveis: campanha += origem_destinatarios TEXT DEFAULT manual CHECK (manual|grupos|contatos_capturados|janela_24h|segmento), grupo_ids BIGINT[], captura_filtro JSONB, intervalo_min_ms INT, intervalo_max_ms INT; campanha_destinatario += variaveis JSONB.
+- 121 - permissoes + features + compliance: permissao rows disparador.{capturar,disparar,api_key.manage,template.manage}; plano.features keys disparador (bool), disparador_media (bool), disparador_max_contatos (int Free=25); disparador_opt_out (empresa_id, telefone, origem, created_at; UNIQUE (empresa_id,telefone)) + RLS; campanha += janela_inicio, janela_fim, kill_switch_pct.
+
+## APIs
+- Auth: verify_api_key -> ApiKeyContext(empresa_id, key_id, scopes) - HTTPBearer(auto_error=False); 401 ausente/invalida, 403 require_scope, NUNCA 500; hmac.compare_digest sobre o HASH (nao o segredo); lookup por key_prefix indexado sob empresa_scope(None, bypass=True); chama set_request_context(empresa_id). shared/api_key.py::resolve_api_key. Molde: verify_service_token (dependencies.py:113-155).
+- Captura extensao (Depends(verify_api_key)): POST /api/captura/{contatos|grupos}, POST /api/captura/grupos/{wa_group_id}/membros (batch cap ~2000/req, upsert idempotente, grava captura_lote). Pydantic discrimina contato (@s.whatsapp.net) vs grupo (regex 18 digitos @g.us) com 422 por campo. Persiste JID/telefone CRU; normaliza so na promocao.
+- Captura Evolution (service-token + get_empresa_context): POST /api/conexoes/{id}/captura/{contatos|grupos}; membros como background task (asyncio.create_task+_BG_TASKS, captura_lote.status). GET leitura retorna total_disponivel mesmo truncado pelo gating. GET /api/disparador/contatos-unicos?grupo_ids= (DISTINCT wa_jid cross-grupo = LEADS UNICOS).
+- Disparo: POST /api/disparador/preview (resolve origem -> count_valido, count_invalido, sample, total_disponivel); create chama create_campanha existente; gating count Free<=25 -> 402. GET /api/disparador/janela-24h?conexao_id=.
+- EvolutionClient novos: fetch_contacts (POST /chat/findContacts/{instance}), fetch_groups (GET /group/fetchAllGroups/{instance}?getParticipants=true), fetch_group_participants, check_numbers (POST /chat/whatsappNumbers/{instance}), send_media_url, send_reaction (POST /message/sendReaction/{instance}), health (/instance/info). Padrao: httpx + header apikey + normalize_to_number (ja existente).
+
+## Dispatcher (mudanca minima, duravel ja existente)
+- _dispatch_loop mantem batches de 50, status por destinatario, abort, contadores, _BG_TASKS. Muda: troca asyncio.sleep(intervalo_s) FIXO (linha 473-474) por random.uniform(intervalo_min_ms, intervalo_max_ms)/1000 por destinatario (fallback intervalo_ms quando min==max); respeita quiet hours; auto-abort se falhas/enviados > kill_switch_pct. _resolve_template_vars (linha 304) estendido para mesclar variaveis do destinatario sobre template_variaveis (placeholders [field1..N]/{{var}}, {{nome}} retrocompat). Resolver de origem + validacao check_numbers + filtro opt-out rodam no create (nao no loop).
+
+## Infra/seguranca
+- Cada tabela nova self-enrola RLS na propria migration (mig 101 nao pega novas). set_request_context obrigatorio no caminho API-key. Extensao em quarentena (so /api/captura/* scope capture, sem service token). Midia preferencialmente por URL (evita gotcha rewrite /uploads).
+
+# Development Roadmap
+
+## MVP (escopo entregavel, ordem de derisco)
+- S0 - Fundacao API keys + RLS: mig 118, api_key.py, verify_api_key, CRUD api-keys, painel api-keys/. TestE2EIsolamento PRIMEIRO (caminho de maior risco).
+- S1 - Captura Evolution -> staging (FUNCAO PRINCIPAL, em CI): mig 119, EvolutionClient (fetch_contacts/groups/participants/check_numbers/health), shared/captura.py (normalizador unico, upserts, promocao, membros async), captura_evolution.py, painel contatos/. Antes do scraper (mais barato, testavel com mock).
+- S2 - Targeting + jitter + variaveis: mig 120, resolver no create + validacao onWhatsApp, jitter no loop, variaveis por destinatario, POST /preview, UI do create + progresso.
+
+## Pos-MVP
+- S3 - Compliance/anti-ban estrutural: opt-out, caps por provider, quiet hours, kill-switch, warmup, aviso ToS bloqueante.
+- S4 - API Oficial + gating completo: mig 121, wire waba_templates + Embedded Signup + janela 24h, Free/Premium.
+- S5 - Extensao Chrome (scraping real): extension/ MV3 via window.Store, isolado/versionado, quarentena, README ToS, ADR (nao hospedar nodeback Baileys). QA manual.
+- S6 - Mensagens ricas viaveis: send_reaction (Evolution), botoes via WABA, handler inbound dos 2 shapes de resposta, secao o que da e o que NAO da. Backlog P3: PIX BR Code (EMV+QR), foto de perfil/status.
+
+# Logical Dependency Chain
+1. S0 (API keys + RLS) primeiro - fundacao de auth e ponto unico de falha (isolamento de tenant). Nada de captura sem isso.
+2. S1 (captura Evolution) depende de S0 - prova o cano de dados (staging+dedup+membros+promocao) em CI com mock, ANTES do scraper fragil. Funcao principal, entregavel e visivel (browser de contatos no painel).
+3. S2 (targeting) depende de S1 - conecta os dados capturados ao disparo; entrega a primeira campanha real ponta-a-ponta (origem=grupos -> preview -> envio com jitter).
+4. S3 (compliance) depende de S2 - endurece o disparo ja funcional.
+5. S4 (API Oficial) depende de S2 - reusa o resolver/gating; pode ser paralelo a S3.
+6. S5 (extensao) depende de S0+S1 - o backend de captura tem que existir e estar validado antes do scraper.
+7. S6 (ricas) depende de S4 - botoes precisam do caminho WABA.
+
+Cada slice e um vertical entregavel (BE+UI+E2E) que pode ir a producao isolado, respeitando foco em 1 modulo por vez.
+
+# Risks and Mitigations
+- ToS/ban (P0): jitter aleatorio, validacao onWhatsApp, opt-out, quiet hours, kill-switch, warmup, caps por provider, aviso bloqueante, empurrar volume p/ WABA.
+- RLS no caminho API-key (P0): set_request_context em verify_api_key; RLS self-enroll por migration; TestE2EIsolamento primeiro (ambas direcoes).
+- Identidade por telefone perde membros so-LID (P0): wa_jid como chave, telefone NULLABLE; espelha cliente.whatsapp_lid (mig 046).
+- Dispatcher in-process (P1): path reenviar pendentes; fix duravel (worker via message_queue) = divida fora de escopo.
+- Rate limit/latencia Evolution (P1): captura assincrona (captura_lote.status), paginacao, cap, membros como lote dedicado, re-captura idempotente.
+- Extensao fragil (P1): hook Store > DOM, seletores isolados + scrape-health + versao, quarentena, ADR nao-hospedar-nodeback.
+- plano.limite_* NULL=ilimitado (P2): cap Free via features, nao colunas limite.
+- Gotcha /uploads (P2): midia por URL preferencial; upload local secundario com ARG no build.
+- Mensagens ricas que nao renderizam (P2): gatear por provider (botao so WABA); so send_reaction em conta pessoal; pagamento!=PIX.
+
+# Appendix
+
+## Evidencia da fonte (docs/Baileys)
+- REST surface canonica = whatsapp-api-nodejs (tutorial 20/4918a): /instance, /message, /group, /misc (~25 endpoints). Postman collection = contrato de payloads.
+- Anti-ban real: ZDGText.js:82-87 randomIntFromInterval(min,max)+timer (jitter); instance.js:232-246 verifyId->onWhatsApp antes de cada envio; presenca composing.
+- Identidade JID: botzdg_chat_upsert.js:63 Object.values(store.contacts) (keyed por JID); app-grupo.js groupMetadata.participants[].id._serialized + owner; membros multi-device = @lid.
+- getAllGroups()=chats.filter(@g.us) SEM participantes (instance.js:427); group.route.js admite no data store yet.
+- Auth tutorial = ?key= em querystring (keyCheck.js) / segredo hardcoded + status 500 (botzdgpost.js) - anti-padroes; nosso nxs_<eid>_<hex>+sha256+scopes e superior.
+- Screenshots (docs/Baileys/fotos/): 3 abas de canal (WPP Connect|API Oficial|WaVoIP), estagio Preparar->ENVIAR, intervalo range (2-10s), placeholders [field1..N], captura gated com total (100 de 1210), Embedded Signup WABA.
+- Mensagens ricas (aulas 4910/4925/4927/4914, Baileys 4.0-4.4 descontinuado): botoes templateButtons/buttons (deprecados em conta pessoal), requestPaymentMessage (WhatsApp Pay != PIX), reacao reactionMessage (unico portavel).
+
+## Codigo-alvo no repo (verificado)
+- src/whatsapp_langchain/server/dependencies.py (verify_api_key + require_scope; molde verify_service_token linha 113-155).
+- src/whatsapp_langchain/shared/api_key.py, shared/captura.py (novos).
+- src/whatsapp_langchain/worker/evolution_client.py (hoje so send_message L134 + send_typing L222).
+- src/whatsapp_langchain/shared/campanha.py (_dispatch_loop linha 319-475; _resolve_template_vars linha 304-316; normalize_phone linha 41; intervalo_s fixo linha 359/473-474).
+- src/whatsapp_langchain/server/routes/{captura,captura_evolution,disparador}.py (novos).
+- db/migrations/118..121_*.sql (RLS self-enroll obrigatorio; mig mais recente confirmada = 117).
+- extension/** + frontend/src/app/disparador/** (novos); reuso connections/evolution-qr-modal.tsx e waba_templates.
+
+## Testes (modelo tests/integration/test_aba_endpoints.py)
+Por slice: TestSmoke (TestClient, 1 test/endpoint -> 401 sem service token, roda em CI) + TestE2E (@pytest.mark.docker_demo, httpx+psycopg, happy path numerado, fixtures _RUN=uuid.hex[:8], CASCADE teardown) + TestE2EIsolamento (fronteira de tenant). Rodar com DATABASE_URL=postgresql://postgres:postgres@localhost:5434/whatsapp_langchain INTERNAL_SERVICE_TOKEN=dev-token-change-in-production EVOLUTION_OUTBOUND_MODE=mock uv run pytest tests/integration/test_disparador_*.py -v.
+</PRD>

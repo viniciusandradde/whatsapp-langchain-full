@@ -52,6 +52,7 @@ from whatsapp_langchain.server.routes.calendar_integration import (
     router as calendar_integration_router,
 )
 from whatsapp_langchain.server.routes.campanha import router as campanha_router
+from whatsapp_langchain.server.routes.disparador import router as disparador_router
 from whatsapp_langchain.server.routes.catalogo import (
     router_mcp as mcp_router,
 )
@@ -374,6 +375,7 @@ app.include_router(agendamento_router)
 app.include_router(perfil_router)
 app.include_router(pasta_router)
 app.include_router(campanha_router)
+app.include_router(disparador_router)
 app.include_router(agendamento_regras_router)
 app.include_router(audit_router)
 app.include_router(feature_flag_router)

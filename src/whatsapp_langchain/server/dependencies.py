@@ -23,6 +23,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg_pool import AsyncConnectionPool
 from twilio.request_validator import RequestValidator  # type: ignore[import-untyped]
 
+from whatsapp_langchain.shared.api_key import (
+    ApiKeyContext,
+    has_scope,
+    resolve_api_key,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import (
@@ -30,6 +35,8 @@ from whatsapp_langchain.shared.empresa import (
     get_empresa_membership,
     is_superadmin,
 )
+from whatsapp_langchain.shared.rate_limit import enforce_bucket_limit
+from whatsapp_langchain.shared.rls_context import set_request_context
 
 logger = structlog.get_logger()
 
@@ -345,3 +352,74 @@ async def check_rate_limit(
         )
     else:
         _check_rate_limit_inmemory(phone_number)
+
+
+# Esquema Bearer da API key por empresa (Disparador). Separado do ServiceToken
+# pra o OpenAPI documentar os dois e a extensão Chrome usar APENAS este.
+_api_key_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="ApiKey",
+    description="API key por empresa do Disparador (formato nxs_<empresa_id>_<hex>).",
+)
+
+
+async def verify_api_key(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_api_key_bearer),
+) -> ApiKeyContext:
+    """Autentica a extensão via API key por empresa e ativa o contexto RLS.
+
+    Diferente de `verify_service_token` (token global), aqui a empresa é
+    DESCOBERTA a partir da própria chave. Após resolver, chamamos
+    `set_request_context(empresa_id)` — sem isso, todo INSERT/SELECT nas tabelas
+    do tenant quebra com `InsufficientPrivilege` sob a policy RLS estrita
+    (mesmo padrão de `evolution_webhook.py`).
+
+    Aplica também rate limit por chave (bucket `apikey:<id>:disparador`).
+
+    Raises:
+        HTTPException 401: chave ausente, malformada, inválida, revogada ou
+            expirada (mensagem genérica — não vaza qual condição falhou).
+        RateLimitExceeded (429): chave excedeu `rate_limit_per_minute`.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        logger.warning("api_key_missing", path=str(request.url.path))
+        raise HTTPException(status_code=401, detail="API key ausente ou malformada")
+
+    pool = await get_pool()
+    ctx = await resolve_api_key(pool, credentials.credentials.strip())
+    if ctx is None:
+        logger.warning("api_key_invalid", path=str(request.url.path))
+        raise HTTPException(status_code=401, detail="API key inválida")
+
+    # Rate limit por chave (janela de 60s). RateLimitExceeded é HTTPException 429.
+    await enforce_bucket_limit(
+        pool,
+        f"apikey:{ctx.key_id}:disparador",
+        limit=ctx.rate_limit_per_minute,
+        window_seconds=60,
+    )
+
+    # CRÍTICO: ativa o contexto RLS pra empresa resolvida.
+    set_request_context(ctx.empresa_id)
+    logger.debug("api_key_valid", empresa_id=ctx.empresa_id, key_id=ctx.key_id)
+    return ctx
+
+
+def require_scope(scope: str):
+    """Factory de dependency que exige um escopo específico na API key.
+
+    Uso:
+        @router.post("/api/captura/contatos",
+                     dependencies=[Depends(require_scope("capture"))])
+    """
+
+    async def _checker(ctx: ApiKeyContext = Depends(verify_api_key)) -> ApiKeyContext:
+        if not has_scope(ctx.scopes, scope):
+            raise HTTPException(
+                status_code=403,
+                detail=f"API key sem escopo necessário: {scope}",
+            )
+        return ctx
+
+    return _checker
