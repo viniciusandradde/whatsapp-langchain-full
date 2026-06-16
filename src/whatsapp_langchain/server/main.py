@@ -56,6 +56,7 @@ from whatsapp_langchain.server.routes.captura_evolution import (
     router as captura_evolution_router,
 )
 from whatsapp_langchain.server.routes.disparador import router as disparador_router
+from whatsapp_langchain.server.routes.disparo import router as disparo_router
 from whatsapp_langchain.server.routes.catalogo import (
     router_mcp as mcp_router,
 )
@@ -379,6 +380,7 @@ app.include_router(perfil_router)
 app.include_router(pasta_router)
 app.include_router(campanha_router)
 app.include_router(disparador_router)
+app.include_router(disparo_router)
 app.include_router(captura_evolution_router)
 app.include_router(agendamento_regras_router)
 app.include_router(audit_router)

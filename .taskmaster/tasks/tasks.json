@@ -583,7 +583,7 @@
           "4",
           "6"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -591,9 +591,10 @@
             "description": "Definir os schemas Pydantic para configuração de origem (manual/grupos/contatos/janela_24h/segmento), request e response do preview com validações customizadas.",
             "dependencies": [],
             "details": "Criar em `server/routes/disparador.py` os modelos:\n\n1. **OrigemConfig(BaseModel):**\n   - `tipo: Literal['manual', 'grupos', 'contatos', 'janela_24h', 'segmento']`\n   - `grupos_ids: list[str] | None` - UUIDs dos grupos selecionados\n   - `segmento_query: str | None` - Query SQL-like para filtros futuros\n   - `telefones_manual: list[str] | None` - Lista manual de telefones\n   - `@model_validator(mode='after')` para garantir que `grupos_ids` só existe quando `tipo='grupos'`, `telefones_manual` só quando `tipo='manual'`, etc.\n\n2. **PreviewRequest(BaseModel):**\n   - `conexao_id: int`\n   - `origem: OrigemConfig`\n   - `mensagem: str = Field(min_length=1, max_length=4096)`\n   - `validar_numeros: bool = False` - Flag para chamar check_numbers (lento)\n\n3. **PreviewResponse(BaseModel):**\n   - `total_bruto: int` - Total antes de qualquer validação\n   - `count_valido: int` - Números com WhatsApp confirmado\n   - `count_invalido: int` - Sem WhatsApp ou bloqueado\n   - `count_duplicado: int` - wa_jid repetido removido\n   - `count_opt_out: int` - Na lista de supressão\n   - `total_disponivel: int` - Final que será disparado\n   - `amostra: list[dict]` - Primeiros N destinatários (truncado por plano)\n   - `amostra_truncada: bool` - Se True, upgrade necessário\n   - `limite_plano: int | None` - Limite mensal do plano atual\n\nSeguir padrão de `CampanhaCreate` em `campanha.py` para validadores e Field constraints.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. TestModelValidation: OrigemConfig com tipo='grupos' mas sem grupos_ids → ValidationError\n2. TestOrigemManual: tipo='manual' com telefones_manual=['5511999'] → válido\n3. TestOrigemInvalida: telefones_manual em tipo='grupos' → ValidationError\n4. TestPreviewRequestMinLength: mensagem vazia → ValidationError\n5. TestPreviewResponseSerialization: Assert JSON output com todos os campos",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:28:09.584Z"
           },
           {
             "id": 2,
@@ -603,9 +604,10 @@
               1
             ],
             "details": "Implementar em `server/routes/disparador.py` ou `shared/disparador.py`:\n\n```python\nasync def _resolver_destinatarios(\n    pool: AsyncConnectionPool,\n    empresa_id: int,\n    origem: OrigemConfig,\n) -> list[dict]:\n```\n\n**Switch por tipo:**\n\n1. **manual:** Normaliza telefones via `normalize_phone()` e formata como `{wa_jid}@s.whatsapp.net`\n\n2. **grupos:** Query SQL com DISTINCT ON para evitar duplicatas entre grupos:\n   ```sql\n   SELECT DISTINCT ON (gm.wa_jid) gm.wa_jid, cc.nome, cc.telefone\n   FROM grupo_membro gm\n   JOIN grupo g ON g.id = gm.grupo_id\n   LEFT JOIN contato_capturado cc ON cc.wa_jid = gm.wa_jid AND cc.empresa_id = $1\n   WHERE g.empresa_id = $1 AND g.id = ANY($2::uuid[])\n   ```\n\n3. **contatos:** Busca todos contato_capturado não promovidos:\n   ```sql\n   SELECT wa_jid, nome, telefone FROM contato_capturado\n   WHERE empresa_id = $1 AND promovido_cliente_id IS NULL\n   ```\n\n4. **janela_24h:** Clientes que interagiram nas últimas 24h via message_queue:\n   ```sql\n   SELECT DISTINCT c.telefone as wa_jid, c.nome, c.telefone\n   FROM cliente c\n   JOIN message_queue mq ON mq.phone_number = c.telefone\n   WHERE c.empresa_id = $1 AND mq.created_at > NOW() - INTERVAL '24 hours'\n   ```\n\n5. **segmento:** Retornar lista vazia por enquanto (placeholder para futuro)\n\nRetornar sempre `list[dict]` com keys `wa_jid`, `telefone` (nullable), `nome` (nullable).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. TestResolverManual: telefones_manual=['5511999999999'] → assert wa_jid='5511999999999@s.whatsapp.net'\n2. TestResolverGrupos: 2 grupos com 3 membros cada, 1 duplicado → assert len=5 (DISTINCT)\n3. TestResolverContatos: 5 contatos, 2 promovidos → assert len=3 (não promovidos)\n4. TestResolverJanela24h: Mock message_queue com interações → assert retorna corretamente\n5. TestResolverSegmento: tipo='segmento' → assert len=0 (placeholder)",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:28:14.852Z"
           },
           {
             "id": 3,
@@ -615,9 +617,10 @@
               2
             ],
             "details": "Implementar duas funções auxiliares:\n\n**1. Deduplicação por wa_jid:**\n```python\ndef _deduplicar_destinatarios(destinatarios: list[dict]) -> tuple[list[dict], int]:\n    \"\"\"Retorna (lista_unica, count_duplicados).\"\"\"\n    seen_jids: set[str] = set()\n    unicos: list[dict] = []\n    duplicados = 0\n    \n    for d in destinatarios:\n        if d['wa_jid'] in seen_jids:\n            duplicados += 1\n        else:\n            seen_jids.add(d['wa_jid'])\n            unicos.append(d)\n    \n    return unicos, duplicados\n```\n\n**2. Filtro de opt-out:**\n```python\nasync def _get_opt_outs(pool: AsyncConnectionPool, empresa_id: int) -> set[str]:\n    \"\"\"Retorna set de wa_jids que fizeram opt-out.\"\"\"\n    async with pool.connection() as conn:\n        rows = await conn.fetch(\n            \"SELECT telefone FROM disparador_opt_out WHERE empresa_id = $1\",\n            empresa_id\n        )\n    # Normalizar telefone para wa_jid format\n    return {f\"{r['telefone']}@s.whatsapp.net\" for r in rows}\n\ndef _filtrar_opt_out(\n    destinatarios: list[dict],\n    opt_outs: set[str]\n) -> tuple[list[dict], int]:\n    \"\"\"Retorna (lista_filtrada, count_opt_out).\"\"\"\n    filtrados = [d for d in destinatarios if d['wa_jid'] not in opt_outs]\n    return filtrados, len(destinatarios) - len(filtrados)\n```\n\n**Nota:** A tabela `disparador_opt_out` será criada na migration 121 (dependência da task 18). Usar query com COALESCE para graceful degradation se tabela não existir ainda.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. TestDeduplicacao: 5 dests com 2 wa_jid repetidos → assert len=3, duplicados=2\n2. TestDeduplicacaoOrdem: Primeiro registro deve ser mantido, não o último\n3. TestOptOutFiltra: 3 dests, 1 em opt_out → assert len=2, count_opt_out=1\n4. TestOptOutVazio: Nenhum opt-out cadastrado → assert len inalterado\n5. TestOptOutNormalizacao: Telefone '5511999' em opt_out filtra wa_jid '5511999@s.whatsapp.net'",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:28:19.923Z"
           },
           {
             "id": 4,
@@ -628,9 +631,10 @@
               3
             ],
             "details": "Implementar integração com `EvolutionClient.check_numbers()` (task 19):\n\n```python\nasync def _validar_numeros_evolution(\n    pool: AsyncConnectionPool,\n    conexao_id: int,\n    empresa_id: int,\n    destinatarios: list[dict],\n) -> tuple[list[dict], int, int]:\n    \"\"\"Valida números via Evolution, retorna (validos, count_valido, count_invalido).\"\"\"\n    \n    # 1. Buscar conexão\n    conexao = await get_conexao(pool, conexao_id, empresa_id)\n    if not conexao or conexao['provider'] != 'evolution':\n        # Não é Evolution, retornar todos como válidos (sem validação)\n        return destinatarios, len(destinatarios), 0\n    \n    # 2. Extrair telefones (só os que têm telefone, não LID-only)\n    phones = [d['telefone'] for d in destinatarios if d.get('telefone')]\n    \n    if not phones:\n        return destinatarios, len(destinatarios), 0\n    \n    # 3. Chamar check_numbers (chunks de 50)\n    from ..worker.evolution_client import EvolutionClient\n    client = EvolutionClient.from_conexao(conexao)\n    results = await client.check_numbers(phones)\n    \n    # 4. Filtrar válidos\n    valid_jids = {r['wa_jid'] for r in results if r['exists']}\n    validos = [d for d in destinatarios if d['wa_jid'] in valid_jids]\n    \n    return validos, len(validos), len(destinatarios) - len(validos)\n```\n\n**Importante:**\n- Só chamar quando `req.validar_numeros=True` (flag explícito, pois é lento)\n- Chunking de 50 números por request (implementado no EvolutionClient da task 19)\n- LID-only contacts (sem telefone) não podem ser validados, manter como válidos\n- Timeout de 30s por chunk para evitar bloqueio\n- Graceful degradation: se Evolution falhar, retornar todos como válidos com log de warning",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. TestValidacaoDesabilitada: validar_numeros=False → assert não chama check_numbers\n2. TestValidacaoEvolution: Mock check_numbers retorna 2 de 3 válidos → assert count_invalido=1\n3. TestValidacaoNaoEvolution: conexao.provider='twilio' → assert todos válidos (skip validação)\n4. TestValidacaoLIDOnly: Destinatário sem telefone (só wa_jid com @lid) → assert mantido como válido\n5. TestValidacaoFalha: Mock check_numbers raise → assert graceful degradation, todos válidos",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:28:25.062Z"
           },
           {
             "id": 5,
@@ -643,11 +647,13 @@
               4
             ],
             "details": "Criar o endpoint completo em `server/routes/disparador.py`:\n\n```python\nrouter = APIRouter(\n    prefix=\"/api/disparador\",\n    tags=[\"disparador\"],\n    dependencies=[Depends(verify_service_token)],\n)\n\n@router.post(\"/preview\")\nasync def preview_disparo(\n    req: PreviewRequest,\n    ctx: EmpresaContext = Depends(get_empresa_context),\n    pool = Depends(get_pool),\n) -> PreviewResponse:\n    # 1. Resolver destinatários\n    destinatarios = await _resolver_destinatarios(pool, ctx.empresa_id, req.origem)\n    total_bruto = len(destinatarios)\n    \n    # 2. Deduplicar\n    unicos, count_duplicado = _deduplicar_destinatarios(destinatarios)\n    \n    # 3. Filtrar opt-out\n    opt_outs = await _get_opt_outs(pool, ctx.empresa_id)\n    sem_opt_out, count_opt_out = _filtrar_opt_out(unicos, opt_outs)\n    \n    # 4. Validar números (se solicitado)\n    count_valido = len(sem_opt_out)\n    count_invalido = 0\n    if req.validar_numeros:\n        sem_opt_out, count_valido, count_invalido = await _validar_numeros_evolution(\n            pool, req.conexao_id, ctx.empresa_id, sem_opt_out\n        )\n    \n    # 5. Aplicar limite do plano\n    from ..shared.plano_limits import get_plano_info, get_uso_disparos_mes\n    plano = await get_plano_info(pool, ctx.empresa_id)\n    limite_plano = plano.features.get('disparador_max_contatos')\n    uso_atual = await get_uso_disparos_mes(pool, ctx.empresa_id)\n    \n    total_disponivel = count_valido\n    if limite_plano is not None:\n        disponivel_plano = limite_plano - uso_atual\n        total_disponivel = min(count_valido, max(0, disponivel_plano))\n    \n    # 6. Amostra truncada (free=10, paid=100)\n    limite_amostra = 10 if plano.slug == 'free' else 100\n    amostra = sem_opt_out[:limite_amostra]\n    amostra_truncada = len(sem_opt_out) > limite_amostra\n    \n    return PreviewResponse(\n        total_bruto=total_bruto,\n        count_valido=count_valido,\n        count_invalido=count_invalido,\n        count_duplicado=count_duplicado,\n        count_opt_out=count_opt_out,\n        total_disponivel=total_disponivel,\n        amostra=[{'wa_jid': d['wa_jid'], 'nome': d.get('nome')} for d in amostra],\n        amostra_truncada=amostra_truncada,\n        limite_plano=limite_plano,\n    )\n```\n\n**Registrar router em main.py:**\n```python\nfrom .routes.disparador import router as disparador_router\napp.include_router(disparador_router)\n```\n\n**Função auxiliar para uso mensal (em shared/plano_limits.py):**\n```python\nasync def get_uso_disparos_mes(pool, empresa_id: int) -> int:\n    async with pool.connection() as conn:\n        row = await conn.fetchrow(\n            \"\"\"SELECT COALESCE(SUM(total_enviados), 0) as uso\n               FROM campanha\n               WHERE empresa_id = $1\n                 AND created_at >= date_trunc('month', CURRENT_DATE)\"\"\",\n            empresa_id\n        )\n    return row['uso'] if row else 0\n```",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. TestSmoke: POST /api/disparador/preview sem auth → 401\n2. TestPreviewManual: origem.tipo='manual', telefones=['5511999'] → assert total_bruto=1\n3. TestPreviewLimitePlano: Plano free com limite 25, uso 20, 10 válidos → assert total_disponivel=5\n4. TestPreviewAmostraTruncada: 50 destinatários, plano free → assert len(amostra)=10, amostra_truncada=True\n5. TestPreviewCompleto: Origem grupos com dedup+opt_out+validação → assert todos os counts corretos\n6. TestE2E: Fluxo real com DB, criar grupo+membros → POST preview → assert response completa",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-16T21:28:30.554Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-16T21:28:30.554Z"
       },
       {
         "id": "8",
@@ -889,9 +895,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-16T21:22:42.939Z",
+      "lastModified": "2026-06-16T21:28:30.554Z",
       "taskCount": 11,
-      "completedCount": 6,
+      "completedCount": 7,
       "tags": [
         "disparador"
       ]
