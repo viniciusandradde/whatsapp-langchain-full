@@ -443,3 +443,55 @@ async def promover_contatos(
                 await conn.commit()
         promovidos += 1
     return promovidos
+
+
+async def despromover_contatos(
+    pool: AsyncConnectionPool, empresa_id: int, contato_ids: list[int]
+) -> dict:
+    """Desfaz a promoção: desvincula o contato do CRM e apaga o `cliente`.
+
+    SEGURANÇA: a FK `atendimento.cliente_id` é CASCADE — apagar um cliente com
+    atendimento apagaria o histórico de conversa. Por isso só removemos do CRM
+    clientes SEM atendimento; os que já têm conversa são apenas desvinculados
+    do staging (continuam no CRM) e reportados em `mantidos_com_atendimento`.
+
+    Returns:
+        {"removidos": int, "mantidos_com_atendimento": int}
+    """
+    removidos = 0
+    mantidos = 0
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT id, cliente_id FROM contato_capturado
+                 WHERE empresa_id = %s AND id = ANY(%s) AND cliente_id IS NOT NULL
+                """,
+                (empresa_id, contato_ids),
+            )
+            rows = await cur.fetchall()
+            for contato_id, cliente_id in rows:
+                # desvincula o staging (volta a ser selecionável)
+                await conn.execute(
+                    """
+                    UPDATE contato_capturado
+                       SET cliente_id = NULL, promovido_at = NULL
+                     WHERE id = %s AND empresa_id = %s
+                    """,
+                    (contato_id, empresa_id),
+                )
+                at = await conn.execute(
+                    "SELECT 1 FROM atendimento WHERE cliente_id = %s LIMIT 1",
+                    (cliente_id,),
+                )
+                if await at.fetchone() is None:
+                    # sem histórico → seguro apagar do CRM
+                    await conn.execute(
+                        "DELETE FROM cliente WHERE id = %s AND empresa_id = %s",
+                        (cliente_id, empresa_id),
+                    )
+                    removidos += 1
+                else:
+                    mantidos += 1
+            await conn.commit()
+    return {"removidos": removidos, "mantidos_com_atendimento": mantidos}

@@ -2772,6 +2772,15 @@ export async function promoverContatos(
   });
 }
 
+export async function despromoverContatos(
+  contatoIds: number[]
+): Promise<{ removidos: number; mantidos_com_atendimento: number }> {
+  return apiFetch<{ removidos: number; mantidos_com_atendimento: number }>(
+    `/api/captura/despromover`,
+    { method: "POST", body: { contato_ids: contatoIds } }
+  );
+}
+
 export async function capturarViaEvolution(
   conexaoId: number,
   tipo: "contatos" | "grupos"

@@ -10,6 +10,7 @@ import {
   type GrupoCapturado,
   capturarViaEvolution,
   createApiKey,
+  despromoverContatos,
   getCapturaLote,
   getContatosCapturados,
   getGruposCapturados,
@@ -81,6 +82,18 @@ export async function promoverContatosAction(
     const { promovidos } = await promoverContatos(ids);
     revalidatePath("/disparador/contatos");
     return { ok: true, data: promovidos };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function despromoverContatosAction(
+  ids: number[]
+): Promise<Result<{ removidos: number; mantidos_com_atendimento: number }>> {
+  try {
+    const data = await despromoverContatos(ids);
+    revalidatePath("/disparador/contatos");
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

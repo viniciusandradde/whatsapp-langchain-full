@@ -136,6 +136,10 @@ class TestCapturaSmoke:
         r = self._client().post("/api/captura/promover", json={"contato_ids": [1]})
         assert r.status_code == 401, r.text
 
+    def test_despromover_sem_auth_401(self) -> None:
+        r = self._client().post("/api/captura/despromover", json={"contato_ids": [1]})
+        assert r.status_code == 401, r.text
+
     def test_ext_ingest_contatos_sem_apikey_401(self) -> None:
         r = self._client().post(
             "/api/captura/contatos",
@@ -204,3 +208,14 @@ class TestCapturaUpsertPromocao:
         assert promovidos == 1
         again = await cap.promover_contatos(pool, empresa, ids)
         assert again == 0  # já promovido, não duplica
+
+        # despromover: remove do CRM (sem atendimento → apaga cliente) e
+        # desvincula o staging (volta a ser promovível).
+        res = await cap.despromover_contatos(pool, empresa, ids)
+        assert res["removidos"] == 1
+        assert res["mantidos_com_atendimento"] == 0
+        contatos2 = await cap.listar_contatos(pool, empresa)
+        alvo = next(c for c in contatos2 if c["wa_jid"] == jid)
+        assert alvo["promovido_at"] is None  # desvinculado
+        # como foi desvinculado, dá pra promover de novo
+        assert await cap.promover_contatos(pool, empresa, ids) == 1
