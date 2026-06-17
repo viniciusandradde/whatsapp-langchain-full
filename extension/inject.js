@@ -159,7 +159,7 @@
   window.addEventListener("message", (ev) => {
     const d = ev.data;
     if (!d || d.source !== "nexus-ext") return;
-    if (d.cmd !== "ensure-wpp" && d.cmd !== "send") return;
+    if (d.cmd !== "ensure-wpp" && d.cmd !== "send" && d.cmd !== "validar") return;
     const reply = (payload) =>
       window.postMessage({ source: "nexus-page", reqId: d.reqId, ...payload }, "*");
     (async () => {
@@ -167,6 +167,15 @@
         const WPP = window.WPP;
         if (!WPP) {
           reply({ error: "WPP (wa-js) não carregado na página" });
+          return;
+        }
+        if (d.cmd === "validar") {
+          // checa se o número tem WhatsApp (onWhatsApp). Retorna o número real
+          // (wid) — útil pra regra-do-9 do BR.
+          const num = String(d.telefone || "").replace(/\D/g, "");
+          const res = await WPP.contact.queryExists(num);
+          const wid = res && (res.wid?._serialized || res.wid || res.id?._serialized);
+          reply({ ok: true, exists: !!res, wid: wid ? String(wid) : null });
           return;
         }
         if (d.cmd === "ensure-wpp") {

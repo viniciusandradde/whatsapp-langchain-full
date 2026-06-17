@@ -36,6 +36,14 @@
     return out;
   }
 
+  function telDoJid(jid) {
+    if (jid && jid.endsWith("@s.whatsapp.net")) {
+      const d = jid.split("@")[0].replace(/\D/g, "");
+      return d ? "+" + d : null;
+    }
+    return null; // @lid não tem telefone derivável
+  }
+
   function spintax(txt) {
     // {a|b|c} → escolha aleatória; resolve aninhados de dentro pra fora.
     let s = txt;
@@ -103,6 +111,11 @@
         <label>Contatos (1 por linha — nome,telefone,campo1…)</label>
         <textarea id="nx-lista" rows="5" placeholder="João,+5511999999999
 Maria,+5511988888888"></textarea>
+        <div class="nx-ctrls">
+          <button class="nx-btn nx-sec" id="nx-validar">Validar nº</button>
+          <button class="nx-btn nx-sec" id="nx-imp-contatos">Importar contatos</button>
+          <button class="nx-btn nx-sec" id="nx-imp-grupos">Importar grupos</button>
+        </div>
         <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})</label>
         <textarea id="nx-msg" rows="4" placeholder="Olá [nome]! {Tudo bem|Como vai}?"></textarea>
         <label>📎 Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda)</label>
@@ -164,6 +177,71 @@ Maria,+5511988888888"></textarea>
         ? `${anexos.length} anexo(s) pronto(s). 1º leva a legenda.`
         : "Nenhum anexo.";
     };
+    $("nx-validar").onclick = validarLista;
+    $("nx-imp-contatos").onclick = () => importar("contatos");
+    $("nx-imp-grupos").onclick = () => importar("grupos");
+  }
+
+  async function validarLista() {
+    if (rodando) return;
+    const lista = parseLista($("nx-lista").value);
+    if (!lista.length) return log("❌ Nada pra validar.");
+    try {
+      log("Verificando sessão…");
+      const wpp = await B().garantirWpp();
+      if (wpp.error) throw new Error(wpp.error);
+      if (!wpp.authenticated) throw new Error("WhatsApp não logado.");
+      const validos = [];
+      let invalidos = 0;
+      for (let i = 0; i < lista.length; i++) {
+        const r = await B().validarNumero(lista[i].telefone);
+        setBar(((i + 1) / lista.length) * 100);
+        log(`Validando ${i + 1}/${lista.length} · ✅ ${validos.length} · ❌ ${invalidos}`);
+        if (r.ok && r.exists) {
+          // usa o número real (wid) quando vier, pra normalizar regra-do-9
+          const real = telDoJid(r.wid || "") || lista[i].telefone;
+          validos.push(
+            [lista[i].nome, real, ...lista[i].campos.filter((c) => c !== lista[i].telefone && c !== lista[i].nome)]
+              .filter(Boolean)
+              .join(",")
+          );
+        } else {
+          invalidos++;
+        }
+        await new Promise((res) => setTimeout(res, 400)); // rate-limit suave
+      }
+      $("nx-lista").value = validos.join("\n");
+      log(`✅ ${validos.length} válidos · ❌ ${invalidos} removidos da lista.`);
+      setBar(0);
+    } catch (e) {
+      log("❌ " + e.message);
+    }
+  }
+
+  async function importar(tipo) {
+    try {
+      log(`Importando ${tipo} do WhatsApp…`);
+      const page = await B().pedirScrape(tipo);
+      if (page.error) throw new Error(page.error);
+      const linhas = [];
+      const vistos = new Set();
+      const add = (nome, tel) => {
+        if (!tel || vistos.has(tel)) return;
+        vistos.add(tel);
+        linhas.push((nome ? nome + "," : "") + tel);
+      };
+      if (tipo === "contatos") {
+        for (const c of page.contatos || []) add(c.push_name || c.name || "", telDoJid(c.wa_jid));
+      } else {
+        for (const g of page.grupos || [])
+          for (const m of g.membros || []) add("", telDoJid(m.wa_jid));
+      }
+      const atual = $("nx-lista").value.trim();
+      $("nx-lista").value = (atual ? atual + "\n" : "") + linhas.join("\n");
+      log(`✅ ${linhas.length} ${tipo === "contatos" ? "contatos" : "membros"} com telefone adicionados.`);
+    } catch (e) {
+      log("❌ " + e.message);
+    }
   }
 
   function log(m) {
