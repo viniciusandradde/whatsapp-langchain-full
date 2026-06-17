@@ -28,6 +28,7 @@ interface Props {
 
 const STATUS_LABELS: Record<Campanha["status"], string> = {
   draft: "rascunho",
+  scheduled: "agendada",
   running: "em execução",
   done: "concluída",
   partial: "parcial",

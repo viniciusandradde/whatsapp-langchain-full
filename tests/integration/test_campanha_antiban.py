@@ -45,6 +45,61 @@ class TestCampanhaCreateSmoke:
 
 
 @pytest.mark.docker_demo
+class TestAgendamento:
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"agd-{_RUN}", f"agd-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_agenda_e_claim_atomico(self, empresa) -> None:
+        from whatsapp_langchain.shared.campanha import (
+            claim_scheduled_due,
+            create_campanha,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            out = await create_campanha(
+                pool,
+                empresa,
+                nome=f"agendada-{_RUN}",
+                descricao=None,
+                mensagem="Olá",
+                conexao_id=None,
+                intervalo_ms=500,
+                max_destinatarios=1000,
+                telefones_brutos=["+5511970009999"],
+                user_id=None,
+                scheduled_at="2020-01-01T00:00:00+00:00",  # passado → vencida
+                agendar=True,
+            )
+        assert out["status"] == "scheduled", out
+
+        # 1º claim pega; 2º não devolve de novo (idempotente/atômico)
+        due1 = await claim_scheduled_due(pool)
+        assert (empresa, out["id"]) in due1
+        due2 = await claim_scheduled_due(pool)
+        assert (empresa, out["id"]) not in due2
+        # status agora é running
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            st = conn.execute(
+                "SELECT status FROM campanha WHERE id = %s", (out["id"],)
+            ).fetchone()
+        assert st[0] == "running", st
+
+
+@pytest.mark.docker_demo
 class TestCrmTargeting:
     @pytest.fixture(scope="class")
     def empresa(self):

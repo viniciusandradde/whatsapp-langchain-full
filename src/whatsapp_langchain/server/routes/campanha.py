@@ -68,6 +68,7 @@ class CampanhaCreate(BaseModel):
     # Sub-fase B+ (padrão profissional) (mig 051)
     modelo_mensagem_id: int | None = None
     scheduled_at: str | None = None  # ISO datetime
+    agendar: bool = False  # True + scheduled_at → nasce 'scheduled' (mig 124)
     tipo: str = "broadcast"  # broadcast|transactional|reativacao
     filtro_segmento: str | None = Field(default=None, max_length=120)
     filtro_tags: list[str] | None = None
@@ -176,6 +177,7 @@ async def create_endpoint(
             kill_switch_pct=body.kill_switch_pct,
             media_url=body.media_url,
             media_tipo=body.media_tipo,
+            agendar=body.agendar,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
