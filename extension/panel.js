@@ -118,6 +118,63 @@ Maria,+5511988888888"></textarea>
         </div>
         <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})</label>
         <textarea id="nx-msg" rows="4" placeholder="Olá [nome]! {Tudo bem|Como vai}?"></textarea>
+        <label>Tipo de mensagem</label>
+        <select id="nx-tipo">
+          <option value="texto">Texto / mídia</option>
+          <option value="enquete">Enquete</option>
+          <option value="localizacao">Localização</option>
+          <option value="vcard">Contato (vCard)</option>
+          <option value="pix">PIX</option>
+          <option value="evento">Evento</option>
+          <option value="lista">Lista / menu</option>
+          <option value="convite-grupo">Convite de grupo</option>
+        </select>
+        <div id="nx-tipo-campos">
+          <div data-tipo="enquete" style="display:none">
+            <label>Pergunta</label><input id="nx-enq-perg" placeholder="Qual sua preferência?">
+            <label>Opções (1 por linha)</label><textarea id="nx-enq-opcoes" rows="3" placeholder="Opção A
+Opção B"></textarea>
+            <label><input type="checkbox" id="nx-enq-multi"> Permitir múltiplas</label>
+          </div>
+          <div data-tipo="localizacao" style="display:none">
+            <div class="nx-row">
+              <div><label>Latitude</label><input id="nx-loc-lat" placeholder="-23.55"></div>
+              <div><label>Longitude</label><input id="nx-loc-lng" placeholder="-46.63"></div>
+            </div>
+            <label>Nome / endereço</label><input id="nx-loc-nome" placeholder="Loja Centro">
+          </div>
+          <div data-tipo="vcard" style="display:none">
+            <label>Nome do contato</label><input id="nx-vc-nome" placeholder="Suporte">
+            <label>Telefone do contato</label><input id="nx-vc-tel" placeholder="+5511999999999">
+          </div>
+          <div data-tipo="pix" style="display:none">
+            <label>Tipo de chave</label>
+            <select id="nx-pix-tipo"><option>CPF</option><option>CNPJ</option><option>EMAIL</option><option>PHONE</option><option>EVP</option></select>
+            <label>Chave</label><input id="nx-pix-chave" placeholder="chave pix">
+            <label>Nome do recebedor</label><input id="nx-pix-nome" placeholder="Empresa LTDA">
+          </div>
+          <div data-tipo="evento" style="display:none">
+            <label>Nome do evento</label><input id="nx-ev-nome">
+            <label>Descrição</label><input id="nx-ev-desc">
+            <div class="nx-row">
+              <div><label>Início</label><input id="nx-ev-inicio" type="datetime-local"></div>
+              <div><label>Fim</label><input id="nx-ev-fim" type="datetime-local"></div>
+            </div>
+            <label>Local</label><input id="nx-ev-local">
+          </div>
+          <div data-tipo="lista" style="display:none">
+            <label>Texto do botão</label><input id="nx-li-btn" placeholder="Ver opções">
+            <label>Título / descrição</label><input id="nx-li-desc" placeholder="Cardápio">
+            <label>Itens (titulo|descrição, 1 por linha)</label>
+            <textarea id="nx-li-rows" rows="3" placeholder="Pizza|R$40
+Refri|R$8"></textarea>
+          </div>
+          <div data-tipo="convite-grupo" style="display:none">
+            <label>Group ID (xxxx@g.us)</label><input id="nx-cg-gid" placeholder="1203...@g.us">
+            <label>Invite code</label><input id="nx-cg-code" placeholder="abc123">
+            <label>Legenda</label><input id="nx-cg-cap" placeholder="Entra no grupo!">
+          </div>
+        </div>
         <label>📎 Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda)</label>
         <input id="nx-files" type="file" multiple
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
@@ -139,10 +196,27 @@ Maria,+5511988888888"></textarea>
         <div class="nx-log" id="nx-log">Pronto. Abra o WhatsApp Web logado.</div>
         <button class="nx-btn nx-sec" id="nx-csv" style="display:none">Baixar falhas (CSV)</button>
         <div class="nx-warn">⚠️ Disparo em massa pela sua sessão pode <b>banir o número</b>.
-          Aqueça o número, use lotes pequenos e intervalos altos. Volume real → WABA oficial.</div>
+          Aqueça o número, use lotes pequenos e intervalos altos.</div>
+        <div class="nx-hint">📨 <b>Volume seguro / API Oficial (WABA)</b>: use o painel do
+          Nexus → <a id="nx-link-painel" href="#" target="_blank" style="color:#075e54">Campanhas</a>
+          (template aprovado, sem risco de ban, funciona no celular).</div>
       </div>`;
     document.body.appendChild(p);
     $("nx-close").onclick = () => p.classList.remove("open");
+    const link = $("nx-link-painel");
+    if (link)
+      link.onclick = async (e) => {
+        e.preventDefault();
+        const cfg = await B().enviarBackground({ type: "get-config" });
+        let url = "https://chat.vsanexus.com/campanhas";
+        if (cfg && cfg.backendUrl) {
+          try {
+            const u = new URL(cfg.backendUrl);
+            url = `${u.protocol}//${u.host.replace(/^api\./, "chat.")}/campanhas`;
+          } catch (_) {}
+        }
+        window.open(url, "_blank");
+      };
     $("nx-start").onclick = iniciar;
     $("nx-pause").onclick = () => {
       pausado = !pausado;
@@ -180,6 +254,98 @@ Maria,+5511988888888"></textarea>
     $("nx-validar").onclick = validarLista;
     $("nx-imp-contatos").onclick = () => importar("contatos");
     $("nx-imp-grupos").onclick = () => importar("grupos");
+    $("nx-tipo").onchange = () => {
+      const t = $("nx-tipo").value;
+      document.querySelectorAll("#nx-tipo-campos > div").forEach((d) => {
+        d.style.display = d.getAttribute("data-tipo") === t ? "block" : "none";
+      });
+    };
+  }
+
+  // Monta o payload do tipo rico selecionado (fixo p/ todos os destinatários).
+  function payloadTipo(tipo) {
+    if (tipo === "enquete") {
+      return {
+        tipo,
+        pergunta: $("nx-enq-perg").value.trim(),
+        opcoes: $("nx-enq-opcoes").value.split("\n").map((s) => s.trim()).filter(Boolean),
+        multipla: $("nx-enq-multi").checked,
+      };
+    }
+    if (tipo === "localizacao") {
+      return {
+        tipo,
+        lat: $("nx-loc-lat").value.trim(),
+        lng: $("nx-loc-lng").value.trim(),
+        nome: $("nx-loc-nome").value.trim(),
+        endereco: $("nx-loc-nome").value.trim(),
+      };
+    }
+    if (tipo === "vcard") {
+      return {
+        tipo,
+        contatoNome: $("nx-vc-nome").value.trim(),
+        contatoTelefone: $("nx-vc-tel").value.trim(),
+      };
+    }
+    if (tipo === "pix") {
+      return {
+        tipo,
+        pixTipo: $("nx-pix-tipo").value,
+        pixChave: $("nx-pix-chave").value.trim(),
+        pixNome: $("nx-pix-nome").value.trim(),
+      };
+    }
+    if (tipo === "evento") {
+      return {
+        tipo,
+        evNome: $("nx-ev-nome").value.trim(),
+        evDesc: $("nx-ev-desc").value.trim(),
+        evInicio: $("nx-ev-inicio").value,
+        evFim: $("nx-ev-fim").value,
+        evLocal: $("nx-ev-local").value.trim(),
+      };
+    }
+    if (tipo === "lista") {
+      const titulo = $("nx-li-desc").value.trim() || "Opções";
+      const rows = $("nx-li-rows")
+        .value.split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((ln, i) => {
+          const [t, d] = ln.split("|");
+          return { rowId: "r" + i, title: (t || "").trim(), description: (d || "").trim() };
+        });
+      return {
+        tipo,
+        btn: $("nx-li-btn").value.trim() || "Ver opções",
+        desc: $("nx-li-desc").value.trim(),
+        titulo,
+        sections: [{ title: titulo, rows }],
+      };
+    }
+    if (tipo === "convite-grupo") {
+      return {
+        tipo,
+        groupId: $("nx-cg-gid").value.trim(),
+        inviteCode: $("nx-cg-code").value.trim(),
+        caption: $("nx-cg-cap").value.trim(),
+      };
+    }
+    return null;
+  }
+
+  function validarPayloadTipo(p) {
+    if (p.tipo === "enquete" && (!p.pergunta || p.opcoes.length < 2))
+      return "Enquete precisa de pergunta + 2 opções.";
+    if (p.tipo === "localizacao" && (!p.lat || !p.lng))
+      return "Informe latitude e longitude.";
+    if (p.tipo === "vcard" && !p.contatoTelefone) return "Informe o telefone do contato.";
+    if (p.tipo === "pix" && !p.pixChave) return "Informe a chave PIX.";
+    if (p.tipo === "evento" && !p.evNome) return "Informe o nome do evento.";
+    if (p.tipo === "lista" && !p.sections[0].rows.length) return "Adicione itens na lista.";
+    if (p.tipo === "convite-grupo" && !p.groupId) return "Informe o Group ID.";
+    return null;
   }
 
   async function validarLista() {
@@ -259,9 +425,17 @@ Maria,+5511988888888"></textarea>
     if (rodando) return;
     const lista = parseLista($("nx-lista").value);
     const msg = $("nx-msg").value.trim();
+    const tipo = $("nx-tipo").value;
     if (!lista.length) return log("❌ Adicione contatos válidos (com telefone).");
-    if (!msg && !anexos.length)
-      return log("❌ Escreva a mensagem ou anexe um arquivo.");
+    let payloadFixo = null;
+    if (tipo === "texto") {
+      if (!msg && !anexos.length)
+        return log("❌ Escreva a mensagem ou anexe um arquivo.");
+    } else {
+      payloadFixo = payloadTipo(tipo);
+      const err = validarPayloadTipo(payloadFixo);
+      if (err) return log("❌ " + err);
+    }
     const min = Math.max(1, Number($("nx-min").value || 5)) * 1000;
     const max = Math.max(min, Number($("nx-max").value || 15) * 1000);
     const pausaCada = Math.max(0, Number($("nx-pausa-cada").value || 0));
@@ -325,7 +499,10 @@ Maria,+5511988888888"></textarea>
         let wamid = "";
         try {
           let r;
-          if (anexos.length) {
+          if (payloadFixo) {
+            // tipo rico (enquete/pix/evento/lista/localização/vcard/convite)
+            r = await B().enviarTipo(row.telefone, payloadFixo);
+          } else if (anexos.length) {
             // 1º anexo leva a legenda (mensagem); os demais sem legenda.
             for (let a = 0; a < anexos.length; a++) {
               r = await B().enviarMidia(
