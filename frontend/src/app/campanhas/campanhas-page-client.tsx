@@ -41,6 +41,7 @@ interface Props {
 
 const STATUS_LABELS: Record<Campanha["status"], string> = {
   draft: "rascunho",
+  scheduled: "agendada",
   running: "em execução",
   done: "concluída",
   partial: "parcial",
@@ -49,6 +50,7 @@ const STATUS_LABELS: Record<Campanha["status"], string> = {
 
 const STATUS_VARIANTS: Record<Campanha["status"], "default" | "outline" | "secondary" | "destructive"> = {
   draft: "outline",
+  scheduled: "default",
   running: "default",
   done: "secondary",
   partial: "outline",
@@ -245,6 +247,7 @@ export function CampanhasPageClient({
       // Sub-fase B+ (padrão profissional) (mig 051)
       modelo_mensagem_id: modeloRaw ? Number(modeloRaw) : null,
       scheduled_at: scheduledRaw ? new Date(scheduledRaw).toISOString() : null,
+      agendar: !!scheduledRaw,
       tipo: (String(fd.get("tipo") || "broadcast") as "broadcast" | "transactional" | "reativacao"),
       filtro_segmento: String(fd.get("filtro_segmento") || "").trim() || null,
       filtro_tags: tagsRaw

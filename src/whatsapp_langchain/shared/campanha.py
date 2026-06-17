@@ -31,6 +31,7 @@ from whatsapp_langchain.shared.conexao import (
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.outbound import _build_client, send_template_by_id
+from whatsapp_langchain.shared.rls_context import empresa_scope
 
 logger = structlog.get_logger()
 
@@ -189,6 +190,8 @@ async def create_campanha(
     # Mídia (mig 123) — foto/vídeo/doc; mensagem vira legenda
     media_url: str | None = None,
     media_tipo: str | None = None,
+    # Agendamento (mig 124) — quando True + scheduled_at, nasce 'scheduled'
+    agendar: bool = False,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -221,6 +224,9 @@ async def create_campanha(
             f"{len(normalized)} destinatários > limite {max_destinatarios}"
         )
 
+    # Nasce 'scheduled' quando agendada (poller dispara no horário); senão draft.
+    status_inicial = "scheduled" if (agendar and scheduled_at) else "draft"
+
     async with pool.connection() as conn:
         async with conn.transaction():
             cur = await conn.execute(
@@ -228,13 +234,13 @@ async def create_campanha(
                 INSERT INTO campanha
                     (empresa_id, nome, descricao, mensagem, conexao_id,
                      intervalo_ms, max_destinatarios, total_destinatarios,
-                     created_by_user_id,
+                     created_by_user_id, status,
                      modelo_mensagem_id, scheduled_at, tipo,
                      filtro_segmento, filtro_tags,
                      message_template_id, template_variaveis,
                      intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
                      media_url, media_tipo)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s)
                 RETURNING {_COLS}
                 """,
@@ -248,6 +254,7 @@ async def create_campanha(
                     max_destinatarios,
                     len(normalized),
                     user_id,
+                    status_inicial,
                     modelo_mensagem_id,
                     scheduled_at,
                     tipo,
@@ -408,19 +415,27 @@ def _should_kill_switch(
 
 
 async def _dispatch_loop(
-    pool: AsyncConnectionPool, empresa_id: int, camp_id: int
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    camp_id: int,
+    *,
+    ja_running: bool = False,
 ) -> None:
     """Loop de envio executado em asyncio.create_task.
 
     Lê telefones pendentes em batches de 50, envia 1 a 1 com cooldown.
     Re-checa status da campanha a cada item — se virou 'aborted',
     para imediatamente (deixa pendentes como 'pendente').
+
+    `ja_running=True`: a campanha já foi transicionada pra 'running' pelo poller
+    de agendamento (claim atômico) — pula a guarda de 'draft' e a transição.
     """
     log = logger.bind(camp_id=camp_id, empresa_id=empresa_id)
     log.info("campanha_dispatch_started")
 
     camp = await get_campanha(pool, empresa_id, camp_id)
-    if camp is None or camp["status"] != "draft":
+    estado_ok = "running" if ja_running else "draft"
+    if camp is None or camp["status"] != estado_ok:
         log.warning("campanha_dispatch_invalid_state", status=camp and camp["status"])
         return
 
@@ -471,14 +486,15 @@ async def _dispatch_loop(
     max_ms = (jrow[1] if jrow else None) or fixo
     kill_pct = jrow[2] if jrow else None
 
-    # Marca como running
-    async with pool.connection() as conn:
-        await conn.execute(
-            "UPDATE campanha SET status='running', started_at=NOW(), updated_at=NOW() "
-            "WHERE id = %s AND status='draft'",
-            (camp_id,),
-        )
-        await conn.commit()
+    # Marca como running (quando agendada, o poller já fez o claim → pula).
+    if not ja_running:
+        async with pool.connection() as conn:
+            await conn.execute(
+                "UPDATE campanha SET status='running', started_at=NOW(), updated_at=NOW() "
+                "WHERE id = %s AND status='draft'",
+                (camp_id,),
+            )
+            await conn.commit()
 
     while True:
         # Recheca abort a cada batch
@@ -669,3 +685,53 @@ def schedule_dispatch(
 
     task.add_done_callback(_on_done)
     return task
+
+
+async def claim_scheduled_due(pool: AsyncConnectionPool) -> list[tuple[int, int]]:
+    """Claim atômico de campanhas agendadas vencidas (scheduled_at <= now()).
+
+    Usa `FOR UPDATE SKIP LOCKED` + transição `scheduled→running` na mesma
+    transação, então 2 instâncias da API nunca disparam a mesma campanha.
+    Retorna lista de `(empresa_id, camp_id)` reivindicadas (já em 'running').
+    """
+    claimed: list[tuple[int, int]] = []
+    # bypass de RLS: poller é cross-tenant (varre todas as empresas).
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                """
+                UPDATE campanha SET status='running', started_at=NOW(), updated_at=NOW()
+                 WHERE id IN (
+                    SELECT id FROM campanha
+                     WHERE status='scheduled' AND scheduled_at IS NOT NULL
+                       AND scheduled_at <= NOW()
+                     ORDER BY scheduled_at
+                     FOR UPDATE SKIP LOCKED
+                     LIMIT 20
+                 )
+                RETURNING empresa_id, id
+                """
+            )
+            claimed = [(r[0], r[1]) for r in await cur.fetchall()]
+    return claimed
+
+
+async def run_scheduled_poller(pool: AsyncConnectionPool, interval_s: float = 30.0) -> None:
+    """Loop infinito: a cada `interval_s`, claim das agendadas vencidas e
+    dispara cada uma (já 'running' pelo claim). Rodar como task no lifespan."""
+    while True:
+        try:
+            due = await claim_scheduled_due(pool)
+            for empresa_id, camp_id in due:
+                logger.info("campanha_scheduled_fired", camp_id=camp_id)
+                # empresa_scope capturado pelo create_task (contextvars) → o
+                # _dispatch_loop roda com o tenant certo apesar do poller ser global.
+                with empresa_scope(empresa_id):
+                    task = asyncio.create_task(
+                        _dispatch_loop(pool, empresa_id, camp_id, ja_running=True)
+                    )
+                _BG_TASKS.add(task)
+                task.add_done_callback(_BG_TASKS.discard)
+        except Exception as e:  # noqa: BLE001 — poller nunca pode morrer
+            logger.error("campanha_scheduled_poller_error", error=str(e))
+        await asyncio.sleep(interval_s)

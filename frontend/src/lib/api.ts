@@ -2565,7 +2565,7 @@ export interface Campanha {
   descricao: string | null;
   mensagem: string;
   conexao_id: number | null;
-  status: "draft" | "running" | "done" | "partial" | "aborted";
+  status: "draft" | "scheduled" | "running" | "done" | "partial" | "aborted";
   intervalo_ms: number;
   max_destinatarios: number;
   total_destinatarios: number;
@@ -2605,6 +2605,7 @@ export interface CampanhaCreateInput {
   // Sub-fase B+ (padrão profissional) (mig 051)
   modelo_mensagem_id?: number | null;
   scheduled_at?: string | null;
+  agendar?: boolean;
   tipo?: "broadcast" | "transactional" | "reativacao";
   filtro_segmento?: string | null;
   filtro_tags?: string[] | null;

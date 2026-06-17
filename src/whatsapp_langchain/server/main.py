@@ -203,12 +203,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("rbac_seed_default_failed", error=str(exc))
 
     # Aquece o pool da app (chat_nexus_app ou postgres fallback)
-    await get_pool()
+    app_pool = await get_pool()
+
+    # Poller de campanhas agendadas (mig 124) — dispara no scheduled_at.
+    import asyncio as _asyncio
+
+    from whatsapp_langchain.shared.campanha import run_scheduled_poller
+
+    scheduled_poller_task = _asyncio.create_task(run_scheduled_poller(app_pool))
     logger.info("server_ready")
 
     yield
 
     # Shutdown
+    scheduled_poller_task.cancel()
     await close_pool()
     logger.info("server_stopped")
 
