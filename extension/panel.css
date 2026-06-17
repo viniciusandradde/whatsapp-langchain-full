@@ -1,0 +1,146 @@
+/* Painel Nexus Disparador injetado no WhatsApp Web (Slice E1). */
+#nexus-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483646;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #075e54;
+  color: #fff;
+  border: 0;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+#nexus-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 80px;
+  z-index: 2147483647;
+  width: 360px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #fff;
+  color: #222;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 13px;
+  display: none;
+}
+#nexus-panel.open {
+  display: block;
+}
+#nexus-panel .nx-head {
+  background: #075e54;
+  color: #fff;
+  padding: 10px 12px;
+  font-weight: 600;
+  border-radius: 10px 10px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#nexus-panel .nx-head .nx-x {
+  cursor: pointer;
+  opacity: 0.85;
+}
+#nexus-panel .nx-body {
+  padding: 12px;
+}
+#nexus-panel label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #667;
+  margin: 8px 0 3px;
+}
+#nexus-panel textarea,
+#nexus-panel input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #ccd;
+  border-radius: 6px;
+  padding: 7px;
+  font-size: 12px;
+  font-family: inherit;
+}
+#nexus-panel textarea {
+  resize: vertical;
+}
+#nexus-panel .nx-row {
+  display: flex;
+  gap: 8px;
+}
+#nexus-panel .nx-row > div {
+  flex: 1;
+}
+#nexus-panel button.nx-btn {
+  width: 100%;
+  padding: 9px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 6px;
+  background: #075e54;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+#nexus-panel button.nx-btn.nx-stop {
+  background: #c0392b;
+}
+#nexus-panel button.nx-btn.nx-sec {
+  background: #eee;
+  color: #333;
+}
+#nexus-panel button.nx-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+#nexus-panel .nx-ctrls {
+  display: flex;
+  gap: 8px;
+}
+#nexus-panel .nx-ctrls button {
+  margin-top: 10px;
+}
+#nexus-panel .nx-log {
+  margin-top: 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 140px;
+  overflow-y: auto;
+  background: #f6f7f8;
+  border-radius: 6px;
+  padding: 8px;
+}
+#nexus-panel .nx-bar {
+  height: 6px;
+  border-radius: 4px;
+  background: #e3e6e8;
+  overflow: hidden;
+  margin-top: 8px;
+}
+#nexus-panel .nx-bar > i {
+  display: block;
+  height: 100%;
+  background: #25d366;
+  width: 0;
+  transition: width 0.2s;
+}
+#nexus-panel .nx-warn {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #8a6d3b;
+  background: #fcf8e3;
+  border-radius: 6px;
+  padding: 7px;
+}
+#nexus-panel .nx-hint {
+  font-size: 11px;
+  color: #889;
+  margin-top: 4px;
+}
