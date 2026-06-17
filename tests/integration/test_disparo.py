@@ -92,3 +92,49 @@ class TestPreviewResolver:
         assert res.count_duplicado == 1  # mesmo telefone
         assert res.total_disponivel == 1  # após dedup
         assert res.amostra == [tel]
+
+
+@pytest.mark.docker_demo
+class TestPreviewGatingPlano:
+    """Gate de plano (migration 122): Free limita a 25 contatos por disparo."""
+
+    @pytest.fixture(scope="class")
+    def empresa_free(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"gate-{_RUN}", f"gate-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+            # vincula ao plano Free (gate de 25)
+            conn.execute(
+                "UPDATE empresa SET plano_id = (SELECT id FROM plano WHERE slug='free')"
+                " WHERE id = %s",
+                (eid,),
+            )
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_free_excede_limite_25(self, empresa_free) -> None:
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.disparo import OrigemConfig, preview_disparo
+
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            # 30 contatos únicos (telefone só-dígitos) > cap de 25
+            for i in range(30):
+                conn.execute(
+                    "INSERT INTO contato_capturado (empresa_id, wa_jid, telefone)"
+                    " VALUES (%s, %s, %s)",
+                    (empresa_free, f"g{_RUN}{i}@s.whatsapp.net", f"+55119{i:08d}"),
+                )
+
+        pool = await get_pool()
+        res = await preview_disparo(
+            pool, empresa_free, OrigemConfig(tipo="contatos"), validar_numeros=False
+        )
+        assert res.total_disponivel == 30
+        assert res.limite_plano == 25  # gate do plano Free ativo
+        assert res.excede_plano is True
