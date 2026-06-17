@@ -105,6 +105,10 @@
 Maria,+5511988888888"></textarea>
         <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})</label>
         <textarea id="nx-msg" rows="4" placeholder="Olá [nome]! {Tudo bem|Como vai}?"></textarea>
+        <label>📎 Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda)</label>
+        <input id="nx-files" type="file" multiple
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
+        <div class="nx-hint" id="nx-files-info">Nenhum anexo. (mídia em massa = maior risco de ban)</div>
         <div class="nx-row">
           <div><label>Intervalo mín (s)</label><input id="nx-min" type="number" value="5" min="1"></div>
           <div><label>Intervalo máx (s)</label><input id="nx-max" type="number" value="15" min="1"></div>
@@ -136,6 +140,30 @@ Maria,+5511988888888"></textarea>
       parar = true;
       log("⏹ Parando…");
     };
+    $("nx-files").onchange = async (e) => {
+      const files = Array.from(e.target.files || []);
+      anexos = [];
+      for (const f of files) {
+        if (f.size > 16 * 1024 * 1024) {
+          log("❌ " + f.name + " ignorado (> 16MB).");
+          continue;
+        }
+        try {
+          const dataUrl = await new Promise((res, rej) => {
+            const rd = new FileReader();
+            rd.onload = () => res(rd.result);
+            rd.onerror = rej;
+            rd.readAsDataURL(f);
+          });
+          anexos.push({ dataUrl, filename: f.name });
+        } catch (_) {
+          log("❌ falha ao ler " + f.name);
+        }
+      }
+      $("nx-files-info").textContent = anexos.length
+        ? `${anexos.length} anexo(s) pronto(s). 1º leva a legenda.`
+        : "Nenhum anexo.";
+    };
   }
 
   function log(m) {
@@ -147,13 +175,15 @@ Maria,+5511988888888"></textarea>
     if (el) el.style.width = Math.max(0, Math.min(100, pct)) + "%";
   }
   let falhasCsv = [];
+  let anexos = []; // [{dataUrl, filename}]
 
   async function iniciar() {
     if (rodando) return;
     const lista = parseLista($("nx-lista").value);
     const msg = $("nx-msg").value.trim();
     if (!lista.length) return log("❌ Adicione contatos válidos (com telefone).");
-    if (!msg) return log("❌ Escreva a mensagem.");
+    if (!msg && !anexos.length)
+      return log("❌ Escreva a mensagem ou anexe um arquivo.");
     const min = Math.max(1, Number($("nx-min").value || 5)) * 1000;
     const max = Math.max(min, Number($("nx-max").value || 15) * 1000);
     const pausaCada = Math.max(0, Number($("nx-pausa-cada").value || 0));
@@ -216,10 +246,24 @@ Maria,+5511988888888"></textarea>
         let erro = null;
         let wamid = "";
         try {
-          const r = await B().enviarMsg(row.telefone, texto, "texto");
-          if (r.error || !r.ok) {
+          let r;
+          if (anexos.length) {
+            // 1º anexo leva a legenda (mensagem); os demais sem legenda.
+            for (let a = 0; a < anexos.length; a++) {
+              r = await B().enviarMidia(
+                row.telefone,
+                anexos[a].dataUrl,
+                anexos[a].filename,
+                a === 0 ? texto : ""
+              );
+              if (r.error || !r.ok) break;
+            }
+          } else {
+            r = await B().enviarMsg(row.telefone, texto, "texto");
+          }
+          if (!r || r.error || !r.ok) {
             status = "falhou";
-            erro = r.error || "falha desconhecida";
+            erro = (r && r.error) || "falha desconhecida";
           } else {
             wamid = r.wamid || "";
           }

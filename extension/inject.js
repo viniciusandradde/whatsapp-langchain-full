@@ -193,6 +193,14 @@
           r = await WPP.chat.sendTextMessage(chatId, d.texto || "", {
             createChat: true,
           });
+        } else if (d.tipo === "midia") {
+          // d.dataUrl = data URI base64; wa-js auto-detecta o tipo pelo mime.
+          r = await WPP.chat.sendFileMessage(chatId, d.dataUrl, {
+            type: "auto-detect",
+            caption: d.caption || undefined,
+            filename: d.filename || "arquivo",
+            createChat: true,
+          });
         } else {
           reply({ error: "tipo de envio ainda não suportado: " + d.tipo });
           return;
