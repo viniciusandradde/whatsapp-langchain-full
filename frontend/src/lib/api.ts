@@ -2615,6 +2615,9 @@ export interface CampanhaCreateInput {
   intervalo_min_ms?: number | null;
   intervalo_max_ms?: number | null;
   kill_switch_pct?: number | null;
+  // Mídia (mig 123) — foto; mensagem vira legenda
+  media_url?: string | null;
+  media_tipo?: string | null;
 }
 
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {

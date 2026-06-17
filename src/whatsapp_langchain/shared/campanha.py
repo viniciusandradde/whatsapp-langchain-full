@@ -29,6 +29,7 @@ from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     list_conexoes,
 )
+from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.outbound import _build_client, send_template_by_id
 
 logger = structlog.get_logger()
@@ -82,6 +83,9 @@ class CampanhaSummary:
     # Template HSM (mig 113) — broadcast fora da janela 24h
     message_template_id: int | None = None
     template_variaveis: dict = field(default_factory=dict)
+    # Mídia (foto) — mig 123. mensagem vira legenda quando há media_url.
+    media_url: str | None = None
+    media_tipo: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -112,6 +116,8 @@ class CampanhaSummary:
             "filtro_tags": list(self.filtro_tags or []),
             "message_template_id": self.message_template_id,
             "template_variaveis": dict(self.template_variaveis or {}),
+            "media_url": self.media_url,
+            "media_tipo": self.media_tipo,
         }
 
 
@@ -122,7 +128,9 @@ _COLS = (
     # B+ padrão profissional (mig 051)
     "modelo_mensagem_id, scheduled_at, tipo, filtro_segmento, filtro_tags, "
     # Template HSM (mig 113)
-    "message_template_id, template_variaveis"
+    "message_template_id, template_variaveis, "
+    # Mídia (mig 123)
+    "media_url, media_tipo"
 )
 
 
@@ -178,6 +186,9 @@ async def create_campanha(
     intervalo_min_ms: int | None = None,
     intervalo_max_ms: int | None = None,
     kill_switch_pct: int | None = None,
+    # Mídia (mig 123) — foto/vídeo/doc; mensagem vira legenda
+    media_url: str | None = None,
+    media_tipo: str | None = None,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -221,9 +232,10 @@ async def create_campanha(
                      modelo_mensagem_id, scheduled_at, tipo,
                      filtro_segmento, filtro_tags,
                      message_template_id, template_variaveis,
-                     intervalo_min_ms, intervalo_max_ms, kill_switch_pct)
+                     intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
+                     media_url, media_tipo)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::text[], %s, %s::jsonb, %s, %s, %s)
+                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s)
                 RETURNING {_COLS}
                 """,
                 (
@@ -246,6 +258,8 @@ async def create_campanha(
                     eff_min,
                     eff_max,
                     eff_kill,
+                    media_url,
+                    media_tipo,
                 ),
             )
             row = await cur.fetchone()
@@ -427,8 +441,18 @@ async def _dispatch_loop(
             return
 
     template_id = camp.get("message_template_id")
-    if not template_id and not (camp.get("mensagem") or "").strip():
-        await _mark_finished(pool, camp_id, "aborted", reason="sem texto nem template")
+    media_url = camp.get("media_url")
+    media_tipo = camp.get("media_tipo") or "image"
+    # Evolution busca a mídia por URL pública — resolve path relativo
+    # (/uploads/disparador/..) para absoluto via public_base_url.
+    if media_url and media_url.startswith("/"):
+        base = (settings.public_base_url or "").rstrip("/")
+        if base:
+            media_url = f"{base}{media_url}"
+        else:
+            log.warning("campanha_media_sem_public_base_url", media_url=media_url)
+    if not template_id and not media_url and not (camp.get("mensagem") or "").strip():
+        await _mark_finished(pool, camp_id, "aborted", reason="sem conteúdo")
         log.error("campanha_sem_conteudo")
         return
 
@@ -519,6 +543,22 @@ async def _dispatch_loop(
                         ),
                     )
                     provider_msg_id = res["provider_message_id"]
+                elif media_url:
+                    # Disparo com mídia (foto): legenda = texto da campanha.
+                    legenda = _apply_tokens(
+                        camp.get("mensagem") or "", cliente_nome, variaveis
+                    )
+                    send_media = getattr(client, "send_media", None)
+                    if send_media is None:
+                        raise RuntimeError(
+                            "Conexão não suporta envio de mídia (use Evolution)."
+                        )
+                    provider_msg_id = await send_media(
+                        phone,
+                        media_url,
+                        mediatype=media_tipo,
+                        caption=legenda or None,
+                    )
                 else:
                     provider_msg_id = await client.send_message(
                         phone,

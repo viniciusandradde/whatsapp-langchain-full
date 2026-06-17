@@ -30,6 +30,7 @@ from whatsapp_langchain.worker.twilio_client import split_message_body
 logger = structlog.get_logger()
 
 EVOLUTION_SEND_TEXT_PATH = "/message/sendText/{instance}"
+EVOLUTION_SEND_MEDIA_PATH = "/message/sendMedia/{instance}"
 EVOLUTION_SEND_PRESENCE_PATH = "/chat/sendPresence/{instance}"
 # Captura (Task 4) — endpoints REST da Evolution usados server-side.
 EVOLUTION_CHECK_NUMBERS_PATH = "/chat/whatsappNumbers/{instance}"
@@ -298,6 +299,74 @@ class EvolutionClient:
                 )
 
         return last_id
+
+    async def send_media(
+        self,
+        to: str,
+        media_url: str,
+        *,
+        mediatype: str = "image",
+        caption: str | None = None,
+        filename: str | None = None,
+    ) -> str:
+        """Envia mídia (imagem/vídeo/documento) via Evolution `/message/sendMedia`.
+
+        `media_url` deve ser uma URL pública (o servidor Evolution busca o
+        arquivo) OU base64. `caption` é a legenda. Retorna o id da mensagem;
+        em mock mode retorna `mock-evo-media-<uuid>`.
+        """
+        normalized_to = normalize_to_number(to)
+        if self.delivery_mode == "mock":
+            mid = f"mock-evo-media-{uuid.uuid4().hex}"
+            logger.info(
+                "evolution_media_mocked",
+                to=normalized_to,
+                instance=self.instance_name,
+                mediatype=mediatype,
+                media_url=media_url[:80],
+            )
+            return mid
+
+        payload: dict[str, str] = {
+            "number": normalized_to,
+            "mediatype": mediatype,
+            "media": media_url,
+        }
+        if caption:
+            payload["caption"] = caption
+        if filename:
+            payload["fileName"] = filename
+
+        url = f"{self.api_url}{EVOLUTION_SEND_MEDIA_PATH.format(instance=self.instance_name)}"
+        async with httpx.AsyncClient() as http:
+            response = await http.post(
+                url,
+                headers={"apikey": self.api_key},
+                json=payload,
+                timeout=60.0,
+            )
+        if not response.is_success:
+            detail = response.text[:500]
+            logger.error(
+                "evolution_media_failed",
+                to=normalized_to,
+                instance=self.instance_name,
+                status_code=response.status_code,
+                detail=detail,
+                mediatype=mediatype,
+            )
+            raise EvolutionSendError(response.status_code, detail)
+        data = response.json()
+        key = data.get("key") or data.get("data", {}).get("key", {})
+        mid = key.get("id", "") if isinstance(key, dict) else ""
+        logger.info(
+            "evolution_media_sent",
+            to=normalized_to,
+            instance=self.instance_name,
+            message_id=mid,
+            mediatype=mediatype,
+        )
+        return mid
 
     async def send_typing(self, to: str, message_id: str | None = None) -> bool:
         """Envia indicador de digitação via Evolution API (best-effort).

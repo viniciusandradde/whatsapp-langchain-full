@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { auth } from "@/lib/auth";
 import {
   abortCampanha,
   createCampanha,
@@ -29,6 +30,49 @@ export async function createCampanhaAction(
     const c = await createCampanha(body);
     revalidatePath("/campanhas");
     return { ok: true, data: c };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function uploadCampanhaMediaAction(
+  formData: FormData
+): Promise<Result<{ media_url: string; media_tipo: string }>> {
+  try {
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      return { ok: false, error: "Arquivo não enviado." };
+    }
+    const { cookies, headers: nextHeaders } = await import("next/headers");
+    const session = await auth.api.getSession({ headers: await nextHeaders() });
+    if (!session?.user?.id) {
+      return { ok: false, error: "Sessão expirada. Faça login novamente." };
+    }
+    const empresaCookie = (await cookies()).get("active_empresa_id")?.value;
+    const apiUrl =
+      process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "";
+    const reqHeaders: Record<string, string> = {
+      Authorization: `Bearer ${process.env.INTERNAL_SERVICE_TOKEN || ""}`,
+      "X-User-Id": session.user.id,
+    };
+    if (empresaCookie) reqHeaders["X-Empresa-Id"] = empresaCookie;
+    const fd = new FormData();
+    fd.set("file", file);
+    const resp = await fetch(`${apiUrl}/api/campanhas/upload-media`, {
+      method: "POST",
+      headers: reqHeaders,
+      body: fd,
+    });
+    if (!resp.ok) {
+      return {
+        ok: false,
+        error: `Falha no upload (${resp.status}): ${(await resp.text()).slice(0, 200)}`,
+      };
+    }
+    return {
+      ok: true,
+      data: (await resp.json()) as { media_url: string; media_tipo: string },
+    };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

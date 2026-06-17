@@ -6,8 +6,13 @@ CRUD + dispatch + abort. Dispatch é fire-and-forget — handler retorna
 
 from __future__ import annotations
 
+import io
+import os
+import uuid
+from pathlib import Path
+
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field, model_validator
 
 from whatsapp_langchain.server.dependencies import (
@@ -19,6 +24,19 @@ from whatsapp_langchain.shared import campanha as camp_lib
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
+
+# Mídia de campanha (foto) — mesmo padrão de avatars/logos (volume Docker
+# disparador_media:/app/uploads/disparador). Servida em /uploads/disparador.
+_MEDIA_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+_MEDIA_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_DISPARADOR_MEDIA_DIR = Path(
+    os.environ.get("DISPARADOR_MEDIA_DIR", "/app/uploads/disparador")
+)
+try:
+    _DISPARADOR_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError):
+    _DISPARADOR_MEDIA_DIR = Path.cwd() / "uploads" / "disparador"
+    _DISPARADOR_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(
     prefix="/api/campanhas",
@@ -50,17 +68,34 @@ class CampanhaCreate(BaseModel):
     intervalo_min_ms: int | None = Field(default=None, ge=0, le=600_000)
     intervalo_max_ms: int | None = Field(default=None, ge=0, le=600_000)
     kill_switch_pct: int | None = Field(default=None, ge=0, le=100)
+    # Mídia (mig 123) — foto; mensagem vira legenda
+    media_url: str | None = Field(default=None, max_length=1000)
+    media_tipo: str | None = None
 
     @model_validator(mode="after")
     def _texto_ou_template(self) -> CampanhaCreate:
-        if not self.message_template_id and not (self.mensagem or "").strip():
-            raise ValueError("Informe `mensagem` (texto) OU `message_template_id`.")
+        if (
+            not self.message_template_id
+            and not self.media_url
+            and not (self.mensagem or "").strip()
+        ):
+            raise ValueError(
+                "Informe `mensagem` (texto), `media_url` (foto) OU `message_template_id`."
+            )
+        if self.media_tipo is not None and self.media_tipo not in {
+            "image",
+            "video",
+            "document",
+        }:
+            raise ValueError("media_tipo deve ser image, video ou document.")
         if (
             self.intervalo_min_ms is not None
             and self.intervalo_max_ms is not None
             and self.intervalo_min_ms > self.intervalo_max_ms
         ):
-            raise ValueError("intervalo_min_ms não pode ser maior que intervalo_max_ms.")
+            raise ValueError(
+                "intervalo_min_ms não pode ser maior que intervalo_max_ms."
+            )
         return self
 
 
@@ -129,10 +164,51 @@ async def create_endpoint(
             intervalo_min_ms=body.intervalo_min_ms,
             intervalo_max_ms=body.intervalo_max_ms,
             kill_switch_pct=body.kill_switch_pct,
+            media_url=body.media_url,
+            media_tipo=body.media_tipo,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     return out
+
+
+@router.post("/upload-media", status_code=201)
+async def upload_media_endpoint(
+    file: UploadFile = File(...),
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Upload de foto pra campanha. Valida MIME+tamanho, re-encoda via Pillow
+    (nunca confia no MIME do client), salva em DISPARADOR_MEDIA_DIR e devolve
+    `media_url` (path relativo /uploads/disparador/...) + `media_tipo`."""
+    content = await file.read()
+    if len(content) > _MEDIA_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo muito grande. Máximo: {_MEDIA_MAX_BYTES // 1024 // 1024} MB.",
+        )
+    if file.content_type not in _MEDIA_MIMES:
+        raise HTTPException(
+            status_code=415, detail="Formato não suportado. Use PNG, JPEG, WebP ou GIF."
+        )
+    try:
+        from PIL import Image
+    except ImportError as e:
+        raise HTTPException(503, "Pillow não disponível no servidor.") from e
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.verify()
+        img = Image.open(io.BytesIO(content))
+        # Limita dimensão máxima (anti-payload gigante) mantendo aspecto.
+        img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+    except Exception as e:
+        raise HTTPException(422, f"Imagem inválida: {e}") from e
+
+    fname = f"{empresa_id}_{uuid.uuid4().hex}.jpg"
+    _DISPARADOR_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(_DISPARADOR_MEDIA_DIR / fname, format="JPEG", quality=85, optimize=True)
+    return {"media_url": f"/uploads/disparador/{fname}", "media_tipo": "image"}
 
 
 @router.post("/{camp_id}/dispatch", status_code=202)

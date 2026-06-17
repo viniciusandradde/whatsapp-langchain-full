@@ -14,7 +14,11 @@ import {
 } from "@/components/ui/card";
 import type { Campanha, Conexao, WabaTemplate } from "@/lib/api";
 
-import { createCampanhaAction, loadApprovedTemplatesAction } from "./actions";
+import {
+  createCampanhaAction,
+  loadApprovedTemplatesAction,
+  uploadCampanhaMediaAction,
+} from "./actions";
 
 function _bodyText(t: WabaTemplate): string {
   return t.componentes_json.find((c) => (c.type || "").toUpperCase() === "BODY")?.text ?? "";
@@ -72,6 +76,25 @@ export function CampanhasPageClient({
   const [killPct, setKillPct] = useState(30);
   // Telefones controlado pra permitir pré-preenchimento vindo de Contatos.
   const [telefonesText, setTelefonesText] = useState("");
+  // Mídia (foto) — mig 123. media_url relativo (/uploads/disparador/..).
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [mediaUploading, setMediaUploading] = useState(false);
+
+  async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setMediaUploading(true);
+    setError(null);
+    const fd = new FormData();
+    fd.set("file", f);
+    const r = await uploadCampanhaMediaAction(fd);
+    setMediaUploading(false);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setMediaUrl(r.data.media_url);
+  }
 
   function aplicarModoSeguro() {
     setIntervaloMin(5000);
@@ -133,6 +156,14 @@ export function CampanhasPageClient({
       setError("Adicione ao menos 1 telefone.");
       return;
     }
+    if (
+      modo === "texto" &&
+      !String(fd.get("mensagem") || "").trim() &&
+      !mediaUrl
+    ) {
+      setError("Escreva uma mensagem ou anexe uma foto.");
+      return;
+    }
     if (modo === "template" && !templateId) {
       setError("Escolha um template aprovado (ou use Texto livre).");
       return;
@@ -169,6 +200,9 @@ export function CampanhasPageClient({
       // Template HSM (mig 113)
       message_template_id: modo === "template" ? templateId : null,
       template_variaveis: modo === "template" ? templateVars : {},
+      // Mídia (mig 123) — foto só no modo texto (Evolution); legenda = mensagem
+      media_url: modo === "texto" ? mediaUrl : null,
+      media_tipo: modo === "texto" && mediaUrl ? "image" : null,
     };
 
     startTransition(async () => {
@@ -274,7 +308,6 @@ export function CampanhasPageClient({
                   <>
                     <textarea
                       name="mensagem"
-                      required
                       maxLength={4000}
                       rows={4}
                       placeholder="Olá! Promoção válida até..."
@@ -284,6 +317,43 @@ export function CampanhasPageClient({
                       Texto livre só entrega pra contatos com janela de 24h aberta.
                       Pra broadcast real (fora da janela), use Template HSM.
                     </p>
+                    {/* Foto (mig 123) — vira a legenda quando há texto */}
+                    <div className="mt-2 rounded-md border border-dashed border-border/60 p-2">
+                      <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                        📷 Foto (opcional)
+                      </label>
+                      {mediaUrl ? (
+                        <div className="flex items-center gap-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={mediaUrl}
+                            alt="prévia"
+                            className="h-16 w-16 rounded object-cover"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setMediaUrl(null)}
+                          >
+                            Remover
+                          </Button>
+                        </div>
+                      ) : (
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          disabled={mediaUploading}
+                          onChange={handleMediaUpload}
+                          className="text-xs"
+                        />
+                      )}
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {mediaUploading
+                          ? "Enviando foto…"
+                          : "A mensagem acima vira a legenda da foto. Envio de foto requer conexão Evolution."}
+                      </p>
+                    </div>
                   </>
                 ) : (
                   <div className="space-y-2">

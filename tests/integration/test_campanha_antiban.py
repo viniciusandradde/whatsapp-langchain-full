@@ -32,6 +32,13 @@ class TestCampanhaCreateSmoke:
         )
         assert r.status_code == 401, r.text
 
+    def test_upload_media_sem_auth_401(self) -> None:
+        r = self._client().post(
+            "/api/campanhas/upload-media",
+            files={"file": ("f.png", b"x", "image/png")},
+        )
+        assert r.status_code == 401, r.text
+
 
 @pytest.mark.docker_demo
 class TestCampanhaAntiBanPersistencia:
@@ -103,3 +110,26 @@ class TestCampanhaAntiBanPersistencia:
                 (out["id"],),
             ).fetchone()
         assert row == (5000, 15000), row  # trocados
+
+    async def test_grava_media(self, empresa) -> None:
+        """Campanha com foto: media_url/media_tipo persistidos (legenda opcional)."""
+        from whatsapp_langchain.shared.campanha import create_campanha
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        out = await create_campanha(
+            pool,
+            empresa,
+            nome=f"campanha-foto-{_RUN}",
+            descricao=None,
+            mensagem="Confira a promoção!",
+            conexao_id=None,
+            intervalo_ms=500,
+            max_destinatarios=1000,
+            telefones_brutos=["+5511999990004"],
+            user_id=None,
+            media_url="/uploads/disparador/foto.jpg",
+            media_tipo="image",
+        )
+        assert out["media_url"] == "/uploads/disparador/foto.jpg"
+        assert out["media_tipo"] == "image"
