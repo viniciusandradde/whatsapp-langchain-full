@@ -20,6 +20,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import campanha as camp_lib
 from whatsapp_langchain.shared.db import get_pool
 
@@ -176,6 +177,7 @@ async def create_endpoint(
 async def upload_media_endpoint(
     file: UploadFile = File(...),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("disparador.disparar")),
 ) -> dict:
     """Upload de foto pra campanha. Valida MIME+tamanho, re-encoda via Pillow
     (nunca confia no MIME do client), salva em DISPARADOR_MEDIA_DIR e devolve

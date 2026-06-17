@@ -17,6 +17,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import captura as cap
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.db import get_pool
@@ -135,3 +136,18 @@ async def promover(
     pool = await get_pool()
     promovidos = await cap.promover_contatos(pool, empresa_id, body.contato_ids)
     return {"promovidos": promovidos}
+
+
+@router.post("/captura/despromover")
+async def despromover(
+    body: PromoverInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("cliente.delete")),
+) -> dict:
+    """Remove contatos do CRM (desfaz a promoção).
+
+    Desvincula do staging e apaga o `cliente` quando não há atendimento
+    (preserva histórico — clientes com conversa são só desvinculados).
+    """
+    pool = await get_pool()
+    return await cap.despromover_contatos(pool, empresa_id, body.contato_ids)

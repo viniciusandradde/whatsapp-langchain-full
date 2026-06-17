@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { DownloadCloud, Megaphone, UserPlus, Users } from "lucide-react";
+import { DownloadCloud, Megaphone, UserMinus, UserPlus, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import type { Conexao, ContatoCapturado } from "@/lib/api";
 
 import {
   capturarViaEvolutionAction,
+  despromoverContatosAction,
   getCapturaLoteAction,
   listContatosAction,
   promoverContatosAction,
@@ -75,10 +76,15 @@ export function ContatosClient({
     });
   }
 
-  // Contatos selecionáveis (com telefone e ainda não promovidos).
-  const selecionaveis = contatos.filter((c) => c.telefone && !c.promovido_at);
+  // Selecionáveis = qualquer um com telefone (promovido ou não). Os botões
+  // filtram por estado: Promover age nos não-promovidos, Remover nos promovidos.
+  const selecionaveis = contatos.filter((c) => c.telefone);
   const todosSelecionados =
     selecionaveis.length > 0 && selecionaveis.every((c) => sel.has(c.id));
+  // Quantos dos selecionados já estão no CRM (pra habilitar "Remover do CRM").
+  const selPromovidos = contatos.filter(
+    (c) => sel.has(c.id) && c.promovido_at
+  ).length;
 
   function toggleTodos() {
     setSel(
@@ -95,6 +101,23 @@ export function ContatosClient({
       const r = await promoverContatosAction([...sel]);
       if (!r.ok) return setErro(r.error);
       setMsg(`${r.data} contato(s) promovido(s) para o CRM.`);
+      setSel(new Set());
+      await carregar();
+    });
+  }
+
+  function removerDoCrm() {
+    setErro(null);
+    setMsg(null);
+    start(async () => {
+      const r = await despromoverContatosAction([...sel]);
+      if (!r.ok) return setErro(r.error);
+      const { removidos, mantidos_com_atendimento } = r.data;
+      let m = `${removidos} contato(s) removido(s) do CRM.`;
+      if (mantidos_com_atendimento > 0) {
+        m += ` ${mantidos_com_atendimento} mantido(s) por já terem atendimento (histórico preservado).`;
+      }
+      setMsg(m);
       setSel(new Set());
       await carregar();
     });
@@ -220,6 +243,17 @@ export function ContatosClient({
             <Button size="sm" disabled={pending || sel.size === 0} onClick={promover}>
               <UserPlus className="mr-1 h-4 w-4" /> Promover p/ CRM
             </Button>
+            {selPromovidos > 0 && (
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={pending}
+                onClick={removerDoCrm}
+              >
+                <UserMinus className="mr-1 h-4 w-4" /> Remover do CRM (
+                {selPromovidos})
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -248,7 +282,7 @@ export function ContatosClient({
                     <input
                       type="checkbox"
                       checked={sel.has(c.id)}
-                      disabled={!c.telefone || !!c.promovido_at}
+                      disabled={!c.telefone}
                       onChange={() => toggle(c.id)}
                     />
                   </TableCell>
