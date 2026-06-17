@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Megaphone, Plus, Send, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +79,7 @@ export function CampanhasPageClient({
   // Mídia (foto) — mig 123. media_url relativo (/uploads/disparador/..).
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -340,13 +341,24 @@ export function CampanhasPageClient({
                           </Button>
                         </div>
                       ) : (
-                        <input
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/gif"
-                          disabled={mediaUploading}
-                          onChange={handleMediaUpload}
-                          className="text-xs"
-                        />
+                        <>
+                          <input
+                            ref={fileRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            onChange={handleMediaUpload}
+                            className="hidden"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={mediaUploading}
+                            onClick={() => fileRef.current?.click()}
+                          >
+                            {mediaUploading ? "Enviando…" : "📷 Escolher foto"}
+                          </Button>
+                        </>
                       )}
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         {mediaUploading
