@@ -74,7 +74,10 @@ async function enviarEmLotes(path, key, itens, lote = 500) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
-      if (msg.type === "test") {
+      if (msg.type === "get-config") {
+        const { backendUrl } = await getConfig();
+        sendResponse({ ok: true, backendUrl });
+      } else if (msg.type === "test") {
         const r = await apiGet("/api/disparador/status");
         sendResponse({ ok: true, data: r });
       } else if (msg.type === "ingest:contatos") {

@@ -210,6 +210,60 @@
             filename: d.filename || "arquivo",
             createChat: true,
           });
+        } else if (d.tipo === "enquete") {
+          r = await WPP.chat.sendCreatePollMessage(
+            chatId,
+            d.pergunta || "",
+            d.opcoes || [],
+            { selectableCount: d.multipla ? (d.opcoes || []).length : 1, createChat: true }
+          );
+        } else if (d.tipo === "localizacao") {
+          r = await WPP.chat.sendLocationMessage(chatId, {
+            lat: Number(d.lat),
+            lng: Number(d.lng),
+            name: d.nome || undefined,
+            address: d.endereco || undefined,
+            createChat: true,
+          });
+        } else if (d.tipo === "vcard") {
+          r = await WPP.chat.sendVCardContactMessage(
+            chatId,
+            { id: jidParaChat(d.contatoTelefone), name: d.contatoNome || "Contato" },
+            { createChat: true }
+          );
+        } else if (d.tipo === "pix") {
+          r = await WPP.chat.sendPixKeyMessage(chatId, {
+            type: d.pixTipo,
+            key: d.pixChave,
+            name: d.pixNome,
+            createChat: true,
+          });
+        } else if (d.tipo === "evento") {
+          r = await WPP.chat.sendEventMessage(chatId, {
+            name: d.evNome || "",
+            description: d.evDesc || undefined,
+            startTime: d.evInicio ? Math.floor(new Date(d.evInicio).getTime() / 1000) : undefined,
+            endTime: d.evFim ? Math.floor(new Date(d.evFim).getTime() / 1000) : undefined,
+            location: d.evLocal || undefined,
+            createChat: true,
+          });
+        } else if (d.tipo === "lista") {
+          r = await WPP.chat.sendListMessage(chatId, {
+            buttonText: d.btn || "Ver opções",
+            description: d.desc || "",
+            title: d.titulo || undefined,
+            footer: d.rodape || undefined,
+            sections: d.sections || [],
+            createChat: true,
+          });
+        } else if (d.tipo === "convite-grupo") {
+          r = await WPP.chat.sendGroupInviteMessage(chatId, {
+            groupId: d.groupId,
+            inviteCode: d.inviteCode,
+            inviteCaption: d.caption || undefined,
+            groupName: d.groupName || undefined,
+            createChat: true,
+          });
         } else {
           reply({ error: "tipo de envio ainda não suportado: " + d.tipo });
           return;

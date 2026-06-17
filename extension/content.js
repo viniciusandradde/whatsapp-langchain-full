@@ -78,6 +78,11 @@ async function validarNumero(telefone) {
   return pedirPagina({ cmd: "validar", telefone }, 30000);
 }
 
+// Tipos ricos (enquete/localização/vcard/pix/evento/lista/convite): payload livre.
+async function enviarTipo(telefone, payload) {
+  return pedirPagina({ cmd: "send", telefone, ...payload }, 120000);
+}
+
 async function enviarBackground(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (r) => resolve(r || { ok: false, error: "sem resposta do background" }));
@@ -137,6 +142,7 @@ window.__nexusBridge = {
   garantirWpp,
   enviarMsg,
   enviarMidia,
+  enviarTipo,
   validarNumero,
   enviarBackground,
   pedirScrape,
