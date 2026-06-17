@@ -61,6 +61,85 @@ class TestCampanhaCreateSmoke:
         r = self._client().post("/api/campanhas/1/clonar")
         assert r.status_code == 401, r.text
 
+    def test_ext_campanha_sem_apikey_401(self) -> None:
+        r = self._client().post(
+            "/api/disparador/ext/campanha",
+            json={"nome": "x", "telefones": ["+5511999999999"]},
+        )
+        assert r.status_code == 401, r.text
+
+    def test_ext_report_sem_apikey_401(self) -> None:
+        r = self._client().post(
+            "/api/disparador/ext/campanha/1/report",
+            json={"items": [{"telefone": "+5511999999999", "status": "enviado"}]},
+        )
+        assert r.status_code == 401, r.text
+
+
+@pytest.mark.docker_demo
+class TestDisparoExt:
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"ext-{_RUN}", f"ext-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_cria_running_e_report_finaliza(self, empresa) -> None:
+        from whatsapp_langchain.shared.campanha import (
+            aplicar_report_ext,
+            create_campanha,
+            get_campanha,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            camp = await create_campanha(
+                pool,
+                empresa,
+                nome=f"ext-{_RUN}",
+                descricao=None,
+                mensagem="oi",
+                conexao_id=None,
+                intervalo_ms=500,
+                max_destinatarios=10_000,
+                telefones_brutos=["+5511950000001", "+5511950000002"],
+                user_id=None,
+                origem_envio="extensao",
+            )
+        assert camp["status"] == "running"  # browser envia; backend não dispara
+        assert camp["origem_envio"] == "extensao"
+
+        # reporta 1 enviado → ainda em running (1 pendente)
+        r1 = await aplicar_report_ext(
+            pool,
+            empresa,
+            camp["id"],
+            [{"telefone": "+5511950000001", "status": "enviado", "wamid": "X1"}],
+        )
+        assert r1["enviados"] == 1 and r1["status"] == "running"
+
+        # reporta o 2º como falhou → acabou → partial
+        r2 = await aplicar_report_ext(
+            pool,
+            empresa,
+            camp["id"],
+            [{"telefone": "+5511950000002", "status": "falhou", "erro": "Connection Closed"}],
+        )
+        assert r2["enviados"] == 1 and r2["falhas"] == 1
+        assert r2["status"] == "partial"
+        final = await get_campanha(pool, empresa, camp["id"])
+        assert final["status"] == "partial" and final["finished_at"] is not None
+
 
 @pytest.mark.docker_demo
 class TestEditar:
