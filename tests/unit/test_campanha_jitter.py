@@ -95,3 +95,58 @@ class TestCampanhaCreateAntiBan:
         )
         assert m.intervalo_min_ms is None
         assert m.kill_switch_pct is None
+
+
+class TestSendComRetry:
+    """Retry anti-ban de envio (transitório → re-tenta; esgota → re-levanta)."""
+
+    async def test_sucesso_na_segunda_tentativa(self):
+        import structlog
+
+        from whatsapp_langchain.shared.campanha import _send_com_retry
+
+        chamadas = {"n": 0}
+
+        async def fn():
+            chamadas["n"] += 1
+            if chamadas["n"] < 2:
+                raise RuntimeError("Connection Closed")
+            return "MID-OK"
+
+        # patch sleep pra não esperar de verdade
+        import whatsapp_langchain.shared.campanha as camp_mod
+
+        async def _noop(*_a, **_k):
+            return None
+
+        orig = camp_mod.asyncio.sleep
+        camp_mod.asyncio.sleep = _noop
+        try:
+            r = await _send_com_retry(fn, log=structlog.get_logger(), phone="+551199")
+        finally:
+            camp_mod.asyncio.sleep = orig
+        assert r == "MID-OK"
+        assert chamadas["n"] == 2
+
+    async def test_esgota_e_relevanta(self):
+        import pytest as _pytest
+        import structlog
+
+        import whatsapp_langchain.shared.campanha as camp_mod
+        from whatsapp_langchain.shared.campanha import _send_com_retry
+
+        async def fn():
+            raise RuntimeError("Connection Closed")
+
+        async def _noop(*_a, **_k):
+            return None
+
+        orig = camp_mod.asyncio.sleep
+        camp_mod.asyncio.sleep = _noop
+        try:
+            with _pytest.raises(RuntimeError, match="Connection Closed"):
+                await _send_com_retry(
+                    fn, log=structlog.get_logger(), phone="+551199", tentativas=3
+                )
+        finally:
+            camp_mod.asyncio.sleep = orig

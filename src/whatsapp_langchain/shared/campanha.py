@@ -675,6 +675,27 @@ def _should_kill_switch(
     return (falhas / tentados) * 100 > pct
 
 
+async def _send_com_retry(fn, *, log, phone, tentativas: int = 3):
+    """Retry anti-ban de um envio. "Connection Closed" / 5xx / timeout da
+    Evolution são TRANSITÓRIOS (a sessão Baileys oscila) — re-tenta com backoff
+    curto antes de desistir, em vez de queimar o destinatário como falha."""
+    ultimo: Exception | None = None
+    for i in range(tentativas):
+        try:
+            return await fn()
+        except Exception as e:  # noqa: BLE001 — re-tenta e re-levanta no fim
+            ultimo = e
+            if i < tentativas - 1:
+                log.warning(
+                    "campanha_send_retry",
+                    phone=phone,
+                    tentativa=i + 1,
+                    error=str(e)[:200],
+                )
+                await asyncio.sleep(1.5 * (i + 1))
+    raise ultimo if ultimo else RuntimeError("falha no envio")
+
+
 async def _dispatch_loop(
     pool: AsyncConnectionPool,
     empresa_id: int,
@@ -733,6 +754,29 @@ async def _dispatch_loop(
         return
 
     client, _mode = await _build_client(pool, conexao)
+
+    # Gate de saúde da sessão (anti-ban): não dispara num canal não-oficial
+    # (Evolution) se a sessão WhatsApp não estiver `open` — blastar uma sessão
+    # caindo foi o que escalou o ban do número anterior. Canais oficiais
+    # (WABA/Twilio) não têm health() → pulam o gate.
+    _health = getattr(client, "health", None)
+    if _health is not None:
+        try:
+            h = await _health()
+            estado = (h or {}).get("state") or (h or {}).get("instance", {}).get(
+                "state"
+            )
+            if estado and estado != "open":
+                await _mark_finished(
+                    pool,
+                    camp_id,
+                    "aborted",
+                    reason=f"sessão WhatsApp não conectada (estado: {estado})",
+                )
+                log.error("campanha_sessao_nao_conectada", estado=estado)
+                return
+        except Exception as e:  # noqa: BLE001 — health indisponível não bloqueia
+            log.warning("campanha_health_check_falhou", error=str(e))
 
     # Faixa de jitter anti-ban (fallback pro intervalo_ms fixo legado).
     async with pool.connection() as conn:
@@ -808,41 +852,37 @@ async def _dispatch_loop(
 
         for dest_id, phone, cliente_nome, variaveis in batch:
             try:
-                if template_id:
-                    res = await send_template_by_id(
-                        pool,
-                        conexao_id=conexao.id,
-                        empresa_id=empresa_id,
-                        to=phone,
-                        template_id=template_id,
-                        variables=_resolve_template_vars(
-                            camp.get("template_variaveis"), cliente_nome, variaveis
-                        ),
-                    )
-                    provider_msg_id = res["provider_message_id"]
-                elif media_url:
-                    # Disparo com mídia (foto): legenda = texto da campanha.
-                    legenda = _apply_tokens(
-                        camp.get("mensagem") or "", cliente_nome, variaveis
-                    )
-                    send_media = getattr(client, "send_media", None)
-                    if send_media is None:
-                        raise RuntimeError(
-                            "Conexão não suporta envio de mídia (use Evolution)."
+                # Factory única do envio (recriada a cada tentativa do retry).
+                async def _do_send(phone=phone, cn=cliente_nome, v=variaveis):
+                    if template_id:
+                        res = await send_template_by_id(
+                            pool,
+                            conexao_id=conexao.id,
+                            empresa_id=empresa_id,
+                            to=phone,
+                            template_id=template_id,
+                            variables=_resolve_template_vars(
+                                camp.get("template_variaveis"), cn, v
+                            ),
                         )
-                    provider_msg_id = await send_media(
-                        phone,
-                        media_url,
-                        mediatype=media_tipo,
-                        caption=legenda or None,
+                        return res["provider_message_id"]
+                    if media_url:
+                        send_media = getattr(client, "send_media", None)
+                        if send_media is None:
+                            raise RuntimeError(
+                                "Conexão não suporta envio de mídia (use Evolution)."
+                            )
+                        legenda = _apply_tokens(camp.get("mensagem") or "", cn, v)
+                        return await send_media(
+                            phone, media_url, mediatype=media_tipo, caption=legenda or None
+                        )
+                    return await client.send_message(
+                        phone, _apply_tokens(camp.get("mensagem") or "", cn, v)
                     )
-                else:
-                    provider_msg_id = await client.send_message(
-                        phone,
-                        _apply_tokens(
-                            camp.get("mensagem") or "", cliente_nome, variaveis
-                        ),
-                    )
+
+                # Retry anti-ban: "Connection Closed" e afins são transitórios —
+                # re-tenta com backoff curto antes de marcar falha definitiva.
+                provider_msg_id = await _send_com_retry(_do_send, log=log, phone=phone)
                 async with pool.connection() as conn:
                     await conn.execute(
                         """
