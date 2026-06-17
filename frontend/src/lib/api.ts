@@ -2620,6 +2620,22 @@ export interface CampanhaCreateInput {
   media_tipo?: string | null;
 }
 
+export interface PreviewCrmFiltro {
+  tags?: string[];
+  segmento?: string | null;
+  lifecycle_stage?: string | null;
+  search?: string | null;
+}
+
+export async function previewCrmCampanha(
+  filtro: PreviewCrmFiltro
+): Promise<{ total: number; telefones: string[] }> {
+  return apiFetch<{ total: number; telefones: string[] }>(
+    `/api/campanhas/preview-crm`,
+    { method: "POST", body: filtro }
+  );
+}
+
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {
   return apiFetch<{ items: Campanha[] }>(`/api/campanhas`);
 }

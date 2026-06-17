@@ -39,6 +39,60 @@ class TestCampanhaCreateSmoke:
         )
         assert r.status_code == 401, r.text
 
+    def test_preview_crm_sem_auth_401(self) -> None:
+        r = self._client().post("/api/campanhas/preview-crm", json={"tags": ["vip"]})
+        assert r.status_code == 401, r.text
+
+
+@pytest.mark.docker_demo
+class TestCrmTargeting:
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"crm-{_RUN}", f"crm-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_resolve_por_tag_e_segmento(self, empresa) -> None:
+        from whatsapp_langchain.shared.cliente import resolve_telefones_por_filtro
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            # 2 clientes VIP + 1 sem tag; 1 do segmento "ouro"
+            ids = []
+            for i, (tel, seg) in enumerate(
+                [("+5511970000001", "ouro"), ("+5511970000002", None), ("+5511970000003", None)]
+            ):
+                r = conn.execute(
+                    "INSERT INTO cliente (empresa_id, telefone, nome, segmento)"
+                    " VALUES (%s, %s, %s, %s) RETURNING id",
+                    (empresa, tel, f"C{i}", seg),
+                ).fetchone()
+                ids.append(r[0])
+            # tag VIP nos 2 primeiros
+            for cid in ids[:2]:
+                conn.execute(
+                    "INSERT INTO cliente_tag (cliente_id, tag) VALUES (%s, 'vip')",
+                    (cid,),
+                )
+
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            vip = await resolve_telefones_por_filtro(pool, empresa, tags=["vip"])
+            ouro = await resolve_telefones_por_filtro(pool, empresa, segmento="ouro")
+            todos = await resolve_telefones_por_filtro(pool, empresa)
+        assert set(vip) == {"+5511970000001", "+5511970000002"}
+        assert ouro == ["+5511970000001"]
+        assert len(todos) == 3  # todos têm telefone
+
 
 @pytest.mark.docker_demo
 class TestCampanhaAntiBanPersistencia:

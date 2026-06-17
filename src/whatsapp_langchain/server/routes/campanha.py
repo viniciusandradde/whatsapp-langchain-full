@@ -46,6 +46,15 @@ router = APIRouter(
 )
 
 
+class PreviewCrmInput(BaseModel):
+    """Filtros pra resolver destinatários a partir do CRM (cliente)."""
+
+    tags: list[str] | None = None
+    segmento: str | None = Field(default=None, max_length=120)
+    lifecycle_stage: str | None = Field(default=None, max_length=60)
+    search: str | None = Field(default=None, max_length=200)
+
+
 class CampanhaCreate(BaseModel):
     nome: str = Field(min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
@@ -171,6 +180,28 @@ async def create_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     return out
+
+
+@router.post("/preview-crm")
+async def preview_crm(
+    body: PreviewCrmInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("disparador.disparar")),
+) -> dict:
+    """Resolve telefones de clientes do CRM por filtros (tags/segmento/
+    lifecycle/busca) pra alimentar os destinatários da campanha."""
+    from whatsapp_langchain.shared.cliente import resolve_telefones_por_filtro
+
+    pool = await get_pool()
+    telefones = await resolve_telefones_por_filtro(
+        pool,
+        empresa_id,
+        tags=body.tags,
+        segmento=body.segmento,
+        lifecycle_stage=body.lifecycle_stage,
+        search=body.search,
+    )
+    return {"total": len(telefones), "telefones": telefones}
 
 
 @router.post("/upload-media", status_code=201)

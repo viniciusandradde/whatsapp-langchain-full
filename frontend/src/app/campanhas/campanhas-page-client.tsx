@@ -17,8 +17,11 @@ import type { Campanha, Conexao, WabaTemplate } from "@/lib/api";
 import {
   createCampanhaAction,
   loadApprovedTemplatesAction,
+  loadTagsAction,
+  previewCrmAction,
   uploadCampanhaMediaAction,
 } from "./actions";
+import type { Tag } from "@/lib/api";
 
 function _bodyText(t: WabaTemplate): string {
   return t.componentes_json.find((c) => (c.type || "").toUpperCase() === "BODY")?.text ?? "";
@@ -80,6 +83,55 @@ export function CampanhasPageClient({
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [mediaUploading, setMediaUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Buscar do CRM (Slice A) — filtros que resolvem telefones de clientes.
+  const [tagsDisponiveis, setTagsDisponiveis] = useState<Tag[]>([]);
+  const [crmTags, setCrmTags] = useState<Set<string>>(new Set());
+  const [crmSegmento, setCrmSegmento] = useState("");
+  const [crmLifecycle, setCrmLifecycle] = useState("");
+  const [crmSearch, setCrmSearch] = useState("");
+  const [crmLoading, setCrmLoading] = useState(false);
+
+  useEffect(() => {
+    loadTagsAction().then((r) => {
+      if (r.ok) setTagsDisponiveis(r.data);
+    });
+  }, []);
+
+  function toggleCrmTag(nome: string) {
+    setCrmTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(nome)) next.delete(nome);
+      else next.add(nome);
+      return next;
+    });
+  }
+
+  async function adicionarDoCrm() {
+    setCrmLoading(true);
+    setError(null);
+    const r = await previewCrmAction({
+      tags: crmTags.size ? [...crmTags] : undefined,
+      segmento: crmSegmento.trim() || null,
+      lifecycle_stage: crmLifecycle.trim() || null,
+      search: crmSearch.trim() || null,
+    });
+    setCrmLoading(false);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    // mescla com o textarea, dedupe.
+    const atuais = new Set(
+      telefonesText
+        .split(/[\s,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    for (const t of r.data.telefones) atuais.add(t);
+    setTelefonesText([...atuais].join("\n"));
+    setSuccess(`${r.data.total} contato(s) do CRM adicionado(s) à lista.`);
+  }
 
   async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -479,6 +531,64 @@ export function CampanhasPageClient({
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   Telefones inválidos (&lt;8 dígitos) são descartados.
                   Duplicados são ignorados.
+                </p>
+              </div>
+
+              {/* Buscar do CRM (Slice A) — filtros que resolvem telefones */}
+              <div className="rounded-md border border-blue-300/40 bg-blue-50/40 p-3 space-y-2 dark:bg-blue-950/10">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
+                  📇 Buscar do CRM
+                </p>
+                {tagsDisponiveis.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {tagsDisponiveis.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleCrmTag(t.nome)}
+                        className={`rounded-full border px-2 py-0.5 text-xs ${
+                          crmTags.has(t.nome)
+                            ? "border-primary bg-primary/15 font-medium text-primary"
+                            : "border-input text-muted-foreground"
+                        }`}
+                      >
+                        {t.nome}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <input
+                    placeholder="Segmento"
+                    value={crmSegmento}
+                    onChange={(e) => setCrmSegmento(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                  />
+                  <input
+                    placeholder="Lifecycle (lead/cliente…)"
+                    value={crmLifecycle}
+                    onChange={(e) => setCrmLifecycle(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                  />
+                  <input
+                    placeholder="Buscar nome/telefone"
+                    value={crmSearch}
+                    onChange={(e) => setCrmSearch(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={crmLoading}
+                  onClick={adicionarDoCrm}
+                >
+                  {crmLoading ? "Buscando…" : "+ Adicionar contatos do CRM"}
+                </Button>
+                <p className="text-[11px] text-muted-foreground">
+                  Sem filtro = todos os clientes com telefone. Os telefones são
+                  somados à lista acima (sem duplicar).
                 </p>
               </div>
 
