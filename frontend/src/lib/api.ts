@@ -2664,6 +2664,10 @@ export async function removeCampanhaDestinatario(
   );
 }
 
+export async function clonarCampanha(id: number): Promise<Campanha> {
+  return apiFetch<Campanha>(`/api/campanhas/${id}/clonar`, { method: "POST" });
+}
+
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {
   return apiFetch<{ items: Campanha[] }>(`/api/campanhas`);
 }
