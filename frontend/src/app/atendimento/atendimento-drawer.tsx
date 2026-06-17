@@ -39,7 +39,6 @@ import {
   loadMensagensAction,
   loadModelosAction,
   loadTemplatesAprovadosAction,
-  loadTraceLinkAction,
   marcarAtendimentoLidoAction,
   resetThreadAction,
   responderAction,
@@ -389,7 +388,6 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                   </Link>
                 </>
               )}
-              <TraceConversaLink atendimentoId={atendimento.id} />
             </p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -1225,40 +1223,6 @@ function MediaPreview({
         </p>
       )}
     </div>
-  );
-}
-
-/**
- * Link de observabilidade da conversa. Resolve o thread_id exato no backend
- * (phone_number:agent_id) e leva pra /traces filtrado. Some quando não há
- * provider de observabilidade ativo (nem Langfuse nem LangSmith).
- */
-function TraceConversaLink({ atendimentoId }: { atendimentoId: number }) {
-  const [threadId, setThreadId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    loadTraceLinkAction(atendimentoId).then((r) => {
-      if (alive && r.ok && r.data.provider && r.data.thread_id) {
-        setThreadId(r.data.thread_id);
-      }
-    });
-    return () => {
-      alive = false;
-    };
-  }, [atendimentoId]);
-
-  if (!threadId) return null;
-  return (
-    <>
-      {" · "}
-      <Link
-        href={`/traces?thread_id=${encodeURIComponent(threadId)}`}
-        className="underline hover:text-foreground"
-      >
-        ver traces
-      </Link>
-    </>
   );
 }
 
