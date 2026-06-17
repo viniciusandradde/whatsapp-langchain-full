@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 14px system-ui, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
+      h1 { font-size: 18px; }
+      label { display: block; margin: 12px 0 4px; font-weight: 600; }
+      input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+      button { margin-top: 14px; margin-right: 8px; padding: 9px 14px; border: 0; border-radius: 6px;
+        background: #075e54; color: #fff; font-weight: 600; cursor: pointer; }
+      button.sec { background: #eee; color: #333; }
+      #msg { margin-top: 12px; padding: 8px; border-radius: 6px; background: #f6f6f6; }
+      small { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>Nexus Disparador — configuração</h1>
+    <label>URL do backend</label>
+    <input id="backendUrl" placeholder="https://api.vsanexus.com" />
+    <small>Sem barra no final. Ex.: https://api.vsanexus.com</small>
+
+    <label>API key da empresa</label>
+    <input id="apiKey" type="password" placeholder="nxs_&lt;empresa&gt;_&lt;hex&gt;" />
+    <small>Gere no painel: Disparador → API keys (exibida só uma vez).</small>
+
+    <div>
+      <button id="save">Salvar</button>
+      <button class="sec" id="test">Testar conexão</button>
+    </div>
+    <div id="msg"></div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

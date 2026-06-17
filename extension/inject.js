@@ -1,0 +1,152 @@
+// inject.js — roda no MAIN world da página web.whatsapp.com.
+//
+// ⚠️ PARTE FRÁGIL E ISOLADA: depende do store interno do WhatsApp Web, que a
+// Meta ofusca/rotaciona. TODO o acoplamento com o WhatsApp vive aqui. Quando
+// quebrar, ajuste só este arquivo e suba o SCRAPE_VERSION.
+//
+// Estratégia: tenta o window.WPP (se a página tiver WA-JS), senão usa moduleRaid
+// pra achar o `Store` no webpack do WhatsApp. Normaliza JID pro padrão do
+// backend (@s.whatsapp.net p/ individual; @lid e @g.us preservados).
+
+(function () {
+  "use strict";
+  const SCRAPE_VERSION = "2026-06-16.1";
+
+  // ---- moduleRaid mínimo (extrai módulos do webpack do WhatsApp) ----
+  function moduleRaid() {
+    const id = "nexusModuleRaid";
+    const modules = {};
+    const tag = self.webpackChunkwhatsapp_web_client || self.webpackChunk;
+    if (!tag) return null;
+    try {
+      tag.push([
+        [id],
+        {},
+        (req) => {
+          for (const m of Object.keys(req.m)) {
+            try {
+              modules[m] = req(m);
+            } catch (_) {}
+          }
+        },
+      ]);
+    } catch (_) {
+      return null;
+    }
+    return modules;
+  }
+
+  function findStore() {
+    if (self.WPP && self.WPP.whatsapp) return { kind: "wpp", S: self.WPP.whatsapp };
+    if (self.Store && self.Store.Contact) return { kind: "store", S: self.Store };
+    const mods = moduleRaid();
+    if (!mods) return null;
+    const S = {};
+    for (const k of Object.keys(mods)) {
+      const m = mods[k];
+      if (!m || typeof m !== "object") continue;
+      if (m.Contact && m.Chat) return { kind: "store", S: m };
+      if (m.default && m.default.Contact) return { kind: "store", S: m.default };
+      if (m.Contact && !S.Contact) S.Contact = m.Contact;
+      if (m.Chat && !S.Chat) S.Chat = m.Chat;
+      if (m.GroupMetadata && !S.GroupMetadata) S.GroupMetadata = m.GroupMetadata;
+    }
+    return S.Contact ? { kind: "store", S } : null;
+  }
+
+  function jidOf(model) {
+    const id = model && (model.id || (model.attributes && model.attributes.id));
+    let s = (id && (id._serialized || id)) || "";
+    if (typeof s !== "string") s = String(s);
+    return s;
+  }
+
+  function normJid(s) {
+    if (!s) return "";
+    if (s.endsWith("@c.us")) return s.replace("@c.us", "@s.whatsapp.net");
+    return s; // @lid, @g.us, @s.whatsapp.net preservados
+  }
+
+  function arr(collection) {
+    if (!collection) return [];
+    if (typeof collection.getModelsArray === "function")
+      return collection.getModelsArray();
+    if (Array.isArray(collection.models)) return collection.models;
+    if (Array.isArray(collection._models)) return collection._models;
+    return [];
+  }
+
+  function scrapeContatos(S) {
+    const out = [];
+    for (const c of arr(S.Contact)) {
+      const a = c.attributes || c;
+      const jid = normJid(jidOf(c));
+      if (!jid || jid.endsWith("@g.us")) continue;
+      if (a.isMe) continue;
+      const verified = a.verifiedName || null;
+      out.push({
+        wa_jid: jid,
+        push_name: a.pushname || a.notify || null,
+        name: a.name || a.formattedName || null,
+        is_business: !!(a.isBusiness || verified),
+        verified_name: verified,
+      });
+    }
+    return out;
+  }
+
+  function scrapeGrupos(S) {
+    const out = [];
+    for (const ch of arr(S.Chat)) {
+      const a = ch.attributes || ch;
+      const jid = jidOf(ch);
+      if (!jid.endsWith("@g.us")) continue;
+      const meta =
+        (S.GroupMetadata &&
+          S.GroupMetadata.get &&
+          S.GroupMetadata.get(jid)) ||
+        null;
+      const parts = meta ? arr({ models: meta.participants }) : [];
+      const membros = parts
+        .map((p) => {
+          const pa = p.attributes || p;
+          const pj = normJid(jidOf(p) || (pa.id && pa.id._serialized) || "");
+          return pj ? { wa_jid: pj, is_admin: !!(pa.isAdmin || pa.isSuperAdmin) } : null;
+        })
+        .filter(Boolean);
+      out.push({
+        wa_group_id: jid,
+        nome: a.name || a.formattedTitle || (meta && meta.subject) || null,
+        descricao: (meta && meta.desc) || null,
+        participantes_count: membros.length || (meta && meta.size) || 0,
+        membros,
+      });
+    }
+    return out;
+  }
+
+  window.addEventListener("message", (ev) => {
+    const d = ev.data;
+    if (!d || d.source !== "nexus-ext" || d.cmd !== "scrape") return;
+    const reply = (payload) =>
+      window.postMessage(
+        { source: "nexus-page", reqId: d.reqId, version: SCRAPE_VERSION, ...payload },
+        "*"
+      );
+    try {
+      const found = findStore();
+      if (!found) {
+        reply({ error: "store do WhatsApp não encontrado (abra uma conversa e aguarde carregar)" });
+        return;
+      }
+      const S = found.S;
+      if (d.what === "contatos") reply({ contatos: scrapeContatos(S) });
+      else if (d.what === "grupos") reply({ grupos: scrapeGrupos(S) });
+      else reply({ error: "tipo inválido" });
+    } catch (e) {
+      reply({ error: "falha no scrape: " + (e && e.message) });
+    }
+  });
+
+  console.info("[nexus] inject pronto, scrape_version=" + SCRAPE_VERSION);
+})();
