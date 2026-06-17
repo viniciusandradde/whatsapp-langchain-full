@@ -67,6 +67,13 @@ async function enviarMsg(telefone, texto, tipo) {
   return pedirPagina({ cmd: "send", telefone, texto, tipo }, 60000);
 }
 
+async function enviarMidia(telefone, dataUrl, filename, caption) {
+  return pedirPagina(
+    { cmd: "send", tipo: "midia", telefone, dataUrl, filename, caption },
+    120000
+  );
+}
+
 async function enviarBackground(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (r) => resolve(r || { ok: false, error: "sem resposta do background" }));
@@ -125,6 +132,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 window.__nexusBridge = {
   garantirWpp,
   enviarMsg,
+  enviarMidia,
   enviarBackground,
   pedirScrape,
 };
