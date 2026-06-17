@@ -130,6 +130,27 @@ def phone_from_jid(jid: str) -> str | None:
     return f"+{digits}" if digits else None
 
 
+def _contact_jid(c: dict) -> str:
+    """Resolve o JID do WhatsApp de um contato da Evolution v2.
+
+    O `/chat/findContacts` retorna registros da tabela Contact, onde `id` é o
+    **cuid interno da Evolution** (ex: `cmq866i4j1wzjpn4x...`), NÃO o JID. O JID
+    real fica em `remoteJid` (`5511...@s.whatsapp.net` ou `<lid>@lid`). Alguns
+    builds expõem o número em `number`. Ordem: remoteJid → number → id (só se
+    parecer JID). O cuid puro é descartado (não dá telefone).
+    """
+    remote = c.get("remoteJid") or c.get("jid")
+    if remote and "@" in str(remote):
+        return str(remote)
+    number = c.get("number")
+    if number:
+        digits = "".join(ch for ch in str(number) if ch.isdigit())
+        if digits:
+            return f"{digits}@s.whatsapp.net"
+    raw_id = str(c.get("id") or "")
+    return raw_id if "@" in raw_id else ""
+
+
 class EvolutionClient:
     """Cliente assíncrono para envio de mensagens WhatsApp via Evolution API.
 
@@ -410,7 +431,7 @@ class EvolutionClient:
             data = resp.json() or []
         out: list[CapturedContact] = []
         for c in data:
-            jid = c.get("id") or c.get("remoteJid") or ""
+            jid = _contact_jid(c)
             if not jid:
                 continue
             verified = c.get("verifiedName")

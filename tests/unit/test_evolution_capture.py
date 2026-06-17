@@ -125,6 +125,30 @@ class TestFetchContacts:
         assert out[0]["verified_name"] == "Loja X"
         assert out[1]["is_business"] is False
 
+    async def test_usa_remotejid_e_ignora_cuid_interno(self, monkeypatch):
+        """Evolution v2: `id` é cuid interno; o JID real vem em `remoteJid`."""
+        resp = _FakeResp(
+            [
+                # cuid interno + remoteJid real → usa remoteJid (telefone derivável)
+                {
+                    "id": "cmq866i4j1wzjpn4xlm0kbk0i",
+                    "remoteJid": "5511999999999@s.whatsapp.net",
+                    "pushName": "Ariel",
+                },
+                # só cuid (sem remoteJid/number) → descartado (não vira telefone)
+                {"id": "cmpwqmhki1vp5pn4xh025ykkv", "pushName": "SemJid"},
+                # número em `number` → constrói JID @s.whatsapp.net
+                {"id": "cmqzzz", "number": "5511888887777", "pushName": "Por número"},
+            ]
+        )
+        _patch_httpx(monkeypatch, resp)
+        out = await _real_client().fetch_contacts()
+        jids = [c["wa_jid"] for c in out]
+        assert "5511999999999@s.whatsapp.net" in jids
+        assert "5511888887777@s.whatsapp.net" in jids
+        assert not any(j.startswith(("cmq", "cmp")) for j in jids)
+        assert len(out) == 2  # o só-cuid foi descartado
+
 
 class TestFetchGroups:
     async def test_parse_invite_link_e_count(self, monkeypatch):
