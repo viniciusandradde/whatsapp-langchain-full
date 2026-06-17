@@ -447,6 +447,28 @@ app.mount(
     StaticFiles(directory=str(_LOGOS_DIR)),
     name="logos",
 )
+
+# Disparador — mídia (foto) de campanha (volume disparador_media:/app/uploads/disparador).
+_default_disparador_media_dir = "/app/uploads/disparador"
+_DISPARADOR_MEDIA_DIR = Path(
+    os.environ.get("DISPARADOR_MEDIA_DIR", _default_disparador_media_dir)
+)
+try:
+    _DISPARADOR_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError) as _exc:
+    _DISPARADOR_MEDIA_DIR = Path.cwd() / "uploads" / "disparador"
+    _DISPARADOR_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "disparador_media_dir_fallback",
+        intended=str(_default_disparador_media_dir),
+        fallback=str(_DISPARADOR_MEDIA_DIR),
+        reason=str(_exc),
+    )
+app.mount(
+    "/uploads/disparador",
+    StaticFiles(directory=str(_DISPARADOR_MEDIA_DIR)),
+    name="disparador_media",
+)
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)

@@ -190,6 +190,38 @@ class TestFetchGroupParticipants:
         assert out[1]["wa_jid"].endswith("@lid")
 
 
+class TestSendMedia:
+    async def test_mock_retorna_id(self):
+        mid = await _mock_client().send_media(
+            "+5511999999999", "https://x/foto.jpg", caption="oi"
+        )
+        assert mid.startswith("mock-evo-media-")
+
+    async def test_real_posta_payload(self, monkeypatch):
+        fake = _patch_httpx(monkeypatch, _FakeResp({"key": {"id": "MID123"}}))
+        mid = await _real_client().send_media(
+            "+5511999999999",
+            "https://x/foto.jpg",
+            mediatype="image",
+            caption="legenda",
+        )
+        assert mid == "MID123"
+        # confere que mandou number/mediatype/media/caption pro sendMedia
+        method, url, kw = fake.calls[-1]
+        assert method == "POST"
+        assert "/message/sendMedia/" in url
+        body = kw["json"]
+        assert body["mediatype"] == "image"
+        assert body["media"] == "https://x/foto.jpg"
+        assert body["caption"] == "legenda"
+        assert body["number"] == "5511999999999"
+
+    async def test_erro_http_levanta(self, monkeypatch):
+        _patch_httpx(monkeypatch, _FakeResp({}, status=400))
+        with pytest.raises(ec.EvolutionSendError):
+            await _real_client().send_media("+5511999999999", "https://x/f.jpg")
+
+
 class TestHealth:
     async def test_mock(self):
         h = await _mock_client().health()

@@ -75,6 +75,19 @@ export function ContatosClient({
     });
   }
 
+  // Contatos selecionáveis (com telefone e ainda não promovidos).
+  const selecionaveis = contatos.filter((c) => c.telefone && !c.promovido_at);
+  const todosSelecionados =
+    selecionaveis.length > 0 && selecionaveis.every((c) => sel.has(c.id));
+
+  function toggleTodos() {
+    setSel(
+      todosSelecionados
+        ? new Set<number>()
+        : new Set(selecionaveis.map((c) => c.id))
+    );
+  }
+
   function promover() {
     setErro(null);
     setMsg(null);
@@ -213,7 +226,15 @@ export function ContatosClient({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead></TableHead>
+                <TableHead>
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar todos"
+                    checked={todosSelecionados}
+                    disabled={selecionaveis.length === 0}
+                    onChange={toggleTodos}
+                  />
+                </TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Telefone</TableHead>
                 <TableHead>Tipo</TableHead>

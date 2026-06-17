@@ -52,6 +52,8 @@ services:
       - avatars_data:/app/uploads/avatars
       # White-label — logos por empresa (servidas como estático)
       - logos_data:/app/uploads/logos
+      # Disparador — mídia (foto) de campanha
+      - disparador_media:/app/uploads/disparador
 
   worker:
     build:
@@ -129,3 +131,4 @@ volumes:
   tests_reports:
   avatars_data:  # Sprint U — uploads de avatar (persiste em rebuilds)
   logos_data:  # White-label — logos por empresa (persiste em rebuilds)
+  disparador_media:  # Disparador — fotos de campanha (persiste em rebuilds)
