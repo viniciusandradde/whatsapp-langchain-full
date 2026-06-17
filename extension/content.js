@@ -120,3 +120,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true;
 });
+
+// Expõe a ponte (mesmo ISOLATED world) pro painel injetado (panel.js).
+window.__nexusBridge = {
+  garantirWpp,
+  enviarMsg,
+  enviarBackground,
+  pedirScrape,
+};
