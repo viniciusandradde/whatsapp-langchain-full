@@ -382,6 +382,56 @@ async def add_destinatarios(
     return {"novos": novos, "total": row[0] if row else 0}
 
 
+async def clonar_campanha(
+    pool: AsyncConnectionPool, empresa_id: int, camp_id: int
+) -> dict:
+    """Clona uma campanha como NOVO rascunho ("{nome} (cópia)"), copiando
+    mensagem/mídia/anti-ban/template/conexão + todos os destinatários (resetados
+    pra 'pendente'). A original fica intacta — usado pra reenviar."""
+    src = await get_campanha(pool, empresa_id, camp_id)
+    if src is None:
+        raise ValueError("Campanha não encontrada")
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    f"""
+                    INSERT INTO campanha
+                        (empresa_id, nome, descricao, mensagem, conexao_id,
+                         intervalo_ms, max_destinatarios, total_destinatarios,
+                         created_by_user_id, status,
+                         modelo_mensagem_id, tipo,
+                         message_template_id, template_variaveis,
+                         intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
+                         media_url, media_tipo)
+                    SELECT empresa_id, nome || ' (cópia)', descricao, mensagem,
+                         conexao_id, intervalo_ms, max_destinatarios,
+                         (SELECT count(*) FROM campanha_destinatario
+                           WHERE campanha_id = %s),
+                         created_by_user_id, 'draft',
+                         modelo_mensagem_id, tipo,
+                         message_template_id, template_variaveis,
+                         intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
+                         media_url, media_tipo
+                    FROM campanha WHERE id = %s AND empresa_id = %s
+                    RETURNING {_COLS}
+                    """,
+                    (camp_id, camp_id, empresa_id),
+                )
+                row = await cur.fetchone()
+                assert row is not None
+                novo = _row_to_camp(row)
+                await conn.execute(
+                    "INSERT INTO campanha_destinatario (campanha_id, telefone, variaveis)"
+                    " SELECT %s, telefone, variaveis FROM campanha_destinatario"
+                    " WHERE campanha_id = %s",
+                    (novo.id, camp_id),
+                )
+                await conn.commit()
+    logger.info("campanha_clonada", origem=camp_id, nova=novo.id)
+    return novo.to_dict()
+
+
 async def remove_destinatario(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int, dest_id: int
 ) -> dict:

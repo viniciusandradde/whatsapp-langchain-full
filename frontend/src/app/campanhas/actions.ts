@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import {
   abortCampanha,
   addCampanhaDestinatarios,
+  clonarCampanha,
   createCampanha,
   dispatchCampanha,
   getCampanha,
@@ -83,6 +84,18 @@ export async function removeDestinatarioAction(
   try {
     const data = await removeCampanhaDestinatario(id, destId);
     revalidatePath(`/campanhas/${id}`);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function clonarCampanhaAction(
+  id: number
+): Promise<Result<Campanha>> {
+  try {
+    const data = await clonarCampanha(id);
+    revalidatePath("/campanhas");
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: toError(e) };

@@ -57,6 +57,10 @@ class TestCampanhaCreateSmoke:
         r = self._client().delete("/api/campanhas/1/destinatarios/1")
         assert r.status_code == 401, r.text
 
+    def test_clonar_sem_auth_401(self) -> None:
+        r = self._client().post("/api/campanhas/1/clonar")
+        assert r.status_code == 401, r.text
+
 
 @pytest.mark.docker_demo
 class TestEditar:
@@ -135,6 +139,35 @@ class TestEditar:
             )
         with _pytest.raises(ValueError, match="não pode ser alterada"):
             await update_campanha(pool, empresa, camp["id"], {"mensagem": "x"})
+
+    async def test_clonar_cria_rascunho_com_destinatarios(self, empresa) -> None:
+        from whatsapp_langchain.shared.campanha import (
+            add_destinatarios,
+            clonar_campanha,
+            get_campanha,
+            list_destinatarios,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        camp = await self._nova(pool, empresa)  # 1 destinatário
+        await add_destinatarios(pool, empresa, camp["id"], ["+5511960000099"])  # +1
+        # marca a original como done (simula já-enviada)
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            conn.execute(
+                "UPDATE campanha SET status='done' WHERE id=%s", (camp["id"],)
+            )
+        nova = await clonar_campanha(pool, empresa, camp["id"])
+        assert nova["status"] == "draft"
+        assert nova["nome"].endswith("(cópia)")
+        assert nova["id"] != camp["id"]
+        # destinatários copiados, todos pendente
+        dn = await list_destinatarios(pool, nova["id"], limit=50)
+        assert len(dn) == 2
+        assert all(d["status"] == "pendente" for d in dn)
+        # original intacta (ainda done)
+        orig = await get_campanha(pool, empresa, camp["id"])
+        assert orig["status"] == "done"
 
 
 @pytest.mark.docker_demo

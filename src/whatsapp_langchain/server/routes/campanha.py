@@ -258,6 +258,20 @@ async def add_destinatarios_endpoint(
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
+@router.post("/{camp_id}/clonar", status_code=201)
+async def clonar_endpoint(
+    camp_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("disparador.disparar")),
+) -> dict:
+    """Clona a campanha como novo rascunho (reenviar). Original intacta."""
+    pool = await get_pool()
+    try:
+        return await camp_lib.clonar_campanha(pool, empresa_id, camp_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
 @router.delete("/{camp_id}/destinatarios/{dest_id}")
 async def remove_destinatario_endpoint(
     camp_id: int,

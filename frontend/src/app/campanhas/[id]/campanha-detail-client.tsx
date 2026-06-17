@@ -1,8 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { ArrowLeft, Megaphone, Pencil, Plus, Send, Square, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Megaphone,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Send,
+  Square,
+  X,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +27,7 @@ import type { Campanha, CampanhaDestinatario } from "@/lib/api";
 import {
   abortCampanhaAction,
   addDestinatariosAction,
+  clonarCampanhaAction,
   dispatchCampanhaAction,
   refreshCampanhaAction,
   removeDestinatarioAction,
@@ -43,11 +54,24 @@ export function CampanhaDetailClient({
   destinatariosIniciais,
   loadError,
 }: Props) {
+  const router = useRouter();
   const [c, setC] = useState(initial);
   const [dest, setDest] = useState(destinatariosIniciais);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const finalizada =
+    c.status === "done" || c.status === "partial" || c.status === "aborted";
+
+  function reenviar() {
+    setError(null);
+    startTransition(async () => {
+      const r = await clonarCampanhaAction(c.id);
+      if (!r.ok) return setError(r.error);
+      router.push(`/campanhas/${r.data.id}`);
+    });
+  }
 
   // Edição (só rascunho/agendada)
   const editavel = c.status === "draft" || c.status === "scheduled";
@@ -194,6 +218,12 @@ export function CampanhaDetailClient({
             <Button variant="destructive" onClick={handleAbort} disabled={isPending}>
               <Square className="size-3.5" />
               Abortar
+            </Button>
+          )}
+          {finalizada && (
+            <Button onClick={reenviar} disabled={isPending}>
+              <RefreshCw className="size-3.5" />
+              Reenviar
             </Button>
           )}
         </div>
