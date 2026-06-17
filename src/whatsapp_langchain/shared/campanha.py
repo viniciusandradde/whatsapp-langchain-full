@@ -174,10 +174,26 @@ async def create_campanha(
     # Template HSM (mig 113)
     message_template_id: int | None = None,
     template_variaveis: dict | None = None,
+    # Anti-ban configurável (migs 120/121) — jitter + kill-switch
+    intervalo_min_ms: int | None = None,
+    intervalo_max_ms: int | None = None,
+    kill_switch_pct: int | None = None,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
-    `validate_phones` antes pra reportar erros ao user."""
+    `validate_phones` antes pra reportar erros ao user.
+
+    Anti-ban: se `intervalo_min_ms`/`intervalo_max_ms` vierem, definem a faixa
+    de jitter aleatório por destinatário; senão caem no `intervalo_ms` legado.
+    `kill_switch_pct` aborta a campanha quando a taxa de falha estoura."""
+    # Faixa de jitter efetiva (CHECK do banco exige min <= max).
+    eff_min = intervalo_min_ms if intervalo_min_ms is not None else intervalo_ms
+    eff_max = (
+        intervalo_max_ms if intervalo_max_ms is not None else max(intervalo_ms, eff_min)
+    )
+    if eff_min > eff_max:
+        eff_min, eff_max = eff_max, eff_min
+    eff_kill = kill_switch_pct if kill_switch_pct is not None else 30
     normalized: list[str] = []
     seen: set[str] = set()
     for raw in telefones_brutos:
@@ -204,9 +220,10 @@ async def create_campanha(
                      created_by_user_id,
                      modelo_mensagem_id, scheduled_at, tipo,
                      filtro_segmento, filtro_tags,
-                     message_template_id, template_variaveis)
+                     message_template_id, template_variaveis,
+                     intervalo_min_ms, intervalo_max_ms, kill_switch_pct)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::text[], %s, %s::jsonb)
+                        %s::text[], %s, %s::jsonb, %s, %s, %s)
                 RETURNING {_COLS}
                 """,
                 (
@@ -226,6 +243,9 @@ async def create_campanha(
                     list(filtro_tags or []) if filtro_tags is not None else None,
                     message_template_id,
                     _json.dumps(template_variaveis or {}),
+                    eff_min,
+                    eff_max,
+                    eff_kill,
                 ),
             )
             row = await cur.fetchone()

@@ -66,6 +66,39 @@ export function CampanhasPageClient({
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
 
+  // Anti-ban (migs 120/121): jitter min/max + kill-switch, com preset seguro.
+  const [intervaloMin, setIntervaloMin] = useState(3000);
+  const [intervaloMax, setIntervaloMax] = useState(8000);
+  const [killPct, setKillPct] = useState(30);
+  // Telefones controlado pra permitir pré-preenchimento vindo de Contatos.
+  const [telefonesText, setTelefonesText] = useState("");
+
+  function aplicarModoSeguro() {
+    setIntervaloMin(5000);
+    setIntervaloMax(15000);
+    setKillPct(25);
+  }
+
+  // Pré-preenche a lista quando vem da página de Contatos ("Criar campanha
+  // com selecionados") — os telefones ficam no sessionStorage. setState fica
+  // num microtask pra não violar set-state-in-effect do compiler.
+  useEffect(() => {
+    let tel: string | null = null;
+    try {
+      tel = sessionStorage.getItem("campanha_telefones");
+      if (tel) sessionStorage.removeItem("campanha_telefones");
+    } catch {
+      tel = null;
+    }
+    if (!tel) return;
+    const lista = tel;
+    Promise.resolve().then(() => {
+      setTelefonesText(lista);
+      setCreating(true);
+      aplicarModoSeguro();
+    });
+  }, []);
+
   // Carrega templates aprovados ao escolher conexão no modo template.
   // (setState só no callback async — evita set-state-in-effect do compiler.)
   useEffect(() => {
@@ -119,7 +152,10 @@ export function CampanhasPageClient({
         | null,
       mensagem: modo === "texto" ? String(fd.get("mensagem") || "").trim() : null,
       conexao_id: conexaoId ? Number(conexaoId) : null,
-      intervalo_ms: Number(fd.get("intervalo_ms") || 500),
+      intervalo_ms: intervaloMin,
+      intervalo_min_ms: intervaloMin,
+      intervalo_max_ms: intervaloMax,
+      kill_switch_pct: killPct,
       max_destinatarios: Number(fd.get("max_destinatarios") || 1000),
       telefones,
       // Sub-fase B+ (padrão profissional) (mig 051)
@@ -333,19 +369,6 @@ export function CampanhasPageClient({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-                    Intervalo (ms)
-                  </label>
-                  <input
-                    type="number"
-                    name="intervalo_ms"
-                    defaultValue={500}
-                    min={0}
-                    max={60_000}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
                     Máx destinatários
                   </label>
                   <input
@@ -366,12 +389,82 @@ export function CampanhasPageClient({
                   name="telefones"
                   required
                   rows={6}
+                  value={telefonesText}
+                  onChange={(e) => setTelefonesText(e.target.value)}
                   placeholder={"+5511999999999\n+5511988888888"}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   Telefones inválidos (&lt;8 dígitos) são descartados.
                   Duplicados são ignorados.
+                </p>
+              </div>
+
+              {/* Anti-ban: jitter aleatório + kill-switch (migs 120/121) */}
+              <div className="rounded-md border border-amber-300/40 bg-amber-50/40 p-3 space-y-3 dark:bg-amber-950/10">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                    🛡️ Anti-ban
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={aplicarModoSeguro}
+                  >
+                    Modo Seguro
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Intervalo mín (ms)
+                    </label>
+                    <input
+                      type="number"
+                      name="intervalo_min_ms"
+                      value={intervaloMin}
+                      onChange={(e) => setIntervaloMin(Number(e.target.value))}
+                      min={0}
+                      max={600_000}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Intervalo máx (ms)
+                    </label>
+                    <input
+                      type="number"
+                      name="intervalo_max_ms"
+                      value={intervaloMax}
+                      onChange={(e) => setIntervaloMax(Number(e.target.value))}
+                      min={0}
+                      max={600_000}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Kill-switch (% falha)
+                    </label>
+                    <input
+                      type="number"
+                      name="kill_switch_pct"
+                      value={killPct}
+                      onChange={(e) => setKillPct(Number(e.target.value))}
+                      min={0}
+                      max={100}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Cada envio espera um tempo <strong>aleatório</strong> entre mín e
+                  máx (cadência fixa = assinatura de bot). A campanha
+                  <strong> aborta sozinha</strong> se a taxa de falha passar do
+                  kill-switch. <strong>Modo Seguro</strong> = 5–15s + 25% (use em
+                  Evolution/não-oficial).
                 </p>
               </div>
 

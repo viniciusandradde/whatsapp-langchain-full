@@ -53,3 +53,45 @@ class TestJitterDelay:
 
     def test_fixo_quando_min_eq_max(self):
         assert _jitter_delay_s(500, 500) == 0.5
+
+
+class TestCampanhaCreateAntiBan:
+    """Validação do modelo de criação com campos anti-ban (migs 120/121)."""
+
+    def _model(self):
+        from whatsapp_langchain.server.routes.campanha import CampanhaCreate
+
+        return CampanhaCreate
+
+    def test_aceita_jitter_e_kill_switch(self):
+        m = self._model()(
+            nome="Promo",
+            mensagem="Olá",
+            telefones=["+5511999999999"],
+            intervalo_min_ms=5000,
+            intervalo_max_ms=15000,
+            kill_switch_pct=25,
+        )
+        assert m.intervalo_min_ms == 5000
+        assert m.intervalo_max_ms == 15000
+        assert m.kill_switch_pct == 25
+
+    def test_min_maior_que_max_rejeita(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="intervalo_min_ms"):
+            self._model()(
+                nome="Promo",
+                mensagem="Olá",
+                telefones=["+5511999999999"],
+                intervalo_min_ms=15000,
+                intervalo_max_ms=5000,
+            )
+
+    def test_anti_ban_opcional(self):
+        # sem os campos → None (cai nos defaults do banco/helper)
+        m = self._model()(
+            nome="Promo", mensagem="Olá", telefones=["+5511999999999"]
+        )
+        assert m.intervalo_min_ms is None
+        assert m.kill_switch_pct is None

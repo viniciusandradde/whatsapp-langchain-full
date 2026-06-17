@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { DownloadCloud, UserPlus, Users } from "lucide-react";
+import { DownloadCloud, Megaphone, UserPlus, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,23 @@ export function ContatosClient({
     evolution[0]?.id ?? ""
   );
   const [capturando, setCapturando] = useState<string | null>(null);
+  const router = useRouter();
+
+  function criarCampanha() {
+    const telefones = contatos
+      .filter((c) => sel.has(c.id) && c.telefone)
+      .map((c) => c.telefone as string);
+    if (telefones.length === 0) {
+      setErro("Selecione contatos com telefone para criar a campanha.");
+      return;
+    }
+    try {
+      sessionStorage.setItem("campanha_telefones", telefones.join("\n"));
+    } catch {
+      /* ignora */
+    }
+    router.push("/campanhas");
+  }
 
   async function carregar() {
     const r = await listContatosAction();
@@ -177,9 +195,19 @@ export function ContatosClient({
           <CardTitle className="text-base">
             {contatos.length} contato(s) · {sel.size} selecionado(s)
           </CardTitle>
-          <Button size="sm" disabled={pending || sel.size === 0} onClick={promover}>
-            <UserPlus className="mr-1 h-4 w-4" /> Promover p/ CRM
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={sel.size === 0}
+              onClick={criarCampanha}
+            >
+              <Megaphone className="mr-1 h-4 w-4" /> Criar campanha
+            </Button>
+            <Button size="sm" disabled={pending || sel.size === 0} onClick={promover}>
+              <UserPlus className="mr-1 h-4 w-4" /> Promover p/ CRM
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>

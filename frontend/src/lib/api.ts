@@ -2611,6 +2611,10 @@ export interface CampanhaCreateInput {
   // Template HSM (mig 113) — broadcast fora da janela 24h
   message_template_id?: number | null;
   template_variaveis?: Record<string, string>;
+  // Anti-ban (migs 120/121) — jitter aleatório + kill-switch
+  intervalo_min_ms?: number | null;
+  intervalo_max_ms?: number | null;
+  kill_switch_pct?: number | null;
 }
 
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {
