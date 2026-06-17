@@ -43,6 +43,99 @@ class TestCampanhaCreateSmoke:
         r = self._client().post("/api/campanhas/preview-crm", json={"tags": ["vip"]})
         assert r.status_code == 401, r.text
 
+    def test_patch_sem_auth_401(self) -> None:
+        r = self._client().patch("/api/campanhas/1", json={"nome": "x"})
+        assert r.status_code == 401, r.text
+
+    def test_add_destinatarios_sem_auth_401(self) -> None:
+        r = self._client().post(
+            "/api/campanhas/1/destinatarios", json={"telefones": ["+5511999999999"]}
+        )
+        assert r.status_code == 401, r.text
+
+    def test_remove_destinatario_sem_auth_401(self) -> None:
+        r = self._client().delete("/api/campanhas/1/destinatarios/1")
+        assert r.status_code == 401, r.text
+
+
+@pytest.mark.docker_demo
+class TestEditar:
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"edit-{_RUN}", f"edit-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def _nova(self, pool, empresa):
+        from whatsapp_langchain.shared.campanha import create_campanha
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        with empresa_scope(empresa):
+            return await create_campanha(
+                pool,
+                empresa,
+                nome=f"e-{_RUN}",
+                descricao=None,
+                mensagem="oi",
+                conexao_id=None,
+                intervalo_ms=500,
+                max_destinatarios=1000,
+                telefones_brutos=["+5511960000001"],
+                user_id=None,
+            )
+
+    async def test_update_add_remove(self, empresa) -> None:
+        from whatsapp_langchain.shared.campanha import (
+            add_destinatarios,
+            get_campanha,
+            list_destinatarios,
+            remove_destinatario,
+            update_campanha,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        camp = await self._nova(pool, empresa)
+        cid = camp["id"]
+
+        # update mensagem
+        upd = await update_campanha(pool, empresa, cid, {"mensagem": "nova msg"})
+        assert upd["mensagem"] == "nova msg"
+
+        # add 2 telefones → total 3
+        r = await add_destinatarios(pool, empresa, cid, ["+5511960000002", "+5511960000003"])
+        assert r["novos"] == 2 and r["total"] == 3
+        c2 = await get_campanha(pool, empresa, cid)
+        assert c2["total_destinatarios"] == 3
+
+        # remove 1 → total 2
+        dests = await list_destinatarios(pool, cid, limit=10)
+        rem = await remove_destinatario(pool, empresa, cid, dests[0]["id"])
+        assert rem["removido"] is True and rem["total"] == 2
+
+    async def test_update_rejeita_running(self, empresa) -> None:
+        import pytest as _pytest
+
+        from whatsapp_langchain.shared.campanha import update_campanha
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        camp = await self._nova(pool, empresa)
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            conn.execute(
+                "UPDATE campanha SET status='running' WHERE id=%s", (camp["id"],)
+            )
+        with _pytest.raises(ValueError, match="não pode ser alterada"):
+            await update_campanha(pool, empresa, camp["id"], {"mensagem": "x"})
+
 
 @pytest.mark.docker_demo
 class TestAgendamento:
