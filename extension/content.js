@@ -74,6 +74,10 @@ async function enviarMidia(telefone, dataUrl, filename, caption) {
   );
 }
 
+async function validarNumero(telefone) {
+  return pedirPagina({ cmd: "validar", telefone }, 30000);
+}
+
 async function enviarBackground(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (r) => resolve(r || { ok: false, error: "sem resposta do background" }));
@@ -133,6 +137,7 @@ window.__nexusBridge = {
   garantirWpp,
   enviarMsg,
   enviarMidia,
+  validarNumero,
   enviarBackground,
   pedirScrape,
 };
