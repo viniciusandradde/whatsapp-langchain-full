@@ -1,4 +1,9 @@
-import { getContatosCapturados, type ContatoCapturado } from "@/lib/api";
+import {
+  getConexoes,
+  getContatosCapturados,
+  type Conexao,
+  type ContatoCapturado,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { ContatosClient } from "./contatos-client";
@@ -9,10 +14,18 @@ export const metadata = { title: "Disparador · Contatos capturados" };
 export default async function ContatosPage() {
   await requireSession();
   let initial: ContatoCapturado[] = [];
+  let evolution: Conexao[] = [];
   try {
-    initial = (await getContatosCapturados()).items;
+    const [contatos, conexoes] = await Promise.all([
+      getContatosCapturados(),
+      getConexoes(),
+    ]);
+    initial = contatos.items;
+    evolution = conexoes.conexoes.filter(
+      (c) => c.provider === "evolution" && c.status === "active"
+    );
   } catch {
     initial = [];
   }
-  return <ContatosClient initial={initial} />;
+  return <ContatosClient initial={initial} evolution={evolution} />;
 }

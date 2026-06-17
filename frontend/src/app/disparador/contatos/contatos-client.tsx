@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { UserPlus, Users } from "lucide-react";
+import { DownloadCloud, UserPlus, Users } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,33 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { ContatoCapturado } from "@/lib/api";
+import type { Conexao, ContatoCapturado } from "@/lib/api";
 
-import { listContatosAction, promoverContatosAction } from "../actions";
+import {
+  capturarViaEvolutionAction,
+  getCapturaLoteAction,
+  listContatosAction,
+  promoverContatosAction,
+} from "../actions";
 
-export function ContatosClient({ initial }: { initial: ContatoCapturado[] }) {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export function ContatosClient({
+  initial,
+  evolution,
+}: {
+  initial: ContatoCapturado[];
+  evolution: Conexao[];
+}) {
   const [contatos, setContatos] = useState<ContatoCapturado[]>(initial);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [conexaoId, setConexaoId] = useState<number | "">(
+    evolution[0]?.id ?? ""
+  );
+  const [capturando, setCapturando] = useState<string | null>(null);
 
   async function carregar() {
     const r = await listContatosAction();
@@ -45,14 +62,47 @@ export function ContatosClient({ initial }: { initial: ContatoCapturado[] }) {
     setMsg(null);
     start(async () => {
       const r = await promoverContatosAction([...sel]);
-      if (!r.ok) {
-        setErro(r.error);
-        return;
-      }
+      if (!r.ok) return setErro(r.error);
       setMsg(`${r.data} contato(s) promovido(s) para o CRM.`);
       setSel(new Set());
       await carregar();
     });
+  }
+
+  async function capturar(tipo: "contatos" | "grupos") {
+    setErro(null);
+    setMsg(null);
+    if (conexaoId === "") return setErro("Selecione uma conexão Evolution.");
+    setCapturando(`Iniciando captura de ${tipo}…`);
+    const r = await capturarViaEvolutionAction(Number(conexaoId), tipo);
+    if (!r.ok) {
+      setCapturando(null);
+      return setErro(r.error);
+    }
+    // polling do lote (captura roda em background no servidor)
+    const loteId = r.data.lote_id;
+    for (let i = 0; i < 40; i++) {
+      await sleep(2000);
+      const lr = await getCapturaLoteAction(loteId);
+      if (!lr.ok) continue;
+      const l = lr.data;
+      setCapturando(
+        `Capturando ${tipo}… ${l.total_novos} novos / ${l.total_recebidos} recebidos (${l.status})`
+      );
+      if (l.status === "concluido" || l.status === "parcial" || l.status === "erro") {
+        setCapturando(null);
+        if (l.status === "erro") setErro(l.erro || "Falha na captura.");
+        else
+          setMsg(
+            `✅ Captura de ${tipo}: ${l.total_novos} novos, ${l.total_atualizados} atualizados.`
+          );
+        await carregar();
+        return;
+      }
+    }
+    setCapturando(null);
+    setMsg("Captura ainda processando — recarregue em instantes.");
+    await carregar();
   }
 
   return (
@@ -71,16 +121,63 @@ export function ContatosClient({ initial }: { initial: ContatoCapturado[] }) {
         </div>
       )}
 
+      {/* Captura server-side via Evolution (robusta, sem extensão) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Capturar via Evolution</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {evolution.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma conexão Evolution ativa. Conecte uma em{" "}
+              <strong>Conexões</strong> para capturar pelo servidor.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  className="rounded-md border px-3 py-2 text-sm"
+                  value={conexaoId}
+                  onChange={(e) =>
+                    setConexaoId(e.target.value ? Number(e.target.value) : "")
+                  }
+                >
+                  {evolution.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.display_name || c.from_number || `Evolution #${c.id}`}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  disabled={!!capturando}
+                  onClick={() => capturar("contatos")}
+                >
+                  <DownloadCloud className="mr-1 h-4 w-4" /> Capturar contatos
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!!capturando}
+                  onClick={() => capturar("grupos")}
+                >
+                  <DownloadCloud className="mr-1 h-4 w-4" /> Capturar grupos
+                </Button>
+              </div>
+              {capturando && (
+                <p className="text-sm text-muted-foreground">{capturando}</p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">
             {contatos.length} contato(s) · {sel.size} selecionado(s)
           </CardTitle>
-          <Button
-            size="sm"
-            disabled={pending || sel.size === 0}
-            onClick={promover}
-          >
+          <Button size="sm" disabled={pending || sel.size === 0} onClick={promover}>
             <UserPlus className="mr-1 h-4 w-4" /> Promover p/ CRM
           </Button>
         </CardHeader>
@@ -134,8 +231,8 @@ export function ContatosClient({ initial }: { initial: ContatoCapturado[] }) {
                     colSpan={5}
                     className="text-center text-sm text-muted-foreground"
                   >
-                    Nenhum contato capturado. Use a extensão ou capture via
-                    Evolution.
+                    Nenhum contato capturado ainda. Use “Capturar via Evolution”
+                    acima.
                   </TableCell>
                 </TableRow>
               )}
