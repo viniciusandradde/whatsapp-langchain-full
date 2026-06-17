@@ -360,6 +360,52 @@ async def list_clientes(
     return [_row_to_cliente(r) for r in rows]
 
 
+async def resolve_telefones_por_filtro(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    tags: list[str] | None = None,
+    segmento: str | None = None,
+    lifecycle_stage: str | None = None,
+    search: str | None = None,
+    limit: int = 10_000,
+) -> list[str]:
+    """Resolve a lista de telefones (E.164, distintos) de clientes do CRM que
+    casam com os filtros. Usado pra alimentar destinatários de campanha.
+
+    - `tags`: JOIN em `cliente_tag` (strings, mesmo que `cliente.tags` expõe);
+      cliente com qualquer uma das tags entra.
+    - `segmento`/`lifecycle_stage`: igualdade exata.
+    - `search`: ILIKE em nome/telefone.
+    Só retorna clientes com telefone preenchido.
+    """
+    params: list = [empresa_id]
+    join = ""
+    where = "WHERE c.empresa_id = %s AND c.telefone IS NOT NULL AND c.telefone <> ''"
+    if tags:
+        join = "JOIN cliente_tag ct ON ct.cliente_id = c.id"
+        where += " AND ct.tag = ANY(%s)"
+        params.append(list(tags))
+    if segmento:
+        where += " AND c.segmento = %s"
+        params.append(segmento)
+    if lifecycle_stage:
+        where += " AND c.lifecycle_stage = %s"
+        params.append(lifecycle_stage)
+    if search:
+        where += " AND (c.nome ILIKE %s OR c.telefone ILIKE %s)"
+        like = f"%{search}%"
+        params.extend([like, like])
+    params.append(limit)
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"SELECT DISTINCT c.telefone FROM cliente c {join} {where} LIMIT %s",  # type: ignore[arg-type]
+            tuple(params),
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
 async def add_anotacao(
     pool: AsyncConnectionPool,
     cliente_id: int,

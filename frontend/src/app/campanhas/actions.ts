@@ -9,10 +9,14 @@ import {
   dispatchCampanha,
   getCampanha,
   getCampanhaDestinatarios,
+  getTags,
   listTemplates,
+  previewCrmCampanha,
   type Campanha,
   type CampanhaCreateInput,
   type CampanhaDestinatario,
+  type PreviewCrmFiltro,
+  type Tag,
   type WabaTemplate,
 } from "@/lib/api";
 
@@ -21,6 +25,26 @@ type OkResult = { ok: true } | { ok: false; error: string };
 
 function toError(e: unknown): string {
   return e instanceof Error ? e.message : "Erro desconhecido.";
+}
+
+export async function loadTagsAction(): Promise<Result<Tag[]>> {
+  try {
+    const { items } = await getTags();
+    return { ok: true, data: items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function previewCrmAction(
+  filtro: PreviewCrmFiltro
+): Promise<Result<{ total: number; telefones: string[] }>> {
+  try {
+    const data = await previewCrmCampanha(filtro);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
 }
 
 export async function createCampanhaAction(
