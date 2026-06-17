@@ -46,11 +46,21 @@ class CampanhaCreate(BaseModel):
     # Template HSM (mig 113) — broadcast fora da janela 24h
     message_template_id: int | None = None
     template_variaveis: dict[str, str] = Field(default_factory=dict)
+    # Anti-ban (migs 120/121) — jitter aleatório + kill-switch
+    intervalo_min_ms: int | None = Field(default=None, ge=0, le=600_000)
+    intervalo_max_ms: int | None = Field(default=None, ge=0, le=600_000)
+    kill_switch_pct: int | None = Field(default=None, ge=0, le=100)
 
     @model_validator(mode="after")
     def _texto_ou_template(self) -> CampanhaCreate:
         if not self.message_template_id and not (self.mensagem or "").strip():
             raise ValueError("Informe `mensagem` (texto) OU `message_template_id`.")
+        if (
+            self.intervalo_min_ms is not None
+            and self.intervalo_max_ms is not None
+            and self.intervalo_min_ms > self.intervalo_max_ms
+        ):
+            raise ValueError("intervalo_min_ms não pode ser maior que intervalo_max_ms.")
         return self
 
 
@@ -116,6 +126,9 @@ async def create_endpoint(
             filtro_tags=body.filtro_tags,
             message_template_id=body.message_template_id,
             template_variaveis=body.template_variaveis,
+            intervalo_min_ms=body.intervalo_min_ms,
+            intervalo_max_ms=body.intervalo_max_ms,
+            kill_switch_pct=body.kill_switch_pct,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
