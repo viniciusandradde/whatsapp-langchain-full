@@ -427,7 +427,8 @@ async def clonar_campanha(
                     " WHERE campanha_id = %s",
                     (novo.id, camp_id),
                 )
-                await conn.commit()
+                # NÃO chamar conn.commit() aqui — o `async with conn.transaction()`
+                # commita ao sair (psycopg proíbe commit explícito dentro dele).
     logger.info("campanha_clonada", origem=camp_id, nova=novo.id)
     return novo.to_dict()
 
