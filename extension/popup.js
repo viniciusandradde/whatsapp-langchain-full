@@ -53,3 +53,26 @@ document
 document
   .getElementById("btn-grupos")
   .addEventListener("click", () => capturar("grupos", "grupos"));
+
+// E0 ZDG-clone: testa o carregamento do WPPConnect (wa-js) + estado da sessão.
+function pedir(tabId, type) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type }, (r) =>
+      resolve(r || { ok: false, error: "sem resposta (recarregue o WhatsApp Web)" })
+    );
+  });
+}
+
+document.getElementById("btn-wpp-status").addEventListener("click", async () => {
+  try {
+    log("Carregando WPPConnect (pode levar alguns segundos)…");
+    const tabId = await abaWhatsApp();
+    const r = await pedir(tabId, "wpp-status");
+    if (!r.ok) throw new Error(r.error);
+    log(
+      `WPP pronto: ${r.ready ? "sim" : "não"} · sessão logada: ${r.authenticated ? "sim ✅" : "não ❌"}`
+    );
+  } catch (e) {
+    log("❌ " + e.message);
+  }
+});

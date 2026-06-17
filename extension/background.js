@@ -97,6 +97,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           { membros: msg.membros || [] }
         );
         sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:campanha") {
+        const r = await apiPost("/api/disparador/ext/campanha", {
+          nome: msg.nome,
+          mensagem: msg.mensagem || null,
+          telefones: msg.telefones || [],
+        });
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:report") {
+        const r = await apiPost(
+          `/api/disparador/ext/campanha/${msg.campanhaId}/report`,
+          { items: msg.items || [] }
+        );
+        sendResponse({ ok: true, data: r });
       } else {
         sendResponse({ ok: false, error: "tipo desconhecido" });
       }

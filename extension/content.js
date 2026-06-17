@@ -28,18 +28,43 @@ window.addEventListener("message", (ev) => {
   }
 });
 
-function pedirScrape(what) {
+function pedirPagina(payload, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     const reqId = ++seq;
     pendentes.set(reqId, resolve);
-    window.postMessage({ source: "nexus-ext", cmd: "scrape", what, reqId }, "*");
+    window.postMessage({ source: "nexus-ext", reqId, ...payload }, "*");
     setTimeout(() => {
       if (pendentes.has(reqId)) {
         pendentes.delete(reqId);
-        reject(new Error("timeout: o WhatsApp Web não respondeu (store carregado?)"));
+        reject(new Error("timeout: o WhatsApp Web não respondeu"));
       }
-    }, 30000);
+    }, timeoutMs);
   });
+}
+
+function pedirScrape(what) {
+  return pedirPagina({ cmd: "scrape", what });
+}
+
+// --- Disparo in-browser (WPPConnect/wa-js) ---
+// wa-js (window.WPP) é pesado (~500KB) → injeta sob demanda, uma vez só.
+let _waJsInjetado = false;
+function injetarWaJs() {
+  if (_waJsInjetado) return;
+  _waJsInjetado = true;
+  const s = document.createElement("script");
+  s.src = chrome.runtime.getURL("vendor/wa-js.js");
+  (document.head || document.documentElement).appendChild(s);
+}
+
+async function garantirWpp() {
+  injetarWaJs();
+  // dá um tempinho pro script carregar antes de checar (ensure-wpp espera onReady).
+  return pedirPagina({ cmd: "ensure-wpp" }, 70000);
+}
+
+async function enviarMsg(telefone, texto, tipo) {
+  return pedirPagina({ cmd: "send", telefone, texto, tipo }, 60000);
 }
 
 async function enviarBackground(msg) {
@@ -77,6 +102,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (rm.ok) membrosTotal += rm.data?.novos || 0;
         }
         sendResponse({ ...rg, raspados: grupos.length, membrosNovos: membrosTotal });
+      } else if (msg.type === "wpp-status") {
+        // E0: carrega wa-js sob demanda e reporta se a sessão está pronta/logada.
+        const r = await garantirWpp();
+        if (r.error) throw new Error(r.error);
+        sendResponse({
+          ok: true,
+          ready: !!r.ready,
+          authenticated: !!r.authenticated,
+        });
       } else {
         sendResponse({ ok: false, error: "comando desconhecido" });
       }
