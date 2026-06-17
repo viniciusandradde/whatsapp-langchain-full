@@ -148,5 +148,65 @@
     }
   });
 
+  // --- Disparo in-browser via WPPConnect (window.WPP, carregado sob demanda
+  // pelo content.js). E0: ensure-wpp (sessão pronta?) + send texto. Tipos ricos
+  // entram nas próximas slices. ---
+  function jidParaChat(telefone) {
+    const digits = String(telefone || "").replace(/\D/g, "");
+    return digits + "@c.us";
+  }
+
+  window.addEventListener("message", (ev) => {
+    const d = ev.data;
+    if (!d || d.source !== "nexus-ext") return;
+    if (d.cmd !== "ensure-wpp" && d.cmd !== "send") return;
+    const reply = (payload) =>
+      window.postMessage({ source: "nexus-page", reqId: d.reqId, ...payload }, "*");
+    (async () => {
+      try {
+        const WPP = window.WPP;
+        if (!WPP) {
+          reply({ error: "WPP (wa-js) não carregado na página" });
+          return;
+        }
+        if (d.cmd === "ensure-wpp") {
+          if (!WPP.isReady) {
+            await new Promise((res, rej) => {
+              const t = setTimeout(() => rej(new Error("WPP não ficou pronto (60s)")), 60000);
+              WPP.webpack.onReady(() => {
+                clearTimeout(t);
+                res();
+              });
+            });
+          }
+          let auth = false;
+          try {
+            auth = !!(WPP.conn && (await WPP.conn.isAuthenticated()));
+          } catch (_) {}
+          reply({ ok: true, ready: true, authenticated: auth });
+          return;
+        }
+        // cmd === "send"
+        const chatId = jidParaChat(d.telefone);
+        let r;
+        if (!d.tipo || d.tipo === "texto") {
+          r = await WPP.chat.sendTextMessage(chatId, d.texto || "", {
+            createChat: true,
+          });
+        } else {
+          reply({ error: "tipo de envio ainda não suportado: " + d.tipo });
+          return;
+        }
+        const wamid =
+          (r && (r.id?._serialized || r.id)) ||
+          (r && r.sendMsgResult) ||
+          "";
+        reply({ ok: true, wamid: String(wamid || "") });
+      } catch (e) {
+        reply({ error: (e && e.message) || String(e) });
+      }
+    })();
+  });
+
   console.info("[nexus] inject pronto, scrape_version=" + SCRAPE_VERSION);
 })();
