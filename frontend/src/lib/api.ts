@@ -2775,6 +2775,22 @@ export async function capturarViaEvolution(
   );
 }
 
+export interface CapturaLote {
+  id: number;
+  tipo: string;
+  origem: string;
+  status: string;
+  total_recebidos: number;
+  total_novos: number;
+  total_atualizados: number;
+  total_pulados_invalido: number;
+  erro: string | null;
+}
+
+export async function getCapturaLote(loteId: number): Promise<CapturaLote> {
+  return apiFetch<CapturaLote>(`/api/captura/lotes/${loteId}`);
+}
+
 export async function previewDisparo(body: {
   conexao_id?: number;
   origem: {

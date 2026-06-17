@@ -3,11 +3,14 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  type CapturaLote,
   type ContatoCapturado,
   type DisparadorApiKey,
   type DisparadorApiKeyCreated,
   type GrupoCapturado,
+  capturarViaEvolution,
   createApiKey,
+  getCapturaLote,
   getContatosCapturados,
   getGruposCapturados,
   listApiKeys,
@@ -78,6 +81,30 @@ export async function promoverContatosAction(
     const { promovidos } = await promoverContatos(ids);
     revalidatePath("/disparador/contatos");
     return { ok: true, data: promovidos };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function capturarViaEvolutionAction(
+  conexaoId: number,
+  tipo: "contatos" | "grupos"
+): Promise<Result<{ lote_id: number; status: string }>> {
+  try {
+    const data = await capturarViaEvolution(conexaoId, tipo);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function getCapturaLoteAction(
+  loteId: number
+): Promise<Result<CapturaLote>> {
+  try {
+    const data = await getCapturaLote(loteId);
+    revalidatePath("/disparador/contatos");
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }
