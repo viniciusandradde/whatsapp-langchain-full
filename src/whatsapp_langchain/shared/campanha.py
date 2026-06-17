@@ -293,6 +293,119 @@ async def create_campanha(
     return camp.to_dict()
 
 
+# Campanha só pode ser editada / ter destinatários mexidos antes de rodar.
+_EDITAVEL = ("draft", "scheduled")
+_CAMPOS_EDITAVEIS = frozenset(
+    {
+        "nome",
+        "descricao",
+        "mensagem",
+        "conexao_id",
+        "intervalo_min_ms",
+        "intervalo_max_ms",
+        "kill_switch_pct",
+        "scheduled_at",
+        "status",
+        "media_url",
+        "media_tipo",
+    }
+)
+
+
+async def _status_editavel(conn, empresa_id: int, camp_id: int) -> str:
+    """Retorna o status se a campanha existe e é editável; senão raise."""
+    cur = await conn.execute(
+        "SELECT status FROM campanha WHERE id = %s AND empresa_id = %s",
+        (camp_id, empresa_id),
+    )
+    row = await cur.fetchone()
+    if row is None:
+        raise ValueError("Campanha não encontrada")
+    if row[0] not in _EDITAVEL:
+        raise ValueError(
+            f"Campanha em '{row[0]}' não pode ser alterada (só rascunho/agendada)."
+        )
+    return row[0]
+
+
+async def update_campanha(
+    pool: AsyncConnectionPool, empresa_id: int, camp_id: int, campos: dict
+) -> dict | None:
+    """Atualiza campos de uma campanha em rascunho/agendada. `campos` é filtrado
+    pela whitelist `_CAMPOS_EDITAVEIS`. Rejeita se a campanha já rodou."""
+    campos = {k: v for k, v in campos.items() if k in _CAMPOS_EDITAVEIS}
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            await _status_editavel(conn, empresa_id, camp_id)
+            if campos:
+                sets = ", ".join(f"{k} = %s" for k in campos) + ", updated_at = NOW()"
+                params = [*campos.values(), camp_id, empresa_id]
+                await conn.execute(
+                    f"UPDATE campanha SET {sets} WHERE id = %s AND empresa_id = %s",  # type: ignore[arg-type]  # noqa: S608 — chaves vêm da whitelist
+                    tuple(params),
+                )
+                await conn.commit()
+    return await get_campanha(pool, empresa_id, camp_id)
+
+
+async def add_destinatarios(
+    pool: AsyncConnectionPool, empresa_id: int, camp_id: int, telefones: list[str]
+) -> dict:
+    """Adiciona telefones a uma campanha editável (normaliza + dedupe). Recalcula
+    total_destinatarios. Retorna {novos, total}."""
+    novos = 0
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            await _status_editavel(conn, empresa_id, camp_id)
+            seen: set[str] = set()
+            for raw in telefones:
+                n = normalize_phone(raw)
+                if n is None or n in seen:
+                    continue
+                seen.add(n)
+                cur = await conn.execute(
+                    "INSERT INTO campanha_destinatario (campanha_id, telefone)"
+                    " VALUES (%s, %s) ON CONFLICT (campanha_id, telefone) DO NOTHING"
+                    " RETURNING id",
+                    (camp_id, n),
+                )
+                if await cur.fetchone() is not None:
+                    novos += 1
+            cur = await conn.execute(
+                "UPDATE campanha SET total_destinatarios ="
+                " (SELECT count(*) FROM campanha_destinatario WHERE campanha_id = %s),"
+                " updated_at = NOW() WHERE id = %s RETURNING total_destinatarios",
+                (camp_id, camp_id),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    return {"novos": novos, "total": row[0] if row else 0}
+
+
+async def remove_destinatario(
+    pool: AsyncConnectionPool, empresa_id: int, camp_id: int, dest_id: int
+) -> dict:
+    """Remove um destinatário de uma campanha editável. Recalcula total."""
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            await _status_editavel(conn, empresa_id, camp_id)
+            cur = await conn.execute(
+                "DELETE FROM campanha_destinatario WHERE id = %s AND campanha_id = %s"
+                " RETURNING id",
+                (dest_id, camp_id),
+            )
+            removido = await cur.fetchone() is not None
+            cur = await conn.execute(
+                "UPDATE campanha SET total_destinatarios ="
+                " (SELECT count(*) FROM campanha_destinatario WHERE campanha_id = %s),"
+                " updated_at = NOW() WHERE id = %s RETURNING total_destinatarios",
+                (camp_id, camp_id),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    return {"removido": removido, "total": row[0] if row else 0}
+
+
 async def list_destinatarios(
     pool: AsyncConnectionPool, camp_id: int, *, limit: int = 200
 ) -> list[dict]:

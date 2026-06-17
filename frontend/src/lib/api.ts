@@ -2637,6 +2637,33 @@ export async function previewCrmCampanha(
   );
 }
 
+export async function updateCampanha(
+  id: number,
+  body: Partial<CampanhaCreateInput> & { agendar?: boolean }
+): Promise<Campanha> {
+  return apiFetch<Campanha>(`/api/campanhas/${id}`, { method: "PATCH", body });
+}
+
+export async function addCampanhaDestinatarios(
+  id: number,
+  body: { telefones?: string[]; crm?: PreviewCrmFiltro }
+): Promise<{ novos: number; total: number }> {
+  return apiFetch<{ novos: number; total: number }>(
+    `/api/campanhas/${id}/destinatarios`,
+    { method: "POST", body }
+  );
+}
+
+export async function removeCampanhaDestinatario(
+  id: number,
+  destId: number
+): Promise<{ removido: boolean; total: number }> {
+  return apiFetch<{ removido: boolean; total: number }>(
+    `/api/campanhas/${id}/destinatarios/${destId}`,
+    { method: "DELETE" }
+  );
+}
+
 export async function getCampanhas(): Promise<{ items: Campanha[] }> {
   return apiFetch<{ items: Campanha[] }>(`/api/campanhas`);
 }

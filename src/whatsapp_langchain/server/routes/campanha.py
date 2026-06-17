@@ -184,6 +184,95 @@ async def create_endpoint(
     return out
 
 
+class CampanhaUpdate(BaseModel):
+    """PATCH parcial — só campos enviados (model_dump exclude_unset) são tocados."""
+
+    nome: str | None = Field(default=None, max_length=120)
+    descricao: str | None = Field(default=None, max_length=500)
+    mensagem: str | None = Field(default=None, max_length=4000)
+    conexao_id: int | None = None
+    intervalo_min_ms: int | None = Field(default=None, ge=0, le=600_000)
+    intervalo_max_ms: int | None = Field(default=None, ge=0, le=600_000)
+    kill_switch_pct: int | None = Field(default=None, ge=0, le=100)
+    scheduled_at: str | None = None
+    agendar: bool | None = None
+    media_url: str | None = Field(default=None, max_length=1000)
+    media_tipo: str | None = None
+
+
+class AddDestinatariosInput(BaseModel):
+    telefones: list[str] | None = Field(default=None, max_length=10_000)
+    crm: PreviewCrmInput | None = None
+
+
+@router.patch("/{camp_id}")
+async def update_endpoint(
+    camp_id: int,
+    body: CampanhaUpdate,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("disparador.disparar")),
+) -> dict:
+    """Edita uma campanha em rascunho/agendada (campos parciais)."""
+    campos = body.model_dump(exclude_unset=True)
+    agendar = campos.pop("agendar", None)
+    if agendar is True:
+        campos["status"] = "scheduled"
+    elif agendar is False:
+        campos["status"] = "draft"
+    pool = await get_pool()
+    try:
+        out = await camp_lib.update_campanha(pool, empresa_id, camp_id, campos)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if out is None:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+    return out
+
+
+@router.post("/{camp_id}/destinatarios")
+async def add_destinatarios_endpoint(
+    camp_id: int,
+    body: AddDestinatariosInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("disparador.disparar")),
+) -> dict:
+    """Adiciona destinatários (lista de telefones e/ou filtro do CRM)."""
+    pool = await get_pool()
+    telefones = list(body.telefones or [])
+    if body.crm is not None:
+        from whatsapp_langchain.shared.cliente import resolve_telefones_por_filtro
+
+        telefones += await resolve_telefones_por_filtro(
+            pool,
+            empresa_id,
+            tags=body.crm.tags,
+            segmento=body.crm.segmento,
+            lifecycle_stage=body.crm.lifecycle_stage,
+            search=body.crm.search,
+        )
+    if not telefones:
+        raise HTTPException(status_code=422, detail="Nenhum telefone informado.")
+    try:
+        return await camp_lib.add_destinatarios(pool, empresa_id, camp_id, telefones)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.delete("/{camp_id}/destinatarios/{dest_id}")
+async def remove_destinatario_endpoint(
+    camp_id: int,
+    dest_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("disparador.disparar")),
+) -> dict:
+    """Remove um destinatário de uma campanha editável."""
+    pool = await get_pool()
+    try:
+        return await camp_lib.remove_destinatario(pool, empresa_id, camp_id, dest_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
 @router.post("/preview-crm")
 async def preview_crm(
     body: PreviewCrmInput,

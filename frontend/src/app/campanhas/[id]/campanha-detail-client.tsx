@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
-import { ArrowLeft, Megaphone, Send, Square } from "lucide-react";
+import { ArrowLeft, Megaphone, Pencil, Plus, Send, Square, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,11 @@ import type { Campanha, CampanhaDestinatario } from "@/lib/api";
 
 import {
   abortCampanhaAction,
+  addDestinatariosAction,
   dispatchCampanhaAction,
   refreshCampanhaAction,
+  removeDestinatarioAction,
+  updateCampanhaAction,
 } from "../actions";
 
 interface Props {
@@ -43,7 +46,64 @@ export function CampanhaDetailClient({
   const [c, setC] = useState(initial);
   const [dest, setDest] = useState(destinatariosIniciais);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Edição (só rascunho/agendada)
+  const editavel = c.status === "draft" || c.status === "scheduled";
+  const [editando, setEditando] = useState(false);
+  const [eNome, setENome] = useState(c.nome);
+  const [eMensagem, setEMensagem] = useState(c.mensagem ?? "");
+  const [novoTel, setNovoTel] = useState("");
+
+  async function recarregar() {
+    const r = await refreshCampanhaAction(c.id);
+    if (r.ok) {
+      setC(r.campanha);
+      setDest(r.destinatarios);
+    }
+  }
+
+  function salvarEdicao() {
+    setError(null);
+    setMsg(null);
+    startTransition(async () => {
+      const r = await updateCampanhaAction(c.id, {
+        nome: eNome.trim(),
+        mensagem: eMensagem.trim() || null,
+      });
+      if (!r.ok) return setError(r.error);
+      setC(r.data);
+      setEditando(false);
+      setMsg("Campanha atualizada.");
+    });
+  }
+
+  function adicionarTelefones() {
+    const tels = novoTel
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (tels.length === 0) return;
+    setError(null);
+    setMsg(null);
+    startTransition(async () => {
+      const r = await addDestinatariosAction(c.id, { telefones: tels });
+      if (!r.ok) return setError(r.error);
+      setNovoTel("");
+      setMsg(`${r.data.novos} adicionado(s). Total: ${r.data.total}.`);
+      await recarregar();
+    });
+  }
+
+  function removerDest(destId: number) {
+    setError(null);
+    startTransition(async () => {
+      const r = await removeDestinatarioAction(c.id, destId);
+      if (!r.ok) return setError(r.error);
+      await recarregar();
+    });
+  }
 
   // Polling enquanto running ou draft (pra pegar updates rápidos)
   useEffect(() => {
@@ -114,6 +174,16 @@ export function CampanhaDetailClient({
           </div>
         </div>
         <div className="flex gap-2">
+          {editavel && (
+            <Button
+              variant="outline"
+              onClick={() => setEditando((v) => !v)}
+              disabled={isPending}
+            >
+              <Pencil className="size-3.5" />
+              {editando ? "Fechar" : "Editar"}
+            </Button>
+          )}
           {c.status === "draft" && (
             <Button onClick={handleDispatch} disabled={isPending}>
               <Send className="size-3.5" />
@@ -129,12 +199,51 @@ export function CampanhaDetailClient({
         </div>
       </div>
 
+      {msg && (
+        <p className="rounded-md border border-emerald-500/40 bg-emerald-50/40 p-3 text-sm text-emerald-700 dark:bg-emerald-950/10">
+          {msg}
+        </p>
+      )}
       {loadError && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {loadError}
         </p>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {editando && editavel && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Editar campanha</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                Nome
+              </label>
+              <input
+                value={eNome}
+                onChange={(e) => setENome(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                Mensagem
+              </label>
+              <textarea
+                value={eMensagem}
+                onChange={(e) => setEMensagem(e.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <Button onClick={salvarEdicao} disabled={isPending} size="sm">
+              Salvar alterações
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -186,7 +295,25 @@ export function CampanhaDetailClient({
             {dest.length === 200 ? "mostrados, há mais" : ""})
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {editavel && (
+            <div className="flex gap-2">
+              <input
+                value={novoTel}
+                onChange={(e) => setNovoTel(e.target.value)}
+                placeholder="Adicionar telefones (vírgula/linha)"
+                className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={adicionarTelefones}
+                disabled={isPending || !novoTel.trim()}
+              >
+                <Plus className="size-3.5" /> Adicionar
+              </Button>
+            </div>
+          )}
           {dest.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum destinatário.</p>
           ) : (
@@ -214,6 +341,17 @@ export function CampanhaDetailClient({
                     >
                       {d.status}
                     </Badge>
+                    {editavel && (
+                      <button
+                        type="button"
+                        onClick={() => removerDest(d.id)}
+                        disabled={isPending}
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label="Remover"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}

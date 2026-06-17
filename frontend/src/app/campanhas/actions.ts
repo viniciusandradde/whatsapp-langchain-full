@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import {
   abortCampanha,
+  addCampanhaDestinatarios,
   createCampanha,
   dispatchCampanha,
   getCampanha,
@@ -12,6 +13,8 @@ import {
   getTags,
   listTemplates,
   previewCrmCampanha,
+  removeCampanhaDestinatario,
+  updateCampanha,
   type Campanha,
   type CampanhaCreateInput,
   type CampanhaDestinatario,
@@ -41,6 +44,45 @@ export async function previewCrmAction(
 ): Promise<Result<{ total: number; telefones: string[] }>> {
   try {
     const data = await previewCrmCampanha(filtro);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function updateCampanhaAction(
+  id: number,
+  body: Partial<CampanhaCreateInput> & { agendar?: boolean }
+): Promise<Result<Campanha>> {
+  try {
+    const data = await updateCampanha(id, body);
+    revalidatePath(`/campanhas/${id}`);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function addDestinatariosAction(
+  id: number,
+  body: { telefones?: string[]; crm?: PreviewCrmFiltro }
+): Promise<Result<{ novos: number; total: number }>> {
+  try {
+    const data = await addCampanhaDestinatarios(id, body);
+    revalidatePath(`/campanhas/${id}`);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function removeDestinatarioAction(
+  id: number,
+  destId: number
+): Promise<Result<{ removido: boolean; total: number }>> {
+  try {
+    const data = await removeCampanhaDestinatario(id, destId);
+    revalidatePath(`/campanhas/${id}`);
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: toError(e) };
