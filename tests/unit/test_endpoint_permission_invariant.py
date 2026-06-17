@@ -59,6 +59,9 @@ ALLOWLIST: list[tuple[str, str]] = [
     # Test runner interno só pra dev/CI
     ("POST", "/api/test-runner"),
     ("GET", "/api/test-runner"),
+    # Disparador in-browser (extensão) — autenticado por API key da empresa
+    # (require_scope("dispatch")), não RBAC de user. Mesmo padrão de webhook.
+    ("POST", "/api/disparador/ext/"),
 ]
 
 # Snapshot de tech-debt — endpoints LEGADOS sem require_permission detectados

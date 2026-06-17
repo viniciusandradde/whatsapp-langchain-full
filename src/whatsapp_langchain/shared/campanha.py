@@ -87,6 +87,8 @@ class CampanhaSummary:
     # Mídia (foto) — mig 123. mensagem vira legenda quando há media_url.
     media_url: str | None = None
     media_tipo: str | None = None
+    # Origem do envio (mig 125): 'backend' (Evolution/WABA) | 'extensao' (in-browser)
+    origem_envio: str = "backend"
 
     def to_dict(self) -> dict:
         return {
@@ -119,6 +121,7 @@ class CampanhaSummary:
             "template_variaveis": dict(self.template_variaveis or {}),
             "media_url": self.media_url,
             "media_tipo": self.media_tipo,
+            "origem_envio": self.origem_envio,
         }
 
 
@@ -131,7 +134,9 @@ _COLS = (
     # Template HSM (mig 113)
     "message_template_id, template_variaveis, "
     # Mídia (mig 123)
-    "media_url, media_tipo"
+    "media_url, media_tipo, "
+    # Origem do envio (mig 125)
+    "origem_envio"
 )
 
 
@@ -192,6 +197,8 @@ async def create_campanha(
     media_tipo: str | None = None,
     # Agendamento (mig 124) — quando True + scheduled_at, nasce 'scheduled'
     agendar: bool = False,
+    # Origem do envio (mig 125): 'extensao' → nasce 'running' (browser envia)
+    origem_envio: str = "backend",
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -225,7 +232,11 @@ async def create_campanha(
         )
 
     # Nasce 'scheduled' quando agendada (poller dispara no horário); senão draft.
-    status_inicial = "scheduled" if (agendar and scheduled_at) else "draft"
+    if origem_envio == "extensao":
+        # Browser (WPPConnect) faz o envio + reporta acks; backend não dispara.
+        status_inicial = "running"
+    else:
+        status_inicial = "scheduled" if (agendar and scheduled_at) else "draft"
 
     async with pool.connection() as conn:
         async with conn.transaction():
@@ -239,9 +250,9 @@ async def create_campanha(
                      filtro_segmento, filtro_tags,
                      message_template_id, template_variaveis,
                      intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
-                     media_url, media_tipo)
+                     media_url, media_tipo, origem_envio)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s)
+                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
                 RETURNING {_COLS}
                 """,
                 (
@@ -267,6 +278,7 @@ async def create_campanha(
                     eff_kill,
                     media_url,
                     media_tipo,
+                    origem_envio,
                 ),
             )
             row = await cur.fetchone()
@@ -291,6 +303,91 @@ async def create_campanha(
         total=len(normalized),
     )
     return camp.to_dict()
+
+
+async def aplicar_report_ext(
+    pool: AsyncConnectionPool, empresa_id: int, camp_id: int, items: list[dict]
+) -> dict:
+    """Aplica o reporte de envio in-browser (extensão) numa campanha
+    `origem_envio='extensao'`. Cada item: {telefone, status('enviado'|'falhou'),
+    erro?, wamid?}. Atualiza `campanha_destinatario` por (campanha_id, telefone),
+    recalcula contadores e finaliza a campanha quando não há mais pendentes.
+
+    Returns: {aplicados, enviados, falhas, total, status}.
+    """
+    aplicados = 0
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            # guard: campanha existe, é da empresa e é da extensão
+            cur = await conn.execute(
+                "SELECT origem_envio FROM campanha WHERE id = %s AND empresa_id = %s",
+                (camp_id, empresa_id),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise ValueError("Campanha não encontrada")
+            if row[0] != "extensao":
+                raise ValueError("Report só vale pra campanha origem_envio='extensao'")
+
+            for it in items:
+                tel = normalize_phone(str(it.get("telefone") or ""))
+                st = it.get("status")
+                if tel is None or st not in ("enviado", "falhou"):
+                    continue
+                cur = await conn.execute(
+                    """
+                    UPDATE campanha_destinatario
+                       SET status = %s, erro = %s, mensagem_id_externo = %s,
+                           sent_at = NOW()
+                     WHERE campanha_id = %s AND telefone = %s
+                       AND status = 'pendente'
+                    RETURNING id
+                    """,
+                    (
+                        st,
+                        (str(it.get("erro"))[:500] if it.get("erro") else None),
+                        it.get("wamid"),
+                        camp_id,
+                        tel,
+                    ),
+                )
+                if await cur.fetchone() is not None:
+                    aplicados += 1
+
+            # recalcula contadores + finaliza se acabou
+            cur = await conn.execute(
+                """
+                UPDATE campanha SET
+                    enviados = (SELECT count(*) FROM campanha_destinatario
+                                 WHERE campanha_id = %s AND status = 'enviado'),
+                    falhas   = (SELECT count(*) FROM campanha_destinatario
+                                 WHERE campanha_id = %s AND status = 'falhou'),
+                    updated_at = NOW(),
+                    status = CASE
+                       WHEN (SELECT count(*) FROM campanha_destinatario
+                              WHERE campanha_id = %s AND status = 'pendente') = 0
+                       THEN (CASE WHEN (SELECT count(*) FROM campanha_destinatario
+                                         WHERE campanha_id = %s AND status = 'falhou') > 0
+                                  THEN 'partial' ELSE 'done' END)
+                       ELSE status END,
+                    finished_at = CASE
+                       WHEN (SELECT count(*) FROM campanha_destinatario
+                              WHERE campanha_id = %s AND status = 'pendente') = 0
+                       THEN NOW() ELSE finished_at END
+                 WHERE id = %s
+                RETURNING enviados, falhas, total_destinatarios, status
+                """,
+                (camp_id, camp_id, camp_id, camp_id, camp_id, camp_id),
+            )
+            r = await cur.fetchone()
+            await conn.commit()
+    return {
+        "aplicados": aplicados,
+        "enviados": r[0] if r else 0,
+        "falhas": r[1] if r else 0,
+        "total": r[2] if r else 0,
+        "status": r[3] if r else None,
+    }
 
 
 # Campanha só pode ser editada / ter destinatários mexidos antes de rodar.
