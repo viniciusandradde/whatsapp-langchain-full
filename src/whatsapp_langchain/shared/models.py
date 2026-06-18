@@ -282,6 +282,9 @@ class Conexao(BaseModel):
     ultimo_health_check_at: datetime | None = None
     ultimo_health_check_ok: bool | None = None
     webhook_verify_token: str | None = None  # WABA inbound
+    # Anti-ban disparador (mig 126): teto diário + aquecimento
+    daily_send_cap: int | None = None  # NULL = sem teto manual
+    warmup_started_at: datetime | None = None  # NULL = sem aquecimento
 
 
 class ConexaoInput(BaseModel):
@@ -306,6 +309,9 @@ class ConexaoPatchInput(BaseModel):
     is_default: bool | None = None
     tipo_atendimento: str | None = None
     status: str | None = None  # active|disabled (não permite 'error')
+    # Anti-ban (mig 126): teto diário de envios + modo aquecimento
+    daily_send_cap: int | None = None
+    warmup_enabled: bool | None = None  # True liga aquecimento (seta warmup_started_at)
 
 
 # --- M3 CRM Light: Cliente + Atendimento ---

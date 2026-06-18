@@ -33,7 +33,8 @@ _SELECT_COLS = (
     "created_at, updated_at, tipo_atendimento, whatsapp_state, "
     "waba_account_id, waba_phone_id, waba_app_id, waba_account_description, "
     "connection_state, state_message, qr_code, qr_expires_at, "
-    "ultimo_health_check_at, ultimo_health_check_ok, webhook_verify_token"
+    "ultimo_health_check_at, ultimo_health_check_ok, webhook_verify_token, "
+    "daily_send_cap, warmup_started_at"
 )
 
 
@@ -64,6 +65,8 @@ def _row_to_conexao(row) -> Conexao:
         ultimo_health_check_at=row[22],
         ultimo_health_check_ok=row[23],
         webhook_verify_token=row[24],
+        daily_send_cap=row[25],
+        warmup_started_at=row[26],
     )
 
 
@@ -324,8 +327,15 @@ async def patch_conexao(
     is_default: bool | None = None,
     tipo_atendimento: str | None = None,
     status: str | None = None,
+    daily_send_cap: int | None = None,
+    warmup_enabled: bool | None = None,
 ) -> Conexao | None:
-    """UPDATE parcial — só seta colunas não-None."""
+    """UPDATE parcial — só seta colunas não-None.
+
+    Anti-ban: `daily_send_cap` <= 0 limpa o teto (NULL); `warmup_enabled` True
+    inicia o aquecimento (preserva a curva se já estava ligado via COALESCE),
+    False desliga (warmup_started_at = NULL).
+    """
     sets: list[str] = []
     args: list[Any] = []
     if display_name is not None:
@@ -343,6 +353,17 @@ async def patch_conexao(
     if status is not None and status in ("active", "disabled"):
         sets.append("status = %s")
         args.append(status)
+    if daily_send_cap is not None:
+        if daily_send_cap <= 0:
+            sets.append("daily_send_cap = NULL")
+        else:
+            sets.append("daily_send_cap = %s")
+            args.append(daily_send_cap)
+    if warmup_enabled is not None:
+        if warmup_enabled:
+            sets.append("warmup_started_at = COALESCE(warmup_started_at, NOW())")
+        else:
+            sets.append("warmup_started_at = NULL")
 
     if not sets:
         return await get_conexao_by_id(pool, conexao_id)

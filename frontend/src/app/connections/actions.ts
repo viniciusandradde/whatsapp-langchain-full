@@ -9,6 +9,7 @@ import {
   evolutionProvision,
   getConexao,
   getConexaoQR,
+  getConexaoQuota,
   getConexaoStatus,
   patchConexao,
   testConexao,
@@ -20,6 +21,7 @@ import {
   wabaOAuthStart,
   type ConexaoInput,
   type ConexaoPatchInput,
+  type ConexaoQuota,
   type EvolutionProvisionInput,
   type TestEvolutionResult,
   type WabaEmbeddedSignupInput,
@@ -57,6 +59,17 @@ export async function patchConexaoAction(
     await patchConexao(id, body);
     revalidatePath("/connections");
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: safeError(e) };
+  }
+}
+
+export async function getConexaoQuotaAction(
+  id: number
+): Promise<ActionResult<ConexaoQuota>> {
+  try {
+    const data = await getConexaoQuota(id);
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: safeError(e) };
   }

@@ -447,3 +447,116 @@ class TestCampanhaAntiBanPersistencia:
         )
         assert out["media_url"] == "/uploads/disparador/foto.jpg"
         assert out["media_tipo"] == "image"
+
+
+@pytest.mark.docker_demo
+class TestTetoDiario:
+    """Teto diário por conexão + aquecimento (mig 126).
+
+    Cobre os helpers DB-facing (`quota_status`, `incr_uso_hoje`) e o reagendamento
+    pro dia seguinte (`_reagendar_warmup`) sem rodar o `_dispatch_loop` completo
+    (que tem sleeps de jitter e gate de sessão — flaky em teste).
+    """
+
+    @pytest.fixture(scope="class")
+    def empresa_conexao(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            eid = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"teto-{_RUN}", f"teto-{_RUN}"),
+            ).fetchone()[0]
+            cid = conn.execute(
+                "INSERT INTO conexao (empresa_id, provider, from_number, "
+                "daily_send_cap) VALUES (%s, 'twilio_prod', %s, 5) RETURNING id",
+                (eid, f"+1555{_RUN[:7]}"),
+            ).fetchone()[0]
+        yield eid, cid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_quota_conta_e_incrementa(self, empresa_conexao) -> None:
+        eid, cid = empresa_conexao
+        from whatsapp_langchain.shared.conexao import get_conexao_by_id
+        from whatsapp_langchain.shared.conexao_quota import (
+            incr_uso_hoje,
+            quota_status,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(eid):
+            conexao = await get_conexao_by_id(pool, cid)
+            assert conexao is not None
+            assert conexao.daily_send_cap == 5
+
+            # 1) Nada enviado hoje → cap 5, usados 0, restante 5.
+            q = await quota_status(pool, conexao)
+            assert q.cap == 5
+            assert q.usados == 0
+            assert q.restante == 5
+            assert q.motivo == "teto manual"
+
+            # 2) Incrementa 3 → restante cai pra 2.
+            async with pool.connection() as conn:
+                await incr_uso_hoje(conn, eid, cid, 3)
+                await conn.commit()
+            q2 = await quota_status(pool, conexao)
+            assert q2.usados == 3
+            assert q2.restante == 2
+
+    async def test_warmup_limita_abaixo_do_manual(self, empresa_conexao) -> None:
+        eid, cid = empresa_conexao
+        from whatsapp_langchain.shared.conexao import (
+            get_conexao_by_id,
+            patch_conexao,
+        )
+        from whatsapp_langchain.shared.conexao_quota import quota_status
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(eid):
+            # Sobe o teto manual pra 500 e liga aquecimento → curva (dia 0 = 20)
+            # vira o limite efetivo.
+            await patch_conexao(pool, cid, daily_send_cap=500, warmup_enabled=True)
+            conexao = await get_conexao_by_id(pool, cid)
+            assert conexao is not None
+            assert conexao.warmup_started_at is not None
+            q = await quota_status(pool, conexao)
+            assert q.cap == 20  # WARMUP_BASE, menor que 500
+            assert "aquecimento" in (q.motivo or "")
+
+    async def test_reagenda_warmup_vira_scheduled(self, empresa_conexao) -> None:
+        eid, cid = empresa_conexao
+        from whatsapp_langchain.shared.campanha import (
+            _reagendar_warmup,
+            create_campanha,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(eid):
+            out = await create_campanha(
+                pool,
+                eid,
+                nome=f"teto-camp-{_RUN}",
+                descricao=None,
+                mensagem="Olá",
+                conexao_id=cid,
+                intervalo_ms=500,
+                max_destinatarios=1000,
+                telefones_brutos=["+5511970001111", "+5511970002222"],
+                user_id=None,
+            )
+            await _reagendar_warmup(pool, out["id"], 20, "aquecimento (dia 0)")
+
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            row = conn.execute(
+                "SELECT status, scheduled_at FROM campanha WHERE id = %s",
+                (out["id"],),
+            ).fetchone()
+        assert row[0] == "scheduled", row
+        assert row[1] is not None  # reagendada pro dia seguinte

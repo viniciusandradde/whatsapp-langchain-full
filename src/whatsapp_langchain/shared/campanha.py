@@ -29,6 +29,10 @@ from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     list_conexoes,
 )
+from whatsapp_langchain.shared.conexao_quota import (
+    incr_uso_hoje,
+    quota_status,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.outbound import _build_client, send_template_by_id
 from whatsapp_langchain.shared.rls_context import empresa_scope
@@ -791,6 +795,20 @@ async def _dispatch_loop(
     max_ms = (jrow[1] if jrow else None) or fixo
     kill_pct = jrow[2] if jrow else None
 
+    # Teto diário / aquecimento (anti-ban): teto efetivo do dia desta conexão.
+    # Ao atingir, NÃO aborta — reagenda os pendentes pro dia seguinte (warm-up);
+    # o poller retoma e continua de onde parou. cap None = sem teto.
+    quota = await quota_status(pool, conexao)
+    cap_diario = quota.cap
+    usados_hoje = quota.usados
+    if cap_diario is not None:
+        log.info(
+            "campanha_teto_diario",
+            cap=cap_diario,
+            usados=usados_hoje,
+            motivo=quota.motivo,
+        )
+
     # Marca como running (quando agendada, o poller já fez o claim → pula).
     if not ja_running:
         async with pool.connection() as conn:
@@ -851,6 +869,17 @@ async def _dispatch_loop(
             return
 
         for dest_id, phone, cliente_nome, variaveis in batch:
+            # Teto diário atingido no meio do envio: reagenda o restante pro
+            # próximo dia (warm-up) em vez de abortar. Deixa os pendentes como
+            # 'pendente' — o poller retoma amanhã.
+            if cap_diario is not None and usados_hoje >= cap_diario:
+                await _reagendar_warmup(pool, camp_id, cap_diario, quota.motivo)
+                log.info(
+                    "campanha_teto_diario_atingido",
+                    cap=cap_diario,
+                    motivo=quota.motivo,
+                )
+                return
             try:
                 # Factory única do envio (recriada a cada tentativa do retry).
                 async def _do_send(phone=phone, cn=cliente_nome, v=variaveis):
@@ -874,7 +903,10 @@ async def _dispatch_loop(
                             )
                         legenda = _apply_tokens(camp.get("mensagem") or "", cn, v)
                         return await send_media(
-                            phone, media_url, mediatype=media_tipo, caption=legenda or None
+                            phone,
+                            media_url,
+                            mediatype=media_tipo,
+                            caption=legenda or None,
                         )
                     return await client.send_message(
                         phone, _apply_tokens(camp.get("mensagem") or "", cn, v)
@@ -897,7 +929,10 @@ async def _dispatch_loop(
                         "updated_at=NOW() WHERE id = %s",
                         (camp_id,),
                     )
+                    # Conta no teto diário da conexão (mesma transação).
+                    await incr_uso_hoje(conn, empresa_id, conexao.id)
                     await conn.commit()
+                usados_hoje += 1
             except Exception as e:  # noqa: BLE001 — gravamos a falha
                 err = str(e)[:500]
                 async with pool.connection() as conn:
@@ -966,6 +1001,31 @@ async def _mark_finished(
         await conn.commit()
 
 
+async def _reagendar_warmup(
+    pool: AsyncConnectionPool, camp_id: int, cap: int, motivo: str | None
+) -> None:
+    """Teto diário atingido: reagenda os pendentes pro início do dia seguinte.
+
+    Não aborta — vira 'scheduled' com `scheduled_at` = meia-noite de amanhã; o
+    `run_scheduled_poller` reivindica e o `_dispatch_loop` (ja_running) continua
+    de onde parou. O disparo "pinga" ao longo dos dias = aquecimento na prática.
+    """
+    nota = f"\n[teto diário {cap} atingido ({motivo or 'manual'}) — retoma amanhã]"
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE campanha
+               SET status = 'scheduled',
+                   scheduled_at = date_trunc('day', NOW()) + INTERVAL '1 day',
+                   updated_at = NOW(),
+                   descricao = COALESCE(descricao, '') || %s
+             WHERE id = %s
+            """,
+            (nota, camp_id),
+        )
+        await conn.commit()
+
+
 # Refs fortes pras tasks de dispatch — sem isso o GC pode coletar a task no
 # meio da campanha (o event loop só guarda referência fraca; asyncio docs).
 _BG_TASKS: set[asyncio.Task] = set()
@@ -1017,7 +1077,9 @@ async def claim_scheduled_due(pool: AsyncConnectionPool) -> list[tuple[int, int]
     return claimed
 
 
-async def run_scheduled_poller(pool: AsyncConnectionPool, interval_s: float = 30.0) -> None:
+async def run_scheduled_poller(
+    pool: AsyncConnectionPool, interval_s: float = 30.0
+) -> None:
     """Loop infinito: a cada `interval_s`, claim das agendadas vencidas e
     dispara cada uma (já 'running' pelo claim). Rodar como task no lifespan."""
     while True:
