@@ -24,7 +24,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["inject.js", "vendor/wa-js.js"],
+      "resources": ["inject.js", "vendor/wa-js.js", "vendor/wavoip-sdk.js"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]
