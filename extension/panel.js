@@ -107,7 +107,11 @@
         <span>🚀 Nexus Disparador</span>
         <span class="nx-x" id="nx-close">✕</span>
       </div>
-      <div class="nx-body">
+      <div class="nx-tabs">
+        <button class="nx-tab nx-tab-on" id="nx-tab-msg">💬 Mensagens</button>
+        <button class="nx-tab" id="nx-tab-voz">📞 Ligações</button>
+      </div>
+      <div class="nx-body" id="nx-msg-body">
         <label>Contatos (1 por linha — nome,telefone,campo1…)</label>
         <textarea id="nx-lista" rows="5" placeholder="João,+5511999999999
 Maria,+5511988888888"></textarea>
@@ -200,8 +204,77 @@ Refri|R$8"></textarea>
         <div class="nx-hint">📨 <b>Volume seguro / API Oficial (WABA)</b>: use o painel do
           Nexus → <a id="nx-link-painel" href="#" target="_blank" style="color:#075e54">Campanhas</a>
           (template aprovado, sem risco de ban, funciona no celular).</div>
+      </div>
+      <div class="nx-body" id="nx-voz-body" style="display:none">
+        <div class="nx-warn">📞 <b>Ligações de voz automáticas (WaVoIP)</b> tocam um áudio
+          pré-gravado. Requer <b>tokens WaVoIP</b> (serviço pago — wavoip.com). Ligação
+          automática em massa <b>queima número rápido</b> e pode ter implicações legais
+          (spam de voz). Use com consentimento e em baixo volume.</div>
+        <label>Tokens WaVoIP (1 por linha)</label>
+        <textarea id="nx-voz-tokens" rows="2" placeholder="cole aqui os tokens dos seus números WaVoIP"></textarea>
+        <div class="nx-ctrls">
+          <button class="nx-btn nx-sec" id="nx-voz-conectar">Conectar tokens</button>
+          <button class="nx-btn nx-sec" id="nx-voz-status">Ver status</button>
+        </div>
+        <div class="nx-hint" id="nx-voz-devs">Nenhum device conectado.</div>
+        <label>🔊 Áudio da ligação (mp3/ogg/wav — tocado ao atender)</label>
+        <input id="nx-voz-audio" type="file" accept="audio/*">
+        <div class="nx-hint" id="nx-voz-audio-info">Nenhum áudio.</div>
+        <label>Contatos (1 por linha — nome,telefone)</label>
+        <textarea id="nx-voz-lista" rows="5" placeholder="João,+5511999999999"></textarea>
+        <div class="nx-row">
+          <div><label>Intervalo mín (s)</label><input id="nx-voz-min" type="number" value="20" min="5"></div>
+          <div><label>Intervalo máx (s)</label><input id="nx-voz-max" type="number" value="45" min="5"></div>
+        </div>
+        <div class="nx-row">
+          <div><label>Toca por até (s)</label><input id="nx-voz-ring" type="number" value="40" min="10"></div>
+          <div><label>Pausa a cada</label><input id="nx-voz-pausa-cada" type="number" value="30" min="0"></div>
+        </div>
+        <div class="nx-row">
+          <div><label>Pausa (s)</label><input id="nx-voz-pausa-seg" type="number" value="600" min="0"></div>
+          <div></div>
+        </div>
+        <button class="nx-btn" id="nx-voz-start">Iniciar ligações</button>
+        <div class="nx-ctrls">
+          <button class="nx-btn nx-sec" id="nx-voz-pause" disabled>Pausar</button>
+          <button class="nx-btn nx-stop" id="nx-voz-stop" disabled>Parar</button>
+        </div>
+        <div class="nx-bar"><i id="nx-voz-bar"></i></div>
+        <div class="nx-log" id="nx-voz-log">Pronto. Conecte os tokens e o áudio.</div>
+        <button class="nx-btn nx-sec" id="nx-voz-csv" style="display:none">Baixar não-atendidas (CSV)</button>
       </div>`;
     document.body.appendChild(p);
+    // tabs
+    const setTab = (voz) => {
+      $("nx-tab-msg").classList.toggle("nx-tab-on", !voz);
+      $("nx-tab-voz").classList.toggle("nx-tab-on", voz);
+      $("nx-msg-body").style.display = voz ? "none" : "block";
+      $("nx-voz-body").style.display = voz ? "block" : "none";
+    };
+    $("nx-tab-msg").onclick = () => setTab(false);
+    $("nx-tab-voz").onclick = () => setTab(true);
+    // WaVoIP wiring
+    $("nx-voz-conectar").onclick = vozConectar;
+    $("nx-voz-status").onclick = vozStatus;
+    $("nx-voz-audio").onchange = vozCarregarAudio;
+    $("nx-voz-start").onclick = iniciarVoz;
+    $("nx-voz-pause").onclick = () => {
+      pausado = !pausado;
+      $("nx-voz-pause").textContent = pausado ? "Continuar" : "Pausar";
+      vozLog(pausado ? "⏸ Pausado." : "▶ Retomando…");
+    };
+    $("nx-voz-stop").onclick = () => {
+      parar = true;
+      vozLog("⏹ Parando…");
+      B().wavoipStop && B().wavoipStop();
+    };
+    // pré-carrega tokens WaVoIP salvos
+    try {
+      chrome.storage.local.get(["wavoipTokens"], (r) => {
+        if (r && Array.isArray(r.wavoipTokens) && r.wavoipTokens.length)
+          $("nx-voz-tokens").value = r.wavoipTokens.join("\n");
+      });
+    } catch (_) {}
     $("nx-close").onclick = () => p.classList.remove("open");
     const link = $("nx-link-painel");
     if (link)
@@ -562,8 +635,220 @@ Refri|R$8"></textarea>
     }
   }
 
+  // ════════════════════════════════════════════════════════════════
+  //  WaVoIP — ligações de voz automáticas (áudio pré-gravado)
+  // ════════════════════════════════════════════════════════════════
+  let vozAudio = null; // { dataUrl, filename }
+  let vozTokensOk = []; // tokens com device 'open'
+  let vozFalhasCsv = [];
+
+  function vozLog(m) {
+    const el = $("nx-voz-log");
+    if (el) el.textContent = m;
+  }
+  function vozSetBar(pct) {
+    const el = $("nx-voz-bar");
+    if (el) el.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  }
+
+  async function vozConectar() {
+    const tokens = ($("nx-voz-tokens").value || "")
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!tokens.length) return vozLog("❌ Cole pelo menos 1 token WaVoIP.");
+    vozLog("Carregando SDK WaVoIP e registrando tokens…");
+    try {
+      const r = await B().wavoipConnect(tokens);
+      if (r.error) throw new Error(r.error);
+      // salva os tokens pra reuso (chrome.storage via content world).
+      try {
+        chrome.storage.local.set({ wavoipTokens: tokens });
+      } catch (_) {}
+      await vozStatus();
+    } catch (e) {
+      vozLog("❌ " + e.message);
+    }
+  }
+
+  async function vozStatus() {
+    try {
+      const r = await B().wavoipStatus();
+      if (r.error) throw new Error(r.error);
+      const devs = r.devices || [];
+      vozTokensOk = devs.filter((d) => d.status === "open").map((d) => d.token);
+      const abertos = vozTokensOk.length;
+      const linhas = devs
+        .map((d) => `${d.status === "open" ? "🟢" : "⚪"} ${d.contact || d.token.slice(0, 8)} (${d.status})`)
+        .join(" · ");
+      $("nx-voz-devs").textContent = devs.length
+        ? `${abertos}/${devs.length} online — ${linhas}`
+        : "Nenhum device. Confira os tokens / vincule o número no WaVoIP.";
+    } catch (e) {
+      $("nx-voz-devs").textContent = "Status indisponível: " + e.message;
+    }
+  }
+
+  async function vozCarregarAudio(e) {
+    const f = (e.target.files || [])[0];
+    if (!f) {
+      vozAudio = null;
+      $("nx-voz-audio-info").textContent = "Nenhum áudio.";
+      return;
+    }
+    if (f.size > 16 * 1024 * 1024) {
+      $("nx-voz-audio-info").textContent = "❌ áudio > 16MB.";
+      return;
+    }
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const rd = new FileReader();
+        rd.onload = () => res(rd.result);
+        rd.onerror = rej;
+        rd.readAsDataURL(f);
+      });
+      vozAudio = { dataUrl, filename: f.name };
+      $("nx-voz-audio-info").textContent = `🔊 ${f.name} pronto.`;
+    } catch (_) {
+      $("nx-voz-audio-info").textContent = "❌ falha ao ler o áudio.";
+    }
+  }
+
+  async function iniciarVoz() {
+    if (rodando) return;
+    const lista = parseLista($("nx-voz-lista").value);
+    if (!lista.length) return vozLog("❌ Adicione contatos válidos (com telefone).");
+    if (!vozAudio) return vozLog("❌ Selecione o áudio da ligação.");
+    if (!vozTokensOk.length) {
+      await vozStatus();
+      if (!vozTokensOk.length)
+        return vozLog("❌ Nenhum número WaVoIP online. Conecte os tokens.");
+    }
+    const min = Math.max(5, Number($("nx-voz-min").value || 20)) * 1000;
+    const max = Math.max(min, Number($("nx-voz-max").value || 45) * 1000);
+    const ringMs = Math.max(10, Number($("nx-voz-ring").value || 40)) * 1000;
+    const pausaCada = Math.max(0, Number($("nx-voz-pausa-cada").value || 0));
+    const pausaSeg = Math.max(0, Number($("nx-voz-pausa-seg").value || 0));
+
+    rodando = true;
+    pausado = false;
+    parar = false;
+    vozFalhasCsv = [];
+    $("nx-voz-start").disabled = true;
+    $("nx-voz-pause").disabled = false;
+    $("nx-voz-stop").disabled = false;
+    $("nx-voz-csv").style.display = "none";
+
+    try {
+      vozLog("Preparando áudio…");
+      const prep = await B().wavoipAudio(vozAudio.dataUrl);
+      if (prep.error) throw new Error(prep.error);
+
+      // híbrido: registra como campanha no Nexus (origem extensão)
+      let campanhaId = null;
+      const criar = await B().enviarBackground({
+        type: "ext:campanha",
+        nome: "Ligações WaVoIP " + new Date().toLocaleString("pt-BR"),
+        mensagem: "[Ligação de voz] " + vozAudio.filename,
+        telefones: lista.map((r) => r.telefone),
+      });
+      if (criar.ok) campanhaId = criar.data.campanha_id;
+      else vozLog("⚠️ Sem registro no Nexus (" + criar.error + ") — segue só local.");
+
+      let ok = 0;
+      let naoAtendidas = 0;
+      let falhas = 0;
+      let reportBuf = [];
+      const total = lista.length;
+
+      async function flushReport() {
+        if (campanhaId && reportBuf.length) {
+          const itens = reportBuf;
+          reportBuf = [];
+          await B().enviarBackground({ type: "ext:report", campanhaId, items: itens });
+        }
+      }
+
+      for (let i = 0; i < total; i++) {
+        if (parar) break;
+        while (pausado && !parar) await new Promise((r) => setTimeout(r, 300));
+        if (parar) break;
+
+        const row = lista[i];
+        const token = vozTokensOk[i % vozTokensOk.length]; // round-robin
+        let status = "enviado"; // atendida = "enviado" no modelo de campanha
+        let erro = null;
+        try {
+          const r = await B().wavoipCall({
+            telefone: row.telefone,
+            phone: row.telefone,
+            token,
+            ringTimeoutMs: ringMs,
+          });
+          if (r.error) {
+            status = "falhou";
+            erro = r.error;
+          } else if (r.status === "completed" && r.answered) {
+            status = "enviado";
+          } else if (r.status === "unanswered") {
+            status = "falhou";
+            erro = "não atendida";
+          } else {
+            status = "falhou";
+            erro = r.error || "não completada";
+          }
+        } catch (e) {
+          status = "falhou";
+          erro = e.message;
+        }
+
+        if (status === "enviado") ok++;
+        else {
+          falhas++;
+          if (erro === "não atendida") naoAtendidas++;
+          vozFalhasCsv.push([row.nome, row.telefone, (erro || "").replace(/[\n,]/g, " ")]);
+        }
+        reportBuf.push({ telefone: row.telefone, status, erro, wamid: "" });
+
+        const feitos = i + 1;
+        vozSetBar((feitos / total) * 100);
+        vozLog(`Ligando ${feitos}/${total} · ✅ ${ok} atendidas · 📵 ${naoAtendidas} · ❌ ${falhas - naoAtendidas} erro`);
+        if (reportBuf.length >= 5) await flushReport();
+
+        if (feitos < total && !parar) {
+          const d = delayMs(feitos, min, max, pausaCada, pausaSeg);
+          await sleepCancelavel(d);
+        }
+      }
+      await flushReport();
+      vozLog(`${parar ? "⏹ Parado" : "✅ Concluído"}: ${ok} atendidas · ${naoAtendidas} não-atendidas · ${falhas - naoAtendidas} erros de ${total}.`);
+      if (vozFalhasCsv.length) $("nx-voz-csv").style.display = "block";
+    } catch (e) {
+      if (e.message !== "__parado__") vozLog("❌ " + e.message);
+    } finally {
+      rodando = false;
+      pausado = false;
+      parar = false;
+      $("nx-voz-start").disabled = false;
+      $("nx-voz-pause").disabled = true;
+      $("nx-voz-pause").textContent = "Pausar";
+      $("nx-voz-stop").disabled = true;
+    }
+  }
+
   // export CSV de falhas
   document.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "nx-voz-csv") {
+      const linhas = [["nome", "telefone", "motivo"], ...vozFalhasCsv]
+        .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+      const blob = new Blob([linhas], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ligacoes-nao-atendidas.csv";
+      a.click();
+      return;
+    }
     if (e.target && e.target.id === "nx-csv") {
       const linhas = [["nome", "telefone", "erro"], ...falhasCsv]
         .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))

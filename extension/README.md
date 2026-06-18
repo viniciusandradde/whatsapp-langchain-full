@@ -60,3 +60,26 @@ Nenhum outro arquivo precisa mudar.
 - Individuais do store vêm como `@c.us`; convertidos para `@s.whatsapp.net`.
 - Membros multi-device podem vir como `@lid` (sem telefone) — enviados como
   `wa_jid`; o backend usa `wa_jid` como identidade primária.
+
+## 📞 Ligações de voz (WaVoIP)
+
+A aba **Ligações** do painel faz **ligações de voz automáticas** que tocam um
+**áudio pré-gravado** ao serem atendidas. Usa o SDK oficial **WaVoIP**
+(`@wavoip/wavoip-webphone`, vendorizado em `vendor/wavoip-sdk.js`), carregado no
+MAIN world sob demanda pelo `content.js`.
+
+- **Pré-requisito**: você precisa de **tokens WaVoIP** — serviço **pago**
+  (wavoip.com). Cada token vincula 1 número WhatsApp. Cole os tokens na aba,
+  "Conectar tokens" e confira que o device fica **online (🟢 open)**.
+- **Mecânica**: `inject.js` registra os tokens (`wavoip.device.add`), intercepta
+  o `getUserMedia` pra injetar o áudio no lugar do microfone, inicia a ligação
+  (`wavoip.call.start`) e acompanha o estado por `getCallActive()` — ao atender,
+  toca o áudio; ao terminar, desliga e passa pro próximo.
+- **Híbrido**: registra a campanha no Nexus (origem `extensao`) — atendidas =
+  `enviado`, não-atendidas/erro = `falhou` (com motivo). Aparece em `/campanhas`.
+- ⚠️ **Risco**: ligação automática em massa **queima número rápido** e tem
+  exposição legal (spam de voz). Defaults conservadores (20–45s entre ligações,
+  pausa periódica). Use com consentimento, baixo volume e número descartável.
+
+Toda a lógica WaVoIP (frágil — depende do SDK de terceiro) está isolada num
+bloco próprio em `inject.js` (`window.wavoip*`).

@@ -279,5 +279,364 @@
     })();
   });
 
+  // ════════════════════════════════════════════════════════════════
+  //  WaVoIP — ligações de voz automáticas (SDK @wavoip/wavoip-webphone)
+  //
+  //  ⚠️ FRÁGIL/ISOLADO: depende do SDK de terceiros (window.wavoipWebphone /
+  //  window.wavoip), carregado sob demanda pelo content.js (vendor/wavoip-sdk.js).
+  //  Reimplementa a lógica do disparador ZDG (NÃO copia o código): registra
+  //  tokens como devices, intercepta o getUserMedia pra injetar um áudio na
+  //  chamada, e disca em massa lendo o estado via call.getCallActive().
+  //
+  //  Tokens WaVoIP = serviço PAGO (wavoip.com); cada token vincula 1 número.
+  // ════════════════════════════════════════════════════════════════
+  (function () {
+    const _digits = (s) => String(s == null ? "" : s).replace(/\D/g, "");
+    let _rendered = false;
+    let _registered = {};
+    let _ctx = null;
+    let _intercepted = false;
+    let _audioBuffer = null; // AudioBuffer pré-decodificado (1x por campanha)
+    let _active = null; // { source, stream, started }
+
+    function audioCtx() {
+      if (_ctx) return _ctx;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error("AudioContext indisponível.");
+      _ctx = new AC();
+      return _ctx;
+    }
+
+    // Substitui getUserMedia: enquanto houver áudio ativo (__nexusMP3Stream),
+    // o SDK recebe o arquivo no lugar do microfone. Sem áudio ativo → original.
+    function interceptMic() {
+      if (_intercepted) return;
+      const md = navigator.mediaDevices;
+      if (!md || typeof md.getUserMedia !== "function") return;
+      const orig = md.getUserMedia.bind(md);
+      window.__nexusOrigGUM = orig;
+      md.getUserMedia = function (constraints) {
+        try {
+          if (constraints && constraints.audio && window.__nexusMP3Stream) {
+            return Promise.resolve(window.__nexusMP3Stream);
+          }
+        } catch (_) {}
+        return orig(constraints);
+      };
+      _intercepted = true;
+    }
+    try {
+      interceptMic();
+    } catch (_) {}
+
+    async function decodeAudio(dataUrl) {
+      const resp = await fetch(dataUrl);
+      const buf = await resp.arrayBuffer();
+      const ctx = audioCtx();
+      return await new Promise((resolve, reject) => {
+        try {
+          const p = ctx.decodeAudioData(buf, resolve, reject);
+          if (p && typeof p.then === "function") p.then(resolve, reject);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
+    function buildStream(buffer, gainVal) {
+      const ctx = audioCtx();
+      const dest = ctx.createMediaStreamDestination();
+      const rec = { source: null, stream: dest.stream, started: false };
+      if (buffer) {
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.loop = false;
+        const gain = ctx.createGain();
+        gain.gain.value = typeof gainVal === "number" ? gainVal : 1.0;
+        src.connect(gain);
+        gain.connect(dest);
+        rec.source = src;
+      }
+      return rec;
+    }
+
+    function clearAudio() {
+      if (_active) {
+        try {
+          if (_active.source && _active.started) _active.source.stop();
+        } catch (_) {}
+        try {
+          _active.stream.getTracks().forEach((t) => t.stop());
+        } catch (_) {}
+      }
+      _active = null;
+      window.__nexusMP3Stream = null;
+    }
+
+    function startAudio(onEnded) {
+      if (!_active || !_active.source || _active.started) return;
+      try {
+        const ctx = audioCtx();
+        if (ctx.state === "suspended") {
+          try {
+            ctx.resume();
+          } catch (_) {}
+        }
+        _active.started = true;
+        if (typeof onEnded === "function")
+          _active.source.onended = () => {
+            try {
+              onEnded();
+            } catch (_) {}
+          };
+        _active.source.start();
+      } catch (_) {}
+    }
+
+    function getActiveCall() {
+      try {
+        const c = window.wavoip && window.wavoip.call;
+        if (c && typeof c.getCallActive === "function")
+          return c.getCallActive() || null;
+      } catch (_) {}
+      return null;
+    }
+
+    function matchesPhone(active, phone) {
+      if (!active) return false;
+      const p = active.peer && (active.peer.phone || active.peer.number || active.peer.id);
+      if (!p) return true; // softphone de 1 linha: a única ativa é a nossa
+      const a = _digits(p);
+      const b = _digits(phone);
+      return !!a && !!b && (a === b || a.slice(-8) === b.slice(-8));
+    }
+
+    function isAnswered(active, phone) {
+      if (!matchesPhone(active, phone)) return false;
+      const st = String((active && active.status) || "").toUpperCase();
+      if (!st) return true;
+      return ["ACTIVE", "ACCEPTED", "IN_CALL", "ONGOING"].includes(st);
+    }
+
+    function hangup() {
+      try {
+        const c = window.wavoip && window.wavoip.call;
+        if (c && typeof c.end === "function") return c.end();
+        if (c && typeof c.hangup === "function") return c.hangup();
+      } catch (_) {}
+    }
+
+    function getDevices() {
+      try {
+        const d = window.wavoip && window.wavoip.device;
+        if (d && typeof d.get === "function") return d.get() || [];
+      } catch (_) {}
+      return [];
+    }
+
+    async function ensureSdk() {
+      // content.js injeta vendor/wavoip-sdk.js; aqui só esperamos aparecer.
+      let tries = 0;
+      while (!window.wavoipWebphone && tries < 300) {
+        await new Promise((r) => setTimeout(r, 100));
+        tries++;
+      }
+      if (!window.wavoipWebphone)
+        throw new Error("SDK WaVoIP não carregou (dê F5 no WhatsApp Web).");
+      if (!_rendered) {
+        try {
+          if (typeof window.wavoipWebphone.render === "function") {
+            await window.wavoipWebphone.render({
+              buttonPosition: {
+                x: window.innerWidth - 90,
+                y: window.innerHeight - 130,
+              },
+            });
+          }
+        } catch (_) {}
+        _rendered = true;
+        try {
+          const s = window.wavoip && window.wavoip.settings;
+          if (s && s.setShowWidgetButton) s.setShowWidgetButton(false);
+        } catch (_) {}
+      }
+    }
+
+    function registerTokens(tokens) {
+      const dev = window.wavoip && window.wavoip.device;
+      const addFn =
+        dev &&
+        (typeof dev.add === "function"
+          ? dev.add
+          : typeof dev.addDevice === "function"
+            ? dev.addDevice
+            : null);
+      if (!addFn) throw new Error("SDK WaVoIP indisponível (window.wavoip).");
+      (tokens || []).forEach((tk) => {
+        if (!tk || _registered[tk]) return;
+        try {
+          addFn.call(dev, tk);
+          _registered[tk] = true;
+        } catch (_) {}
+      });
+    }
+
+    // Disca 1 número e resolve SÓ quando a ligação termina (pra o caller poder
+    // discar a próxima). Toca o áudio ao atender; ao terminar o áudio, desliga.
+    function placeCall(opts) {
+      opts = opts || {};
+      const phone = _digits(opts.phone);
+      const token = opts.token;
+      const ringMs = opts.ringTimeoutMs || 45000;
+      const maxTalkMs = opts.maxTalkMs || 120000;
+      const postAudioMs = typeof opts.postAudioMs === "number" ? opts.postAudioMs : 1200;
+      const endOnAudioFinish = opts.endOnAudioFinish !== false;
+
+      return new Promise((resolve) => {
+        const c = window.wavoip && window.wavoip.call;
+        if (!c) {
+          resolve({ status: "failed", answered: false, error: "WaVoIP não conectado." });
+          return;
+        }
+        if (!phone) {
+          resolve({ status: "failed", answered: false, error: "Número inválido." });
+          return;
+        }
+
+        let settled = false;
+        let phase = "ringing";
+        let answered = false;
+        let answeredAt = 0;
+        let endingAt = 0;
+        let endingResult = "completed";
+        const startedAt = Date.now();
+        let poll = null;
+
+        function finish(status, err) {
+          if (settled) return;
+          settled = true;
+          if (poll) clearInterval(poll);
+          clearAudio();
+          resolve({
+            status,
+            answered,
+            duration: answeredAt ? Math.round((Date.now() - answeredAt) / 1000) : 0,
+            error: err || null,
+          });
+        }
+        function beginEnding(result) {
+          if (phase === "ending") return;
+          phase = "ending";
+          endingResult = result;
+          endingAt = Date.now();
+          hangup();
+        }
+
+        try {
+          _active = buildStream(_audioBuffer, opts.gain);
+          window.__nexusMP3Stream = _active.stream;
+          const ctx0 = audioCtx();
+          if (ctx0.state === "suspended") {
+            try {
+              ctx0.resume();
+            } catch (_) {}
+          }
+        } catch (_) {
+          window.__nexusMP3Stream = null;
+        }
+
+        let ret;
+        try {
+          ret =
+            typeof c.start === "function"
+              ? c.start(phone, { fromTokens: [token] })
+              : c.startCall(phone, [token]);
+        } catch (e) {
+          finish("failed", (e && e.message) || "falha ao iniciar a ligação");
+          return;
+        }
+        Promise.resolve(ret).then((r) => {
+          if (r && r.err) {
+            const em =
+              r.err.message ||
+              (r.err.devices ? "nenhum device pro token" : "falha ao iniciar");
+            finish("failed", em);
+          }
+        }, () => {});
+
+        poll = setInterval(() => {
+          if (settled) return;
+          const active = getActiveCall();
+          const matched = matchesPhone(active, phone);
+          if (phase === "ringing") {
+            if (isAnswered(active, phone)) {
+              phase = "answered";
+              answered = true;
+              answeredAt = Date.now();
+              startAudio(() => {
+                if (endOnAudioFinish)
+                  setTimeout(() => beginEnding("completed"), postAudioMs);
+              });
+            } else if (Date.now() - startedAt > ringMs) {
+              beginEnding("unanswered");
+            }
+            return;
+          }
+          if (phase === "answered") {
+            if (!matched) {
+              finish("completed");
+              return;
+            }
+            if (Date.now() - answeredAt > maxTalkMs) beginEnding("completed");
+            return;
+          }
+          // ending: resolve só quando a ligação realmente sai do slot ativo.
+          if (!matched || Date.now() - endingAt > 8000) finish(endingResult);
+        }, 500);
+      });
+    }
+
+    window.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (!d || d.source !== "nexus-ext" || !d.cmd || d.cmd.indexOf("wavoip-") !== 0)
+        return;
+      const reply = (payload) =>
+        window.postMessage({ source: "nexus-page", reqId: d.reqId, ...payload }, "*");
+      (async () => {
+        try {
+          if (d.cmd === "wavoip-ensure") {
+            await ensureSdk();
+            reply({ ok: true, ready: true });
+          } else if (d.cmd === "wavoip-connect") {
+            await ensureSdk();
+            registerTokens(d.tokens || []);
+            reply({ ok: true });
+          } else if (d.cmd === "wavoip-status") {
+            const devs = getDevices().map((x) => ({
+              token: x.token,
+              status: String(x.status || "").toLowerCase(),
+              contact: x.contact || null,
+            }));
+            reply({ ok: true, devices: devs });
+          } else if (d.cmd === "wavoip-audio") {
+            _audioBuffer = d.dataUrl ? await decodeAudio(d.dataUrl) : null;
+            reply({ ok: true, segundos: _audioBuffer ? Math.round(_audioBuffer.duration) : 0 });
+          } else if (d.cmd === "wavoip-call") {
+            const r = await placeCall(d);
+            reply({ ok: true, ...r });
+          } else if (d.cmd === "wavoip-stop") {
+            hangup();
+            clearAudio();
+            reply({ ok: true });
+          } else {
+            reply({ error: "comando wavoip desconhecido: " + d.cmd });
+          }
+        } catch (e) {
+          reply({ error: (e && e.message) || String(e) });
+        }
+      })();
+    });
+  })();
+
   console.info("[nexus] inject pronto, scrape_version=" + SCRAPE_VERSION);
 })();
