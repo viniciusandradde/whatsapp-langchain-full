@@ -404,6 +404,32 @@ async def set_conexao_status(
         )
 
 
+async def hard_delete_conexao(
+    pool: AsyncConnectionPool, conexao_id: int, empresa_id: int
+) -> bool:
+    """Remove a linha de conexao do banco (exclusão total, sem deixar órfã).
+
+    FKs: message_queue/campanha/captura_lote/grupo → SET NULL; menu_chatbot/
+    waba_template/usuario_conexao/conexao_envio_diario → CASCADE; **atendimento
+    → RESTRICT**. Se houver atendimento referenciando, o DELETE falha (atômico,
+    rola tudo de volta) e retornamos False — o caller faz soft-delete pra
+    preservar o histórico. WHERE com empresa_id = defesa em profundidade.
+
+    Retorna True se a linha foi removida, False se um FK bloqueou.
+    """
+    from psycopg.errors import ForeignKeyViolation
+
+    try:
+        async with pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "DELETE FROM conexao WHERE id = %s AND empresa_id = %s",
+                (conexao_id, empresa_id),
+            )
+            return cur.rowcount > 0
+    except ForeignKeyViolation:
+        return False
+
+
 async def set_connection_state(
     pool: AsyncConnectionPool,
     conexao_id: int,
