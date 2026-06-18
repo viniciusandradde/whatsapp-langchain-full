@@ -10,7 +10,15 @@ sprint futura quando tivermos mocks server-side.
 
 from __future__ import annotations
 
+import uuid
+
+import psycopg
+import pytest
 from fastapi.testclient import TestClient
+
+from .helpers import get_db_url
+
+_RUN = uuid.uuid4().hex[:8]
 
 
 def _client() -> TestClient:
@@ -173,3 +181,68 @@ class TestSmokeWebhookWABA:
         em qualquer outra coisa). Log warning interno."""
         resp = _client().post("/webhook/waba", json={"object": "page"})
         assert resp.status_code == 200
+
+
+@pytest.mark.docker_demo
+class TestHardDeleteConexao:
+    """Exclusão total da conexão (sem órfã): hard-delete quando não há
+    atendimento; soft-delete (status='disabled') quando há (FK RESTRICT)."""
+
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            eid = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"del-{_RUN}", f"del-{_RUN}"),
+            ).fetchone()[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    def _nova_conexao(self, eid: int, sufixo: str) -> int:
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            return conn.execute(
+                "INSERT INTO conexao (empresa_id, provider, from_number) "
+                "VALUES (%s, 'twilio_prod', %s) RETURNING id",
+                (eid, f"+1999{_RUN[:4]}{sufixo}"),
+            ).fetchone()[0]
+
+    async def test_hard_delete_sem_atendimento(self, empresa) -> None:
+        from whatsapp_langchain.shared.conexao import hard_delete_conexao
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        cid = self._nova_conexao(empresa, "01")
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            removida = await hard_delete_conexao(pool, cid, empresa)
+        assert removida is True
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            row = conn.execute("SELECT 1 FROM conexao WHERE id = %s", (cid,)).fetchone()
+        assert row is None  # linha sumiu de vez
+
+    async def test_soft_fallback_com_atendimento(self, empresa) -> None:
+        from whatsapp_langchain.shared.conexao import hard_delete_conexao
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        cid = self._nova_conexao(empresa, "02")
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            clid = conn.execute(
+                "INSERT INTO cliente (empresa_id, telefone) VALUES (%s, %s) "
+                "RETURNING id",
+                (empresa, f"+5511{_RUN[:6]}2"),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO atendimento (empresa_id, cliente_id, conexao_id) "
+                "VALUES (%s, %s, %s)",
+                (empresa, clid, cid),
+            )
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            removida = await hard_delete_conexao(pool, cid, empresa)
+        assert removida is False  # FK RESTRICT do atendimento bloqueou
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            row = conn.execute("SELECT 1 FROM conexao WHERE id = %s", (cid,)).fetchone()
+        assert row is not None  # linha preservada → caller faz soft-delete

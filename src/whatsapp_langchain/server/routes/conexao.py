@@ -29,6 +29,7 @@ from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     get_credentials_decrypted,
+    hard_delete_conexao,
     list_conexoes,
     mask_sensitive,
     patch_conexao,
@@ -165,13 +166,17 @@ async def disable_conexao(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
 ) -> None:
-    """Soft-delete (status='disabled'). Evolution: também desconecta instance."""
+    """Exclusão total — sem deixar órfã. Evolution: DELETA a instance no
+    servidor (não só logout). DB: hard-delete quando não há atendimento
+    referenciando (FK RESTRICT); senão soft-delete (status='disabled') pra
+    preservar o histórico de atendimentos."""
     pool = await get_pool()
     existing = await get_conexao_by_id(pool, conexao_id)
     if existing is None or existing.empresa_id != empresa_id:
         raise HTTPException(status_code=404, detail="Conexão não encontrada.")
 
-    # Cleanup do provider antes do soft-delete (best-effort)
+    # Remove a instance no Evolution server (best-effort) ANTES de mexer no DB —
+    # delete_instance (não disconnect) pra não deixar a instância órfã no server.
     if existing.provider == "evolution" and settings.evolution_admin_enabled:
         try:
             credentials = await get_credentials_decrypted(pool, conexao_id)
@@ -179,12 +184,21 @@ async def disable_conexao(
                 "instance_name"
             ) or existing.payload_json.get("instance_name")
             if inst:
-                await evo_admin.disconnect_instance(inst)
+                await evo_admin.delete_instance(inst)
         except Exception as exc:
-            logger.warning("conexao_evolution_disconnect_failed", error=str(exc))
+            logger.warning("conexao_evolution_delete_failed", error=str(exc))
 
-    await set_conexao_status(pool, conexao_id, "disabled")
-    logger.info("conexao_disabled", empresa_id=empresa_id, conexao_id=conexao_id)
+    # Tenta exclusão total; se um atendimento referenciar (FK RESTRICT), cai
+    # pro soft-delete (que esconde da listagem) pra não perder histórico.
+    removida = await hard_delete_conexao(pool, conexao_id, empresa_id)
+    if not removida:
+        await set_conexao_status(pool, conexao_id, "disabled")
+    logger.info(
+        "conexao_deleted",
+        empresa_id=empresa_id,
+        conexao_id=conexao_id,
+        modo="hard" if removida else "soft",
+    )
 
 
 # ---------- WABA OAuth Embedded Signup ----------
