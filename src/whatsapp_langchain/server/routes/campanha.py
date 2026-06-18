@@ -82,6 +82,9 @@ class CampanhaCreate(BaseModel):
     # Mídia (mig 123) — foto; mensagem vira legenda
     media_url: str | None = Field(default=None, max_length=1000)
     media_tipo: str | None = None
+    # Pausa longa periódica anti-ban (mig 127) — 0 = desligado
+    pausa_a_cada: int | None = Field(default=None, ge=0, le=100_000)
+    pausa_segundos: int | None = Field(default=None, ge=0, le=86_400)
 
     @model_validator(mode="after")
     def _texto_ou_template(self) -> CampanhaCreate:
@@ -178,6 +181,8 @@ async def create_endpoint(
             media_url=body.media_url,
             media_tipo=body.media_tipo,
             agendar=body.agendar,
+            pausa_a_cada=body.pausa_a_cada,
+            pausa_segundos=body.pausa_segundos,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -198,6 +203,8 @@ class CampanhaUpdate(BaseModel):
     agendar: bool | None = None
     media_url: str | None = Field(default=None, max_length=1000)
     media_tipo: str | None = None
+    pausa_a_cada: int | None = Field(default=None, ge=0, le=100_000)
+    pausa_segundos: int | None = Field(default=None, ge=0, le=86_400)
 
 
 class AddDestinatariosInput(BaseModel):

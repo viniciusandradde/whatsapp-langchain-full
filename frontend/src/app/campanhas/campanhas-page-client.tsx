@@ -79,6 +79,9 @@ export function CampanhasPageClient({
   const [intervaloMin, setIntervaloMin] = useState(3000);
   const [intervaloMax, setIntervaloMax] = useState(8000);
   const [killPct, setKillPct] = useState(30);
+  // Pausa longa periódica anti-ban (mig 127): a cada N envios, descansa M s.
+  const [pausaCada, setPausaCada] = useState(0);
+  const [pausaSeg, setPausaSeg] = useState(600);
   // Telefones controlado pra permitir pré-preenchimento vindo de Contatos.
   const [telefonesText, setTelefonesText] = useState("");
   // Mídia (foto) — mig 123. media_url relativo (/uploads/disparador/..).
@@ -155,6 +158,8 @@ export function CampanhasPageClient({
     setIntervaloMin(5000);
     setIntervaloMax(15000);
     setKillPct(25);
+    setPausaCada(50);
+    setPausaSeg(600);
   }
 
   // Pré-preenche a lista quando vem da página de Contatos ("Criar campanha
@@ -242,6 +247,8 @@ export function CampanhasPageClient({
       intervalo_min_ms: intervaloMin,
       intervalo_max_ms: intervaloMax,
       kill_switch_pct: killPct,
+      pausa_a_cada: pausaCada,
+      pausa_segundos: pausaSeg,
       max_destinatarios: Number(fd.get("max_destinatarios") || 1000),
       telefones,
       // Sub-fase B+ (padrão profissional) (mig 051)
@@ -654,12 +661,45 @@ export function CampanhasPageClient({
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Pausa a cada (envios)
+                    </label>
+                    <input
+                      type="number"
+                      name="pausa_a_cada"
+                      value={pausaCada}
+                      onChange={(e) => setPausaCada(Number(e.target.value))}
+                      min={0}
+                      max={100_000}
+                      placeholder="0 = desligado"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Duração da pausa (s)
+                    </label>
+                    <input
+                      type="number"
+                      name="pausa_segundos"
+                      value={pausaSeg}
+                      onChange={(e) => setPausaSeg(Number(e.target.value))}
+                      min={0}
+                      max={86_400}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
                 <p className="text-[11px] text-muted-foreground">
                   Cada envio espera um tempo <strong>aleatório</strong> entre mín e
                   máx (cadência fixa = assinatura de bot). A campanha
                   <strong> aborta sozinha</strong> se a taxa de falha passar do
-                  kill-switch. <strong>Modo Seguro</strong> = 5–15s + 25% (use em
-                  Evolution/não-oficial).
+                  kill-switch. A <strong>pausa periódica</strong> dá um descanso
+                  longo a cada N envios (0 = desligado). <strong>Mídia</strong> tem
+                  piso de 8s entre envios mesmo com intervalo menor.
+                  <strong> Modo Seguro</strong> = 5–15s + 25% + pausa 600s/50.
                 </p>
               </div>
 

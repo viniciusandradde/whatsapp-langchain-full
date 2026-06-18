@@ -1,8 +1,10 @@
 """Testes unitários do jitter anti-ban + resolução de variáveis (Task 6.4)."""
 
 from whatsapp_langchain.shared.campanha import (
+    _MEDIA_MIN_INTERVAL_MS,
     _apply_tokens,
     _jitter_delay_s,
+    _piso_midia,
     _resolve_template_vars,
 )
 
@@ -55,6 +57,25 @@ class TestJitterDelay:
         assert _jitter_delay_s(500, 500) == 0.5
 
 
+class TestPisoMidia:
+    """Piso de intervalo anti-ban pra mídia (mig 127 — item 5 do best-practices)."""
+
+    def test_sem_midia_nao_mexe(self):
+        assert _piso_midia(3000, 8000, False) == (3000, 8000)
+
+    def test_midia_abaixo_do_piso_sobe(self):
+        min_ms, max_ms = _piso_midia(3000, 5000, True)
+        assert min_ms == _MEDIA_MIN_INTERVAL_MS
+        assert max_ms >= min_ms  # max ajustado pra não ficar abaixo do novo min
+
+    def test_midia_acima_do_piso_mantem(self):
+        # já está acima do piso → não reduz
+        assert _piso_midia(10000, 20000, True) == (10000, 20000)
+
+    def test_piso_eh_8s(self):
+        assert _MEDIA_MIN_INTERVAL_MS == 8000
+
+
 class TestCampanhaCreateAntiBan:
     """Validação do modelo de criação com campos anti-ban (migs 120/121)."""
 
@@ -90,9 +111,7 @@ class TestCampanhaCreateAntiBan:
 
     def test_anti_ban_opcional(self):
         # sem os campos → None (cai nos defaults do banco/helper)
-        m = self._model()(
-            nome="Promo", mensagem="Olá", telefones=["+5511999999999"]
-        )
+        m = self._model()(nome="Promo", mensagem="Olá", telefones=["+5511999999999"])
         assert m.intervalo_min_ms is None
         assert m.kill_switch_pct is None
 

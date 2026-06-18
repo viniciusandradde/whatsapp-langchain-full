@@ -133,7 +133,13 @@ class TestDisparoExt:
             pool,
             empresa,
             camp["id"],
-            [{"telefone": "+5511950000002", "status": "falhou", "erro": "Connection Closed"}],
+            [
+                {
+                    "telefone": "+5511950000002",
+                    "status": "falhou",
+                    "erro": "Connection Closed",
+                }
+            ],
         )
         assert r2["enviados"] == 1 and r2["falhas"] == 1
         assert r2["status"] == "partial"
@@ -194,7 +200,9 @@ class TestEditar:
         assert upd["mensagem"] == "nova msg"
 
         # add 2 telefones → total 3
-        r = await add_destinatarios(pool, empresa, cid, ["+5511960000002", "+5511960000003"])
+        r = await add_destinatarios(
+            pool, empresa, cid, ["+5511960000002", "+5511960000003"]
+        )
         assert r["novos"] == 2 and r["total"] == 3
         c2 = await get_campanha(pool, empresa, cid)
         assert c2["total_destinatarios"] == 3
@@ -233,9 +241,7 @@ class TestEditar:
         await add_destinatarios(pool, empresa, camp["id"], ["+5511960000099"])  # +1
         # marca a original como done (simula já-enviada)
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
-            conn.execute(
-                "UPDATE campanha SET status='done' WHERE id=%s", (camp["id"],)
-            )
+            conn.execute("UPDATE campanha SET status='done' WHERE id=%s", (camp["id"],))
         nova = await clonar_campanha(pool, empresa, camp["id"])
         assert nova["status"] == "draft"
         assert nova["nome"].endswith("(cópia)")
@@ -329,7 +335,11 @@ class TestCrmTargeting:
             # 2 clientes VIP + 1 sem tag; 1 do segmento "ouro"
             ids = []
             for i, (tel, seg) in enumerate(
-                [("+5511970000001", "ouro"), ("+5511970000002", None), ("+5511970000003", None)]
+                [
+                    ("+5511970000001", "ouro"),
+                    ("+5511970000002", None),
+                    ("+5511970000003", None),
+                ]
             ):
                 r = conn.execute(
                     "INSERT INTO cliente (empresa_id, telefone, nome, segmento)"
@@ -447,6 +457,39 @@ class TestCampanhaAntiBanPersistencia:
         )
         assert out["media_url"] == "/uploads/disparador/foto.jpg"
         assert out["media_tipo"] == "image"
+
+    async def test_grava_pausa_periodica(self, empresa) -> None:
+        """Pausa longa periódica anti-ban (mig 127): persiste + editável."""
+        from whatsapp_langchain.shared.campanha import (
+            create_campanha,
+            update_campanha,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        out = await create_campanha(
+            pool,
+            empresa,
+            nome=f"campanha-pausa-{_RUN}",
+            descricao=None,
+            mensagem="Olá",
+            conexao_id=None,
+            intervalo_ms=500,
+            max_destinatarios=1000,
+            telefones_brutos=["+5511999990005"],
+            user_id=None,
+            pausa_a_cada=50,
+            pausa_segundos=600,
+        )
+        assert out["pausa_a_cada"] == 50
+        assert out["pausa_segundos"] == 600
+
+        # editável em rascunho
+        upd = await update_campanha(
+            pool, empresa, out["id"], {"pausa_a_cada": 30, "pausa_segundos": 300}
+        )
+        assert upd["pausa_a_cada"] == 30
+        assert upd["pausa_segundos"] == 300
 
 
 @pytest.mark.docker_demo
