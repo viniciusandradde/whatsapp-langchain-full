@@ -215,6 +215,7 @@ export type ConexaoStatus = "active" | "disabled" | "error";
 export type ConnectionState =
   | "pending"
   | "qr_pending"
+  | "pairing_code_pending"
   | "open"
   | "connecting"
   | "disconnected"
@@ -325,11 +326,20 @@ export interface WabaFinalizeInput {
 export interface EvolutionProvisionInput {
   display_name: string;
   instance_name?: string;
+  // Código de pareamento (alternativa ao QR): número com DDI, só dígitos.
+  phone_number?: string;
 }
 
 export interface EvolutionProvisionResponse {
   conexao_id: number;
   qr_base64: string | null;
+  pairing_code: string | null;
+  state: ConnectionState;
+  expires_in: number;
+}
+
+export interface PairingCodeResponse {
+  pairing_code: string | null;
   state: ConnectionState;
   expires_in: number;
 }
@@ -1403,6 +1413,16 @@ export async function evolutionProvision(
 
 export async function getConexaoQR(id: number): Promise<QRResponse> {
   return apiFetch<QRResponse>(`/api/conexoes/${id}/qr`);
+}
+
+export async function regeneratePairingCode(
+  id: number,
+  phone_number: string
+): Promise<PairingCodeResponse> {
+  return apiFetch<PairingCodeResponse>(`/api/conexoes/${id}/pairing-code`, {
+    method: "POST",
+    body: { phone_number },
+  });
 }
 
 export async function getConexaoStatus(id: number): Promise<StatusResponse> {
