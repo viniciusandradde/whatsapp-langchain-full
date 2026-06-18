@@ -247,6 +247,9 @@ export interface Conexao {
   ultimo_health_check_at?: string | null;
   ultimo_health_check_ok?: boolean | null;
   webhook_verify_token?: string | null;
+  // Anti-ban (mig 126): teto diário + aquecimento
+  daily_send_cap?: number | null;
+  warmup_started_at?: string | null;
 }
 
 export interface ConexoesResponse {
@@ -271,6 +274,20 @@ export interface ConexaoPatchInput {
   is_default?: boolean;
   tipo_atendimento?: string;
   status?: ConexaoStatus;
+  // Anti-ban (mig 126): teto diário de envios + modo aquecimento
+  daily_send_cap?: number | null;
+  warmup_enabled?: boolean | null;
+}
+
+export interface ConexaoQuota {
+  conexao_id: number;
+  cap: number | null;
+  usados: number;
+  restante: number | null;
+  motivo: string | null;
+  daily_send_cap: number | null;
+  warmup_ativo: boolean;
+  warmup_started_at: string | null;
 }
 
 export interface WabaOAuthStartResponse {
@@ -1318,6 +1335,10 @@ export async function updateConexao(
 
 export async function disableConexao(id: number): Promise<void> {
   await apiFetch<void>(`/api/conexoes/${id}`, { method: "DELETE" });
+}
+
+export async function getConexaoQuota(id: number): Promise<ConexaoQuota> {
+  return apiFetch<ConexaoQuota>(`/api/conexoes/${id}/quota`);
 }
 
 // --- Sprint Conexões WABA OAuth + Evolution auto-provision ---

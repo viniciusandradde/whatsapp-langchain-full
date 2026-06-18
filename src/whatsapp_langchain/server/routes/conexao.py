@@ -40,6 +40,7 @@ from whatsapp_langchain.shared.conexao import (
     update_waba_fields,
     upsert_conexao,
 )
+from whatsapp_langchain.shared.conexao_quota import quota_status
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import Conexao, ConexaoInput, ConexaoPatchInput
@@ -127,10 +128,36 @@ async def patch_conexao_endpoint(
         is_default=body.is_default,
         tipo_atendimento=body.tipo_atendimento,
         status=body.status,
+        daily_send_cap=body.daily_send_cap,
+        warmup_enabled=body.warmup_enabled,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Conexão não encontrada.")
     return mask_sensitive(updated)
+
+
+@router.get("/{conexao_id}/quota")
+async def read_conexao_quota(
+    conexao_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict[str, object]:
+    """Teto diário / aquecimento (anti-ban): teto efetivo do dia, quanto já
+    saiu e quanto resta para esta conexão."""
+    pool = await get_pool()
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    q = await quota_status(pool, conexao)
+    return {
+        "conexao_id": conexao_id,
+        "cap": q.cap,
+        "usados": q.usados,
+        "restante": q.restante,
+        "motivo": q.motivo,
+        "daily_send_cap": conexao.daily_send_cap,
+        "warmup_ativo": conexao.warmup_started_at is not None,
+        "warmup_started_at": conexao.warmup_started_at,
+    }
 
 
 @router.delete("/{conexao_id}", status_code=204)

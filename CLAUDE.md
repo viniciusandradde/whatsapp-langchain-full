@@ -99,6 +99,8 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 - `113_campanha_template.sql` — campanha dispara template HSM aprovado (selector no form + variáveis)
 - `114_twilio_legacy.sql` — marca Twilio como legado (WABA-first); coluna/flag de depreciação
 - `115_empresa_branding.sql` — **white-label por empresa**: `empresa` += `logo_path`/`nome_exibicao`/`cor_primaria`/`cor_secundaria` (ver módulo White-label abaixo)
+- `118`–`125` — **Disparador** (extensão Chrome + captura + disparo em massa): `empresa_api_key`, schema captura, jitter anti-ban, compliance, mídia/agendamento/origem na campanha
+- `126_conexao_teto_diario.sql` — **anti-ban: teto diário + aquecimento por conexão**: `conexao` += `daily_send_cap`/`warmup_started_at` + tabela contadora `conexao_envio_diario`. O dispatcher reagenda a campanha pro dia seguinte ao bater o teto (warm-up, não aborta). Lógica em `shared/conexao_quota.py`; UI no painel anti-ban de `/connections/[id]`; `GET /api/conexoes/{id}/quota`
 
 **Twilio outbound modes** (`TWILIO_OUTBOUND_MODE`) — `mock` (logs only, default in dev) vs `real` (Twilio Messages API via API Key auth). Worker startup fail-fasts if `real` mode is missing any of `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_FROM_NUMBER`. Empty value resolves to `real` in production, `mock` otherwise (`Settings.resolved_twilio_outbound_mode`).
 

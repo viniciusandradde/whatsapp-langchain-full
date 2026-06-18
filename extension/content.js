@@ -63,6 +63,38 @@ async function garantirWpp() {
   return pedirPagina({ cmd: "ensure-wpp" }, 70000);
 }
 
+// --- WaVoIP (ligações de voz) — SDK pesado de terceiro, injeta sob demanda ---
+let _waVoipInjetado = false;
+function injetarWaVoip() {
+  if (_waVoipInjetado) return;
+  _waVoipInjetado = true;
+  const s = document.createElement("script");
+  s.src = chrome.runtime.getURL("vendor/wavoip-sdk.js");
+  (document.head || document.documentElement).appendChild(s);
+}
+
+async function wavoipEnsure() {
+  injetarWaVoip();
+  return pedirPagina({ cmd: "wavoip-ensure" }, 70000);
+}
+async function wavoipConnect(tokens) {
+  injetarWaVoip();
+  return pedirPagina({ cmd: "wavoip-connect", tokens }, 70000);
+}
+async function wavoipStatus() {
+  return pedirPagina({ cmd: "wavoip-status" }, 15000);
+}
+async function wavoipAudio(dataUrl) {
+  return pedirPagina({ cmd: "wavoip-audio", dataUrl }, 30000);
+}
+async function wavoipCall(payload) {
+  // payload: { telefone→phone, token, gain, ringTimeoutMs, maxTalkMs }
+  return pedirPagina({ cmd: "wavoip-call", ...payload }, 180000);
+}
+async function wavoipStop() {
+  return pedirPagina({ cmd: "wavoip-stop" }, 10000);
+}
+
 async function enviarMsg(telefone, texto, tipo) {
   return pedirPagina({ cmd: "send", telefone, texto, tipo }, 60000);
 }
@@ -146,4 +178,11 @@ window.__nexusBridge = {
   validarNumero,
   enviarBackground,
   pedirScrape,
+  // WaVoIP (ligações de voz)
+  wavoipEnsure,
+  wavoipConnect,
+  wavoipStatus,
+  wavoipAudio,
+  wavoipCall,
+  wavoipStop,
 };
