@@ -92,6 +92,14 @@ class TestSmokeConexoesEvolution:
     def test_get_status_sem_auth_401(self) -> None:
         assert _client().get("/api/conexoes/1/status").status_code == 401
 
+    def test_pairing_code_sem_auth_401(self) -> None:
+        # Conexão por código de pareamento (mig 128).
+        resp = _client().post(
+            "/api/conexoes/1/pairing-code",
+            json={"phone_number": "+5511999999999"},
+        )
+        assert resp.status_code == 401
+
 
 class TestSmokeConexoesOps:
     """3 endpoints ops: test, disconnect."""

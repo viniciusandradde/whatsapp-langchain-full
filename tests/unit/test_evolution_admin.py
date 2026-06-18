@@ -84,3 +84,70 @@ def test_headers_falha_sem_config(monkeypatch):
     monkeypatch.setattr(settings, "evolution_api_url", "")
     with pytest.raises(admin.EvolutionAdminError):
         admin._headers()
+
+
+# ---- Diagnóstico de 401/403 (Mudança 1) ----
+
+
+def test_classify_admin_error_401():
+    msg = admin.classify_admin_error(admin.EvolutionAdminError(401, "Unauthorized"))
+    assert msg is not None
+    assert "rejeitada (401)" in msg
+    assert "evo.test" in msg  # aponta o servidor
+    assert "global-xyz" not in msg  # nunca vaza o segredo
+
+
+def test_classify_admin_error_403_missing_key():
+    msg = admin.classify_admin_error(
+        admin.EvolutionAdminError(403, "Missing global api key")
+    )
+    assert msg is not None
+    assert "rejeitada (403)" in msg
+
+
+def test_classify_admin_error_non_auth_returns_none():
+    assert admin.classify_admin_error(admin.EvolutionAdminError(409, "in use")) is None
+    assert admin.classify_admin_error(admin.EvolutionAdminError(403, "Forbidden")) is None
+
+
+def test_describe_key_source(monkeypatch):
+    assert admin.describe_key_source() == "EVOLUTION_GLOBAL_API_KEY"
+    monkeypatch.setattr(settings, "evolution_global_api_key", None)
+    assert admin.describe_key_source() == "EVOLUTION_API_KEY (fallback)"
+    monkeypatch.setattr(settings, "evolution_api_key", None)
+    assert admin.describe_key_source() == "(nenhuma key configurada)"
+
+
+# ---- Código de pareamento (Mudança 2) ----
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_connect_instance_com_pairing_code():
+    route = respx.get("https://evo.test/instance/connect/test1").mock(
+        return_value=httpx.Response(
+            200, json={"pairingCode": "WZYEH1YY", "code": "x", "count": 1}
+        )
+    )
+    data = await admin.connect_instance("test1", phone_number="+55 11 99999-9999")
+    assert data["pairingCode"] == "WZYEH1YY"
+    # número normalizado (só dígitos) vai no ?number=
+    assert route.calls[0].request.url.params["number"] == "5511999999999"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_connect_instance_pairing_retry_on_null(monkeypatch):
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(admin.asyncio, "sleep", _noop)
+    route = respx.get("https://evo.test/instance/connect/test1").mock(
+        side_effect=[
+            httpx.Response(200, json={"pairingCode": None, "count": 0}),
+            httpx.Response(200, json={"pairingCode": "ABCD1234", "count": 1}),
+        ]
+    )
+    data = await admin.connect_instance("test1", phone_number="5511999999999")
+    assert data["pairingCode"] == "ABCD1234"
+    assert route.call_count == 2  # re-tentou 1×

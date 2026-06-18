@@ -11,6 +11,7 @@ import {
   getConexaoQR,
   getConexaoQuota,
   getConexaoStatus,
+  regeneratePairingCode,
   patchConexao,
   testConexao,
   getWabaConfig,
@@ -167,6 +168,20 @@ export async function evolutionProvisionAction(input: EvolutionProvisionInput) {
 export async function refreshQRAction(conexaoId: number) {
   try {
     return { ok: true as const, data: await getConexaoQR(conexaoId) };
+  } catch (e) {
+    return { ok: false as const, error: safeError(e) };
+  }
+}
+
+export async function regeneratePairingCodeAction(
+  conexaoId: number,
+  phoneNumber: string
+) {
+  try {
+    return {
+      ok: true as const,
+      data: await regeneratePairingCode(conexaoId, phoneNumber),
+    };
   } catch (e) {
     return { ok: false as const, error: safeError(e) };
   }

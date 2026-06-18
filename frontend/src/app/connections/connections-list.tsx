@@ -62,6 +62,11 @@ const STATE_BADGES: Record<
     cls: "bg-amber-500/15 text-amber-400 border-amber-500/30",
     icon: Clock,
   },
+  pairing_code_pending: {
+    label: "Aguardando código",
+    cls: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    icon: Clock,
+  },
   connecting: {
     label: "Conectando",
     cls: "bg-amber-500/15 text-amber-400 border-amber-500/30",

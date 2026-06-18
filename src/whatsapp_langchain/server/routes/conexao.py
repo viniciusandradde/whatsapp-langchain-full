@@ -622,11 +622,25 @@ async def waba_embedded_signup(
 class EvolutionProvisionInput(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
     instance_name: str | None = Field(default=None, max_length=80)
+    # Conexão por código de pareamento (alternativa ao QR): número com DDI.
+    phone_number: str | None = Field(default=None, max_length=20)
 
 
 class EvolutionProvisionResponse(BaseModel):
     conexao_id: int
     qr_base64: str | None = None
+    # Código de pareamento (8 chars) quando phone_number foi informado.
+    pairing_code: str | None = None
+    state: str
+    expires_in: int = 45
+
+
+class PairingCodeInput(BaseModel):
+    phone_number: str = Field(min_length=8, max_length=20)
+
+
+class PairingCodeResponse(BaseModel):
+    pairing_code: str | None = None
     state: str
     expires_in: int = 45
 
@@ -667,19 +681,42 @@ async def evolution_provision(
     )
 
     # Provision PRIMEIRO — se Evolution rejeita (401/4xx grave), aborta SEM
-    # criar row no DB pra não deixar órfã. 409/403 = "já existe", segue.
+    # criar row no DB pra não deixar órfã. 409/403 = "já existe", segue —
+    # MAS um 403 de auth (key vazia) deve falhar com diagnóstico, não seguir.
     try:
         await evo_admin.provision_instance(instance_name, webhook_url=webhook_url)
     except evo_admin.EvolutionAdminError as exc:
+        diag = evo_admin.classify_admin_error(exc)
+        if diag:
+            logger.warning(
+                "evolution_auth_rejected",
+                status=exc.status_code,
+                key_source=evo_admin.describe_key_source(),
+                admin_url=settings.resolved_evolution_admin_url,
+                empresa_id=empresa_id,
+            )
+            raise HTTPException(status_code=502, detail=diag)
         if exc.status_code not in (200, 201, 409, 403):
             raise HTTPException(
                 status_code=502, detail=f"Evolution server: {exc.detail[:200]}"
             )
 
-    # Pega QR (também antes da row — falha => sem órfã)
+    # Pega QR (escanear) OU pairing code (digitar) — também antes da row.
     try:
-        qr_data = await evo_admin.connect_instance(instance_name)
+        qr_data = await evo_admin.connect_instance(
+            instance_name, phone_number=body.phone_number
+        )
     except evo_admin.EvolutionAdminError as exc:
+        diag = evo_admin.classify_admin_error(exc)
+        if diag:
+            logger.warning(
+                "evolution_auth_rejected",
+                status=exc.status_code,
+                key_source=evo_admin.describe_key_source(),
+                admin_url=settings.resolved_evolution_admin_url,
+                empresa_id=empresa_id,
+            )
+            raise HTTPException(status_code=502, detail=diag)
         raise HTTPException(
             status_code=502, detail=f"Evolution connect: {exc.detail[:200]}"
         )
@@ -713,8 +750,41 @@ async def evolution_provision(
         },
     )
 
-    qr_base64 = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64")
     expires_at = datetime.now(UTC) + timedelta(seconds=45)
+
+    if body.phone_number:
+        # Modo código de pareamento: persiste o código na coluna qr_code
+        # (reuso) com estado distinto. Sem código = socket não pronto.
+        pairing_code = qr_data.get("pairingCode")
+        if not pairing_code:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Evolution não retornou código de pareamento — gere "
+                    "novamente em alguns segundos."
+                ),
+            )
+        await set_qr_code(
+            pool,
+            conexao.id,
+            qr_base64=pairing_code,
+            expires_at=expires_at,
+            state="pairing_code_pending",
+        )
+        logger.info(
+            "evolution_provisioned",
+            empresa_id=empresa_id,
+            conexao_id=conexao.id,
+            instance=instance_name,
+            modo="pairing_code",
+        )
+        return EvolutionProvisionResponse(
+            conexao_id=conexao.id,
+            pairing_code=pairing_code,
+            state="pairing_code_pending",
+        )
+
+    qr_base64 = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64")
     await set_qr_code(pool, conexao.id, qr_base64=qr_base64, expires_at=expires_at)
 
     logger.info(
@@ -755,7 +825,10 @@ async def get_qr(
         try:
             qr_data = await evo_admin.refresh_qr(instance)
         except evo_admin.EvolutionAdminError as exc:
-            raise HTTPException(status_code=502, detail=str(exc.detail)[:200])
+            raise HTTPException(
+                status_code=502,
+                detail=evo_admin.classify_admin_error(exc) or str(exc.detail)[:200],
+            )
         qr_base64 = qr_data.get("base64") or qr_data.get("qrcode", {}).get("base64")
         expires_at = now + timedelta(seconds=45)
         await set_qr_code(pool, conexao_id, qr_base64=qr_base64, expires_at=expires_at)
@@ -771,6 +844,63 @@ async def get_qr(
         "expires_in": expires_in,
         "state": conexao.connection_state,
     }
+
+
+@router.post("/{conexao_id}/pairing-code")
+async def regenerate_pairing_code(
+    conexao_id: int,
+    body: PairingCodeInput,
+    empresa_id: int = Depends(get_empresa_context),
+) -> PairingCodeResponse:
+    """Gera um novo código de pareamento (Evolution) pro número informado.
+
+    Alternativa ao QR: o user digita o código no WhatsApp (Aparelhos conectados
+    → Conectar com número de telefone). Precisa do número a cada chamada porque
+    o Evolution repassa pro Baileys `requestPairingCode`.
+    """
+    pool = await get_pool()
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    if conexao.provider != "evolution":
+        raise HTTPException(
+            status_code=400, detail="Pairing code só aplicável a Evolution."
+        )
+    if not settings.evolution_admin_enabled:
+        raise HTTPException(status_code=503, detail="Evolution admin não configurado.")
+
+    credentials = await get_credentials_decrypted(pool, conexao_id) or {}
+    instance = credentials.get("instance_name") or conexao.payload_json.get(
+        "instance_name"
+    )
+    if not instance:
+        raise HTTPException(status_code=500, detail="instance_name ausente.")
+
+    try:
+        data = await evo_admin.refresh_pairing_code(instance, body.phone_number)
+    except evo_admin.EvolutionAdminError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=evo_admin.classify_admin_error(exc) or str(exc.detail)[:200],
+        )
+    pairing_code = data.get("pairingCode")
+    if not pairing_code:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Evolution não retornou código de pareamento — tente novamente "
+                "em alguns segundos."
+            ),
+        )
+    expires_at = datetime.now(UTC) + timedelta(seconds=45)
+    await set_qr_code(
+        pool,
+        conexao_id,
+        qr_base64=pairing_code,
+        expires_at=expires_at,
+        state="pairing_code_pending",
+    )
+    return PairingCodeResponse(pairing_code=pairing_code, state="pairing_code_pending")
 
 
 @router.get("/{conexao_id}/status")

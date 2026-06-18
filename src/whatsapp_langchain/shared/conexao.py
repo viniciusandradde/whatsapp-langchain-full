@@ -429,17 +429,22 @@ async def set_qr_code(
     *,
     qr_base64: str | None,
     expires_at: datetime | None,
+    state: str = "qr_pending",
 ) -> None:
-    """Salva QR (Evolution) + TTL pro polling do front."""
+    """Salva QR (Evolution) + TTL pro polling do front.
+
+    `state` permite reusar a mesma coluna `qr_code`/`qr_expires_at` pro código
+    de pareamento (`state='pairing_code_pending'`) — só o estado diferencia.
+    """
     async with pool.connection() as conn:
         await conn.execute(
             """
             UPDATE conexao
                SET qr_code = %s, qr_expires_at = %s,
-                   connection_state = 'qr_pending', updated_at = NOW()
+                   connection_state = %s, updated_at = NOW()
              WHERE id = %s
             """,
-            (qr_base64, expires_at, conexao_id),
+            (qr_base64, expires_at, state, conexao_id),
         )
 
 

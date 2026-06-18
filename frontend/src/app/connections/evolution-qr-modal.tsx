@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, RefreshCw, Smartphone, X } from "lucide-react";
+import { Check, Loader2, RefreshCw, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +13,7 @@ import {
   evolutionProvisionAction,
   pollStatusAction,
   refreshQRAction,
+  regeneratePairingCodeAction,
   testEvolutionAction,
 } from "./actions";
 
@@ -20,7 +21,14 @@ interface Props {
   onClose: (refresh: boolean) => void;
 }
 
-type Phase = "mode" | "form" | "manual" | "qr" | "connected" | "error";
+type Phase =
+  | "mode"
+  | "form"
+  | "manual"
+  | "qr"
+  | "pairing"
+  | "connected"
+  | "error";
 
 export function EvolutionQRModal({ onClose }: Props) {
   const [phase, setPhase] = useState<Phase>("mode");
@@ -33,6 +41,10 @@ export function EvolutionQRModal({ onClose }: Props) {
   const [qr, setQr] = useState<string | null>(null);
   const [expiresIn, setExpiresIn] = useState(45);
   const [error, setError] = useState<string | null>(null);
+  // Modo de conexão no provisionamento: QR (escanear) vs código (digitar).
+  const [connectMode, setConnectMode] = useState<"qr" | "pairing">("qr");
+  const [pairingPhone, setPairingPhone] = useState("");
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -46,11 +58,17 @@ export function EvolutionQRModal({ onClose }: Props) {
       setError("Nome da conexão é obrigatório.");
       return;
     }
+    const pairing = connectMode === "pairing";
+    if (pairing && pairingPhone.replace(/\D/g, "").length < 8) {
+      setError("Informe o número (com DDI) para gerar o código.");
+      return;
+    }
     setError(null);
-    setPhase("qr");
+    setPhase(pairing ? "pairing" : "qr");
     const r = await evolutionProvisionAction({
       display_name: displayName.trim(),
       instance_name: instanceName.trim() || undefined,
+      phone_number: pairing ? pairingPhone.trim() : undefined,
     });
     if (!r.ok) {
       setPhase("error");
@@ -58,24 +76,37 @@ export function EvolutionQRModal({ onClose }: Props) {
       return;
     }
     setConexaoId(r.data.conexao_id);
-    setQr(r.data.qr_base64);
     setExpiresIn(r.data.expires_in);
+    if (pairing) {
+      setPairingCode(r.data.pairing_code);
+    } else {
+      setQr(r.data.qr_base64);
+    }
     startPolling(r.data.conexao_id);
   }
 
   function startPolling(id: number) {
     if (pollRef.current) clearInterval(pollRef.current);
+    const pairing = connectMode === "pairing";
     pollRef.current = setInterval(async () => {
-      // Conta countdown
+      // Conta countdown — ao expirar, regenera QR ou código conforme o modo.
       setExpiresIn((s) => {
         if (s <= 1) {
-          // refresh QR
-          refreshQRAction(id).then((r) => {
-            if (r.ok) {
-              setQr(r.data.qr_base64);
-              setExpiresIn(r.data.expires_in);
-            }
-          });
+          if (pairing) {
+            regeneratePairingCodeAction(id, pairingPhone.trim()).then((r) => {
+              if (r.ok) {
+                setPairingCode(r.data.pairing_code);
+                setExpiresIn(r.data.expires_in);
+              }
+            });
+          } else {
+            refreshQRAction(id).then((r) => {
+              if (r.ok) {
+                setQr(r.data.qr_base64);
+                setExpiresIn(r.data.expires_in);
+              }
+            });
+          }
           return 45;
         }
         return s - 1;
@@ -88,6 +119,15 @@ export function EvolutionQRModal({ onClose }: Props) {
         setPhase("connected");
       }
     }, 1000);
+  }
+
+  async function handleRegeneratePairing() {
+    if (!conexaoId) return;
+    const r = await regeneratePairingCodeAction(conexaoId, pairingPhone.trim());
+    if (r.ok) {
+      setPairingCode(r.data.pairing_code);
+      setExpiresIn(r.data.expires_in);
+    }
   }
 
   async function handleManualImport() {
@@ -154,6 +194,7 @@ export function EvolutionQRModal({ onClose }: Props) {
             {phase === "form" && "Provisionar nova instance"}
             {phase === "manual" && "Importar instance existente"}
             {phase === "qr" && "Escanear QR Code"}
+            {phase === "pairing" && "Conectar com código"}
             {phase === "connected" && "Conectado!"}
             {phase === "error" && "Erro na conexão"}
           </h2>
@@ -324,6 +365,55 @@ export function EvolutionQRModal({ onClose }: Props) {
                   se você não preencher.
                 </p>
               </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Como conectar
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConnectMode("qr")}
+                    className={`flex-1 rounded-md border px-3 py-2 text-sm ${
+                      connectMode === "qr"
+                        ? "border-emerald-500/60 bg-emerald-500/10 font-medium"
+                        : "border-border/40 hover:bg-muted/20"
+                    }`}
+                  >
+                    📷 Escanear QR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConnectMode("pairing")}
+                    className={`flex-1 rounded-md border px-3 py-2 text-sm ${
+                      connectMode === "pairing"
+                        ? "border-emerald-500/60 bg-emerald-500/10 font-medium"
+                        : "border-border/40 hover:bg-muted/20"
+                    }`}
+                  >
+                    🔢 Código (digitar)
+                  </button>
+                </div>
+              </div>
+              {connectMode === "pairing" && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Número a conectar (com DDI) *
+                  </label>
+                  <input
+                    value={pairingPhone}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setPairingPhone(e.target.value)
+                    }
+                    placeholder="+55 11 99999-9999"
+                    maxLength={20}
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Em vez de escanear, você digita um código de 8 caracteres no
+                    WhatsApp do número acima.
+                  </p>
+                </div>
+              )}
               {error && (
                 <div className="rounded-md border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive">
                   {error}
@@ -368,6 +458,52 @@ export function EvolutionQRModal({ onClose }: Props) {
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   Atualizar QR
+                </Button>
+              </div>
+            </>
+          )}
+
+          {phase === "pairing" && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                No WhatsApp do número, abra <strong>Aparelhos conectados</strong>{" "}
+                &gt; <strong>Conectar com número de telefone</strong> e digite o
+                código abaixo.
+              </p>
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-border/40 bg-muted/10 p-6">
+                {pairingCode ? (
+                  <div className="font-mono text-3xl font-bold tracking-[0.3em]">
+                    {pairingCode.length > 4
+                      ? `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}`
+                      : pairingCode}
+                  </div>
+                ) : (
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                )}
+                {pairingCode && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      navigator.clipboard?.writeText(pairingCode)
+                    }
+                    className="gap-1.5"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Copiar código
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Expira em {expiresIn}s</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRegeneratePairing}
+                  className="gap-1.5"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Gerar novo código
                 </Button>
               </div>
             </>

@@ -14,6 +14,8 @@ Fluxo de criação de uma nova conexão Evolution no painel:
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Any
 
 import httpx
@@ -31,6 +33,48 @@ class EvolutionAdminError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"Evolution admin error {status_code}: {detail}")
+
+
+def describe_key_source() -> str:
+    """Qual env var fornece a key do header `apikey` (sem expor o segredo).
+
+    Usado em logs/mensagens de erro pra apontar ONDE corrigir um 401, sem
+    nunca devolver o valor da chave.
+    """
+    if settings.evolution_global_api_key:
+        return "EVOLUTION_GLOBAL_API_KEY"
+    if settings.evolution_api_key:
+        return "EVOLUTION_API_KEY (fallback)"
+    return "(nenhuma key configurada)"
+
+
+def classify_admin_error(exc: EvolutionAdminError) -> str | None:
+    """Traduz um erro de auth do Evolution numa mensagem acionável.
+
+    Retorna None quando o erro NÃO é de autenticação (caller usa o genérico).
+    401 = key errada; 403 "Missing global api key" = key vazia. Em ambos a
+    causa é o header `apikey` enviado ≠ AUTHENTICATION_API_KEY do servidor.
+    """
+    if exc.status_code == 401 or (
+        exc.status_code == 403
+        and any(
+            t in (exc.detail or "").lower()
+            for t in ("api key", "apikey", "unauthorized")
+        )
+    ):
+        return (
+            f"API key do Evolution rejeitada ({exc.status_code}) — confira "
+            f"{describe_key_source()} (Nexus) vs AUTHENTICATION_API_KEY do "
+            f"servidor {_base()}. O header `apikey` enviado não corresponde à "
+            f"chave do servidor."
+        )
+    return None
+
+
+def _normalize_phone(number: str) -> str:
+    """Só dígitos (tira `+`, espaços, traços) — formato do Baileys
+    `requestPairingCode`: DDI+DDD+número, ex. 5511999999999."""
+    return re.sub(r"\D", "", number or "")
 
 
 def _headers() -> dict[str, str]:
@@ -113,17 +157,34 @@ async def provision_instance(
         return resp.json()
 
 
-async def connect_instance(instance_name: str) -> dict[str, Any]:
-    """POST /instance/connect/{name} → retorna QR base64 pra escanear.
+async def connect_instance(
+    instance_name: str, phone_number: str | None = None
+) -> dict[str, Any]:
+    """GET /instance/connect/{name} → QR base64 (escanear) OU pairing code.
 
-    Returns: {"base64": "data:image/png;base64,...", "code": "<uri>", "count": int}
+    Sem `phone_number`: retorna QR — `{"base64","code","count","pairingCode":null}`.
+    Com `phone_number`: passa `?number=<dígitos>` e retorna o código de
+    pareamento — `{"pairingCode":"WZYEH1YY","code","count"}` (sem `base64`).
+
+    Gotcha do Evolution: num socket recém-criado o `pairingCode` às vezes volta
+    null/`count:0`; re-tentamos 1× após um pequeno delay quando há número.
     """
     url = f"{_base()}/instance/connect/{instance_name}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url, headers=_headers())
-        if resp.status_code != 200:
-            raise EvolutionAdminError(resp.status_code, resp.text[:400])
-        return resp.json()
+    params = {"number": _normalize_phone(phone_number)} if phone_number else None
+
+    async def _call() -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, headers=_headers(), params=params)
+            if resp.status_code != 200:
+                raise EvolutionAdminError(resp.status_code, resp.text[:400])
+            return resp.json()
+
+    data = await _call()
+    if phone_number and not (data or {}).get("pairingCode"):
+        # socket pode não estar pronto — espera e tenta de novo (1×).
+        await asyncio.sleep(2.0)
+        data = await _call()
+    return data
 
 
 async def get_connection_state(instance_name: str) -> dict[str, Any]:
@@ -159,6 +220,11 @@ async def delete_instance(instance_name: str) -> bool:
 async def refresh_qr(instance_name: str) -> dict[str, Any]:
     """Re-chama /instance/connect — Evolution regera QR se o anterior expirou."""
     return await connect_instance(instance_name)
+
+
+async def refresh_pairing_code(instance_name: str, phone_number: str) -> dict[str, Any]:
+    """Re-chama /instance/connect?number= — gera um novo código de pareamento."""
+    return await connect_instance(instance_name, phone_number=phone_number)
 
 
 def normalize_state(raw_state: dict[str, Any]) -> str:
