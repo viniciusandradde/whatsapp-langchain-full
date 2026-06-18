@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { getConexao } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
+import { AntiBanPanel } from "./anti-ban-panel";
+
 export const dynamic = "force-dynamic";
 
 interface PageProps {
@@ -126,6 +128,12 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
+
+      <AntiBanPanel
+        conexaoId={conexao.id}
+        initialDailyCap={conexao.daily_send_cap ?? null}
+        initialWarmupAtivo={conexao.warmup_started_at != null}
+      />
 
       {hasTemplates && (
         <Link

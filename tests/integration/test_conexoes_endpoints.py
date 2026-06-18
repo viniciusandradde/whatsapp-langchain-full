@@ -102,6 +102,10 @@ class TestSmokeConexoesOps:
     def test_disconnect_sem_auth_401(self) -> None:
         assert _client().post("/api/conexoes/1/disconnect").status_code == 401
 
+    def test_quota_sem_auth_401(self) -> None:
+        # Teto diário / aquecimento (mig 126).
+        assert _client().get("/api/conexoes/1/quota").status_code == 401
+
 
 class TestSmokeWABATemplates:
     """7 endpoints templates."""

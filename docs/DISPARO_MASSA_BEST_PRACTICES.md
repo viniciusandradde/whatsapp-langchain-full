@@ -42,13 +42,16 @@ Cloud API tiers: **250/24h** (não-verificado) → 1k → 10k → 100k → ilimi
 "Connection Closed" é **transitória** (sessão volta) → o disparador deve **re-tentar**
 (backoff), não marcar `falhou` na hora.
 
-## Guard-rails a implementar no disparador (TODO)
-1. **Trava de saúde da sessão**: checar `connectionState` antes de cada lote; se ≠ `open`, pausar.
-2. **Retry com backoff** em erro transitório (Connection Closed) antes de `falhou`.
-3. **Teto diário por conexão + aquecimento** (ramp ~1.8x/dia, começa ~20).
-4. **Pausa 10–15 min a cada 50** enviados.
-5. **Intervalo mínimo forçado pra mídia** (>> texto) + nudge pra WABA.
-6. Server Evolution: avaliar `CONFIG_SESSION_PHONE_VERSION` atual.
+## Guard-rails no disparador
+1. ✅ **Trava de saúde da sessão**: checa `health()`/`connectionState` antes do disparo; aborta se ≠ `open` (PR #29).
+2. ✅ **Retry com backoff** em erro transitório (Connection Closed) antes de `falhou` (`_send_com_retry`, PR #29).
+3. ✅ **Teto diário por conexão + aquecimento** (mig 126): `conexao.daily_send_cap` + `warmup_started_at`
+   (curva dia0≈20, ~1.8x/dia, gradua em ~8 dias). O teto efetivo é o menor entre o manual e a curva.
+   Ao atingir, a campanha vira `scheduled` pro dia seguinte (não aborta) → o poller retoma = aquecimento na prática.
+   Contador em `conexao_envio_diario`; UI em `/connections/[id]` (painel anti-ban) + `GET /api/conexoes/{id}/quota`.
+4. **Pausa 10–15 min a cada 50** enviados. *(pendente — hoje só jitter por mensagem)*
+5. **Intervalo mínimo forçado pra mídia** (>> texto) + nudge pra WABA. *(pendente)*
+6. Server Evolution: avaliar `CONFIG_SESSION_PHONE_VERSION` atual. *(infra, fora do app)*
 
 ## Refutados (NÃO citar como fato)
 Intervalos 15-45s/30-90s; limites exatos do baileys-antiban (8/min,200/h,1500/dia);
