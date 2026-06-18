@@ -7,6 +7,8 @@ helpers pra dicts (JSON) usados pelo storage genérico
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -21,17 +23,29 @@ class IntegracaoConfigError(WarelineConfigError):
     """Re-export pra novos providers (mesma semântica do Wareline)."""
 
 
+def _derive_fernet_key(secret: str) -> bytes:
+    """Deriva uma Fernet key válida (32 bytes url-safe base64) de um segredo
+    qualquer via SHA-256. Determinística → mesma key entre restarts."""
+    return base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+
+
 def _get_fernet() -> Fernet:
-    """Lazy + valida chave configurada. Compartilha mesma key do Wareline."""
+    """Lazy. Usa WARELINE_ENCRYPTION_KEY se setada; senão DERIVA a key de um
+    segredo já presente (INTERNAL_SERVICE_TOKEN) — evita exigir uma env nova só
+    pra isso e mantém as credenciais cifradas. A derivação é determinística;
+    se o INTERNAL_SERVICE_TOKEN mudar, ciphertext antigo não decifra (mesma
+    propriedade de "não perca a chave" da env explícita)."""
     key = settings.wareline_encryption_key
-    if key is None:
-        raise IntegracaoConfigError(
-            "WARELINE_ENCRYPTION_KEY não configurada. Gere com "
-            "`python -c 'from cryptography.fernet import Fernet; "
-            "print(Fernet.generate_key().decode())'`"
-        )
-    raw = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
-    return Fernet(raw.encode() if isinstance(raw, str) else raw)
+    if key is not None:
+        raw = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
+        return Fernet(raw.encode() if isinstance(raw, str) else raw)
+    fallback = (settings.internal_service_token or "").strip()
+    if fallback:
+        return Fernet(_derive_fernet_key(fallback))
+    raise IntegracaoConfigError(
+        "WARELINE_ENCRYPTION_KEY não configurada e sem INTERNAL_SERVICE_TOKEN "
+        "pra derivar. Setar INTERNAL_SERVICE_TOKEN (já obrigatório) resolve."
+    )
 
 
 def encrypt_str(plaintext: str) -> str:
