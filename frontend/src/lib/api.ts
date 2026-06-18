@@ -2582,6 +2582,9 @@ export interface Campanha {
   tipo: "broadcast" | "transactional" | "reativacao";
   filtro_segmento: string | null;
   filtro_tags: string[] | null;
+  // Pausa longa periódica anti-ban (mig 127)
+  pausa_a_cada?: number;
+  pausa_segundos?: number;
 }
 
 export interface CampanhaDestinatario {
@@ -2616,6 +2619,9 @@ export interface CampanhaCreateInput {
   intervalo_min_ms?: number | null;
   intervalo_max_ms?: number | null;
   kill_switch_pct?: number | null;
+  // Pausa longa periódica anti-ban (mig 127) — 0 = desligado
+  pausa_a_cada?: number | null;
+  pausa_segundos?: number | null;
   // Mídia (mig 123) — foto; mensagem vira legenda
   media_url?: string | null;
   media_tipo?: string | null;

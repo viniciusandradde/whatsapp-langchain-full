@@ -53,6 +53,23 @@ def normalize_phone(raw: str) -> str | None:
     return f"+{digits}"
 
 
+# Piso de intervalo mínimo (ms) entre envios de MÍDIA — anti-ban. Mídia em
+# ritmo de texto foi o que escalou o ban da campanha 9 (ver
+# docs/DISPARO_MASSA_BEST_PRACTICES.md). 8s é conservador pra canal não-oficial.
+_MEDIA_MIN_INTERVAL_MS = 8000
+
+
+def _piso_midia(min_ms: int, max_ms: int, tem_midia: bool) -> tuple[int, int]:
+    """Aplica o piso anti-ban de intervalo quando a campanha tem mídia.
+
+    Texto fica como configurado; mídia força `min_ms >= _MEDIA_MIN_INTERVAL_MS`
+    (e ajusta `max_ms` pra não ficar abaixo do novo mínimo)."""
+    if tem_midia and min_ms < _MEDIA_MIN_INTERVAL_MS:
+        min_ms = _MEDIA_MIN_INTERVAL_MS
+        max_ms = max(max_ms, min_ms)
+    return min_ms, max_ms
+
+
 # ---- CRUD campanha ----
 
 
@@ -89,6 +106,9 @@ class CampanhaSummary:
     media_tipo: str | None = None
     # Origem do envio (mig 125): 'backend' (Evolution/WABA) | 'extensao' (in-browser)
     origem_envio: str = "backend"
+    # Pausa longa periódica anti-ban (mig 127): 0 = desligado
+    pausa_a_cada: int = 0
+    pausa_segundos: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -122,6 +142,8 @@ class CampanhaSummary:
             "media_url": self.media_url,
             "media_tipo": self.media_tipo,
             "origem_envio": self.origem_envio,
+            "pausa_a_cada": self.pausa_a_cada,
+            "pausa_segundos": self.pausa_segundos,
         }
 
 
@@ -136,7 +158,9 @@ _COLS = (
     # Mídia (mig 123)
     "media_url, media_tipo, "
     # Origem do envio (mig 125)
-    "origem_envio"
+    "origem_envio, "
+    # Pausa periódica anti-ban (mig 127)
+    "pausa_a_cada, pausa_segundos"
 )
 
 
@@ -199,6 +223,9 @@ async def create_campanha(
     agendar: bool = False,
     # Origem do envio (mig 125): 'extensao' → nasce 'running' (browser envia)
     origem_envio: str = "backend",
+    # Pausa longa periódica anti-ban (mig 127) — 0 = desligado
+    pausa_a_cada: int | None = None,
+    pausa_segundos: int | None = None,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -215,6 +242,8 @@ async def create_campanha(
     if eff_min > eff_max:
         eff_min, eff_max = eff_max, eff_min
     eff_kill = kill_switch_pct if kill_switch_pct is not None else 30
+    eff_pausa_cada = max(0, pausa_a_cada) if pausa_a_cada is not None else 0
+    eff_pausa_seg = max(0, pausa_segundos) if pausa_segundos is not None else 0
     normalized: list[str] = []
     seen: set[str] = set()
     for raw in telefones_brutos:
@@ -250,9 +279,10 @@ async def create_campanha(
                      filtro_segmento, filtro_tags,
                      message_template_id, template_variaveis,
                      intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
-                     media_url, media_tipo, origem_envio)
+                     media_url, media_tipo, origem_envio,
+                     pausa_a_cada, pausa_segundos)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s, %s)
+                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_COLS}
                 """,
                 (
@@ -279,6 +309,8 @@ async def create_campanha(
                     media_url,
                     media_tipo,
                     origem_envio,
+                    eff_pausa_cada,
+                    eff_pausa_seg,
                 ),
             )
             row = await cur.fetchone()
@@ -405,6 +437,8 @@ _CAMPOS_EDITAVEIS = frozenset(
         "status",
         "media_url",
         "media_tipo",
+        "pausa_a_cada",
+        "pausa_segundos",
     }
 )
 
@@ -500,7 +534,7 @@ async def clonar_campanha(
                          modelo_mensagem_id, tipo,
                          message_template_id, template_variaveis,
                          intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
-                         media_url, media_tipo)
+                         media_url, media_tipo, pausa_a_cada, pausa_segundos)
                     SELECT empresa_id, nome || ' (cópia)', descricao, mensagem,
                          conexao_id, intervalo_ms, max_destinatarios,
                          (SELECT count(*) FROM campanha_destinatario
@@ -509,7 +543,7 @@ async def clonar_campanha(
                          modelo_mensagem_id, tipo,
                          message_template_id, template_variaveis,
                          intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
-                         media_url, media_tipo
+                         media_url, media_tipo, pausa_a_cada, pausa_segundos
                     FROM campanha WHERE id = %s AND empresa_id = %s
                     RETURNING {_COLS}
                     """,
@@ -781,7 +815,8 @@ async def _dispatch_loop(
     # Faixa de jitter anti-ban (fallback pro intervalo_ms fixo legado).
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT intervalo_min_ms, intervalo_max_ms, kill_switch_pct "
+            "SELECT intervalo_min_ms, intervalo_max_ms, kill_switch_pct, "
+            "pausa_a_cada, pausa_segundos "
             "FROM campanha WHERE id = %s",
             (camp_id,),
         )
@@ -790,6 +825,16 @@ async def _dispatch_loop(
     min_ms = (jrow[0] if jrow else None) or fixo
     max_ms = (jrow[1] if jrow else None) or fixo
     kill_pct = jrow[2] if jrow else None
+    pausa_cada = (jrow[3] if jrow else 0) or 0
+    pausa_seg = (jrow[4] if jrow else 0) or 0
+
+    # Piso de intervalo pra MÍDIA (anti-ban): blast de mídia em ritmo de texto
+    # (3-8s) foi o que escalou o ban da campanha 9. Mídia força um intervalo
+    # mínimo maior — texto fica como configurado.
+    _min_orig = min_ms
+    min_ms, max_ms = _piso_midia(min_ms, max_ms, bool(media_url))
+    if min_ms != _min_orig:
+        log.info("campanha_piso_midia_aplicado", de=_min_orig, para=min_ms)
 
     # Marca como running (quando agendada, o poller já fez o claim → pula).
     if not ja_running:
@@ -800,6 +845,10 @@ async def _dispatch_loop(
                 (camp_id,),
             )
             await conn.commit()
+
+    # Conta envios já feitos (enviados+falhas) pra alinhar a pausa periódica
+    # mesmo quando a campanha é retomada (agendada/reagendada) no meio.
+    processados = camp["enviados"] + camp["falhas"]
 
     while True:
         # Recheca abort a cada batch
@@ -874,7 +923,10 @@ async def _dispatch_loop(
                             )
                         legenda = _apply_tokens(camp.get("mensagem") or "", cn, v)
                         return await send_media(
-                            phone, media_url, mediatype=media_tipo, caption=legenda or None
+                            phone,
+                            media_url,
+                            mediatype=media_tipo,
+                            caption=legenda or None,
                         )
                     return await client.send_message(
                         phone, _apply_tokens(camp.get("mensagem") or "", cn, v)
@@ -919,7 +971,19 @@ async def _dispatch_loop(
                     "campanha_send_failed", dest_id=dest_id, phone=phone, error=err
                 )
 
+            processados += 1
             delay_s = _jitter_delay_s(min_ms, max_ms)
+
+            # Pausa longa periódica (descanso anti-ban): a cada `pausa_cada`
+            # envios, dorme `pausa_seg` segundos além do jitter normal.
+            if pausa_cada > 0 and processados % pausa_cada == 0:
+                log.info(
+                    "campanha_pausa_periodica",
+                    processados=processados,
+                    segundos=pausa_seg,
+                )
+                delay_s += pausa_seg
+
             if delay_s > 0:
                 await asyncio.sleep(delay_s)
 
@@ -1017,7 +1081,9 @@ async def claim_scheduled_due(pool: AsyncConnectionPool) -> list[tuple[int, int]
     return claimed
 
 
-async def run_scheduled_poller(pool: AsyncConnectionPool, interval_s: float = 30.0) -> None:
+async def run_scheduled_poller(
+    pool: AsyncConnectionPool, interval_s: float = 30.0
+) -> None:
     """Loop infinito: a cada `interval_s`, claim das agendadas vencidas e
     dispara cada uma (já 'running' pelo claim). Rodar como task no lifespan."""
     while True:
