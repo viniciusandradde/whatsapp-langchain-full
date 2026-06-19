@@ -150,6 +150,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (rm.ok) membrosTotal += rm.data?.novos || 0;
         }
         sendResponse({ ...rg, raspados: grupos.length, membrosNovos: membrosTotal });
+      } else if (msg.type === "exportar") {
+        // Exportar CSV: devolve a lista crua pro popup (NÃO ingere no backend).
+        const what = msg.what === "grupos" ? "grupos" : "contatos";
+        const page = await pedirScrape(what);
+        if (page.error) throw new Error(page.error);
+        sendResponse({ ok: true, contatos: page.contatos, grupos: page.grupos });
       } else if (msg.type === "wpp-status") {
         // E0: carrega wa-js sob demanda e reporta se a sessão está pronta/logada.
         const r = await garantirWpp();

@@ -2,45 +2,70 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
+    <link rel="stylesheet" href="nexus-ui.css" />
     <style>
-      body { width: 320px; font: 13px system-ui, sans-serif; margin: 0; }
-      header { padding: 10px 12px; background: #075e54; color: #fff; font-weight: 600; }
-      .tabs { display: flex; border-bottom: 1px solid #ddd; }
-      .tab { flex: 1; padding: 8px; text-align: center; cursor: pointer; color: #555; }
-      .tab.active { color: #075e54; border-bottom: 2px solid #075e54; font-weight: 600; }
-      .panel { display: none; padding: 12px; }
-      .panel.active { display: block; }
-      button { width: 100%; padding: 9px; margin: 4px 0; border: 0; border-radius: 6px;
-        background: #075e54; color: #fff; font-weight: 600; cursor: pointer; }
-      button.sec { background: #eee; color: #333; }
-      #log { margin-top: 8px; padding: 8px; background: #f6f6f6; border-radius: 6px;
-        min-height: 36px; white-space: pre-wrap; font-size: 12px; }
-      a { color: #075e54; }
-      .warn { font-size: 11px; color: #b00; margin-top: 8px; }
+      body { width: 400px; margin: 0; max-height: 580px; overflow-y: auto; }
+      .row { display: flex; gap: 8px; }
+      .row > .nx-btn { margin: 5px 0; }
+      .vars-box > div { margin-bottom: 6px; }
     </style>
   </head>
-  <body>
-    <header>Nexus Disparador</header>
-    <div class="tabs">
-      <div class="tab active" data-tab="wpp">Captura (WPP)</div>
-      <div class="tab" data-tab="oficial">API Oficial</div>
+  <body class="nx-root">
+    <header class="nx-h"><span class="nx-logo">N</span> Nexus Disparador</header>
+    <div class="nx-tabs">
+      <button class="nx-tab on" data-tab="wpp">Captura</button>
+      <button class="nx-tab" data-tab="oficial">Canal oficial</button>
     </div>
 
-    <div class="panel active" id="panel-wpp">
-      <button id="btn-contatos">Capturar contatos</button>
-      <button id="btn-grupos">Capturar grupos + membros</button>
-      <button class="sec" id="btn-wpp-status">Testar sessão (WPP)</button>
-      <div id="log">Abra o WhatsApp Web e aguarde carregar.</div>
-      <div class="warn">
-        ⚠️ Capturar/disparar de sessão pessoal pode violar os Termos do WhatsApp
-        e banir o número. Use com consentimento (LGPD).
+    <!-- Aba Captura (sessão do WhatsApp Web) -->
+    <div class="nx-panel on" id="panel-wpp">
+      <p class="nx-hint">
+        Importe seus contatos e grupos do WhatsApp Web para o Nexus, ou
+        exporte para CSV.
+      </p>
+      <button class="nx-btn" id="btn-contatos">Importar contatos</button>
+      <button class="nx-btn" id="btn-grupos">Importar grupos e membros</button>
+      <div class="row">
+        <button class="nx-btn nx-btn-outline" id="btn-csv-contatos">Exportar contatos (CSV)</button>
+        <button class="nx-btn nx-btn-outline" id="btn-csv-grupos">Exportar grupos (CSV)</button>
+      </div>
+      <button class="nx-btn nx-btn-ghost nx-btn-sm" id="btn-wpp-status">Testar sessão</button>
+      <div class="nx-log" id="log">Abra o WhatsApp Web e aguarde carregar.</div>
+      <div class="nx-warn">
+        Disparar de uma conta pessoal pode violar os termos do WhatsApp e
+        bloquear o número. Use com responsabilidade e consentimento (LGPD).
+        Para volume sustentável, prefira o canal oficial.
       </div>
     </div>
 
-    <div class="panel" id="panel-oficial">
-      <p>A captura/Disparo pelo <b>canal oficial (WABA)</b> é feita pelo painel
-        do ChatNexus (Conexões → Embedded Signup) e Campanhas → Templates.</p>
-      <button class="sec" id="btn-options">Configurar API key / backend</button>
+    <!-- Aba Canal oficial (WABA via Nexus) -->
+    <div class="nx-panel" id="panel-oficial">
+      <p class="nx-hint">
+        Envie um template aprovado pelo canal oficial (WhatsApp Business). O
+        envio é feito pelo Nexus com a conexão configurada no painel — seguro e
+        sem risco de bloqueio.
+      </p>
+
+      <label class="nx-label">Conexão</label>
+      <select class="nx-select" id="waba-conexao"><option value="">Carregando…</option></select>
+
+      <label class="nx-label">Template</label>
+      <select class="nx-select" id="waba-template"><option value="">Selecione a conexão</option></select>
+
+      <div class="vars-box" id="waba-vars"></div>
+
+      <label class="nx-label">Números (1 por linha)</label>
+      <textarea class="nx-textarea" id="waba-numeros" placeholder="5511999999999&#10;5511888888888"></textarea>
+
+      <label class="nx-label">Agendar para (opcional)</label>
+      <input class="nx-input" type="datetime-local" id="waba-agenda" />
+
+      <button class="nx-btn" id="btn-waba-enviar">Enviar pelo canal oficial</button>
+      <div class="nx-log" id="waba-log">Configure a API key nas opções (escopos: dispatch e templates).</div>
+    </div>
+
+    <div style="padding: 0 14px 14px;">
+      <button class="nx-btn nx-btn-ghost nx-btn-sm" id="btn-options">Configurações (API key / servidor)</button>
     </div>
 
     <script src="popup.js"></script>

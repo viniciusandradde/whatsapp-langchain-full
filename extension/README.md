@@ -26,11 +26,27 @@ Para volume sustentável, use o **canal oficial (WABA)** pelo painel.
 ## Uso
 
 1. Abra `https://web.whatsapp.com` e aguarde carregar (abra uma conversa).
-2. Clique no ícone da extensão → aba **Captura (WPP)**:
-   - **Capturar contatos** → envia contatos pro staging.
-   - **Capturar grupos + membros** → envia grupos e seus membros.
+2. Clique no ícone da extensão → aba **Captura**:
+   - **Importar contatos / grupos** → envia pro staging do Nexus.
+   - **Exportar contatos / grupos (CSV)** → baixa um CSV local (sem backend).
 3. No painel: **Disparador → Contatos/Grupos** para ver o que chegou e
    **promover** ao CRM; depois **Campanhas → Nova** para disparar.
+
+### Disparo pela sessão (painel injetado no WhatsApp Web)
+Clique no botão flutuante (canto inferior direito) → aba **Mensagens**: monte a
+lista, a mensagem (com `[nome]` e spintax `{oi|olá}`), escolha o tipo, ajuste
+intervalos e — opcional — **Agendar início** (mantenha a aba aberta). Aba
+**Ligações** faz chamadas WaVoIP. ⚠️ disparo por sessão pessoal pode banir o número.
+
+### Canal oficial (WABA) — popup, aba **Canal oficial**
+Envio por template aprovado, **roteado pelo backend Nexus** (sem token Meta no
+navegador): escolha a conexão WABA, o template, preencha as variáveis, cole os
+números (e opcionalmente agende) → o Nexus dispara e você acompanha em
+**Campanhas**. Requer API key com escopos `dispatch` e `templates`.
+
+## Identidade visual
+A UI segue o design system **Obsidian** do Nexus (laranja `#F97316` + azul
+`#3B82F6`, dark-first) — `nexus-ui.css` (popup/opções) e `panel.css` (painel).
 
 ## Arquitetura
 

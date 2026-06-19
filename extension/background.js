@@ -54,7 +54,11 @@ async function apiGet(path) {
   const resp = await fetch(`${backendUrl}${path}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  if (resp.status === 401) throw new Error("API key inválida.");
+  if (resp.status === 403)
+    throw new Error("API key sem escopo necessário (dispatch/templates).");
+  if (resp.status === 429) throw new Error("Muitas requisições. Aguarde um momento.");
+  if (!resp.ok) throw new Error("Não foi possível concluir a ação.");
   return resp.json();
 }
 
@@ -112,6 +116,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           `/api/disparador/ext/campanha/${msg.campanhaId}/report`,
           { items: msg.items || [] }
         );
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:conexoes") {
+        const r = await apiGet("/api/disparador/ext/conexoes");
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:templates") {
+        const r = await apiGet(
+          `/api/disparador/ext/templates?conexao_id=${encodeURIComponent(msg.conexaoId)}`
+        );
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:campanha-template") {
+        const r = await apiPost("/api/disparador/ext/campanha-template", msg.body || {});
         sendResponse({ ok: true, data: r });
       } else {
         sendResponse({ ok: false, error: "tipo desconhecido" });

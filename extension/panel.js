@@ -191,6 +191,9 @@ Refri|R$8"></textarea>
           <div><label>Pausa a cada</label><input id="nx-pausa-cada" type="number" value="50" min="0"></div>
           <div><label>Pausa (s)</label><input id="nx-pausa-seg" type="number" value="600" min="0"></div>
         </div>
+        <label>Agendar início (opcional)</label>
+        <input id="nx-agenda" type="datetime-local">
+        <div class="nx-hint" id="nx-agenda-hint">Deixe vazio para disparar agora. Se agendar, mantenha esta aba do WhatsApp Web aberta.</div>
         <button class="nx-btn" id="nx-start">Iniciar disparo</button>
         <div class="nx-ctrls">
           <button class="nx-btn nx-sec" id="nx-pause" disabled>Pausar</button>
@@ -202,8 +205,9 @@ Refri|R$8"></textarea>
         <div class="nx-warn">⚠️ Disparo em massa pela sua sessão pode <b>banir o número</b>.
           Aqueça o número, use lotes pequenos e intervalos altos.</div>
         <div class="nx-hint">📨 <b>Volume seguro / API Oficial (WABA)</b>: use o painel do
-          Nexus → <a id="nx-link-painel" href="#" target="_blank" style="color:#075e54">Campanhas</a>
+          Nexus → <a id="nx-link-painel" href="#" target="_blank" style="color:#60a5fa">Campanhas</a>
           (template aprovado, sem risco de ban, funciona no celular).</div>
+        <button class="nx-btn nx-sec" id="nx-cancel-agenda" style="display:none">Cancelar agendamento</button>
       </div>
       <div class="nx-body" id="nx-voz-body" style="display:none">
         <div class="nx-warn">📞 <b>Ligações de voz automáticas (WaVoIP)</b> tocam um áudio
@@ -291,6 +295,7 @@ Refri|R$8"></textarea>
         window.open(url, "_blank");
       };
     $("nx-start").onclick = iniciar;
+    $("nx-cancel-agenda").onclick = cancelarAgenda;
     $("nx-pause").onclick = () => {
       pausado = !pausado;
       $("nx-pause").textContent = pausado ? "Continuar" : "Pausar";
@@ -494,7 +499,56 @@ Refri|R$8"></textarea>
   let falhasCsv = [];
   let anexos = []; // [{dataUrl, filename}]
 
+  // ---- Agendamento (client-side; a aba precisa ficar aberta) ----
+  let _agTimeout = null;
+  let _agInterval = null;
+  function fmtDur(ms) {
+    const s = Math.round(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    return (h ? h + "h " : "") + (m || h ? m + "min " : "") + r + "s";
+  }
+  function cancelarAgenda() {
+    clearTimeout(_agTimeout);
+    clearInterval(_agInterval);
+    _agTimeout = _agInterval = null;
+    $("nx-cancel-agenda").style.display = "none";
+    if (!rodando) $("nx-start").disabled = false;
+  }
+  function agendarDisparo(quando) {
+    cancelarAgenda();
+    $("nx-start").disabled = true;
+    $("nx-cancel-agenda").style.display = "";
+    const tick = () => {
+      const rest = quando - Date.now();
+      if (rest <= 0) return;
+      log(`⏰ Agendado para ${new Date(quando).toLocaleString("pt-BR")} — faltam ${fmtDur(rest)}. Mantenha esta aba aberta.`);
+    };
+    tick();
+    _agInterval = setInterval(tick, 15000);
+    _agTimeout = setTimeout(() => {
+      clearInterval(_agInterval);
+      _agInterval = null;
+      $("nx-cancel-agenda").style.display = "none";
+      log("⏰ Iniciando disparo agendado…");
+      dispararAgora();
+    }, quando - Date.now());
+  }
+  // Wrapper do botão: respeita o agendamento, senão dispara já.
   async function iniciar() {
+    if (rodando) return;
+    const ag = $("nx-agenda").value;
+    if (ag) {
+      const quando = new Date(ag).getTime();
+      if (Number.isFinite(quando) && quando - Date.now() > 1000) {
+        return agendarDisparo(quando);
+      }
+    }
+    return dispararAgora();
+  }
+
+  async function dispararAgora() {
     if (rodando) return;
     const lista = parseLista($("nx-lista").value);
     const msg = $("nx-msg").value.trim();
