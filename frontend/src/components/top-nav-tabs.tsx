@@ -104,6 +104,7 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
       "/clientes",
       "/agendamentos",
       "/campanhas",
+      "/disparador",
       "/tags",
     ],
   },
