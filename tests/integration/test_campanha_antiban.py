@@ -491,6 +491,40 @@ class TestCampanhaAntiBanPersistencia:
         assert upd["pausa_a_cada"] == 30
         assert upd["pausa_segundos"] == 300
 
+    async def test_grava_pool_conexoes(self, empresa) -> None:
+        """Pool de rotação (mig 130): conexao_ids persiste + conexao_id = 1º."""
+        from whatsapp_langchain.shared.campanha import create_campanha
+        from whatsapp_langchain.shared.db import get_pool
+
+        # 2 conexões reais (conexao_id tem FK; o 1º do pool vira o conexao_id).
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            c1 = conn.execute(
+                "INSERT INTO conexao (empresa_id, provider, from_number) "
+                "VALUES (%s, 'twilio_prod', %s) RETURNING id",
+                (empresa, f"+19{_RUN[:6]}a"),
+            ).fetchone()[0]
+            c2 = conn.execute(
+                "INSERT INTO conexao (empresa_id, provider, from_number) "
+                "VALUES (%s, 'twilio_prod', %s) RETURNING id",
+                (empresa, f"+19{_RUN[:6]}b"),
+            ).fetchone()[0]
+        pool = await get_pool()
+        out = await create_campanha(
+            pool,
+            empresa,
+            nome=f"campanha-pool-{_RUN}",
+            descricao=None,
+            mensagem="Olá",
+            conexao_id=None,
+            intervalo_ms=500,
+            max_destinatarios=1000,
+            telefones_brutos=["+5511999990006"],
+            user_id=None,
+            conexao_ids=[c1, c2, c1],  # dedup preserva ordem
+        )
+        assert out["conexao_ids"] == [c1, c2]
+        assert out["conexao_id"] == c1  # 1º do pool (compat)
+
 
 @pytest.mark.docker_demo
 class TestTetoDiario:

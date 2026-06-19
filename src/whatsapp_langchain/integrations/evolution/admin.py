@@ -232,6 +232,29 @@ async def get_instance_owner_number(instance_name: str) -> str | None:
     return None
 
 
+async def get_owner_numbers() -> dict[str, str]:
+    """Mapa {instance_name: +número} de TODAS as instâncias com dono vinculado,
+    em UMA chamada (pra backfill em lote do from_number na listagem)."""
+    url = f"{_base()}/instance/fetchInstances"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(url, headers=_headers())
+        if resp.status_code != 200:
+            raise EvolutionAdminError(resp.status_code, resp.text[:400])
+        data = resp.json()
+    items = data if isinstance(data, list) else [data]
+    out: dict[str, str] = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        inner = it.get("instance")
+        inst = inner if isinstance(inner, dict) else it
+        name = inst.get("name") or inst.get("instanceName")
+        digits = _normalize_phone(str(inst.get("ownerJid") or "").split("@", 1)[0])
+        if name and digits:
+            out[str(name)] = f"+{digits}"
+    return out
+
+
 async def disconnect_instance(instance_name: str) -> bool:
     """DELETE /instance/logout/{name} → desconecta sessão (mantém instance)."""
     url = f"{_base()}/instance/logout/{instance_name}"

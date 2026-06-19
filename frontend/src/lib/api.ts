@@ -2626,6 +2626,8 @@ export interface Campanha {
   // Pausa longa periódica anti-ban (mig 127)
   pausa_a_cada?: number;
   pausa_segundos?: number;
+  // Pool de rotação de números (mig 130)
+  conexao_ids?: number[];
 }
 
 export interface CampanhaDestinatario {
@@ -2663,6 +2665,8 @@ export interface CampanhaCreateInput {
   // Pausa longa periódica anti-ban (mig 127) — 0 = desligado
   pausa_a_cada?: number | null;
   pausa_segundos?: number | null;
+  // Pool de rotação de números (mig 130) — disparo alterna entre eles
+  conexao_ids?: number[];
   // Mídia (mig 123) — foto; mensagem vira legenda
   media_url?: string | null;
   media_tipo?: string | null;

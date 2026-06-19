@@ -70,6 +70,29 @@ async def list_my_conexoes(
     """Lista conexões da empresa ativa, default primeiro."""
     pool = await get_pool()
     items = await list_conexoes(pool, empresa_id)
+
+    # Backfill do número real (mig PR #38): conexões Evolution conectadas que
+    # ainda têm o placeholder `evolution:<inst>`. UMA chamada fetchInstances só
+    # quando há placeholder (caso comum: nenhum → zero overhead). Best-effort.
+    placeholders = [
+        c
+        for c in items
+        if c.provider == "evolution"
+        and (c.from_number or "").startswith("evolution:")
+        and c.connection_state in ("open", "ready")
+    ]
+    if placeholders and settings.evolution_admin_enabled:
+        try:
+            numeros = await evo_admin.get_owner_numbers()
+            for c in placeholders:
+                inst = c.payload_json.get("instance_name")
+                numero = numeros.get(inst) if inst else None
+                if numero and numero != c.from_number:
+                    await set_conexao_from_number(pool, c.id, numero)
+                    c.from_number = numero
+        except Exception as exc:
+            logger.warning("conexao_list_backfill_numero_falhou", error=str(exc))
+
     return {"conexoes": [mask_sensitive(c) for c in items]}
 
 
