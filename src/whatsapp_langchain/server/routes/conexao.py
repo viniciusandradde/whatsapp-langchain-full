@@ -35,6 +35,7 @@ from whatsapp_langchain.shared.conexao import (
     patch_conexao,
     record_health_check,
     save_credentials,
+    set_conexao_from_number,
     set_conexao_status,
     set_connection_state,
     set_qr_code,
@@ -942,6 +943,20 @@ async def get_status(
                     conexao.connection_state = new_state
             except Exception as exc:
                 logger.warning("evolution_state_check_failed", error=str(exc))
+
+            # Conectou e o from_number ainda é o placeholder `evolution:<inst>`?
+            # Busca o número real (ownerJid) e grava — pro painel mostrar o número
+            # em vez de "aguardando conexão". Best-effort (UNIQUE pode colidir).
+            if conexao.connection_state in ("open", "ready") and (
+                conexao.from_number or ""
+            ).startswith("evolution:"):
+                try:
+                    numero = await evo_admin.get_instance_owner_number(instance)
+                    if numero and numero != conexao.from_number:
+                        await set_conexao_from_number(pool, conexao_id, numero)
+                        conexao.from_number = numero
+                except Exception as exc:
+                    logger.warning("evolution_sync_numero_falhou", error=str(exc))
 
     return {
         "state": conexao.connection_state,
