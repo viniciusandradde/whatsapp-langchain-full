@@ -21,6 +21,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -113,6 +114,9 @@ class CampanhaSummary:
     # Pausa longa periódica anti-ban (mig 127): 0 = desligado
     pausa_a_cada: int = 0
     pausa_segundos: int = 0
+    # Pool de rotação de números (mig 130): dispatcher alterna entre eles.
+    # None/vazio = usa conexao_id (single).
+    conexao_ids: list[int] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -148,6 +152,7 @@ class CampanhaSummary:
             "origem_envio": self.origem_envio,
             "pausa_a_cada": self.pausa_a_cada,
             "pausa_segundos": self.pausa_segundos,
+            "conexao_ids": list(self.conexao_ids or []),
         }
 
 
@@ -164,7 +169,9 @@ _COLS = (
     # Origem do envio (mig 125)
     "origem_envio, "
     # Pausa periódica anti-ban (mig 127)
-    "pausa_a_cada, pausa_segundos"
+    "pausa_a_cada, pausa_segundos, "
+    # Pool de rotação de números (mig 130)
+    "conexao_ids"
 )
 
 
@@ -230,6 +237,8 @@ async def create_campanha(
     # Pausa longa periódica anti-ban (mig 127) — 0 = desligado
     pausa_a_cada: int | None = None,
     pausa_segundos: int | None = None,
+    # Pool de rotação de números (mig 130) — dispatcher alterna entre eles
+    conexao_ids: list[int] | None = None,
 ) -> dict:
     """Cria campanha + insere destinatários. Telefones inválidos são
     descartados silenciosamente; o caller pode chamar
@@ -248,6 +257,13 @@ async def create_campanha(
     eff_kill = kill_switch_pct if kill_switch_pct is not None else 30
     eff_pausa_cada = max(0, pausa_a_cada) if pausa_a_cada is not None else 0
     eff_pausa_seg = max(0, pausa_segundos) if pausa_segundos is not None else 0
+    # Pool de rotação (mig 130): dedup preservando ordem. Se vier pool, o
+    # conexao_id (legado/single) vira o 1º do pool — compat com reads.
+    eff_pool: list[int] | None = None
+    if conexao_ids:
+        eff_pool = list(dict.fromkeys(int(c) for c in conexao_ids))
+        if conexao_id is None:
+            conexao_id = eff_pool[0]
     normalized: list[str] = []
     seen: set[str] = set()
     for raw in telefones_brutos:
@@ -284,9 +300,10 @@ async def create_campanha(
                      message_template_id, template_variaveis,
                      intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
                      media_url, media_tipo, origem_envio,
-                     pausa_a_cada, pausa_segundos)
+                     pausa_a_cada, pausa_segundos, conexao_ids)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s)
+                        %s::text[], %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s::bigint[])
                 RETURNING {_COLS}
                 """,
                 (
@@ -315,6 +332,7 @@ async def create_campanha(
                     origem_envio,
                     eff_pausa_cada,
                     eff_pausa_seg,
+                    eff_pool,
                 ),
             )
             row = await cur.fetchone()
@@ -538,7 +556,8 @@ async def clonar_campanha(
                          modelo_mensagem_id, tipo,
                          message_template_id, template_variaveis,
                          intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
-                         media_url, media_tipo, pausa_a_cada, pausa_segundos)
+                         media_url, media_tipo, pausa_a_cada, pausa_segundos,
+                         conexao_ids)
                     SELECT empresa_id, nome || ' (cópia)', descricao, mensagem,
                          conexao_id, intervalo_ms, max_destinatarios,
                          (SELECT count(*) FROM campanha_destinatario
@@ -547,7 +566,8 @@ async def clonar_campanha(
                          modelo_mensagem_id, tipo,
                          message_template_id, template_variaveis,
                          intervalo_min_ms, intervalo_max_ms, kill_switch_pct,
-                         media_url, media_tipo, pausa_a_cada, pausa_segundos
+                         media_url, media_tipo, pausa_a_cada, pausa_segundos,
+                         conexao_ids
                     FROM campanha WHERE id = %s AND empresa_id = %s
                     RETURNING {_COLS}
                     """,
@@ -734,6 +754,22 @@ async def _send_com_retry(fn, *, log, phone, tentativas: int = 3):
     raise ultimo if ultimo else RuntimeError("falha no envio")
 
 
+def _proxima_conexao(
+    pool_ids: list[int], restante: dict[int, int | None], rr: int
+) -> tuple[int, int] | None:
+    """Round-robin: a partir do índice `rr`, escolhe a próxima conexão do pool
+    com capacidade (restante None=ilimitado, ou > 0). Retorna
+    `(conexao_id, novo_rr)` ou None se TODAS estão sem capacidade (teto batido)."""
+    n = len(pool_ids)
+    for k in range(n):
+        idx = (rr + k) % n
+        cid = pool_ids[idx]
+        r = restante.get(cid)
+        if r is None or r > 0:
+            return cid, (idx + 1) % n
+    return None
+
+
 async def _dispatch_loop(
     pool: AsyncConnectionPool,
     empresa_id: int,
@@ -759,21 +795,27 @@ async def _dispatch_loop(
         log.warning("campanha_dispatch_invalid_state", status=camp and camp["status"])
         return
 
-    # Resolve conexão: se não especificada, primeira ativa
-    conexao_id = camp["conexao_id"]
-    if conexao_id is None:
-        conexoes = await list_conexoes(pool, empresa_id)  # já retorna só ativas
-        if not conexoes:
+    # Resolve o POOL de conexões (mig 130): o dispatcher rotaciona entre elas.
+    # `conexao_ids` não-vazio = pool; senão `conexao_id` (single); senão a 1ª ativa.
+    raw_pool = camp.get("conexao_ids") or (
+        [camp["conexao_id"]] if camp.get("conexao_id") else []
+    )
+    if not raw_pool:
+        ativas = await list_conexoes(pool, empresa_id)  # já retorna só ativas
+        if not ativas:
             await _mark_finished(pool, camp_id, "aborted", reason="sem conexão ativa")
             log.error("campanha_no_active_conexao")
             return
-        conexao = conexoes[0]
-    else:
-        conexao = await get_conexao_by_id(pool, conexao_id)
-        if conexao is None or conexao.empresa_id != empresa_id:
-            await _mark_finished(pool, camp_id, "aborted", reason="conexão inválida")
-            log.error("campanha_invalid_conexao", conexao_id=conexao_id)
-            return
+        raw_pool = [ativas[0].id]
+    conexoes_pool = []
+    for cid in raw_pool:
+        cx = await get_conexao_by_id(pool, cid)
+        if cx is not None and cx.empresa_id == empresa_id and cx.status == "active":
+            conexoes_pool.append(cx)
+    if not conexoes_pool:
+        await _mark_finished(pool, camp_id, "aborted", reason="conexão inválida")
+        log.error("campanha_invalid_conexao", pool=raw_pool)
+        return
 
     template_id = camp.get("message_template_id")
     media_url = camp.get("media_url")
@@ -791,30 +833,40 @@ async def _dispatch_loop(
         log.error("campanha_sem_conteudo")
         return
 
-    client, _mode = await _build_client(pool, conexao)
-
-    # Gate de saúde da sessão (anti-ban): não dispara num canal não-oficial
-    # (Evolution) se a sessão WhatsApp não estiver `open` — blastar uma sessão
-    # caindo foi o que escalou o ban do número anterior. Canais oficiais
-    # (WABA/Twilio) não têm health() → pulam o gate.
-    _health = getattr(client, "health", None)
-    if _health is not None:
-        try:
-            h = await _health()
-            estado = (h or {}).get("state") or (h or {}).get("instance", {}).get(
-                "state"
-            )
-            if estado and estado != "open":
-                await _mark_finished(
-                    pool,
-                    camp_id,
-                    "aborted",
-                    reason=f"sessão WhatsApp não conectada (estado: {estado})",
+    # Um client por conexão do pool + gate de saúde POR conexão (anti-ban):
+    # conexão com sessão ≠ open sai do rodízio (não martela sessão caindo).
+    # Canais oficiais (WABA/Twilio) não têm health() → ficam.
+    clients: dict[int, Any] = {}
+    saudaveis = []
+    for cx in conexoes_pool:
+        cli, _mode = await _build_client(pool, cx)
+        _health = getattr(cli, "health", None)
+        if _health is not None:
+            try:
+                h = await _health()
+                estado = (h or {}).get("state") or (h or {}).get("instance", {}).get(
+                    "state"
                 )
-                log.error("campanha_sessao_nao_conectada", estado=estado)
-                return
-        except Exception as e:  # noqa: BLE001 — health indisponível não bloqueia
-            log.warning("campanha_health_check_falhou", error=str(e))
+                if estado and estado != "open":
+                    log.warning(
+                        "campanha_conexao_fora_do_pool",
+                        conexao_id=cx.id,
+                        estado=estado,
+                    )
+                    continue
+            except Exception as e:  # noqa: BLE001 — health indisponível não bloqueia
+                log.warning(
+                    "campanha_health_check_falhou", conexao_id=cx.id, error=str(e)
+                )
+        clients[cx.id] = cli
+        saudaveis.append(cx)
+    if not saudaveis:
+        await _mark_finished(
+            pool, camp_id, "aborted", reason="nenhuma conexão com sessão conectada"
+        )
+        log.error("campanha_pool_sem_sessao_aberta")
+        return
+    pool_ids = [cx.id for cx in saudaveis]
 
     # Faixa de jitter anti-ban (fallback pro intervalo_ms fixo legado).
     async with pool.connection() as conn:
@@ -840,19 +892,23 @@ async def _dispatch_loop(
     if min_ms != _min_orig:
         log.info("campanha_piso_midia_aplicado", de=_min_orig, para=min_ms)
 
-    # Teto diário / aquecimento (anti-ban): teto efetivo do dia desta conexão.
-    # Ao atingir, NÃO aborta — reagenda os pendentes pro dia seguinte (warm-up);
-    # o poller retoma e continua de onde parou. cap None = sem teto.
-    quota = await quota_status(pool, conexao)
-    cap_diario = quota.cap
-    usados_hoje = quota.usados
-    if cap_diario is not None:
-        log.info(
-            "campanha_teto_diario",
-            cap=cap_diario,
-            usados=usados_hoje,
-            motivo=quota.motivo,
-        )
+    # Teto diário / aquecimento (anti-ban) POR conexão do pool: cada número tem
+    # seu teto/aquecimento; quem zera sai do rodízio. Todas zeradas → reagenda
+    # pro dia seguinte (warm-up). restante None = ilimitado.
+    restante: dict[int, int | None] = {}
+    quota_motivo: dict[int, str | None] = {}
+    for cx in saudaveis:
+        q = await quota_status(pool, cx)
+        restante[cx.id] = q.restante
+        quota_motivo[cx.id] = q.motivo
+        if q.cap is not None:
+            log.info(
+                "campanha_teto_diario",
+                conexao_id=cx.id,
+                cap=q.cap,
+                usados=q.usados,
+                motivo=q.motivo,
+            )
 
     # Marca como running (quando agendada, o poller já fez o claim → pula).
     if not ja_running:
@@ -867,6 +923,7 @@ async def _dispatch_loop(
     # Conta envios já feitos (enviados+falhas) pra alinhar a pausa periódica
     # mesmo quando a campanha é retomada (agendada/reagendada) no meio.
     processados = camp["enviados"] + camp["falhas"]
+    rr = 0  # índice do round-robin do pool de conexões
 
     while True:
         # Recheca abort a cada batch
@@ -918,24 +975,31 @@ async def _dispatch_loop(
             return
 
         for dest_id, phone, cliente_nome, variaveis in batch:
-            # Teto diário atingido no meio do envio: reagenda o restante pro
-            # próximo dia (warm-up) em vez de abortar. Deixa os pendentes como
-            # 'pendente' — o poller retoma amanhã.
-            if cap_diario is not None and usados_hoje >= cap_diario:
-                await _reagendar_warmup(pool, camp_id, cap_diario, quota.motivo)
-                log.info(
-                    "campanha_teto_diario_atingido",
-                    cap=cap_diario,
-                    motivo=quota.motivo,
-                )
+            # Round-robin anti-ban: próxima conexão do pool com capacidade.
+            escolha = _proxima_conexao(pool_ids, restante, rr)
+            if escolha is None:
+                # TODAS as conexões bateram o teto diário → reagenda o restante
+                # pro dia seguinte (warm-up). Deixa os pendentes como 'pendente'.
+                motivo = next((m for m in quota_motivo.values() if m), "teto diário")
+                await _reagendar_warmup(pool, camp_id, 0, motivo)
+                log.info("campanha_teto_diario_atingido", pool=pool_ids, motivo=motivo)
                 return
+            cid, rr = escolha
+            cur_conexao = next(cx for cx in saudaveis if cx.id == cid)
+            cur_client = clients[cid]
             try:
-                # Factory única do envio (recriada a cada tentativa do retry).
-                async def _do_send(phone=phone, cn=cliente_nome, v=variaveis):
+                # Factory do envio amarrada à conexão escolhida (mesma no retry).
+                async def _do_send(
+                    phone=phone,
+                    cn=cliente_nome,
+                    v=variaveis,
+                    _cx=cur_conexao,
+                    _cli=cur_client,
+                ):
                     if template_id:
                         res = await send_template_by_id(
                             pool,
-                            conexao_id=conexao.id,
+                            conexao_id=_cx.id,
                             empresa_id=empresa_id,
                             to=phone,
                             template_id=template_id,
@@ -945,7 +1009,7 @@ async def _dispatch_loop(
                         )
                         return res["provider_message_id"]
                     if media_url:
-                        send_media = getattr(client, "send_media", None)
+                        send_media = getattr(_cli, "send_media", None)
                         if send_media is None:
                             raise RuntimeError(
                                 "Conexão não suporta envio de mídia (use Evolution)."
@@ -957,7 +1021,7 @@ async def _dispatch_loop(
                             mediatype=media_tipo,
                             caption=legenda or None,
                         )
-                    return await client.send_message(
+                    return await _cli.send_message(
                         phone, _apply_tokens(camp.get("mensagem") or "", cn, v)
                     )
 
@@ -978,10 +1042,11 @@ async def _dispatch_loop(
                         "updated_at=NOW() WHERE id = %s",
                         (camp_id,),
                     )
-                    # Conta no teto diário da conexão (mesma transação).
-                    await incr_uso_hoje(conn, empresa_id, conexao.id)
+                    # Conta no teto diário DA conexão usada (mesma transação).
+                    await incr_uso_hoje(conn, empresa_id, cid)
                     await conn.commit()
-                usados_hoje += 1
+                if restante[cid] is not None:
+                    restante[cid] -= 1  # type: ignore[operator]
             except Exception as e:  # noqa: BLE001 — gravamos a falha
                 err = str(e)[:500]
                 async with pool.connection() as conn:
@@ -1070,8 +1135,10 @@ async def _reagendar_warmup(
     Não aborta — vira 'scheduled' com `scheduled_at` = meia-noite de amanhã; o
     `run_scheduled_poller` reivindica e o `_dispatch_loop` (ja_running) continua
     de onde parou. O disparo "pinga" ao longo dos dias = aquecimento na prática.
+    `cap` é mantido por compat (com pool de números não há teto único).
     """
-    nota = f"\n[teto diário {cap} atingido ({motivo or 'manual'}) — retoma amanhã]"
+    _cap_txt = f" {cap}" if cap else ""
+    nota = f"\n[teto diário{_cap_txt} atingido ({motivo or 'manual'}) — retoma amanhã]"
     async with pool.connection() as conn:
         await conn.execute(
             """

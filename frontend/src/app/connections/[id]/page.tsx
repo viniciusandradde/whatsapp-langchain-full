@@ -7,6 +7,7 @@ import { getConexao } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { AntiBanPanel } from "./anti-ban-panel";
+import { TipoAtendimentoSelect } from "./tipo-atendimento-select";
 
 export const dynamic = "force-dynamic";
 
@@ -103,7 +104,10 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
             }
           />
           <Field label="Agente padrão" value={conexao.default_agent_id || "—"} />
-          <Field label="Tipo atendimento" value={conexao.tipo_atendimento || "ia"} />
+          <TipoAtendimentoSelect
+            conexaoId={conexao.id}
+            initial={conexao.tipo_atendimento || "ia"}
+          />
           <Field label="Padrão" value={conexao.is_default ? "Sim" : "Não"} />
           {isWABA && conexao.waba_account_id && (
             <>

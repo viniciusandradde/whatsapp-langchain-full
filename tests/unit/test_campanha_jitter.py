@@ -5,8 +5,39 @@ from whatsapp_langchain.shared.campanha import (
     _apply_tokens,
     _jitter_delay_s,
     _piso_midia,
+    _proxima_conexao,
     _resolve_template_vars,
 )
+
+
+class TestProximaConexao:
+    """Round-robin do pool de números com teto diário (mig 130)."""
+
+    def test_alterna_em_ordem(self):
+        pool = [10, 20, 30]
+        rest = {10: None, 20: None, 30: None}  # ilimitado
+        seq = []
+        rr = 0
+        for _ in range(6):
+            cid, rr = _proxima_conexao(pool, rest, rr)
+            seq.append(cid)
+        assert seq == [10, 20, 30, 10, 20, 30]
+
+    def test_pula_quem_zerou(self):
+        pool = [10, 20, 30]
+        rest = {10: 0, 20: 5, 30: 0}  # só o 20 tem capacidade
+        cid, rr = _proxima_conexao(pool, rest, 0)
+        assert cid == 20
+        cid2, _ = _proxima_conexao(pool, rest, rr)
+        assert cid2 == 20  # continua só no 20
+
+    def test_todas_zeradas_retorna_none(self):
+        pool = [10, 20]
+        assert _proxima_conexao(pool, {10: 0, 20: 0}, 0) is None
+
+    def test_pool_de_um(self):
+        cid, rr = _proxima_conexao([10], {10: None}, 0)
+        assert cid == 10 and rr == 0
 
 
 class TestApplyTokens:

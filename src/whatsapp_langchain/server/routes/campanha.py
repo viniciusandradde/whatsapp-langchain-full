@@ -85,6 +85,8 @@ class CampanhaCreate(BaseModel):
     # Pausa longa periódica anti-ban (mig 127) — 0 = desligado
     pausa_a_cada: int | None = Field(default=None, ge=0, le=100_000)
     pausa_segundos: int | None = Field(default=None, ge=0, le=86_400)
+    # Pool de rotação de números (mig 130) — disparo alterna entre eles (anti-ban)
+    conexao_ids: list[int] | None = Field(default=None, max_length=50)
 
     @model_validator(mode="after")
     def _texto_ou_template(self) -> CampanhaCreate:
@@ -109,6 +111,13 @@ class CampanhaCreate(BaseModel):
         ):
             raise ValueError(
                 "intervalo_min_ms não pode ser maior que intervalo_max_ms."
+            )
+        # Rotação (mig 130) só faz sentido pra texto/mídia (Evolution). Template
+        # HSM é por-conexão → exige número único.
+        if self.message_template_id and self.conexao_ids and len(self.conexao_ids) > 1:
+            raise ValueError(
+                "Template HSM usa um número só — rotação de números só vale pra "
+                "texto/mídia."
             )
         return self
 
@@ -183,6 +192,7 @@ async def create_endpoint(
             agendar=body.agendar,
             pausa_a_cada=body.pausa_a_cada,
             pausa_segundos=body.pausa_segundos,
+            conexao_ids=body.conexao_ids,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e

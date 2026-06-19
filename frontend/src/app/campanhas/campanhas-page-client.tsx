@@ -71,6 +71,8 @@ export function CampanhasPageClient({
   // Modo de conteúdo: texto livre (janela 24h) OU template HSM aprovado.
   const [modo, setModo] = useState<"texto" | "template">("texto");
   const [conexaoId, setConexaoId] = useState<string>("");
+  // Rotação de números (mig 130): pool selecionado pro disparo texto/mídia.
+  const [conexaoIds, setConexaoIds] = useState<number[]>([]);
   const [templates, setTemplates] = useState<WabaTemplate[]>([]);
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
@@ -243,6 +245,9 @@ export function CampanhasPageClient({
         | null,
       mensagem: modo === "texto" ? String(fd.get("mensagem") || "").trim() : null,
       conexao_id: conexaoId ? Number(conexaoId) : null,
+      // Rotação só no texto/mídia (template HSM é por-conexão → número único).
+      conexao_ids:
+        modo === "texto" && conexaoIds.length ? conexaoIds : undefined,
       intervalo_ms: intervaloMin,
       intervalo_min_ms: intervaloMin,
       intervalo_max_ms: intervaloMax,
@@ -489,27 +494,62 @@ export function CampanhasPageClient({
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-                    Conexão
+                    {modo === "template" ? "Conexão" : "Números do disparo"}
                   </label>
-                  <select
-                    name="conexao_id"
-                    value={conexaoId}
-                    onChange={(e) => {
-                      setConexaoId(e.target.value);
-                      setTemplateId(null);
-                      setTemplateVars({});
-                    }}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="">
-                      {modo === "template" ? "Selecione a conexão…" : "Primeira ativa"}
-                    </option>
-                    {conexoes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.from_number} ({c.provider})
-                      </option>
-                    ))}
-                  </select>
+                  {modo === "template" ? (
+                    <select
+                      name="conexao_id"
+                      value={conexaoId}
+                      onChange={(e) => {
+                        setConexaoId(e.target.value);
+                        setTemplateId(null);
+                        setTemplateVars({});
+                      }}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Selecione a conexão…</option>
+                      {conexoes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.from_number} ({c.provider})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <>
+                      <div className="max-h-32 space-y-1 overflow-auto rounded-md border border-input bg-background p-2">
+                        {conexoes.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Nenhuma conexão ativa.
+                          </p>
+                        )}
+                        {conexoes.map((c) => (
+                          <label
+                            key={c.id}
+                            className="flex cursor-pointer items-center gap-2 text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={conexaoIds.includes(c.id)}
+                              onChange={(e) =>
+                                setConexaoIds((prev) =>
+                                  e.target.checked
+                                    ? [...prev, c.id]
+                                    : prev.filter((x) => x !== c.id)
+                                )
+                              }
+                              className="h-4 w-4"
+                            />
+                            {c.from_number} ({c.provider})
+                          </label>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Selecione 2+ números → o envio <strong>alterna</strong> entre
+                        eles, respeitando o teto diário de cada um (anti-ban). Vazio =
+                        primeira ativa.
+                      </p>
+                    </>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
