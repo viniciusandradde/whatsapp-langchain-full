@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import {
   createDocumentoConhecimento,
   createPasta,
@@ -158,7 +159,8 @@ export async function triggerLearnerAction(): Promise<LearnerResult> {
     );
     if (!r.ok) {
       const txt = await r.text();
-      return { ok: false, error: `${r.status}: ${txt.slice(0, 300)}` };
+      console.error("[pastas] learner run", r.status, txt.slice(0, 300));
+      return { ok: false, error: friendlyError(r.status, txt) };
     }
     const data = await r.json();
     revalidatePath("/dashboard/rag/sandbox");
@@ -211,9 +213,10 @@ export async function uploadFileToFolderAction(
     });
     if (!r.ok) {
       const txt = await r.text();
+      console.error("[pastas] upload", r.status, txt.slice(0, 300));
       return {
         ok: false,
-        error: `${r.status}: ${txt.slice(0, 300)}`,
+        error: friendlyError(r.status, txt),
         filename,
       };
     }

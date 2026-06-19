@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import { auth } from "@/lib/auth";
 import {
   createEmpresa,
@@ -126,7 +127,8 @@ export async function uploadEmpresaLogoAction(
     });
     if (!resp.ok) {
       const t = await resp.text();
-      return { ok: false, error: `API ${resp.status}: ${t.slice(0, 200)}` };
+      console.error("[companies] logo upload", resp.status, t.slice(0, 300));
+      return { ok: false, error: friendlyError(resp.status, t) };
     }
     revalidatePath("/companies");
     revalidatePath("/", "layout");

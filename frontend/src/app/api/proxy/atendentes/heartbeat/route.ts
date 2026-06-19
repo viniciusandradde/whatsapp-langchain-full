@@ -15,7 +15,10 @@ export async function POST() {
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Sessão expirada. Faça login novamente." },
+        { status: 401 }
+      );
     }
     const r = await fetch(`${apiUrl()}/api/atendentes/me/heartbeat`, {
       method: "POST",
@@ -25,14 +28,18 @@ export async function POST() {
       },
     });
     if (!r.ok) {
+      console.error("[proxy heartbeat]", r.status, r.statusText);
       return NextResponse.json(
-        { error: `upstream ${r.status}` },
+        { error: "Não foi possível concluir a ação." },
         { status: r.status }
       );
     }
     return new NextResponse(null, { status: 204 });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "fetch failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[proxy heartbeat]", e);
+    return NextResponse.json(
+      { error: "Não foi possível concluir a ação." },
+      { status: 500 }
+    );
   }
 }

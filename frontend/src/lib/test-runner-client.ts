@@ -7,6 +7,8 @@
  * Server components devem continuar usando getTestRuns/isMyAdmin de @/lib/api.
  */
 
+import { messageFromDetail } from "@/lib/api-error-shared";
+
 export type TestRunStatus = "queued" | "running" | "passed" | "failed" | "error";
 // Sprint Eval-UI (mig 075): roteia subprocess pytest entre tests/e2e/ e tests/eval/.
 export type TestRunModo = "e2e" | "eval-online" | "eval-offline";
@@ -40,12 +42,13 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     credentials: "include",
   });
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail: unknown;
     try {
       const body = await res.json();
-      detail = body?.detail || body?.message || detail;
+      detail = body?.detail ?? body?.message;
     } catch {}
-    throw new Error(`${res.status}: ${detail}`);
+    console.error("[test-runner]", res.status, res.statusText, url, detail ?? "");
+    throw new Error(messageFromDetail(res.status, detail));
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

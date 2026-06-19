@@ -66,8 +66,11 @@ export async function GET(
   );
 
   if (!upstream.ok || !upstream.body) {
-    const text = await upstream.text().catch(() => "Upstream error");
-    return new Response(text, { status: upstream.status });
+    const text = await upstream.text().catch(() => "");
+    console.error("[sse atendimento]", upstream.status, upstream.statusText, text.slice(0, 300));
+    return new Response("Não foi possível abrir o stream de eventos.", {
+      status: upstream.status,
+    });
   }
 
   // Stream pass-through. Browser recebe os chunks SSE diretamente.

@@ -1,6 +1,11 @@
 import { AlertCircle, ArrowUpCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  ApiRequestError,
+  messageFromDetail,
+  stripTechnical,
+} from "@/lib/api-error-shared";
 import { cn } from "@/lib/utils";
 
 /**
@@ -40,6 +45,36 @@ interface ParsedError {
 }
 
 function parseError(error: unknown): ParsedError {
+  const parsed = _parseError(error);
+  // Rede de segurança: nunca exibir resíduo técnico, venha de onde vier.
+  parsed.message = stripTechnical(parsed.message);
+  return parsed;
+}
+
+function _parseError(error: unknown): ParsedError {
+  // Caso 0: ApiRequestError (funil central) — usa status/detail estruturados.
+  if (error instanceof ApiRequestError) {
+    const d = error.detail;
+    if (d && typeof d === "object") {
+      const dd = d as Record<string, unknown>;
+      const isQuota =
+        error.status === 402 ||
+        dd.error === "quota_exceeded" ||
+        dd.error === "feature_unavailable";
+      return {
+        message: messageFromDetail(error.status, d),
+        code: typeof dd.error === "string" ? dd.error : undefined,
+        upgradeTo: typeof dd.upgrade_to === "string" ? dd.upgrade_to : null,
+        isQuotaError: isQuota,
+        raw: error,
+      };
+    }
+    return {
+      message: error.message,
+      isQuotaError: error.status === 402,
+      raw: error,
+    };
+  }
   // Caso 1: Error padrão com .message
   if (error instanceof Error) {
     return _tryParseMessage(error.message, error);

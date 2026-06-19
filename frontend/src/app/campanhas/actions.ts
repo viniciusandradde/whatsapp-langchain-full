@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import { auth } from "@/lib/auth";
 import {
   abortCampanha,
@@ -143,10 +144,9 @@ export async function uploadCampanhaMediaAction(
       body: fd,
     });
     if (!resp.ok) {
-      return {
-        ok: false,
-        error: `Falha no upload (${resp.status}): ${(await resp.text()).slice(0, 200)}`,
-      };
+      const t = await resp.text();
+      console.error("[campanhas] upload-media", resp.status, t.slice(0, 300));
+      return { ok: false, error: friendlyError(resp.status, t) };
     }
     return {
       ok: true,

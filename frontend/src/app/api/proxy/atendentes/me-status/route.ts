@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import { auth } from "@/lib/auth";
 
 const apiUrl = () =>
@@ -33,15 +34,19 @@ export async function GET() {
       cache: "no-store",
     });
     if (!r.ok) {
+      console.error("[proxy me-status GET]", r.status, r.statusText);
       return NextResponse.json(
-        { error: `upstream ${r.status}` },
+        { error: friendlyError(r.status, "") },
         { status: r.status }
       );
     }
     return NextResponse.json(await r.json());
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "fetch failed";
-    return NextResponse.json({ error: msg }, { status: 401 });
+    console.error("[proxy me-status GET]", e);
+    return NextResponse.json(
+      { error: "Sessão expirada. Faça login novamente." },
+      { status: 401 }
+    );
   }
 }
 
@@ -56,14 +61,18 @@ export async function POST(req: Request) {
     });
     if (!r.ok) {
       const detail = await r.text().catch(() => "");
+      console.error("[proxy me-status POST]", r.status, r.statusText, detail.slice(0, 300));
       return NextResponse.json(
-        { error: detail || `upstream ${r.status}` },
+        { error: friendlyError(r.status, detail) },
         { status: r.status }
       );
     }
     return new NextResponse(null, { status: 204 });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "fetch failed";
-    return NextResponse.json({ error: msg }, { status: 401 });
+    console.error("[proxy me-status POST]", e);
+    return NextResponse.json(
+      { error: "Sessão expirada. Faça login novamente." },
+      { status: 401 }
+    );
   }
 }
