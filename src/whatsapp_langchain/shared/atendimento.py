@@ -16,19 +16,23 @@ runtime — "meus" (atribuídos ao operador), "aguardando" (sem dono),
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.models import Atendimento
 
+if TYPE_CHECKING:
+    from whatsapp_langchain.shared.models import Conexao
+
 logger = structlog.get_logger()
 
 
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
 # Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061
-# (triagem) + 2 mig 081/082 (coleta) + 1 mig 085 (aba_id) = 26.
+# (triagem) + 2 mig 081/082 (coleta) + 1 mig 085 (aba_id) + 3 mig 129
+# (snapshot do canal) = 29.
 _BARE_COLS = (
     "id, empresa_id, cliente_id, conexao_id, agente_atual, "
     "status, assigned_to_user_id, last_message_at, closed_at, "
@@ -42,7 +46,9 @@ _BARE_COLS = (
     # Mig 081/082 wizard coleta
     "coleta_estado, coleta_resumo, "
     # Mig 085 aba customizável
-    "aba_id"
+    "aba_id, "
+    # Mig 129 snapshot do canal (persiste após apagar a conexão)
+    "conexao_nome, conexao_numero, conexao_provider"
 )
 # Com alias `a.` — usado em SELECTs com JOIN.
 _BASE_COLS = ", ".join(f"a.{c.strip()}" for c in _BARE_COLS.split(","))
@@ -51,8 +57,8 @@ _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
     # Índices: 0..10 base, 11..15 mig 047, 16..22 mig 061, 23..24 coleta,
-    # 25 aba_id (mig 085)
-    base_len = 26
+    # 25 aba_id (mig 085), 26..28 snapshot do canal (mig 129)
+    base_len = 29
     return Atendimento(
         id=row[0],
         empresa_id=row[1],
@@ -84,6 +90,10 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         coleta_resumo=row[24],
         # Mig 085 aba
         aba_id=row[25],
+        # Mig 129 snapshot do canal (sobrevive ao apagar a conexão)
+        conexao_nome=row[26],
+        conexao_numero=row[27],
+        conexao_provider=row[28],
         # JOIN extras (apenas quando _JOIN_COLS é usado)
         cliente_nome=row[base_len] if with_cliente and len(row) > base_len else None,
         cliente_telefone=row[base_len + 1]
@@ -99,6 +109,7 @@ async def open_or_attach_atendimento(
     conexao_id: int,
     *,
     agente: str = "vsa_tech",
+    conexao: Conexao | None = None,
 ) -> tuple[Atendimento, bool]:
     """Abre novo atendimento ou anexa ao já-aberto (fluxo do webhook).
 
@@ -175,11 +186,21 @@ async def open_or_attach_atendimento(
 
         cur = await conn.execute(
             f"""
-            INSERT INTO atendimento (empresa_id, cliente_id, conexao_id, agente_atual)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO atendimento
+                (empresa_id, cliente_id, conexao_id, agente_atual,
+                 conexao_nome, conexao_numero, conexao_provider)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING {_BARE_COLS}
             """,
-            (empresa_id, cliente_id, conexao_id, agente),
+            (
+                empresa_id,
+                cliente_id,
+                conexao_id,
+                agente,
+                conexao.display_name if conexao else None,
+                conexao.from_number if conexao else None,
+                conexao.provider if conexao else None,
+            ),
         )
         new = await cur.fetchone()
     assert new is not None

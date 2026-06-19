@@ -590,6 +590,14 @@ async def send_template(
         raise HTTPException(
             status_code=404, detail="Cliente do atendimento não encontrado."
         )
+    if atd.conexao_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A conexão deste atendimento foi removida — reatribua a uma "
+                "conexão ativa para enviar."
+            ),
+        )
     try:
         res = await send_template_by_id(
             pool,

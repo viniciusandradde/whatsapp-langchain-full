@@ -339,6 +339,7 @@ async def webhook_evolution(
         cliente_id=cliente.id,
         conexao_id=conexao_id,
         agente=resolved_agent,
+        conexao=conexao,  # snapshot do canal (mig 129)
     )
 
     msg_id = str(key.get("id") or "").strip() or None

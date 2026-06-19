@@ -193,6 +193,7 @@ async def webhook_twilio(
         cliente_id=cliente.id,
         conexao_id=conexao_id,
         agente=resolved_agent,
+        conexao=conexao,  # snapshot do canal (mig 129)
     )
 
     # Enfileiramento:
