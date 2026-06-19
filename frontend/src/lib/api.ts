@@ -10,6 +10,7 @@
  */
 import "server-only";
 import { cookies, headers as nextHeaders } from "next/headers";
+import { ApiRequestError } from "@/lib/api-error-shared";
 import { auth } from "@/lib/auth";
 import { ensureFrontendRuntimeConfig } from "@/lib/runtime-config";
 
@@ -558,6 +559,7 @@ export interface Atendimento {
   empresa_id: number;
   cliente_id: number;
   conexao_id: number;
+  conexao_provider: string | null;
   agente_atual: string;
   status: AtendimentoStatus;
   assigned_to_user_id: string | null;
@@ -953,12 +955,15 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     // Tenta extrair `detail` do JSON pra mensagem mais útil (FastAPI
-    // sempre retorna {detail: "..."} em HTTPException).
+    // sempre retorna {detail: "..."} em HTTPException). `detailRaw` pode ser
+    // string OU objeto (ex: 402 quota {message,error,upgrade_to}).
+    let detailRaw: unknown;
     let detail = "";
     try {
       const errBody = await response.clone().json();
       if (errBody && typeof errBody === "object" && "detail" in errBody) {
-        detail = (errBody as { detail: string }).detail;
+        detailRaw = (errBody as { detail: unknown }).detail;
+        if (typeof detailRaw === "string") detail = detailRaw;
       }
     } catch {
       // Resposta não-JSON: ignora
@@ -997,11 +1002,17 @@ export async function apiFetch<T>(
       );
     }
 
-    throw new Error(
-      `API error: ${response.status} ${response.statusText} (${path})${
-        detail ? ` — ${detail}` : ""
-      }`
+    // Catch-all (400/404/422/5xx/402…): detalhe técnico SÓ no log; o erro
+    // lançado carrega mensagem amigável (detail do backend ou fallback).
+    // status/detail/path ficam em props pra lógica (ex: UI de quota 402).
+    console.error(
+      "[api]",
+      response.status,
+      response.statusText,
+      path,
+      detailRaw ?? ""
     );
+    throw new ApiRequestError(response.status, detailRaw, path);
   }
 
   // 204 No Content (DELETE bem-sucedido) ou body vazio: retorna undefined.
@@ -1891,7 +1902,8 @@ export async function proxyHistoricoExport(
   }
   const resp = await fetch(url, { headers, cache: "no-store" });
   if (!resp.ok) {
-    throw new Error(`Falha ao exportar (${resp.status})`);
+    console.error("[api] export", resp.status, resp.statusText, url);
+    throw new Error("Não foi possível exportar. Tente novamente.");
   }
   const cd = resp.headers.get("content-disposition") || "";
   const m = cd.match(/filename="?([^"]+)"?/);
@@ -2999,14 +3011,15 @@ export async function uploadDocumentoConhecimento(
     cache: "no-store",
   });
   if (!response.ok) {
-    let detail = response.statusText;
+    let detail: unknown;
     try {
       const body = await response.json();
       if (body?.detail) detail = body.detail;
     } catch {
       /* response não é JSON */
     }
-    throw new Error(`Upload falhou (${response.status}): ${detail}`);
+    console.error("[api] upload", response.status, response.statusText, detail ?? "");
+    throw new ApiRequestError(response.status, detail, "upload");
   }
   return (await response.json()) as DocumentoConhecimento;
 }

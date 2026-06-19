@@ -57,6 +57,12 @@ const STATUS_VARIANTS: Record<Campanha["status"], "default" | "outline" | "secon
   aborted: "destructive",
 };
 
+/** Só WABA (Meta) e Twilio têm template HSM; Evolution não. Espelha o
+ *  `_validate_conexao` do backend pra evitar a chamada que daria 400. */
+function suportaTemplate(provider?: string): boolean {
+  return provider === "waba" || (provider?.startsWith("twilio") ?? false);
+}
+
 export function CampanhasPageClient({
   initialCampanhas,
   conexoes,
@@ -188,6 +194,12 @@ export function CampanhasPageClient({
   // (setState só no callback async — evita set-state-in-effect do compiler.)
   useEffect(() => {
     if (modo !== "template" || !conexaoId) return;
+    // Guard: só busca templates em conexões que suportam HSM (WABA/Twilio).
+    // Evolution daria 400 — evita a chamada e mostra nota amigável na UI.
+    const cx = conexoes.find((c) => String(c.id) === conexaoId);
+    // Conexão sem HSM (Evolution): não chama (daria 400). `templatesAtivos`
+    // já fica vazio via guard no render; nada de setState aqui.
+    if (!suportaTemplate(cx?.provider)) return;
     let alive = true;
     loadApprovedTemplatesAction(Number(conexaoId)).then((r) => {
       if (alive && r.ok) setTemplates(r.data);
@@ -195,11 +207,15 @@ export function CampanhasPageClient({
     return () => {
       alive = false;
     };
-  }, [modo, conexaoId]);
+  }, [modo, conexaoId, conexoes]);
 
-  // Só consideramos templates carregados quando relevante (modo+conexão).
+  // Só consideramos templates carregados quando relevante (modo+conexão que
+  // suporta HSM). Conexão Evolution → lista vazia (e nota amigável no render).
+  const conexaoSel = conexoes.find((c) => String(c.id) === conexaoId);
   const templatesAtivos =
-    modo === "template" && conexaoId ? templates : [];
+    modo === "template" && conexaoId && suportaTemplate(conexaoSel?.provider)
+      ? templates
+      : [];
   const selTemplate = templatesAtivos.find((t) => t.id === templateId) ?? null;
   const templateKeys = selTemplate ? _varKeys(selTemplate) : [];
 
@@ -439,6 +455,11 @@ export function CampanhasPageClient({
                     {!conexaoId ? (
                       <p className="text-xs text-muted-foreground">
                         Escolha a conexão abaixo pra listar os templates aprovados.
+                      </p>
+                    ) : !suportaTemplate(conexaoSel?.provider) ? (
+                      <p className="text-xs text-muted-foreground">
+                        Templates disponíveis apenas para conexões WhatsApp Oficial
+                        (WABA) ou Twilio. Esta conexão não suporta templates.
                       </p>
                     ) : templatesAtivos.length === 0 ? (
                       <p className="text-xs text-muted-foreground">

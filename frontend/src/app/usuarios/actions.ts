@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import { upsertUserPassword } from "@/lib/user-password";
 import { auth } from "@/lib/auth";
 import {
@@ -182,10 +183,8 @@ export async function uploadAvatarAction(
     });
     if (!resp.ok) {
       const errText = await resp.text();
-      return {
-        ok: false,
-        error: `API error ${resp.status}: ${errText.slice(0, 200)}`,
-      };
+      console.error("[usuarios] avatar upload", resp.status, errText.slice(0, 300));
+      return { ok: false, error: friendlyError(resp.status, errText) };
     }
     const data = (await resp.json()) as { avatar_path: string };
     revalidatePath("/usuarios");

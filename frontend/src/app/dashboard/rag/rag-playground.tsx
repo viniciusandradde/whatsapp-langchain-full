@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Beaker, Loader2 } from "lucide-react";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -81,7 +82,8 @@ export function RagPlayground({ pastas }: Props) {
       });
       if (!r.ok) {
         const txt = await r.text();
-        throw new Error(`${r.status}: ${txt}`);
+        console.error("[rag-playground]", r.status, r.statusText, txt.slice(0, 300));
+        throw new Error(friendlyError(r.status, txt));
       }
       const data = (await r.json()) as PreviewModeResult[];
       setResults(data);

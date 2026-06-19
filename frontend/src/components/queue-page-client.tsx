@@ -168,7 +168,8 @@ export function QueuePageClient() {
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Erro ${response.status}`);
+        console.error("[queue]", response.status, response.statusText);
+        throw new Error(body.error || "Não foi possível carregar a fila.");
       }
 
       const result: QueueData = await response.json();

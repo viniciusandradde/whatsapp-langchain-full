@@ -7,6 +7,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { friendlyError } from "@/lib/api-error-shared";
 import {
   approveRagSuggestion,
   rejectRagSuggestion,
@@ -116,7 +117,8 @@ export async function syncLangsmithAction(
     );
     if (!r.ok) {
       const txt = await r.text();
-      return { ok: false, error: `${r.status}: ${txt.slice(0, 300)}` };
+      console.error("[rag-sandbox]", r.status, txt.slice(0, 300));
+      return { ok: false, error: friendlyError(r.status, txt) };
     }
     const data = await r.json();
     return {
@@ -168,7 +170,8 @@ async function _callClean(dryRun: boolean): Promise<CleanResult> {
     );
     if (!r.ok) {
       const txt = await r.text();
-      return { ok: false, error: `${r.status}: ${txt.slice(0, 300)}` };
+      console.error("[rag-sandbox]", r.status, txt.slice(0, 300));
+      return { ok: false, error: friendlyError(r.status, txt) };
     }
     const data = await r.json();
     if (!dryRun) revalidatePath("/dashboard/rag/sandbox");
@@ -223,7 +226,8 @@ export async function importDatasetAction(
     });
     if (!r.ok) {
       const txt = await r.text();
-      return { ok: false, error: `${r.status}: ${txt.slice(0, 300)}` };
+      console.error("[rag-sandbox]", r.status, txt.slice(0, 300));
+      return { ok: false, error: friendlyError(r.status, txt) };
     }
     const data = await r.json();
     revalidatePath("/dashboard/rag/sandbox");

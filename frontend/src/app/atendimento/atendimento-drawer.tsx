@@ -573,6 +573,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
           <TemplateComposerModal
             atendimentoId={atendimento.id}
             conexaoId={atendimento.conexao_id}
+            provider={atendimento.conexao_provider}
             onClose={() => setTemplateModalOpen(false)}
             onSent={() => {
               setTemplateModalOpen(false);
@@ -1243,11 +1244,13 @@ function _varKeys(t: WabaTemplate): string[] {
 function TemplateComposerModal({
   atendimentoId,
   conexaoId,
+  provider,
   onClose,
   onSent,
 }: {
   atendimentoId: number;
   conexaoId: number;
+  provider?: string | null;
   onClose: () => void;
   onSent: () => void;
 }) {
@@ -1257,7 +1260,13 @@ function TemplateComposerModal({
   const [error, setError] = useState<string | null>(null);
   const [sending, startSend] = useTransition();
 
+  // Só WABA/Twilio têm template HSM (espelha _validate_conexao do backend).
+  const suporta = provider === "waba" || (provider?.startsWith("twilio") ?? false);
+
   useEffect(() => {
+    // Conexão sem suporte a HSM (ex: Evolution): nem chama o endpoint (daria
+    // 400). O render mostra a nota amigável; nada de setState aqui.
+    if (!suporta) return;
     let alive = true;
     loadTemplatesAprovadosAction(conexaoId).then((r) => {
       if (!alive) return;
@@ -1267,7 +1276,7 @@ function TemplateComposerModal({
     return () => {
       alive = false;
     };
-  }, [conexaoId]);
+  }, [conexaoId, suporta]);
 
   const sel = templates?.find((t) => t.id === selId) ?? null;
   const keys = sel ? _varKeys(sel) : [];
@@ -1294,7 +1303,12 @@ function TemplateComposerModal({
           </button>
         </div>
         <div className="space-y-3 px-4 py-4 text-sm">
-          {templates === null ? (
+          {!suporta ? (
+            <p className="text-xs text-muted-foreground">
+              Templates disponíveis apenas para conexões WhatsApp Oficial (WABA)
+              ou Twilio. Esta conexão não suporta templates.
+            </p>
+          ) : templates === null ? (
             <p className="text-xs text-muted-foreground">Carregando templates aprovados…</p>
           ) : templates.length === 0 ? (
             <p className="text-xs text-muted-foreground">

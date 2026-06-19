@@ -29,8 +29,10 @@ export async function GET() {
     const data = await getQueue();
     return NextResponse.json(data);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Erro ao buscar fila";
-    return NextResponse.json({ error: message }, { status: 502 });
+    console.error("[queue]", error);
+    return NextResponse.json(
+      { error: "Não foi possível carregar a fila." },
+      { status: 502 }
+    );
   }
 }

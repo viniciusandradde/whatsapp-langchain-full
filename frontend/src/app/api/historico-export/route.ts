@@ -23,7 +23,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Erro ao exportar";
-    return new Response(msg, { status: 502 });
+    console.error("[historico-export]", e);
+    return new Response("Não foi possível exportar. Tente novamente.", {
+      status: 502,
+    });
   }
 }
