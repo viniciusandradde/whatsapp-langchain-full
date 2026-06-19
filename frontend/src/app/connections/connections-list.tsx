@@ -178,6 +178,17 @@ export function ConnectionsList({ initialConexoes }: Props) {
     });
   }
 
+  function handleSetTipo(id: number, tipo: string) {
+    // Define a finalidade do número: ia = agente responde; manual = só disparo.
+    setConexoes((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, tipo_atendimento: tipo } : c))
+    );
+    startTransition(async () => {
+      const r = await patchConexaoAction(id, { tipo_atendimento: tipo });
+      if (!r.ok) alert(`Erro ao mudar tipo: ${r.error}`);
+    });
+  }
+
   function handleSetDefault(id: number) {
     // Marca conexão como padrão (is_default=true). Backend faz unset batch
     // das outras da mesma empresa automaticamente (single-default invariant).
@@ -265,6 +276,7 @@ export function ConnectionsList({ initialConexoes }: Props) {
                 <th className="px-3 py-2 font-medium">Número</th>
                 <th className="px-3 py-2 font-medium">Provider</th>
                 <th className="px-3 py-2 font-medium">Estado</th>
+                <th className="px-3 py-2 font-medium">Tipo de atendimento</th>
                 <th className="px-3 py-2 font-medium">Padrão</th>
                 <th className="w-32 px-3 py-2 font-medium text-right">Ações</th>
               </tr>
@@ -298,6 +310,18 @@ export function ConnectionsList({ initialConexoes }: Props) {
                     <StateBadge
                       state={c.connection_state || "pending"}
                     />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={c.tipo_atendimento || "ia"}
+                      onChange={(e) => handleSetTipo(c.id, e.target.value)}
+                      className="h-8 rounded-md border border-border/40 bg-background px-2 text-xs"
+                      title="IA = o agente responde · Manual = só disparo (IA não responde) · Híbrido"
+                    >
+                      <option value="ia">IA (agente)</option>
+                      <option value="manual">Manual (só disparo)</option>
+                      <option value="hibrido">Híbrido</option>
+                    </select>
                   </td>
                   <td className="px-3 py-2">
                     <button
