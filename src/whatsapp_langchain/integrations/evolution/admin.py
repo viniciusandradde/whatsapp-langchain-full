@@ -201,6 +201,37 @@ async def get_connection_state(instance_name: str) -> dict[str, Any]:
         return resp.json()
 
 
+async def get_instance_owner_number(instance_name: str) -> str | None:
+    """Número (E.164) do dono da instância, via `ownerJid` do fetchInstances.
+
+    Retorna `+<dígitos>` (o JID do WhatsApp, ex. 556784249725@s.whatsapp.net →
+    +556784249725) ou None se a instância não tem dono vinculado ainda / não
+    achada. Best-effort — usado pra preencher o `from_number` real após o QR.
+    """
+    url = f"{_base()}/instance/fetchInstances"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            url, headers=_headers(), params={"instanceName": instance_name}
+        )
+        if resp.status_code != 200:
+            raise EvolutionAdminError(resp.status_code, resp.text[:400])
+        data = resp.json()
+    items = data if isinstance(data, list) else [data]
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        # v2: campos no topo; tolera shapes antigos com .instance aninhada
+        inner = it.get("instance")
+        inst = inner if isinstance(inner, dict) else it
+        name = inst.get("name") or inst.get("instanceName")
+        if name != instance_name:
+            continue
+        jid = inst.get("ownerJid") or inst.get("owner") or ""
+        digits = _normalize_phone(str(jid).split("@", 1)[0])
+        return f"+{digits}" if digits else None
+    return None
+
+
 async def disconnect_instance(instance_name: str) -> bool:
     """DELETE /instance/logout/{name} → desconecta sessão (mantém instance)."""
     url = f"{_base()}/instance/logout/{instance_name}"

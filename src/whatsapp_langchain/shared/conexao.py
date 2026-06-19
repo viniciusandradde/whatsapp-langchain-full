@@ -404,6 +404,19 @@ async def set_conexao_status(
         )
 
 
+async def set_conexao_from_number(
+    pool: AsyncConnectionPool, conexao_id: int, from_number: str
+) -> None:
+    """Atualiza o from_number (usado pra trocar o placeholder `evolution:<inst>`
+    pelo número real após a sessão conectar). Best-effort: se colidir com o
+    UNIQUE (empresa_id, from_number), a exceção sobe pro caller tratar."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE conexao SET from_number = %s, updated_at = NOW() WHERE id = %s",
+            (from_number, conexao_id),
+        )
+
+
 async def hard_delete_conexao(
     pool: AsyncConnectionPool, conexao_id: int, empresa_id: int
 ) -> bool:

@@ -71,6 +71,33 @@ async def test_disconnect_instance_ok():
     assert await admin.disconnect_instance("inst") is True
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_instance_owner_number_extrai_jid():
+    respx.get("https://evo.test/instance/fetchInstances").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "inst1", "connectionStatus": "open",
+                 "ownerJid": "556784249725@s.whatsapp.net"}
+            ],
+        )
+    )
+    num = await admin.get_instance_owner_number("inst1")
+    assert num == "+556784249725"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_instance_owner_number_sem_dono():
+    respx.get("https://evo.test/instance/fetchInstances").mock(
+        return_value=httpx.Response(
+            200, json=[{"name": "inst1", "connectionStatus": "close"}]
+        )
+    )
+    assert await admin.get_instance_owner_number("inst1") is None
+
+
 def test_normalize_state_mapping():
     assert admin.normalize_state({"instance": {"state": "open"}}) == "open"
     assert admin.normalize_state({"instance": {"state": "connecting"}}) == "connecting"
