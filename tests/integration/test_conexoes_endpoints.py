@@ -222,7 +222,9 @@ class TestHardDeleteConexao:
             row = conn.execute("SELECT 1 FROM conexao WHERE id = %s", (cid,)).fetchone()
         assert row is None  # linha sumiu de vez
 
-    async def test_soft_fallback_com_atendimento(self, empresa) -> None:
+    async def test_hard_delete_persiste_atendimento_com_snapshot(self, empresa) -> None:
+        # Mig 129: apagar a conexão NÃO apaga o atendimento — ele persiste com
+        # conexao_id=NULL e o snapshot do canal intacto (estilo ZigChat).
         from whatsapp_langchain.shared.conexao import hard_delete_conexao
         from whatsapp_langchain.shared.db import get_pool
         from whatsapp_langchain.shared.rls_context import empresa_scope
@@ -234,15 +236,59 @@ class TestHardDeleteConexao:
                 "RETURNING id",
                 (empresa, f"+5511{_RUN[:6]}2"),
             ).fetchone()[0]
-            conn.execute(
-                "INSERT INTO atendimento (empresa_id, cliente_id, conexao_id) "
-                "VALUES (%s, %s, %s)",
+            aid = conn.execute(
+                "INSERT INTO atendimento (empresa_id, cliente_id, conexao_id, "
+                "conexao_nome, conexao_numero, conexao_provider) "
+                "VALUES (%s, %s, %s, 'Vendas', '+1999', 'twilio_prod') RETURNING id",
                 (empresa, clid, cid),
-            )
+            ).fetchone()[0]
         pool = await get_pool()
         with empresa_scope(empresa):
             removida = await hard_delete_conexao(pool, cid, empresa)
-        assert removida is False  # FK RESTRICT do atendimento bloqueou
+        assert removida is True  # SET NULL não bloqueia mais
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
-            row = conn.execute("SELECT 1 FROM conexao WHERE id = %s", (cid,)).fetchone()
-        assert row is not None  # linha preservada → caller faz soft-delete
+            assert (
+                conn.execute("SELECT 1 FROM conexao WHERE id = %s", (cid,)).fetchone()
+                is None
+            )  # conexão sumiu
+            row = conn.execute(
+                "SELECT conexao_id, conexao_nome, conexao_numero, conexao_provider "
+                "FROM atendimento WHERE id = %s",
+                (aid,),
+            ).fetchone()
+        assert row is not None  # atendimento PERSISTE
+        assert row[0] is None  # conexao_id virou NULL
+        assert row[1:] == ("Vendas", "+1999", "twilio_prod")  # snapshot intacto
+
+    async def test_historico_mostra_canal_do_snapshot_apos_delete(self, empresa) -> None:
+        # Mig 129: histórico de um atendimento com conexão apagada ainda mostra
+        # o canal via COALESCE(cx.*, snapshot).
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.historico import (
+            HistoricoFiltros,
+            list_atendimentos_historico,
+        )
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            clid = conn.execute(
+                "INSERT INTO cliente (empresa_id, telefone) VALUES (%s, %s) RETURNING id",
+                (empresa, f"+5511{_RUN[:6]}3"),
+            ).fetchone()[0]
+            # atendimento JÁ sem conexão (conexao_id NULL) + snapshot — estado
+            # pós-delete.
+            aid = conn.execute(
+                "INSERT INTO atendimento (empresa_id, cliente_id, conexao_id, "
+                "conexao_nome, conexao_numero, conexao_provider) "
+                "VALUES (%s, %s, NULL, 'Marketing', '+5567', 'evolution') RETURNING id",
+                (empresa, clid),
+            ).fetchone()[0]
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            rows, _total = await list_atendimentos_historico(
+                pool, empresa, filtros=HistoricoFiltros(), limit=50
+            )
+        alvo = next((r for r in rows if r["id"] == aid), None)
+        assert alvo is not None  # aparece no histórico
+        assert alvo["conexao_nome"] == "Marketing"  # veio do snapshot
+        assert alvo["conexao_numero"] == "+5567"

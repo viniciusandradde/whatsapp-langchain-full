@@ -977,6 +977,11 @@ async def _try_handle_menu(
     if atendimento.status == "em_andamento" and atendimento.assigned_to_user_id:
         return False
 
+    # conexao_id pode ser NULL se a conexão foi apagada (mig 129) — sem canal
+    # não há menu a aplicar.
+    if atendimento.conexao_id is None:
+        return False
+
     menu = await get_menu_ativo_para_conexao(
         pool, message.empresa_id, atendimento.conexao_id
     )

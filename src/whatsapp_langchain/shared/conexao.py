@@ -409,11 +409,12 @@ async def hard_delete_conexao(
 ) -> bool:
     """Remove a linha de conexao do banco (exclusão total, sem deixar órfã).
 
-    FKs: message_queue/campanha/captura_lote/grupo → SET NULL; menu_chatbot/
-    waba_template/usuario_conexao/conexao_envio_diario → CASCADE; **atendimento
-    → RESTRICT**. Se houver atendimento referenciando, o DELETE falha (atômico,
-    rola tudo de volta) e retornamos False — o caller faz soft-delete pra
-    preservar o histórico. WHERE com empresa_id = defesa em profundidade.
+    FKs: message_queue/campanha/captura_lote/grupo/**atendimento** → SET NULL
+    (mig 129 desacoplou o atendimento → ele PERSISTE com conexao_id=NULL +
+    snapshot do canal); menu_chatbot/waba_template/usuario_conexao/
+    conexao_envio_diario → CASCADE. O try/except fica como defesa caso alguma
+    outra FK passe a bloquear no futuro (hoje: nenhuma) → caller faz soft-delete.
+    WHERE com empresa_id = defesa em profundidade.
 
     Retorna True se a linha foi removida, False se um FK bloqueou.
     """

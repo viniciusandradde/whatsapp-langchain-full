@@ -222,9 +222,17 @@ async def send_outbound_manual(
     if cliente is None or cliente.empresa_id != empresa_id:
         raise OutboundError("Cliente do atendimento não encontrado.")
 
+    if atendimento.conexao_id is None:
+        raise OutboundError(
+            "A conexão deste atendimento foi removida — reatribua a uma conexão "
+            "ativa para responder."
+        )
     conexao = await get_conexao_by_id(pool, atendimento.conexao_id)
     if conexao is None or conexao.empresa_id != empresa_id:
-        raise OutboundError("Conexão do atendimento não encontrada.")
+        raise OutboundError(
+            "A conexão deste atendimento foi removida — reatribua a uma conexão "
+            "ativa para responder."
+        )
 
     client, outbound_mode = await _build_client(pool, conexao)
 
@@ -301,6 +309,10 @@ async def send_system_outbound(
         logger.warning("system_outbound_cliente_ausente", atendimento_id=atendimento_id)
         return {}
 
+    if atendimento.conexao_id is None:
+        # Conexão apagada (mig 129) — system msg no-opa em conexão morta.
+        logger.warning("system_outbound_conexao_ausente", atendimento_id=atendimento_id)
+        return {}
     conexao = await get_conexao_by_id(pool, atendimento.conexao_id)
     if conexao is None:
         logger.warning("system_outbound_conexao_ausente", atendimento_id=atendimento_id)

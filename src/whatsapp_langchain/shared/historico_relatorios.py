@@ -192,14 +192,18 @@ async def por_canal(
         pool,
         f"""
         SELECT a.conexao_id,
-               COALESCE(cx.display_name, cx.from_number) AS canal,
-               cx.provider,
+               COALESCE(cx.display_name, a.conexao_nome,
+                        cx.from_number, a.conexao_numero) AS canal,
+               COALESCE(cx.provider, a.conexao_provider) AS provider,
                COUNT(*) AS total,
                COUNT(*) FILTER (WHERE a.status='resolvido') AS resolvidos
         FROM atendimento a
         LEFT JOIN conexao cx ON cx.id = a.conexao_id
         WHERE a.empresa_id=%s AND a.created_at >= NOW() - (%s||' days')::INTERVAL{sc}
-        GROUP BY a.conexao_id, cx.display_name, cx.from_number, cx.provider
+        GROUP BY a.conexao_id,
+                 COALESCE(cx.display_name, a.conexao_nome,
+                          cx.from_number, a.conexao_numero),
+                 COALESCE(cx.provider, a.conexao_provider)
         ORDER BY total DESC
         """,
         [empresa_id, dias, *sp],

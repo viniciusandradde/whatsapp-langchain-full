@@ -28,8 +28,11 @@ def _row(
     assigned_to_user_id=None,
     closed_at=None,
     aba_id=None,
+    conexao_nome=None,
+    conexao_numero=None,
+    conexao_provider=None,
 ):
-    """11 cols base + 5 mig 047 + 7 mig 061 + 2 mig 081/082 + 1 mig 085 = 26."""
+    """11 base + 5 mig 047 + 7 mig 061 + 2 mig 081/082 + 1 mig 085 + 3 mig 129 = 29."""
     now = datetime.now(UTC)
     return (
         # Base (0..10)
@@ -63,6 +66,10 @@ def _row(
         None,  # coleta_resumo
         # Mig 085 aba (25)
         aba_id,
+        # Mig 129 snapshot do canal (26..28)
+        conexao_nome,
+        conexao_numero,
+        conexao_provider,
     )
 
 
@@ -99,6 +106,42 @@ async def test_open_or_attach_inserts_when_no_open_row():
     sql_calls = [c.args[0] for c in conn.execute.await_args_list]
     assert any("SELECT" in s and "FOR UPDATE" in s for s in sql_calls)
     assert any("INSERT INTO atendimento" in s for s in sql_calls)
+
+
+@pytest.mark.asyncio
+async def test_open_or_attach_grava_snapshot_do_canal():
+    # Mig 129: passar `conexao=` grava nome/número/provider no INSERT pra
+    # persistir após apagar a conexão.
+    from types import SimpleNamespace
+
+    pool, conn = _mock_pool(
+        None,
+        None,
+        _row(
+            id_=11,
+            conexao_nome="Vendas",
+            conexao_numero="+55119",
+            conexao_provider="evolution",
+        ),
+    )
+    fake_conexao = SimpleNamespace(
+        display_name="Vendas", from_number="+55119", provider="evolution"
+    )
+    out, was_created = await open_or_attach_atendimento(
+        pool, 1, 5, 7, conexao=fake_conexao
+    )
+    assert was_created is True
+    assert out.conexao_nome == "Vendas"
+    assert out.conexao_numero == "+55119"
+    assert out.conexao_provider == "evolution"
+    # o INSERT inclui as colunas de snapshot + os valores nos params
+    insert_call = next(
+        c
+        for c in conn.execute.await_args_list
+        if "INSERT INTO atendimento" in c.args[0]
+    )
+    assert "conexao_nome, conexao_numero, conexao_provider" in insert_call.args[0]
+    assert "Vendas" in insert_call.args[1]
 
 
 @pytest.mark.asyncio

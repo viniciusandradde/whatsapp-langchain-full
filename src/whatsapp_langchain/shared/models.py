@@ -605,7 +605,7 @@ class Atendimento(BaseModel):
     id: int
     empresa_id: int
     cliente_id: int
-    conexao_id: int
+    conexao_id: int | None = None  # mig 129: SET NULL ao apagar a conexão
     agente_atual: str = "vsa_tech"
     status: str = "aguardando"  # aguardando|em_andamento|resolvido|abandonado
     assigned_to_user_id: str | None = None
@@ -616,6 +616,11 @@ class Atendimento(BaseModel):
     # Campos derivados (preenchidos pelas queries que fazem JOIN):
     cliente_nome: str | None = None
     cliente_telefone: str | None = None
+    # Snapshot do canal (mig 129) — gravado na abertura; sobrevive ao apagar a
+    # conexão. Reads preferem o dado vivo (JOIN) e caem nestes quando NULL.
+    conexao_nome: str | None = None
+    conexao_numero: str | None = None
+    conexao_provider: str | None = None
     # Sprint 3 padrão profissional (mig 047)
     protocolo: str | None = None
     qtde_resposta_invalida: int = 0
