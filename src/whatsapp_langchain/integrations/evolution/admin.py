@@ -115,9 +115,13 @@ async def provision_instance(
         "integration": integration,
     }
     if webhook_url:
+        # byEvents=False: Evolution posta TODOS os eventos na rota BASE
+        # (/webhook/evolution), que é onde nosso handler escuta e lê o `event`
+        # do body. byEvents=True postaria em subpaths (/webhook/evolution/
+        # messages-upsert) que NÃO existem → 404 → inbound nunca chega.
         webhook_cfg: dict[str, Any] = {
             "url": webhook_url,
-            "byEvents": True,
+            "byEvents": False,
             "base64": True,
             "events": [
                 "MESSAGES_UPSERT",

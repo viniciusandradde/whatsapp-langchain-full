@@ -35,6 +35,9 @@ async def test_provision_instance_envia_payload():
     sent = json.loads(body)
     assert sent["webhook"]["headers"]["apikey"] == "instance-abc"
     assert sent["webhook"]["headers"]["apikey"] != "global-xyz"
+    # byEvents=False: Evolution posta na rota BASE (/webhook/evolution); True
+    # postaria em subpaths inexistentes → 404 → inbound nunca chega (regressão).
+    assert sent["webhook"]["byEvents"] is False
     assert result["instance"]["instanceName"] == "x"
 
 
