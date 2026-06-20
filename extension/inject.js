@@ -145,6 +145,58 @@
     return out;
   }
 
+  // Grupos via API do wa-js (assíncrona, confiável) — carrega TODOS os grupos
+  // + participantes. O store cru (scrapeGrupos) é frágil: metadata é lazy e
+  // grupos não-abertos podem nem aparecer. Retorna null se a API não existir.
+  async function scrapeGruposWpp() {
+    const WPP = window.WPP;
+    if (!WPP || !WPP.group || typeof WPP.group.getAllGroups !== "function") {
+      return null;
+    }
+    const groups = (await WPP.group.getAllGroups()) || [];
+    const out = [];
+    for (const g of groups) {
+      const idRaw = (g && g.id && (g.id._serialized || g.id)) || g.id || g;
+      const jid = String(idRaw || "");
+      if (!jid.endsWith("@g.us")) continue;
+      const a = (g && g.attributes) || g || {};
+      const gm = (g && g.groupMetadata) || (a && a.groupMetadata) || null;
+      // participantes: tenta a API async; fallback pra metadata do modelo.
+      let parts = [];
+      try {
+        if (typeof WPP.group.getParticipants === "function") {
+          parts = (await WPP.group.getParticipants(jid)) || [];
+        }
+      } catch (_) {}
+      if ((!parts || !parts.length) && gm && gm.participants) {
+        parts = Array.isArray(gm.participants)
+          ? gm.participants
+          : arr(gm.participants);
+      }
+      const membros = parts
+        .map((p) => {
+          const pa = (p && p.attributes) || p || {};
+          const pidRaw =
+            (p && p.id && (p.id._serialized || p.id)) ||
+            (pa.id && (pa.id._serialized || pa.id)) ||
+            "";
+          const pj = normJid(String(pidRaw || ""));
+          return pj
+            ? { wa_jid: pj, is_admin: !!(pa.isAdmin || pa.isSuperAdmin || p.isAdmin) }
+            : null;
+        })
+        .filter(Boolean);
+      out.push({
+        wa_group_id: jid,
+        nome: a.name || a.subject || (gm && gm.subject) || null,
+        descricao: (gm && gm.desc) || a.desc || null,
+        participantes_count: membros.length || (gm && gm.size) || 0,
+        membros,
+      });
+    }
+    return out;
+  }
+
   window.addEventListener("message", (ev) => {
     const d = ev.data;
     if (!d || d.source !== "nexus-ext" || d.cmd !== "scrape") return;
@@ -153,19 +205,45 @@
         { source: "nexus-page", reqId: d.reqId, version: SCRAPE_VERSION, ...payload },
         "*"
       );
-    try {
-      const found = findStore();
-      if (!found) {
-        reply({ error: "store do WhatsApp não encontrado (abra uma conversa e aguarde carregar)" });
-        return;
+    (async () => {
+      try {
+        const found = findStore();
+        if (!found) {
+          reply({
+            error:
+              "store do WhatsApp não encontrado (abra uma conversa e aguarde carregar)",
+          });
+          return;
+        }
+        const S = found.S;
+        if (d.what === "contatos") {
+          reply({ contatos: scrapeContatos(S) });
+        } else if (d.what === "grupos") {
+          // Prefere a API do wa-js (todos os grupos + participantes); cai no
+          // store cru só se a API não existir/falhar.
+          let grupos = null;
+          try {
+            grupos = await scrapeGruposWpp();
+          } catch (_) {}
+          if (!grupos) grupos = scrapeGrupos(S);
+          try {
+            const totMembros = grupos.reduce(
+              (n, g) => n + (g.membros ? g.membros.length : 0),
+              0
+            );
+            console.info("[nexus] grupos raspados", {
+              grupos: grupos.length,
+              membros: totMembros,
+            });
+          } catch (_) {}
+          reply({ grupos });
+        } else {
+          reply({ error: "tipo inválido" });
+        }
+      } catch (e) {
+        reply({ error: "falha no scrape: " + (e && e.message) });
       }
-      const S = found.S;
-      if (d.what === "contatos") reply({ contatos: scrapeContatos(S) });
-      else if (d.what === "grupos") reply({ grupos: scrapeGrupos(S) });
-      else reply({ error: "tipo inválido" });
-    } catch (e) {
-      reply({ error: "falha no scrape: " + (e && e.message) });
-    }
+    })();
   });
 
   // --- Disparo in-browser via WPPConnect (window.WPP, carregado sob demanda
