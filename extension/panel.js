@@ -44,6 +44,25 @@
     return null; // @lid não tem telefone derivável
   }
 
+  // ---- Regra do 9 (BR / DDI 55) ----
+  // DDD ≤ 30 (SP=11, RJ=21…): celular tem o 9 → 55+DDD+9XXXXXXXX (13 díg).
+  // DDD > 30 (ex. 35): não tem o 9 → 55+DDD+XXXXXXXX (12 díg).
+  // Recebe/devolve só dígitos; preserva o que não casa.
+  function aplicarRegra9(digits) {
+    if (!digits || !/^\d+$/.test(digits)) return digits;
+    if (digits.slice(0, 2) !== "55") return digits;
+    const ddd = parseInt(digits.slice(2, 4), 10);
+    if (ddd < 11) return digits;
+    if (ddd <= 30) {
+      if (digits.length === 12 && digits[4] !== "9") {
+        return digits.slice(0, 4) + "9" + digits.slice(4);
+      }
+    } else if (digits.length === 13 && digits[4] === "9") {
+      return digits.slice(0, 4) + digits.slice(5);
+    }
+    return digits;
+  }
+
   function spintax(txt) {
     // {a|b|c} → escolha aleatória; resolve aninhados de dentro pra fora.
     let s = txt;
@@ -117,6 +136,7 @@
 Maria,+5511988888888"></textarea>
         <div class="nx-ctrls">
           <button class="nx-btn nx-sec" id="nx-validar">Validar nº</button>
+          <button class="nx-btn nx-sec" id="nx-regra9">Ajustar BR (9)</button>
           <button class="nx-btn nx-sec" id="nx-imp-contatos">Importar contatos</button>
           <button class="nx-btn nx-sec" id="nx-imp-grupos">Importar grupos</button>
         </div>
@@ -330,6 +350,7 @@ Refri|R$8"></textarea>
         : "Nenhum anexo.";
     };
     $("nx-validar").onclick = validarLista;
+    $("nx-regra9").onclick = ajustarRegra9Lista;
     $("nx-imp-contatos").onclick = () => importar("contatos");
     $("nx-imp-grupos").onclick = () => importar("grupos");
     $("nx-tipo").onchange = () => {
@@ -424,6 +445,30 @@ Refri|R$8"></textarea>
     if (p.tipo === "lista" && !p.sections[0].rows.length) return "Adicione itens na lista.";
     if (p.tipo === "convite-grupo" && !p.groupId) return "Informe o Group ID.";
     return null;
+  }
+
+  // Reescreve a lista aplicando a regra do 9 nos números brasileiros (offline).
+  function ajustarRegra9Lista() {
+    if (rodando) return;
+    const lista = parseLista($("nx-lista").value);
+    if (!lista.length) return log("❌ Nada pra ajustar.");
+    let mudou = 0;
+    const linhas = lista.map((row) => {
+      const dig = row.telefone.replace(/\D/g, "");
+      const novo = aplicarRegra9(dig);
+      if (novo !== dig) mudou++;
+      const tel = (row.telefone.trim().startsWith("+") ? "+" : "") + novo;
+      const extras = row.campos.filter(
+        (c) => c !== row.telefone && c !== row.nome
+      );
+      return [row.nome, tel, ...extras].filter(Boolean).join(",");
+    });
+    $("nx-lista").value = linhas.join("\n");
+    log(
+      mudou > 0
+        ? `✅ ${mudou} número(s) ajustado(s) pela regra do 9 (DDI 55).`
+        : "Nenhum número precisou de ajuste."
+    );
   }
 
   async function validarLista() {
