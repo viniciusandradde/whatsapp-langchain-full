@@ -128,6 +128,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === "ext:campanha-template") {
         const r = await apiPost("/api/disparador/ext/campanha-template", msg.body || {});
         sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:telemetria") {
+        await telemetria(msg.evento, msg.meta);
+        sendResponse({ ok: true });
       } else {
         sendResponse({ ok: false, error: "tipo desconhecido" });
       }
@@ -136,4 +139,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
   return true; // resposta assíncrona
+});
+
+// Telemetria própria (substitui o GA4 do ZDG): manda eventos pro NOSSO backend.
+// Best-effort — sem config (API key/URL) ou erro de rede, não faz nada.
+async function telemetria(evento, meta) {
+  try {
+    const { apiKey, backendUrl } = await getConfig();
+    if (!apiKey || !backendUrl) return;
+    await fetch(`${backendUrl}/api/disparador/ext/telemetria`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ evento, meta: meta || {} }),
+    });
+  } catch (_) {
+    // telemetria nunca quebra a extensão
+  }
+}
+
+chrome.runtime.onInstalled.addListener((details) => {
+  telemetria("instalada", {
+    reason: details.reason,
+    version: chrome.runtime.getManifest().version,
+  });
 });

@@ -29,8 +29,13 @@ $("test").addEventListener("click", async () => {
     if (!r) return msg("❌ sem resposta do background");
     if (!r.ok) return msg("❌ " + r.error);
     const d = r.data || {};
-    msg(
-      `✅ Conectado · empresa ${d.empresa_id} · escopos: ${(d.scopes || []).join(", ")}`
-    );
+    const p = d.plano || {};
+    let linha = `✅ Conectado · empresa ${d.empresa_id} · escopos: ${(d.scopes || []).join(", ")}`;
+    if (p.slug) {
+      const cap =
+        p.max_contatos == null ? "ilimitado" : `${p.max_contatos} contatos/disparo`;
+      linha += `\nPlano: ${p.nome || p.slug} · ${cap} · mídia: ${p.midia ? "sim" : "não"}`;
+    }
+    msg(linha);
   });
 });

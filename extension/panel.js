@@ -11,6 +11,13 @@
   window.__nexusPanelLoaded = true;
 
   const B = () => window.__nexusBridge || {};
+  // Telemetria própria (best-effort, via background → nosso backend).
+  const tele = (evento, meta) => {
+    try {
+      B().enviarBackground &&
+        B().enviarBackground({ type: "ext:telemetria", evento, meta: meta || {} });
+    } catch (_) {}
+  };
   const $ = (id) => document.getElementById(id);
 
   // ---- estado do disparo ----
@@ -116,7 +123,10 @@
     fab.id = "nexus-fab";
     fab.title = "Nexus Disparador";
     fab.textContent = "🚀";
-    fab.onclick = () => $("nexus-panel").classList.toggle("open");
+    fab.onclick = () => {
+      const aberto = $("nexus-panel").classList.toggle("open");
+      if (aberto) tele("ativada", {});
+    };
     document.body.appendChild(fab);
 
     const p = document.createElement("div");
@@ -682,6 +692,7 @@ Refri|R$8"></textarea>
     pausado = false;
     parar = false;
     falhasCsv = [];
+    tele("disparo_iniciado", { total: lista.length, tipo });
     $("nx-start").disabled = true;
     $("nx-pause").disabled = false;
     $("nx-stop").disabled = false;
@@ -782,6 +793,12 @@ Refri|R$8"></textarea>
         }
       }
       await flushReport();
+      tele("disparo_concluido", {
+        total,
+        enviados,
+        falhas,
+        parado: !!parar,
+      });
       log(
         `${parar ? "⏹ Parado" : "✅ Concluído"}: ${enviados} enviados · ${falhas} falhas de ${total}.`
       );

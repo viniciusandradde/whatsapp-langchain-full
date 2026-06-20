@@ -89,6 +89,41 @@ async def _limite_plano(pool: AsyncConnectionPool, empresa_id: int) -> int | Non
         return None
 
 
+async def checar_limite_plano_disparo(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    total_contatos: int,
+    com_midia: bool = False,
+) -> str | None:
+    """Valida o disparo contra o plano. Retorna None se ok, ou a mensagem de
+    erro (pra 402) se excede. Usado no caminho HARD da extensão.
+
+    Lê `features['disparador_max_contatos']` (cap de contatos) e
+    `features['disparador_media']` (libera mídia). Best-effort: se o plano não
+    resolver, libera (não derruba o disparo).
+    """
+    try:
+        from whatsapp_langchain.shared.plano_limits import get_plano_info
+
+        plano = await get_plano_info(pool, empresa_id)
+    except Exception:  # noqa: BLE001
+        return None
+    cap = plano.features.get("disparador_max_contatos")
+    if cap is not None and total_contatos > int(cap):
+        upg = plano.upgrade_sugerido()
+        extra = f" Faça upgrade pro plano {upg.title()} pra enviar mais." if upg else ""
+        return (
+            f"Seu plano {plano.plano_nome} permite até {int(cap)} contatos por "
+            f"disparo (você tentou {total_contatos})." + extra
+        )
+    if com_midia and not plano.features.get("disparador_media", False):
+        upg = plano.upgrade_sugerido()
+        extra = f" Disponível no plano {upg.title()}." if upg else ""
+        return f"Envio de mídia não está incluído no plano {plano.plano_nome}.{extra}"
+    return None
+
+
 class PreviewResultado(BaseModel):
     total_bruto: int
     count_duplicado: int

@@ -8,6 +8,7 @@ contexto RLS. A extensão usa SOMENTE este caminho — nunca o token de serviço
 
 from __future__ import annotations
 
+import json
 import re
 
 import structlog
@@ -35,13 +36,30 @@ router = APIRouter(prefix="/api/disparador", tags=["disparador"])
 async def get_status(ctx: ApiKeyContext = Depends(verify_api_key)) -> dict:
     """Health-check autenticado: a extensão usa pra validar a API key + URL.
 
-    Retorna a empresa resolvida e os escopos da chave (sem expor segredo).
+    Retorna a empresa, os escopos da chave e o plano (slug + limites do
+    disparador) pra extensão exibir e pré-bloquear acima do limite.
     """
+    plano_info: dict = {}
+    try:
+        from whatsapp_langchain.shared.plano_limits import get_plano_info
+
+        pool = await get_pool()
+        plano = await get_plano_info(pool, ctx.empresa_id)
+        cap = plano.features.get("disparador_max_contatos")
+        plano_info = {
+            "slug": plano.plano_slug,
+            "nome": plano.plano_nome,
+            "max_contatos": int(cap) if cap is not None else None,  # None = ilimitado
+            "midia": bool(plano.features.get("disparador_media", False)),
+        }
+    except Exception as e:  # noqa: BLE001 — status nunca quebra
+        logger.warning("ext_status_plano_falhou", erro=str(e))
     return {
         "ok": True,
         "empresa_id": ctx.empresa_id,
         "scopes": ctx.scopes,
         "rate_limit_per_minute": ctx.rate_limit_per_minute,
+        "plano": plano_info,
     }
 
 
@@ -76,6 +94,13 @@ async def ext_criar_campanha(
     """Cria uma campanha origem_envio='extensao' (status 'running') pro disparo
     in-browser. Retorna o id + os destinatários normalizados pra enviar."""
     pool = await get_pool()
+    from whatsapp_langchain.shared.disparo import checar_limite_plano_disparo
+
+    erro = await checar_limite_plano_disparo(
+        pool, ctx.empresa_id, total_contatos=len(body.telefones)
+    )
+    if erro:
+        raise HTTPException(status_code=402, detail=erro)
     try:
         camp = await camp_lib.create_campanha(
             pool,
@@ -205,6 +230,13 @@ async def ext_campanha_template(
                 status_code=404,
                 detail="Template não encontrado ou não aprovado nesta conexão.",
             )
+    from whatsapp_langchain.shared.disparo import checar_limite_plano_disparo
+
+    erro = await checar_limite_plano_disparo(
+        pool, ctx.empresa_id, total_contatos=len(body.telefones)
+    )
+    if erro:
+        raise HTTPException(status_code=402, detail=erro)
     agendar = bool(body.scheduled_at)
     try:
         camp = await camp_lib.create_campanha(
@@ -240,6 +272,38 @@ async def ext_campanha_template(
         "total": camp["total_destinatarios"],
         "agendada": agendar,
     }
+
+
+_EVENTOS_TELEMETRIA = frozenset(
+    {"instalada", "ativada", "captura", "disparo_iniciado", "disparo_concluido"}
+)
+
+
+class ExtTelemetriaInput(BaseModel):
+    evento: str = Field(min_length=1, max_length=40)
+    meta: dict = Field(default_factory=dict)
+
+
+@router.post("/ext/telemetria", status_code=204)
+async def ext_telemetria(
+    body: ExtTelemetriaInput,
+    ctx: ApiKeyContext = Depends(verify_api_key),
+) -> None:
+    """Telemetria própria da extensão (substitui o GA4 do ZDG). Best-effort:
+    evento desconhecido é descartado silenciosamente; erro nunca propaga."""
+    if body.evento not in _EVENTOS_TELEMETRIA:
+        return None
+    pool = await get_pool()
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                "INSERT INTO disparador_ext_evento (empresa_id, evento, meta) "
+                "VALUES (%s, %s, %s)",
+                (ctx.empresa_id, body.evento, json.dumps(body.meta or {})),
+            )
+    except Exception as e:  # noqa: BLE001 — telemetria nunca quebra o fluxo
+        logger.warning("ext_telemetria_falhou", erro=str(e))
+    return None
 
 
 @router.post("/ext/campanha/{camp_id}/report")
