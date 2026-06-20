@@ -11,6 +11,9 @@
   window.__nexusPanelLoaded = true;
 
   const B = () => window.__nexusBridge || {};
+  // Ícones do design system (SVG, sem emoji) + logo VSA.
+  const ICON = (n, s) => (window.NexusIcons ? window.NexusIcons.svg(n, s) : "");
+  const LOGO_URL = chrome.runtime.getURL("icons/vsa-logo.png");
   // Telemetria própria (best-effort, via background → nosso backend).
   const tele = (evento, meta) => {
     try {
@@ -122,7 +125,7 @@
     const fab = document.createElement("button");
     fab.id = "nexus-fab";
     fab.title = "Nexus Disparador";
-    fab.textContent = "🚀";
+    fab.innerHTML = `<img src="${LOGO_URL}" alt="Nexus" class="nx-fab-logo">`;
     fab.onclick = () => {
       const aberto = $("nexus-panel").classList.toggle("open");
       if (aberto) tele("ativada", {});
@@ -133,12 +136,12 @@
     p.id = "nexus-panel";
     p.innerHTML = `
       <div class="nx-head">
-        <span>🚀 Nexus Disparador</span>
-        <span class="nx-x" id="nx-close">✕</span>
+        <span class="nx-head-brand"><img src="${LOGO_URL}" alt="" class="nx-head-logo"> Nexus Disparador</span>
+        <span class="nx-x" id="nx-close">${ICON("x", 16)}</span>
       </div>
       <div class="nx-tabs">
-        <button class="nx-tab nx-tab-on" id="nx-tab-msg">💬 Mensagens</button>
-        <button class="nx-tab" id="nx-tab-voz">📞 Ligações</button>
+        <button class="nx-tab nx-tab-on" id="nx-tab-msg">${ICON("message-circle", 15)} Mensagens</button>
+        <button class="nx-tab" id="nx-tab-voz">${ICON("phone", 15)} Ligações</button>
       </div>
       <div class="nx-body" id="nx-msg-body">
         <label>Contatos (1 por linha — nome,telefone,campo1…)</label>
@@ -153,7 +156,7 @@ Maria,+5511988888888"></textarea>
         </div>
         <div class="nx-hint">"Enviar ao grupo" dispara 1 mensagem no grupo inteiro. "Membros" adiciona cada participante.</div>
         <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})
-          <button type="button" class="nxe-trigger" id="nx-emoji" title="Emojis">😊</button>
+          <button type="button" class="nxe-trigger" id="nx-emoji" title="Emojis">${ICON("smile", 16)}</button>
         </label>
         <textarea id="nx-msg" rows="4" placeholder="Olá [nome]! {Tudo bem|Como vai}?"></textarea>
         <label>Tipo de mensagem</label>
@@ -213,7 +216,7 @@ Refri|R$8"></textarea>
             <label>Legenda</label><input id="nx-cg-cap" placeholder="Entra no grupo!">
           </div>
         </div>
-        <label>📎 Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda do 1º)</label>
+        <label>${ICON("paperclip", 14)} Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda do 1º)</label>
         <input id="nx-files" type="file" multiple
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
         <div class="nx-anexos" id="nx-files-grid"></div>
@@ -245,7 +248,7 @@ Refri|R$8"></textarea>
         <button class="nx-btn nx-sec" id="nx-cancel-agenda" style="display:none">Cancelar agendamento</button>
       </div>
       <div class="nx-body" id="nx-voz-body" style="display:none">
-        <div class="nx-warn">📞 <b>Ligações de voz automáticas (WaVoIP)</b> tocam um áudio
+        <div class="nx-warn"><b>Ligações de voz automáticas (WaVoIP)</b> tocam um áudio
           pré-gravado. Requer <b>tokens WaVoIP</b> (serviço pago — wavoip.com). Ligação
           automática em massa <b>queima número rápido</b> e pode ter implicações legais
           (spam de voz). Use com consentimento e em baixo volume.</div>
@@ -304,7 +307,7 @@ Refri|R$8"></textarea>
     };
     $("nx-voz-stop").onclick = () => {
       parar = true;
-      vozLog("⏹ Parando…");
+      vozLog("■ Parando…");
       B().wavoipStop && B().wavoipStop();
     };
     // pré-carrega tokens WaVoIP salvos
@@ -338,13 +341,13 @@ Refri|R$8"></textarea>
     };
     $("nx-stop").onclick = () => {
       parar = true;
-      log("⏹ Parando…");
+      log("■ Parando…");
     };
     $("nx-files").onchange = async (e) => {
       const files = Array.from(e.target.files || []);
       for (const f of files) {
         if (f.size > 16 * 1024 * 1024) {
-          log("❌ " + f.name + " ignorado (> 16MB).");
+          log("✕ " + f.name + " ignorado (> 16MB).");
           continue;
         }
         try {
@@ -356,7 +359,7 @@ Refri|R$8"></textarea>
           });
           anexos.push({ dataUrl, filename: f.name, tipo: f.type || "" });
         } catch (_) {
-          log("❌ falha ao ler " + f.name);
+          log("✕ falha ao ler " + f.name);
         }
       }
       e.target.value = ""; // permite re-selecionar o mesmo arquivo
@@ -466,7 +469,7 @@ Refri|R$8"></textarea>
   function ajustarRegra9Lista() {
     if (rodando) return;
     const lista = parseLista($("nx-lista").value);
-    if (!lista.length) return log("❌ Nada pra ajustar.");
+    if (!lista.length) return log("✕ Nada pra ajustar.");
     let mudou = 0;
     const linhas = lista.map((row) => {
       const dig = row.telefone.replace(/\D/g, "");
@@ -481,7 +484,7 @@ Refri|R$8"></textarea>
     $("nx-lista").value = linhas.join("\n");
     log(
       mudou > 0
-        ? `✅ ${mudou} número(s) ajustado(s) pela regra do 9 (DDI 55).`
+        ? `✓ ${mudou} número(s) ajustado(s) pela regra do 9 (DDI 55).`
         : "Nenhum número precisou de ajuste."
     );
   }
@@ -489,7 +492,7 @@ Refri|R$8"></textarea>
   async function validarLista() {
     if (rodando) return;
     const lista = parseLista($("nx-lista").value);
-    if (!lista.length) return log("❌ Nada pra validar.");
+    if (!lista.length) return log("✕ Nada pra validar.");
     try {
       log("Verificando sessão…");
       const wpp = await B().garantirWpp();
@@ -500,7 +503,7 @@ Refri|R$8"></textarea>
       for (let i = 0; i < lista.length; i++) {
         const r = await B().validarNumero(lista[i].telefone);
         setBar(((i + 1) / lista.length) * 100);
-        log(`Validando ${i + 1}/${lista.length} · ✅ ${validos.length} · ❌ ${invalidos}`);
+        log(`Validando ${i + 1}/${lista.length} · ✓ ${validos.length} · ✕ ${invalidos}`);
         if (r.ok && r.exists) {
           // usa o número real (wid) quando vier, pra normalizar regra-do-9
           const real = telDoJid(r.wid || "") || lista[i].telefone;
@@ -515,10 +518,10 @@ Refri|R$8"></textarea>
         await new Promise((res) => setTimeout(res, 400)); // rate-limit suave
       }
       $("nx-lista").value = validos.join("\n");
-      log(`✅ ${validos.length} válidos · ❌ ${invalidos} removidos da lista.`);
+      log(`✓ ${validos.length} válidos · ✕ ${invalidos} removidos da lista.`);
       setBar(0);
     } catch (e) {
-      log("❌ " + e.message);
+      log("✕ " + e.message);
     }
   }
 
@@ -553,9 +556,9 @@ Refri|R$8"></textarea>
       }
       const atual = $("nx-lista").value.trim();
       $("nx-lista").value = (atual ? atual + "\n" : "") + linhas.join("\n");
-      log(`✅ ${linhas.length} ${rotulo} adicionados à lista.`);
+      log(`✓ ${linhas.length} ${rotulo} adicionados à lista.`);
     } catch (e) {
-      log("❌ " + e.message);
+      log("✕ " + e.message);
     }
   }
 
@@ -576,11 +579,12 @@ Refri|R$8"></textarea>
       } else {
         const ic = document.createElement("div");
         ic.className = "nx-anexo-ic";
-        ic.textContent = (a.tipo || "").startsWith("video/")
-          ? "🎬"
+        const nome = (a.tipo || "").startsWith("video/")
+          ? "film"
           : (a.tipo || "").startsWith("audio/")
-            ? "🎵"
-            : "📄";
+            ? "music"
+            : "file-text";
+        ic.innerHTML = ICON(nome, 22);
         cell.appendChild(ic);
       }
       if (idx === 0) {
@@ -643,7 +647,7 @@ Refri|R$8"></textarea>
     const tick = () => {
       const rest = quando - Date.now();
       if (rest <= 0) return;
-      log(`⏰ Agendado para ${new Date(quando).toLocaleString("pt-BR")} — faltam ${fmtDur(rest)}. Mantenha esta aba aberta.`);
+      log(`Agendado para ${new Date(quando).toLocaleString("pt-BR")} — faltam ${fmtDur(rest)}. Mantenha esta aba aberta.`);
     };
     tick();
     _agInterval = setInterval(tick, 15000);
@@ -651,7 +655,7 @@ Refri|R$8"></textarea>
       clearInterval(_agInterval);
       _agInterval = null;
       $("nx-cancel-agenda").style.display = "none";
-      log("⏰ Iniciando disparo agendado…");
+      log("Iniciando disparo agendado…");
       dispararAgora();
     }, quando - Date.now());
   }
@@ -673,15 +677,15 @@ Refri|R$8"></textarea>
     const lista = parseLista($("nx-lista").value);
     const msg = $("nx-msg").value.trim();
     const tipo = $("nx-tipo").value;
-    if (!lista.length) return log("❌ Adicione contatos válidos (com telefone).");
+    if (!lista.length) return log("✕ Adicione contatos válidos (com telefone).");
     let payloadFixo = null;
     if (tipo === "texto") {
       if (!msg && !anexos.length)
-        return log("❌ Escreva a mensagem ou anexe um arquivo.");
+        return log("✕ Escreva a mensagem ou anexe um arquivo.");
     } else {
       payloadFixo = payloadTipo(tipo);
       const err = validarPayloadTipo(payloadFixo);
-      if (err) return log("❌ " + err);
+      if (err) return log("✕ " + err);
     }
     const min = Math.max(1, Number($("nx-min").value || 5)) * 1000;
     const max = Math.max(min, Number($("nx-max").value || 15) * 1000);
@@ -783,7 +787,7 @@ Refri|R$8"></textarea>
 
         const feitos = i + 1;
         setBar((feitos / total) * 100);
-        log(`Enviando ${feitos}/${total} · ✅ ${enviados} · ❌ ${falhas}`);
+        log(`Enviando ${feitos}/${total} · ✓ ${enviados} · ✕ ${falhas}`);
         if (reportBuf.length >= 10) await flushReport();
 
         // anti-ban: espera antes do próximo (não no último)
@@ -800,11 +804,11 @@ Refri|R$8"></textarea>
         parado: !!parar,
       });
       log(
-        `${parar ? "⏹ Parado" : "✅ Concluído"}: ${enviados} enviados · ${falhas} falhas de ${total}.`
+        `${parar ? "■ Parado" : "✓ Concluído"}: ${enviados} enviados · ${falhas} falhas de ${total}.`
       );
       if (falhasCsv.length) $("nx-csv").style.display = "block";
     } catch (e) {
-      if (e.message !== "__parado__") log("❌ " + e.message);
+      if (e.message !== "__parado__") log("✕ " + e.message);
     } finally {
       rodando = false;
       pausado = false;
@@ -837,7 +841,7 @@ Refri|R$8"></textarea>
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-    if (!tokens.length) return vozLog("❌ Cole pelo menos 1 token WaVoIP.");
+    if (!tokens.length) return vozLog("✕ Cole pelo menos 1 token WaVoIP.");
     vozLog("Carregando SDK WaVoIP e registrando tokens…");
     try {
       const r = await B().wavoipConnect(tokens);
@@ -848,7 +852,7 @@ Refri|R$8"></textarea>
       } catch (_) {}
       await vozStatus();
     } catch (e) {
-      vozLog("❌ " + e.message);
+      vozLog("✕ " + e.message);
     }
   }
 
@@ -878,7 +882,7 @@ Refri|R$8"></textarea>
       return;
     }
     if (f.size > 16 * 1024 * 1024) {
-      $("nx-voz-audio-info").textContent = "❌ áudio > 16MB.";
+      $("nx-voz-audio-info").textContent = "✕ áudio > 16MB.";
       return;
     }
     try {
@@ -891,19 +895,19 @@ Refri|R$8"></textarea>
       vozAudio = { dataUrl, filename: f.name };
       $("nx-voz-audio-info").textContent = `🔊 ${f.name} pronto.`;
     } catch (_) {
-      $("nx-voz-audio-info").textContent = "❌ falha ao ler o áudio.";
+      $("nx-voz-audio-info").textContent = "✕ falha ao ler o áudio.";
     }
   }
 
   async function iniciarVoz() {
     if (rodando) return;
     const lista = parseLista($("nx-voz-lista").value);
-    if (!lista.length) return vozLog("❌ Adicione contatos válidos (com telefone).");
-    if (!vozAudio) return vozLog("❌ Selecione o áudio da ligação.");
+    if (!lista.length) return vozLog("✕ Adicione contatos válidos (com telefone).");
+    if (!vozAudio) return vozLog("✕ Selecione o áudio da ligação.");
     if (!vozTokensOk.length) {
       await vozStatus();
       if (!vozTokensOk.length)
-        return vozLog("❌ Nenhum número WaVoIP online. Conecte os tokens.");
+        return vozLog("✕ Nenhum número WaVoIP online. Conecte os tokens.");
     }
     const min = Math.max(5, Number($("nx-voz-min").value || 20)) * 1000;
     const max = Math.max(min, Number($("nx-voz-max").value || 45) * 1000);
@@ -993,7 +997,7 @@ Refri|R$8"></textarea>
 
         const feitos = i + 1;
         vozSetBar((feitos / total) * 100);
-        vozLog(`Ligando ${feitos}/${total} · ✅ ${ok} atendidas · 📵 ${naoAtendidas} · ❌ ${falhas - naoAtendidas} erro`);
+        vozLog(`Ligando ${feitos}/${total} · ✓ ${ok} atendidas · 📵 ${naoAtendidas} · ✕ ${falhas - naoAtendidas} erro`);
         if (reportBuf.length >= 5) await flushReport();
 
         if (feitos < total && !parar) {
@@ -1002,10 +1006,10 @@ Refri|R$8"></textarea>
         }
       }
       await flushReport();
-      vozLog(`${parar ? "⏹ Parado" : "✅ Concluído"}: ${ok} atendidas · ${naoAtendidas} não-atendidas · ${falhas - naoAtendidas} erros de ${total}.`);
+      vozLog(`${parar ? "■ Parado" : "✓ Concluído"}: ${ok} atendidas · ${naoAtendidas} não-atendidas · ${falhas - naoAtendidas} erros de ${total}.`);
       if (vozFalhasCsv.length) $("nx-voz-csv").style.display = "block";
     } catch (e) {
-      if (e.message !== "__parado__") vozLog("❌ " + e.message);
+      if (e.message !== "__parado__") vozLog("✕ " + e.message);
     } finally {
       rodando = false;
       pausado = false;

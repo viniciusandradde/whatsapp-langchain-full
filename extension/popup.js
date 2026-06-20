@@ -50,11 +50,11 @@ async function capturar(what, rotulo) {
     const r = await pedirAba(tabId, { type: "capturar", what });
     if (!r.ok) throw new Error(r.error);
     const d = r.data || {};
-    let msg = `✅ ${rotulo}: ${r.raspados ?? "?"} lidos · ${d.novos ?? 0} novos`;
+    let msg = `✓ ${rotulo}: ${r.raspados ?? "?"} lidos · ${d.novos ?? 0} novos`;
     if (r.membrosNovos != null) msg += ` · ${r.membrosNovos} membros novos`;
     log(msg);
   } catch (e) {
-    log("❌ " + e.message);
+    log("✕ " + e.message);
   }
 }
 
@@ -94,17 +94,17 @@ async function exportarCsv(what) {
           x.is_business ? "sim" : "nao",
         ]),
       ]);
-      log(`✅ ${c.length} contatos exportados.`);
+      log(`✓ ${c.length} contatos exportados.`);
     } else {
       const g = r.grupos || [];
       baixarCsv("grupos.csv", [
         ["nome", "wa_group_id", "participantes"],
         ...g.map((x) => [x.nome || "", x.wa_group_id || "", x.participantes_count ?? ""]),
       ]);
-      log(`✅ ${g.length} grupos exportados.`);
+      log(`✓ ${g.length} grupos exportados.`);
     }
   } catch (e) {
-    log("❌ " + e.message);
+    log("✕ " + e.message);
   }
 }
 
@@ -118,9 +118,9 @@ document.getElementById("btn-wpp-status").addEventListener("click", async () => 
     const tabId = await abaWhatsApp();
     const r = await pedirAba(tabId, { type: "wpp-status" });
     if (!r.ok) throw new Error(r.error);
-    log(`Sessão pronta: ${r.ready ? "sim" : "não"} · conectada: ${r.authenticated ? "sim ✅" : "não ❌"}`);
+    log(`Sessão pronta: ${r.ready ? "sim" : "não"} · conectada: ${r.authenticated ? "sim ✓" : "não ✕"}`);
   } catch (e) {
-    log("❌ " + e.message);
+    log("✕ " + e.message);
   }
 });
 
@@ -132,7 +132,7 @@ async function carregarConexoes() {
   const sel = document.getElementById("waba-conexao");
   const r = await pedirBg({ type: "ext:conexoes" });
   if (!r.ok) {
-    wlog("❌ " + r.error);
+    wlog("✕ " + r.error);
     sel.innerHTML = '<option value="">—</option>';
     return;
   }
@@ -161,7 +161,7 @@ document.getElementById("waba-conexao").addEventListener("change", async (e) => 
   const r = await pedirBg({ type: "ext:templates", conexaoId: Number(conexaoId) });
   if (!r.ok) {
     selT.innerHTML = '<option value="">—</option>';
-    wlog("❌ " + r.error);
+    wlog("✕ " + r.error);
     return;
   }
   const items = (r.data && r.data.items) || [];
@@ -223,8 +223,8 @@ document.getElementById("btn-waba-enviar").addEventListener("click", async () =>
     });
     if (!r.ok) throw new Error(r.error);
     const d = r.data || {};
-    wlog(`✅ Campanha #${d.campanha_id} criada (${d.total} destinatários). O envio é feito pelo Nexus — acompanhe em Campanhas.`);
+    wlog(`✓ Campanha #${d.campanha_id} criada (${d.total} destinatários). O envio é feito pelo Nexus — acompanhe em Campanhas.`);
   } catch (e) {
-    wlog("❌ " + e.message);
+    wlog("✕ " + e.message);
   }
 });

@@ -34,7 +34,7 @@ Para volume sustentável, use o **canal oficial (WABA)** pelo painel.
 
 ### Disparo pela sessão (painel injetado no WhatsApp Web)
 Clique no botão flutuante (canto inferior direito) → aba **Mensagens**: monte a
-lista, a mensagem (com `[nome]`, spintax `{oi|olá}` e **emoji picker** 😊),
+lista, a mensagem (com `[nome]`, spintax `{oi|olá}` e **emoji picker**),
 escolha o tipo, anexe arquivos (**grid com preview**), ajuste intervalos e —
 opcional — **Agendar início** (mantenha a aba aberta). Recursos extra:
 - **Ajustar BR (9)**: corrige números brasileiros pela regra do 9 (offline).
@@ -85,7 +85,7 @@ Nenhum outro arquivo precisa mudar.
 - Membros multi-device podem vir como `@lid` (sem telefone) — enviados como
   `wa_jid`; o backend usa `wa_jid` como identidade primária.
 
-## 📞 Ligações de voz (WaVoIP)
+## Ligações de voz (WaVoIP)
 
 A aba **Ligações** do painel faz **ligações de voz automáticas** que tocam um
 **áudio pré-gravado** ao serem atendidas. Usa o SDK oficial **WaVoIP**
@@ -94,7 +94,7 @@ MAIN world sob demanda pelo `content.js`.
 
 - **Pré-requisito**: você precisa de **tokens WaVoIP** — serviço **pago**
   (wavoip.com). Cada token vincula 1 número WhatsApp. Cole os tokens na aba,
-  "Conectar tokens" e confira que o device fica **online (🟢 open)**.
+  "Conectar tokens" e confira que o device fica **online ( open)**.
 - **Mecânica**: `inject.js` registra os tokens (`wavoip.device.add`), intercepta
   o `getUserMedia` pra injetar o áudio no lugar do microfone, inicia a ligação
   (`wavoip.call.start`) e acompanha o estado por `getCallActive()` — ao atender,

@@ -16,7 +16,7 @@ $("save").addEventListener("click", async () => {
   const apiKey = $("apiKey").value.trim();
   const backendUrl = $("backendUrl").value.trim().replace(/\/+$/, "");
   await chrome.storage.local.set({ apiKey, backendUrl });
-  msg("✅ Salvo.");
+  msg("✓ Salvo.");
 });
 
 $("test").addEventListener("click", async () => {
@@ -26,11 +26,11 @@ $("test").addEventListener("click", async () => {
   await chrome.storage.local.set({ apiKey, backendUrl });
   msg("Testando…");
   chrome.runtime.sendMessage({ type: "test" }, (r) => {
-    if (!r) return msg("❌ sem resposta do background");
-    if (!r.ok) return msg("❌ " + r.error);
+    if (!r) return msg("✕ sem resposta do background");
+    if (!r.ok) return msg("✕ " + r.error);
     const d = r.data || {};
     const p = d.plano || {};
-    let linha = `✅ Conectado · empresa ${d.empresa_id} · escopos: ${(d.scopes || []).join(", ")}`;
+    let linha = `✓ Conectado · empresa ${d.empresa_id} · escopos: ${(d.scopes || []).join(", ")}`;
     if (p.slug) {
       const cap =
         p.max_contatos == null ? "ilimitado" : `${p.max_contatos} contatos/disparo`;

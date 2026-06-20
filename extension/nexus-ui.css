@@ -59,6 +59,9 @@
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 800; font-size: 13px;
 }
+/* Logo VSA (imagem) no header do popup/opções */
+.nx-logo-img { width: 24px; height: 24px; object-fit: contain; display: block; }
+h1 .nx-logo-img { width: 26px; height: 26px; }
 
 .nx-tabs { display: flex; border-bottom: 1px solid var(--border-subtle); background: var(--obsidian-900); }
 .nx-tab {
