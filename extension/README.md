@@ -34,9 +34,17 @@ Para volume sustentável, use o **canal oficial (WABA)** pelo painel.
 
 ### Disparo pela sessão (painel injetado no WhatsApp Web)
 Clique no botão flutuante (canto inferior direito) → aba **Mensagens**: monte a
-lista, a mensagem (com `[nome]` e spintax `{oi|olá}`), escolha o tipo, ajuste
-intervalos e — opcional — **Agendar início** (mantenha a aba aberta). Aba
-**Ligações** faz chamadas WaVoIP. ⚠️ disparo por sessão pessoal pode banir o número.
+lista, a mensagem (com `[nome]`, spintax `{oi|olá}` e **emoji picker** 😊),
+escolha o tipo, anexe arquivos (**grid com preview**), ajuste intervalos e —
+opcional — **Agendar início** (mantenha a aba aberta). Recursos extra:
+- **Ajustar BR (9)**: corrige números brasileiros pela regra do 9 (offline).
+- **Grupos: enviar ao grupo**: dispara 1 mensagem pro grupo inteiro (`@g.us`);
+  **Grupos: membros** adiciona cada participante.
+- Aba **Ligações**: chamadas WaVoIP. ⚠️ disparo por sessão pessoal pode banir o número.
+
+Os **limites do seu plano** (contatos por disparo / mídia) são exibidos nas
+Opções (Testar conexão) e aplicados pelo backend. A extensão envia **telemetria
+própria** (instalação/uso) só pro seu Nexus — sem rastreadores de terceiros.
 
 ### Canal oficial (WABA) — popup, aba **Canal oficial**
 Envio por template aprovado, **roteado pelo backend Nexus** (sem token Meta no
