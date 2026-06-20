@@ -4,7 +4,7 @@
 #nexus-fab {
   position: fixed;
   right: 18px;
-  bottom: 18px;
+  bottom: 104px; /* acima do compositor/botão de gravação do WhatsApp Web */
   z-index: 2147483646;
   width: 54px;
   height: 54px;
@@ -34,7 +34,7 @@
 #nexus-panel {
   position: fixed;
   right: 18px;
-  bottom: 84px;
+  bottom: 170px; /* acima do FAB (que subiu pra 104px) */
   z-index: 2147483647;
   width: 372px;
   max-height: 82vh;
