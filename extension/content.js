@@ -61,6 +61,11 @@ function injetarWaJs() {
   _waJsInjetado = true;
   const s = document.createElement("script");
   s.src = chrome.runtime.getURL("vendor/wa-js.js");
+  // Se o download falhar, libera o guard pra permitir nova tentativa.
+  s.onerror = () => {
+    _waJsInjetado = false;
+    console.warn("[nexus] falha ao carregar vendor/wa-js.js");
+  };
   (document.head || document.documentElement).appendChild(s);
 }
 

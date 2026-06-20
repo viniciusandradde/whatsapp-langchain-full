@@ -194,9 +194,27 @@
       window.postMessage({ source: "nexus-page", reqId: d.reqId, ...payload }, "*");
     (async () => {
       try {
-        const WPP = window.WPP;
+        // Espera o window.WPP aparecer: o vendor/wa-js.js (~502KB) é injetado
+        // via <script> e leva um tempinho pra executar. Sem o poll, o handler
+        // falhava na hora com "WPP não carregado" (race) em vez de aguardar.
+        async function aguardarWPP(timeoutMs) {
+          const fim = Date.now() + timeoutMs;
+          while (!window.WPP && Date.now() < fim) {
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          return window.WPP || null;
+        }
+        let WPP = window.WPP;
         if (!WPP) {
-          reply({ error: "WPP (wa-js) não carregado na página" });
+          // ensure-wpp pode esperar mais (acabou de injetar o script); os
+          // demais comandos só rodam após ensure-wpp, então 5s basta.
+          WPP = await aguardarWPP(d.cmd === "ensure-wpp" ? 20000 : 5000);
+        }
+        if (!WPP) {
+          reply({
+            error:
+              "wa-js não carregou — recarregue o WhatsApp Web e tente de novo.",
+          });
           return;
         }
         if (d.cmd === "validar") {
@@ -221,6 +239,9 @@
           let auth = false;
           try {
             auth = !!(WPP.conn && (await WPP.conn.isAuthenticated()));
+          } catch (_) {}
+          try {
+            console.info("[nexus] WPP pronto", { ready: true, authenticated: auth });
           } catch (_) {}
           reply({ ok: true, ready: true, authenticated: auth });
           return;
