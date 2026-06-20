@@ -37,7 +37,22 @@
   }
 
   function findStore() {
-    if (self.WPP && self.WPP.whatsapp) return { kind: "wpp", S: self.WPP.whatsapp };
+    // wa-js (WPP): os stores têm sufixo *Store (ContactStore, ChatStore…).
+    // Normalizamos pros nomes que scrapeContatos/scrapeGrupos esperam.
+    if (self.WPP && self.WPP.whatsapp) {
+      const W = self.WPP.whatsapp;
+      const Contact = W.ContactStore || W.Contact;
+      if (Contact) {
+        return {
+          kind: "store",
+          S: {
+            Contact: Contact,
+            Chat: W.ChatStore || W.Chat,
+            GroupMetadata: W.GroupMetadataStore || W.GroupMetadata,
+          },
+        };
+      }
+    }
     if (self.Store && self.Store.Contact) return { kind: "store", S: self.Store };
     const mods = moduleRaid();
     if (!mods) return null;
@@ -106,7 +121,12 @@
           S.GroupMetadata.get &&
           S.GroupMetadata.get(jid)) ||
         null;
-      const parts = meta ? arr({ models: meta.participants }) : [];
+      // participants pode ser array OU coleção (getModelsArray) no wa-js.
+      const parts = meta
+        ? Array.isArray(meta.participants)
+          ? meta.participants
+          : arr(meta.participants)
+        : [];
       const membros = parts
         .map((p) => {
           const pa = p.attributes || p;

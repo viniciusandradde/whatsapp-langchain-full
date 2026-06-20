@@ -42,7 +42,14 @@ function pedirPagina(payload, timeoutMs = 30000) {
   });
 }
 
-function pedirScrape(what) {
+async function pedirScrape(what) {
+  // Garante o wa-js (window.WPP) carregado + sessão logada ANTES de raspar —
+  // sem isso o findStore cai no moduleRaid (frágil) e dá "store não encontrado".
+  const wpp = await garantirWpp();
+  if (wpp.error) return { error: wpp.error };
+  if (!wpp.authenticated) {
+    return { error: "WhatsApp Web não está logado. Abra e escaneie o QR primeiro." };
+  }
   return pedirPagina({ cmd: "scrape", what });
 }
 
