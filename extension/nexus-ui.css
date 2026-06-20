@@ -135,6 +135,33 @@ h1 .nx-logo-img { width: 26px; height: 26px; }
 .nx-badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; }
 .nx-badge-error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 
+.nx-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 8px 0 4px;
+  cursor: pointer;
+}
+.nx-check input { margin-top: 1px; accent-color: var(--brand-primary); }
+
+.nx-prog { margin: 8px 0; display: flex; align-items: center; gap: 8px; }
+.nx-prog-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--obsidian-700);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.nx-prog-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--grad-brand);
+  transition: width 0.2s ease;
+}
+
 a { color: var(--brand-secondary); }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 9999px; }

@@ -42,19 +42,65 @@ function pedirBg(msg) {
   });
 }
 
+// Opções de captura (force-load).
+function getOpts() {
+  return {
+    carregarTudo: !!document.getElementById("chk-carregar-tudo")?.checked,
+  };
+}
+
+// ---- Progresso + cancelar ----
+function mostrarProg(on) {
+  const el = document.getElementById("prog");
+  if (el) el.style.display = on ? "flex" : "none";
+  if (!on) setProg(0);
+}
+function setProg(pct) {
+  const b = document.getElementById("prog-bar");
+  if (b) b.style.width = Math.max(0, Math.min(100, pct)) + "%";
+}
+// inject.js → content.js → runtime → aqui (barra por grupo).
+chrome.runtime.onMessage.addListener((m) => {
+  if (m && m.type === "captura-progresso" && m.total) {
+    setProg((m.feito / m.total) * 100);
+    log(`Lendo grupos ${m.feito}/${m.total}… ${m.rotulo || ""}`);
+  }
+});
+document.getElementById("btn-cancelar").addEventListener("click", async () => {
+  log("Cancelando…");
+  try {
+    const tabId = await abaWhatsApp();
+    await pedirAba(tabId, { type: "cancelar-captura" });
+  } catch (_) {}
+});
+
 // ---- Captura (importar pro Nexus) ----
 async function capturar(what, rotulo) {
   try {
     log(`Importando ${rotulo}…`);
+    if (what === "grupos") mostrarProg(true);
     const tabId = await abaWhatsApp();
-    const r = await pedirAba(tabId, { type: "capturar", what });
+    const r = await pedirAba(tabId, { type: "capturar", what, opts: getOpts() });
     if (!r.ok) throw new Error(r.error);
     const d = r.data || {};
     let msg = `✓ ${rotulo}: ${r.raspados ?? "?"} lidos · ${d.novos ?? 0} novos`;
+    if (d.atualizados != null) msg += ` · ${d.atualizados} atualizados`;
     if (r.membrosNovos != null) msg += ` · ${r.membrosNovos} membros novos`;
+    if (r.semTelefone) msg += `\n${r.semTelefone} sem telefone (multi-device, mantidos pelo ID)`;
+    if (r.membrosSemTel) msg += `\n${r.membrosSemTel} membros sem telefone (multi-device)`;
+    if (r.cancelado) msg += `\n⚠ Captura cancelada — resultado parcial.`;
+    const falhas = r.falhas || [];
+    if (falhas.length) {
+      msg += `\n⚠ ${falhas.length} grupo(s) sem membros: ${falhas
+        .slice(0, 3)
+        .map((f) => f.nome || f.wa_group_id)
+        .join(", ")}${falhas.length > 3 ? "…" : ""}`;
+    }
     log(msg);
   } catch (e) {
     log("✕ " + e.message);
+  } finally {
+    mostrarProg(false);
   }
 }
 
@@ -80,36 +126,80 @@ function baixarCsv(nome, linhas) {
 async function exportarCsv(what) {
   try {
     log(`Lendo ${what} do WhatsApp Web…`);
+    if (what !== "contatos") mostrarProg(true);
     const tabId = await abaWhatsApp();
-    const r = await pedirAba(tabId, { type: "exportar", what });
+    // membros usa o scrape de grupos (que já traz os participantes)
+    const scrapeWhat = what === "contatos" ? "contatos" : "grupos";
+    const r = await pedirAba(tabId, { type: "exportar", what: scrapeWhat, opts: getOpts() });
     if (!r.ok) throw new Error(r.error);
+
     if (what === "contatos") {
       const c = r.contatos || [];
+      // telefone SÓ quando derivável (@s.whatsapp.net); @lid fica vazio + tipo=lid.
       baixarCsv("contatos.csv", [
-        ["nome", "telefone", "wa_jid", "is_business"],
+        ["nome", "telefone", "tipo", "wa_jid", "is_business"],
         ...c.map((x) => [
           x.name || x.push_name || "",
-          (x.wa_jid || "").split("@")[0],
+          x.telefone || "",
+          x.tipo || "whatsapp",
           x.wa_jid || "",
           x.is_business ? "sim" : "nao",
         ]),
       ]);
-      log(`✓ ${c.length} contatos exportados.`);
-    } else {
+      const semTel = c.filter((x) => !x.telefone).length;
+      log(`✓ ${c.length} contatos exportados${semTel ? ` (${semTel} sem telefone)` : ""}.`);
+    } else if (what === "grupos") {
       const g = r.grupos || [];
       baixarCsv("grupos.csv", [
-        ["nome", "wa_group_id", "participantes"],
-        ...g.map((x) => [x.nome || "", x.wa_group_id || "", x.participantes_count ?? ""]),
+        ["nome", "wa_group_id", "participantes", "descricao", "invite_link", "somos_admin"],
+        ...g.map((x) => [
+          x.nome || "",
+          x.wa_group_id || "",
+          x.participantes_count ?? "",
+          x.descricao || "",
+          x.invite_link || "",
+          x.somos_admin ? "sim" : "nao",
+        ]),
       ]);
       log(`✓ ${g.length} grupos exportados.`);
+    } else {
+      // membros: linha por (grupo, membro) — @lid com telefone vazio (não perde).
+      const g = r.grupos || [];
+      const linhas = [["grupo", "wa_group_id", "membro_nome", "telefone", "tipo", "wa_jid", "is_admin"]];
+      let total = 0;
+      let semTel = 0;
+      for (const grp of g) {
+        for (const m of grp.membros || []) {
+          if (!m.telefone) semTel++;
+          total++;
+          linhas.push([
+            grp.nome || "",
+            grp.wa_group_id || "",
+            m.nome || "",
+            m.telefone || "",
+            m.tipo || "whatsapp",
+            m.wa_jid || "",
+            m.is_admin ? "sim" : "nao",
+          ]);
+        }
+      }
+      baixarCsv("membros-grupos.csv", linhas);
+      const falhas = (r.falhas || []).length;
+      log(
+        `✓ ${total} membros de ${g.length} grupos${semTel ? ` (${semTel} sem telefone)` : ""}` +
+          `${falhas ? ` · ⚠ ${falhas} grupo(s) sem membros` : ""}.`
+      );
     }
   } catch (e) {
     log("✕ " + e.message);
+  } finally {
+    mostrarProg(false);
   }
 }
 
 document.getElementById("btn-csv-contatos").addEventListener("click", () => exportarCsv("contatos"));
 document.getElementById("btn-csv-grupos").addEventListener("click", () => exportarCsv("grupos"));
+document.getElementById("btn-csv-membros").addEventListener("click", () => exportarCsv("membros"));
 
 // ---- Testar sessão WPP ----
 document.getElementById("btn-wpp-status").addEventListener("click", async () => {

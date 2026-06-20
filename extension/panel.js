@@ -538,8 +538,13 @@ Refri|R$8"></textarea>
         linhas.push((nome ? nome + "," : "") + tel);
       };
       let rotulo;
+      let semTel = 0; // multi-device (@lid) — não enviáveis, mas contados
       if (tipo === "contatos") {
-        for (const c of page.contatos || []) add(c.push_name || c.name || "", telDoJid(c.wa_jid));
+        for (const c of page.contatos || []) {
+          const tel = c.telefone || telDoJid(c.wa_jid);
+          if (!tel) semTel++;
+          add(c.push_name || c.name || "", tel);
+        }
         rotulo = "contatos";
       } else if (tipo === "grupos-destino") {
         // Cada grupo vira UM destinatário (o id @g.us). jidParaChat detecta
@@ -551,12 +556,21 @@ Refri|R$8"></textarea>
         rotulo = "grupos (destino)";
       } else {
         for (const g of page.grupos || [])
-          for (const m of g.membros || []) add("", telDoJid(m.wa_jid));
+          for (const m of g.membros || []) {
+            const tel = m.telefone || telDoJid(m.wa_jid);
+            if (!tel) semTel++;
+            add(m.nome || "", tel);
+          }
         rotulo = "membros";
       }
       const atual = $("nx-lista").value.trim();
       $("nx-lista").value = (atual ? atual + "\n" : "") + linhas.join("\n");
-      log(`✓ ${linhas.length} ${rotulo} adicionados à lista.`);
+      let msg = `✓ ${linhas.length} ${rotulo} adicionados à lista.`;
+      if (semTel) msg += ` (${semTel} sem telefone — multi-device, não enviáveis)`;
+      const falhas = (page.falhas || []).length;
+      if (falhas) msg += ` ⚠ ${falhas} grupo(s) sem membros.`;
+      if (page.cancelado) msg += " (cancelado — parcial)";
+      log(msg);
     } catch (e) {
       log("✕ " + e.message);
     }

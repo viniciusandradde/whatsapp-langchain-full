@@ -29,6 +29,15 @@
         <button class="nx-btn nx-btn-outline" id="btn-csv-contatos">Exportar contatos (CSV)</button>
         <button class="nx-btn nx-btn-outline" id="btn-csv-grupos">Exportar grupos (CSV)</button>
       </div>
+      <button class="nx-btn nx-btn-outline" id="btn-csv-membros">Exportar membros de grupos (CSV)</button>
+      <label class="nx-check">
+        <input type="checkbox" id="chk-carregar-tudo" />
+        Carregar tudo antes (rola a lista — mais lento, pega grupos não-abertos)
+      </label>
+      <div class="nx-prog" id="prog" style="display:none">
+        <div class="nx-prog-bar"><i id="prog-bar"></i></div>
+        <button class="nx-btn nx-btn-danger nx-btn-sm" id="btn-cancelar">Cancelar</button>
+      </div>
       <button class="nx-btn nx-btn-ghost nx-btn-sm" id="btn-wpp-status">Testar sessão</button>
       <div class="nx-log" id="log">Abra o WhatsApp Web e aguarde carregar.</div>
       <div class="nx-warn">

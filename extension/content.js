@@ -20,13 +20,32 @@ let seq = 0;
 
 window.addEventListener("message", (ev) => {
   const d = ev.data;
-  if (!d || d.source !== "nexus-page" || d.reqId == null) return;
+  if (!d) return;
+  // Eventos de progresso da captura (inject.js) → repassa pra UI (popup/painel)
+  // via runtime. Fire-and-forget; não usa o mapa de pendentes.
+  if (d.source === "nexus-progress") {
+    try {
+      chrome.runtime.sendMessage({
+        type: "captura-progresso",
+        feito: d.feito,
+        total: d.total,
+        rotulo: d.rotulo,
+      });
+    } catch (_) {}
+    return;
+  }
+  if (d.source !== "nexus-page" || d.reqId == null) return;
   const cb = pendentes.get(d.reqId);
   if (cb) {
     pendentes.delete(d.reqId);
     cb(d);
   }
 });
+
+// Cancela a captura de grupos em andamento (seta a flag cooperativa no MAIN).
+function cancelarCaptura() {
+  window.postMessage({ source: "nexus-ext", cmd: "cancelar" }, "*");
+}
 
 function pedirPagina(payload, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
@@ -42,7 +61,7 @@ function pedirPagina(payload, timeoutMs = 30000) {
   });
 }
 
-async function pedirScrape(what) {
+async function pedirScrape(what, opts) {
   // Garante o wa-js (window.WPP) carregado + sessão logada ANTES de raspar —
   // sem isso o findStore cai no moduleRaid (frágil) e dá "store não encontrado".
   const wpp = await garantirWpp();
@@ -50,7 +69,27 @@ async function pedirScrape(what) {
   if (!wpp.authenticated) {
     return { error: "WhatsApp Web não está logado. Abra e escaneie o QR primeiro." };
   }
-  return pedirPagina({ cmd: "scrape", what });
+  // Grupos podem ter MUITOS membros (getParticipants por grupo) → timeout amplo.
+  // Erro de timeout vira mensagem clara (não "store não encontrado").
+  const timeout = what === "grupos" ? 600000 : 60000;
+  const o = opts || {};
+  try {
+    return await pedirPagina(
+      {
+        cmd: "scrape",
+        what,
+        carregarTudo: !!o.carregarTudo,
+        scrollIntervalo: o.scrollIntervalo,
+        scrollIncremento: o.scrollIncremento,
+      },
+      timeout
+    );
+  } catch (e) {
+    return {
+      error:
+        "A captura demorou demais e foi interrompida. Tente novamente (grupos grandes levam mais tempo).",
+    };
+  }
 }
 
 // --- Disparo in-browser (WPPConnect/wa-js) ---
@@ -137,23 +176,31 @@ async function enviarBackground(msg) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
-      if (msg.type === "capturar" && msg.what === "contatos") {
-        const page = await pedirScrape("contatos");
+      if (msg.type === "cancelar-captura") {
+        cancelarCaptura();
+        sendResponse({ ok: true });
+      } else if (msg.type === "capturar" && msg.what === "contatos") {
+        const page = await pedirScrape("contatos", msg.opts);
         if (page.error) throw new Error(page.error);
-        const r = await enviarBackground({
-          type: "ingest:contatos",
-          contatos: page.contatos || [],
+        const contatos = page.contatos || [];
+        const r = await enviarBackground({ type: "ingest:contatos", contatos });
+        sendResponse({
+          ...r,
+          raspados: contatos.length,
+          // contatos sem telefone (multi-device @lid) — reportados, não escondidos
+          semTelefone: contatos.filter((c) => !c.telefone).length,
         });
-        sendResponse({ ...r, raspados: (page.contatos || []).length });
       } else if (msg.type === "capturar" && msg.what === "grupos") {
-        const page = await pedirScrape("grupos");
+        const page = await pedirScrape("grupos", msg.opts);
         if (page.error) throw new Error(page.error);
         const grupos = page.grupos || [];
         const rg = await enviarBackground({ type: "ingest:grupos", grupos });
         // membros por grupo (best-effort)
         let membrosTotal = 0;
+        let membrosSemTel = 0;
         for (const g of grupos) {
           if (!g.membros || !g.membros.length) continue;
+          membrosSemTel += g.membros.filter((m) => !m.telefone).length;
           const rm = await enviarBackground({
             type: "ingest:membros",
             waGroupId: g.wa_group_id,
@@ -161,13 +208,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           });
           if (rm.ok) membrosTotal += rm.data?.novos || 0;
         }
-        sendResponse({ ...rg, raspados: grupos.length, membrosNovos: membrosTotal });
+        sendResponse({
+          ...rg,
+          raspados: grupos.length,
+          membrosNovos: membrosTotal,
+          membrosSemTel,
+          falhas: page.falhas || [],
+          cancelado: !!page.cancelado,
+        });
       } else if (msg.type === "exportar") {
         // Exportar CSV: devolve a lista crua pro popup (NÃO ingere no backend).
         const what = msg.what === "grupos" ? "grupos" : "contatos";
-        const page = await pedirScrape(what);
+        const page = await pedirScrape(what, msg.opts);
         if (page.error) throw new Error(page.error);
-        sendResponse({ ok: true, contatos: page.contatos, grupos: page.grupos });
+        sendResponse({
+          ok: true,
+          contatos: page.contatos,
+          grupos: page.grupos,
+          falhas: page.falhas || [],
+        });
       } else if (msg.type === "wpp-status") {
         // E0: carrega wa-js sob demanda e reporta se a sessão está pronta/logada.
         const r = await garantirWpp();
@@ -196,6 +255,7 @@ window.__nexusBridge = {
   validarNumero,
   enviarBackground,
   pedirScrape,
+  cancelarCaptura,
   // WaVoIP (ligações de voz)
   wavoipEnsure,
   wavoipConnect,
