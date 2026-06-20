@@ -200,3 +200,68 @@
   background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
 }
+
+/* Emoji picker (NexusEmoji) — escopo global pq o popover é anexado ao host */
+.nxe-trigger {
+  background: transparent !important;
+  border: 0 !important;
+  cursor: pointer;
+  font-size: 15px !important;
+  padding: 0 4px !important;
+  width: auto !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+  vertical-align: middle;
+}
+.nxe-pop {
+  position: absolute;
+  right: 0;
+  z-index: 2147483647;
+  width: 290px;
+  max-height: 260px;
+  margin-top: 4px;
+  background: #1c1c24;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  font-family: "Inter", system-ui, sans-serif;
+}
+.nxe-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.nxe-tab {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: #a3a3a3;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nxe-tab:hover { color: #f5f5f5; background: rgba(255, 255, 255, 0.05); }
+.nxe-tab.on { color: #f97316; background: rgba(249, 115, 22, 0.1); font-weight: 600; }
+.nxe-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.nxe-em {
+  background: transparent;
+  border: 0;
+  font-size: 19px;
+  padding: 3px;
+  cursor: pointer;
+  border-radius: 6px;
+  line-height: 1;
+}
+.nxe-em:hover { background: rgba(255, 255, 255, 0.08); }

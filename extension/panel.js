@@ -142,7 +142,9 @@ Maria,+5511988888888"></textarea>
           <button class="nx-btn nx-sec" id="nx-imp-grupos-dest">Grupos: enviar ao grupo</button>
         </div>
         <div class="nx-hint">"Enviar ao grupo" dispara 1 mensagem no grupo inteiro. "Membros" adiciona cada participante.</div>
-        <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})</label>
+        <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})
+          <button type="button" class="nxe-trigger" id="nx-emoji" title="Emojis">😊</button>
+        </label>
         <textarea id="nx-msg" rows="4" placeholder="Olá [nome]! {Tudo bem|Como vai}?"></textarea>
         <label>Tipo de mensagem</label>
         <select id="nx-tipo">
@@ -353,6 +355,7 @@ Refri|R$8"></textarea>
     };
     $("nx-validar").onclick = validarLista;
     $("nx-regra9").onclick = ajustarRegra9Lista;
+    if (window.NexusEmoji) window.NexusEmoji.attach($("nx-emoji"), $("nx-msg"));
     $("nx-imp-contatos").onclick = () => importar("contatos");
     $("nx-imp-grupos").onclick = () => importar("grupos");
     $("nx-imp-grupos-dest").onclick = () => importar("grupos-destino");
