@@ -152,7 +152,17 @@
   // pelo content.js). E0: ensure-wpp (sessão pronta?) + send texto. Tipos ricos
   // entram nas próximas slices. ---
   function jidParaChat(telefone) {
-    const digits = String(telefone || "").replace(/\D/g, "");
+    const raw = String(telefone || "").trim();
+    // Já é JID completo? respeita.
+    if (/@(g\.us|c\.us|s\.whatsapp\.net|lid)$/.test(raw)) {
+      return raw.replace("@s.whatsapp.net", "@c.us");
+    }
+    // Group ID formato antigo (com hífen): 1234567890-1234567890 → @g.us
+    if (/^\d{8,}-\d{4,}$/.test(raw)) return raw + "@g.us";
+    const digits = raw.replace(/\D/g, "");
+    // Group ID novo: numérico longo (≥16 díg, ex. 120363…) → @g.us.
+    // Telefones têm ~12-13 díg, então o limiar separa com folga.
+    if (digits.length >= 16) return digits + "@g.us";
     return digits + "@c.us";
   }
 

@@ -138,8 +138,10 @@ Maria,+5511988888888"></textarea>
           <button class="nx-btn nx-sec" id="nx-validar">Validar nº</button>
           <button class="nx-btn nx-sec" id="nx-regra9">Ajustar BR (9)</button>
           <button class="nx-btn nx-sec" id="nx-imp-contatos">Importar contatos</button>
-          <button class="nx-btn nx-sec" id="nx-imp-grupos">Importar grupos</button>
+          <button class="nx-btn nx-sec" id="nx-imp-grupos">Grupos: membros</button>
+          <button class="nx-btn nx-sec" id="nx-imp-grupos-dest">Grupos: enviar ao grupo</button>
         </div>
+        <div class="nx-hint">"Enviar ao grupo" dispara 1 mensagem no grupo inteiro. "Membros" adiciona cada participante.</div>
         <label>Mensagem ([nome], [telefone], [campo1] · spintax {oi|olá})</label>
         <textarea id="nx-msg" rows="4" placeholder="Olá [nome]! {Tudo bem|Como vai}?"></textarea>
         <label>Tipo de mensagem</label>
@@ -353,6 +355,7 @@ Refri|R$8"></textarea>
     $("nx-regra9").onclick = ajustarRegra9Lista;
     $("nx-imp-contatos").onclick = () => importar("contatos");
     $("nx-imp-grupos").onclick = () => importar("grupos");
+    $("nx-imp-grupos-dest").onclick = () => importar("grupos-destino");
     $("nx-tipo").onchange = () => {
       const t = $("nx-tipo").value;
       document.querySelectorAll("#nx-tipo-campos > div").forEach((d) => {
@@ -519,15 +522,26 @@ Refri|R$8"></textarea>
         vistos.add(tel);
         linhas.push((nome ? nome + "," : "") + tel);
       };
+      let rotulo;
       if (tipo === "contatos") {
         for (const c of page.contatos || []) add(c.push_name || c.name || "", telDoJid(c.wa_jid));
+        rotulo = "contatos";
+      } else if (tipo === "grupos-destino") {
+        // Cada grupo vira UM destinatário (o id @g.us). jidParaChat detecta
+        // o id longo e roteia pro grupo — 1 mensagem pro grupo inteiro.
+        for (const g of page.grupos || []) {
+          const gid = String(g.wa_group_id || "").replace(/@g\.us$/, "");
+          add(g.nome || "Grupo", gid);
+        }
+        rotulo = "grupos (destino)";
       } else {
         for (const g of page.grupos || [])
           for (const m of g.membros || []) add("", telDoJid(m.wa_jid));
+        rotulo = "membros";
       }
       const atual = $("nx-lista").value.trim();
       $("nx-lista").value = (atual ? atual + "\n" : "") + linhas.join("\n");
-      log(`✅ ${linhas.length} ${tipo === "contatos" ? "contatos" : "membros"} com telefone adicionados.`);
+      log(`✅ ${linhas.length} ${rotulo} adicionados à lista.`);
     } catch (e) {
       log("❌ " + e.message);
     }
