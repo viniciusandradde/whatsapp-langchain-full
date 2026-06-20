@@ -203,9 +203,10 @@ Refri|R$8"></textarea>
             <label>Legenda</label><input id="nx-cg-cap" placeholder="Entra no grupo!">
           </div>
         </div>
-        <label>📎 Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda)</label>
+        <label>📎 Anexos (imagem/vídeo/áudio/doc — a mensagem vira legenda do 1º)</label>
         <input id="nx-files" type="file" multiple
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
+        <div class="nx-anexos" id="nx-files-grid"></div>
         <div class="nx-hint" id="nx-files-info">Nenhum anexo. (mídia em massa = maior risco de ban)</div>
         <div class="nx-row">
           <div><label>Intervalo mín (s)</label><input id="nx-min" type="number" value="5" min="1"></div>
@@ -331,7 +332,6 @@ Refri|R$8"></textarea>
     };
     $("nx-files").onchange = async (e) => {
       const files = Array.from(e.target.files || []);
-      anexos = [];
       for (const f of files) {
         if (f.size > 16 * 1024 * 1024) {
           log("❌ " + f.name + " ignorado (> 16MB).");
@@ -344,14 +344,13 @@ Refri|R$8"></textarea>
             rd.onerror = rej;
             rd.readAsDataURL(f);
           });
-          anexos.push({ dataUrl, filename: f.name });
+          anexos.push({ dataUrl, filename: f.name, tipo: f.type || "" });
         } catch (_) {
           log("❌ falha ao ler " + f.name);
         }
       }
-      $("nx-files-info").textContent = anexos.length
-        ? `${anexos.length} anexo(s) pronto(s). 1º leva a legenda.`
-        : "Nenhum anexo.";
+      e.target.value = ""; // permite re-selecionar o mesmo arquivo
+      renderAnexos();
     };
     $("nx-validar").onclick = validarLista;
     $("nx-regra9").onclick = ajustarRegra9Lista;
@@ -547,6 +546,55 @@ Refri|R$8"></textarea>
       log(`✅ ${linhas.length} ${rotulo} adicionados à lista.`);
     } catch (e) {
       log("❌ " + e.message);
+    }
+  }
+
+  // Grid de thumbnails dos anexos (preview p/ imagem, ícone p/ resto) + remover.
+  function renderAnexos() {
+    const grid = $("nx-files-grid");
+    const info = $("nx-files-info");
+    if (!grid) return;
+    grid.innerHTML = "";
+    anexos.forEach((a, idx) => {
+      const cell = document.createElement("div");
+      cell.className = "nx-anexo";
+      const isImg = (a.tipo || "").startsWith("image/");
+      if (isImg) {
+        const img = document.createElement("img");
+        img.src = a.dataUrl;
+        cell.appendChild(img);
+      } else {
+        const ic = document.createElement("div");
+        ic.className = "nx-anexo-ic";
+        ic.textContent = (a.tipo || "").startsWith("video/")
+          ? "🎬"
+          : (a.tipo || "").startsWith("audio/")
+            ? "🎵"
+            : "📄";
+        cell.appendChild(ic);
+      }
+      if (idx === 0) {
+        const tag = document.createElement("span");
+        tag.className = "nx-anexo-tag";
+        tag.textContent = "legenda";
+        cell.appendChild(tag);
+      }
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "nx-anexo-x";
+      rm.textContent = "✕";
+      rm.title = a.filename;
+      rm.onclick = () => {
+        anexos.splice(idx, 1);
+        renderAnexos();
+      };
+      cell.appendChild(rm);
+      grid.appendChild(cell);
+    });
+    if (info) {
+      info.textContent = anexos.length
+        ? `${anexos.length} anexo(s). O 1º leva a legenda (mensagem).`
+        : "Nenhum anexo. (mídia em massa = maior risco de ban)";
     }
   }
 

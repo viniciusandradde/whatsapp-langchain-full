@@ -201,6 +201,68 @@
   border-radius: 9999px;
 }
 
+/* Grid de anexos (thumbnails) */
+#nexus-panel .nx-anexos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+#nexus-panel .nx-anexo {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #24242c;
+}
+#nexus-panel .nx-anexo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+#nexus-panel .nx-anexo-ic {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+#nexus-panel .nx-anexo-tag {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(90deg, #f97316, #ea580c);
+  padding: 1px 0;
+}
+#nexus-panel .nx-anexo-x {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  cursor: pointer;
+}
+#nexus-panel .nx-anexo-x:hover { background: #ef4444; box-shadow: none; transform: none; }
+
 /* Emoji picker (NexusEmoji) — escopo global pq o popover é anexado ao host */
 .nxe-trigger {
   background: transparent !important;
