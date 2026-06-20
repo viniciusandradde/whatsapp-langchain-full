@@ -9,9 +9,9 @@
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: #14141a;
+  background: #ffffff;
   color: #fff;
-  border: 1px solid rgba(249, 115, 22, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   cursor: pointer;
   box-shadow: 0 6px 20px -4px rgba(249, 115, 22, 0.5);
   display: flex;
@@ -29,7 +29,6 @@
   object-fit: contain;
   display: block;
   margin: 0 auto;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
 }
 
 #nexus-panel {
