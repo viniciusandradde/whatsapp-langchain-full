@@ -109,16 +109,27 @@ async def status_lote(
 
 @router.get("/captura/contatos")
 async def listar_contatos(
-    limit: int = 200,
+    limit: int = 1000,
     offset: int = 0,
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
-    """Lista contatos capturados (browser do painel)."""
+    """Lista contatos capturados (browser do painel) + totais.
+
+    `total` permite a UI mostrar 'X de N' — antes a lista capava em 200 e dava a
+    impressão de que só 200 foram capturados. Teto por página subiu pra 5000.
+    """
     pool = await get_pool()
     items = await cap.listar_contatos(
-        pool, empresa_id, limit=min(limit, 1000), offset=offset
+        pool, empresa_id, limit=min(limit, 5000), offset=offset
     )
-    return {"items": items}
+    totais = await cap.contar_contatos(pool, empresa_id)
+    return {
+        "items": items,
+        "total": totais["total"],
+        "promoviveis": totais["promoviveis"],
+        "limit": min(limit, 5000),
+        "offset": offset,
+    }
 
 
 @router.get("/captura/grupos")
@@ -135,6 +146,17 @@ async def promover(
     """Promove contatos do staging para o CRM `cliente` (só os com telefone)."""
     pool = await get_pool()
     promovidos = await cap.promover_contatos(pool, empresa_id, body.contato_ids)
+    return {"promovidos": promovidos}
+
+
+@router.post("/captura/promover-todos")
+async def promover_todos(empresa_id: int = Depends(get_empresa_context)) -> dict:
+    """Promove TODOS os contatos elegíveis (com telefone, não promovidos) ao CRM.
+
+    Server-side — não depende da lista carregada na UI (que era capada). Resolve
+    o caso 'só 200 viraram cliente'."""
+    pool = await get_pool()
+    promovidos = await cap.promover_todos_contatos(pool, empresa_id)
     return {"promovidos": promovidos}
 
 

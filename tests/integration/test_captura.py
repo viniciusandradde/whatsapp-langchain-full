@@ -136,6 +136,10 @@ class TestCapturaSmoke:
         r = self._client().post("/api/captura/promover", json={"contato_ids": [1]})
         assert r.status_code == 401, r.text
 
+    def test_promover_todos_sem_auth_401(self) -> None:
+        r = self._client().post("/api/captura/promover-todos")
+        assert r.status_code == 401, r.text
+
     def test_despromover_sem_auth_401(self) -> None:
         r = self._client().post("/api/captura/despromover", json={"contato_ids": [1]})
         assert r.status_code == 401, r.text
@@ -219,3 +223,57 @@ class TestCapturaUpsertPromocao:
         assert alvo["promovido_at"] is None  # desvinculado
         # como foi desvinculado, dá pra promover de novo
         assert await cap.promover_contatos(pool, empresa, ids) == 1
+
+
+@pytest.mark.docker_demo
+class TestContarPromoverTodos:
+    """Fix '200 contatos': contar_contatos (total/promoviveis) + promover_todos
+    server-side (não depende da lista capada na UI)."""
+
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"capt-todos-{_RUN}", f"capt-todos-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_contar_e_promover_todos(self, empresa) -> None:
+        from whatsapp_langchain.shared import captura as cap
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        # 5 contatos com telefone + 1 @lid (sem telefone → não promovível)
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            for i in range(5):
+                conn.execute(
+                    "INSERT INTO contato_capturado (empresa_id, wa_jid, telefone) "
+                    "VALUES (%s, %s, %s)",
+                    (
+                        empresa,
+                        f"55119{_RUN[:6]}{i}@s.whatsapp.net",
+                        f"55119{_RUN[:6]}{i}",
+                    ),
+                )
+            conn.execute(
+                "INSERT INTO contato_capturado (empresa_id, wa_jid) VALUES (%s, %s)",
+                (empresa, f"lid{_RUN}@lid"),
+            )
+
+        totais = await cap.contar_contatos(pool, empresa)
+        assert totais["total"] == 6
+        assert totais["promoviveis"] == 5  # o @lid (sem telefone) não conta
+
+        # promove TODOS os elegíveis de uma vez (server-side)
+        n = await cap.promover_todos_contatos(pool, empresa)
+        assert n == 5
+        # idempotente: já promovidos não duplicam
+        assert await cap.promover_todos_contatos(pool, empresa) == 0
+        depois = await cap.contar_contatos(pool, empresa)
+        assert depois["promoviveis"] == 0  # nada mais a promover (só o @lid)

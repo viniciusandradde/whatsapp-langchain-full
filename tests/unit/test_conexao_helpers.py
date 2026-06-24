@@ -58,6 +58,8 @@ def _row(
         None,  # ultimo_health_check_at
         None,  # ultimo_health_check_ok
         None,  # webhook_verify_token
+        None,  # daily_send_cap
+        None,  # warmup_started_at
     )
 
 

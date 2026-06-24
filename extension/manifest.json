@@ -1,30 +1,42 @@
 {
   "manifest_version": 3,
   "name": "Nexus Disparador — Captura WhatsApp",
-  "version": "0.1.0",
-  "description": "Captura contatos e grupos do WhatsApp Web e envia para o ChatNexus (Disparador).",
+  "version": "0.2.0",
+  "description": "Captura contatos/grupos do WhatsApp Web, exporta CSV e dispara campanhas (sessão ou canal oficial) pelo ChatNexus.",
   "permissions": ["storage", "scripting"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
     "https://*/*"
   ],
   "background": { "service_worker": "background.js" },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Nexus Disparador"
+    "default_title": "Nexus Disparador",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
   },
   "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["https://web.whatsapp.com/*"],
-      "js": ["content.js", "panel.js"],
+      "js": ["vendor/icons.js", "vendor/emoji-picker.js", "content.js", "panel.js"],
       "css": ["panel.css"],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["inject.js", "vendor/wa-js.js", "vendor/wavoip-sdk.js"],
+      "resources": ["inject.js", "vendor/wa-js.js", "vendor/wavoip-sdk.js", "icons/vsa-logo.png"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ]

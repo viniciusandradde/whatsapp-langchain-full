@@ -54,7 +54,11 @@ async function apiGet(path) {
   const resp = await fetch(`${backendUrl}${path}`, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  if (resp.status === 401) throw new Error("API key inválida.");
+  if (resp.status === 403)
+    throw new Error("API key sem escopo necessário (dispatch/templates).");
+  if (resp.status === 429) throw new Error("Muitas requisições. Aguarde um momento.");
+  if (!resp.ok) throw new Error("Não foi possível concluir a ação.");
   return resp.json();
 }
 
@@ -113,6 +117,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           { items: msg.items || [] }
         );
         sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:conexoes") {
+        const r = await apiGet("/api/disparador/ext/conexoes");
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:templates") {
+        const r = await apiGet(
+          `/api/disparador/ext/templates?conexao_id=${encodeURIComponent(msg.conexaoId)}`
+        );
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:campanha-template") {
+        const r = await apiPost("/api/disparador/ext/campanha-template", msg.body || {});
+        sendResponse({ ok: true, data: r });
+      } else if (msg.type === "ext:telemetria") {
+        await telemetria(msg.evento, msg.meta);
+        sendResponse({ ok: true });
       } else {
         sendResponse({ ok: false, error: "tipo desconhecido" });
       }
@@ -121,4 +139,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
   return true; // resposta assíncrona
+});
+
+// Telemetria própria (substitui o GA4 do ZDG): manda eventos pro NOSSO backend.
+// Best-effort — sem config (API key/URL) ou erro de rede, não faz nada.
+async function telemetria(evento, meta) {
+  try {
+    const { apiKey, backendUrl } = await getConfig();
+    if (!apiKey || !backendUrl) return;
+    await fetch(`${backendUrl}/api/disparador/ext/telemetria`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ evento, meta: meta || {} }),
+    });
+  } catch (_) {
+    // telemetria nunca quebra a extensão
+  }
+}
+
+chrome.runtime.onInstalled.addListener((details) => {
+  telemetria("instalada", {
+    reason: details.reason,
+    version: chrome.runtime.getManifest().version,
+  });
 });

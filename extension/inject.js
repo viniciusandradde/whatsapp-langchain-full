@@ -37,7 +37,22 @@
   }
 
   function findStore() {
-    if (self.WPP && self.WPP.whatsapp) return { kind: "wpp", S: self.WPP.whatsapp };
+    // wa-js (WPP): os stores têm sufixo *Store (ContactStore, ChatStore…).
+    // Normalizamos pros nomes que scrapeContatos/scrapeGrupos esperam.
+    if (self.WPP && self.WPP.whatsapp) {
+      const W = self.WPP.whatsapp;
+      const Contact = W.ContactStore || W.Contact;
+      if (Contact) {
+        return {
+          kind: "store",
+          S: {
+            Contact: Contact,
+            Chat: W.ChatStore || W.Chat,
+            GroupMetadata: W.GroupMetadataStore || W.GroupMetadata,
+          },
+        };
+      }
+    }
     if (self.Store && self.Store.Contact) return { kind: "store", S: self.Store };
     const mods = moduleRaid();
     if (!mods) return null;
@@ -76,6 +91,16 @@
     return [];
   }
 
+  // Telefone derivável: SÓ de @s.whatsapp.net (ou @c.us já normalizado).
+  // @lid (multi-device) NÃO tem telefone — devolve "" (não inventa lixo).
+  function telDeJid(jid) {
+    const s = String(jid || "");
+    if (s.endsWith("@s.whatsapp.net")) {
+      return s.split("@")[0].replace(/\D/g, "");
+    }
+    return "";
+  }
+
   function scrapeContatos(S) {
     const out = [];
     for (const c of arr(S.Contact)) {
@@ -84,8 +109,11 @@
       if (!jid || jid.endsWith("@g.us")) continue;
       if (a.isMe) continue;
       const verified = a.verifiedName || null;
+      const isLid = jid.endsWith("@lid");
       out.push({
         wa_jid: jid,
+        telefone: telDeJid(jid) || null, // null p/ @lid — sem telefone derivável
+        tipo: isLid ? "lid" : "whatsapp",
         push_name: a.pushname || a.notify || null,
         name: a.name || a.formattedName || null,
         is_business: !!(a.isBusiness || verified),
@@ -106,7 +134,12 @@
           S.GroupMetadata.get &&
           S.GroupMetadata.get(jid)) ||
         null;
-      const parts = meta ? arr({ models: meta.participants }) : [];
+      // participants pode ser array OU coleção (getModelsArray) no wa-js.
+      const parts = meta
+        ? Array.isArray(meta.participants)
+          ? meta.participants
+          : arr(meta.participants)
+        : [];
       const membros = parts
         .map((p) => {
           const pa = p.attributes || p;
@@ -125,6 +158,149 @@
     return out;
   }
 
+  // Grupos via API do wa-js (assíncrona, confiável) — carrega TODOS os grupos
+  // + participantes. O store cru (scrapeGrupos) é frágil: metadata é lazy e
+  // grupos não-abertos podem nem aparecer. Retorna null se a API não existir.
+  // Force-load (best-effort): rola a lista de conversas pra forçar o WhatsApp a
+  // sincronizar mais chats/grupos no store. Frágil (depende do DOM do WA); ajuda
+  // principalmente logo após abrir a sessão. Para quando a lista para de crescer.
+  async function forcarCarregar(intervaloMs, incrementoPx, cancelado) {
+    const intervalo = Math.max(200, Number(intervaloMs) || 600);
+    const incremento = Math.max(100, Number(incrementoPx) || 450);
+    const pane =
+      document.querySelector("#pane-side") ||
+      document.querySelector('[aria-label*="Lista de conversas"]') ||
+      document.querySelector('[aria-label*="Chat list"]');
+    if (!pane) return;
+    let estavel = 0;
+    let ultAltura = -1;
+    for (let i = 0; i < 200 && estavel < 4; i++) {
+      if (cancelado && cancelado()) break;
+      pane.scrollTop = pane.scrollTop + incremento;
+      await new Promise((r) => setTimeout(r, intervalo));
+      const h = pane.scrollHeight;
+      if (h === ultAltura) estavel++;
+      else estavel = 0;
+      ultAltura = h;
+    }
+    pane.scrollTop = 0;
+  }
+
+  // opts: { onProgress(feito, total, rotulo), cancelado() => bool }
+  // Retorna { grupos:[...], falhas:[{wa_group_id, nome, motivo}] } ou null se a
+  // API não existir. NÃO mente: count = membros realmente capturados; falha de
+  // participantes é registrada em `falhas`, não engolida.
+  async function scrapeGruposWpp(opts) {
+    const WPP = window.WPP;
+    if (!WPP || !WPP.group || typeof WPP.group.getAllGroups !== "function") {
+      return null;
+    }
+    const onProgress = (opts && opts.onProgress) || function () {};
+    const cancelado = (opts && opts.cancelado) || function () {
+      return false;
+    };
+    const groups = (await WPP.group.getAllGroups()) || [];
+    const out = [];
+    const falhas = [];
+    const total = groups.length;
+    let feito = 0;
+    const MAX_CONVITES = 60; // cap de invite_link (chamada lenta/limitada)
+    let convitesPegos = 0;
+    for (const g of groups) {
+      if (cancelado()) break;
+      const idRaw = (g && g.id && (g.id._serialized || g.id)) || g.id || g;
+      const jid = String(idRaw || "");
+      if (!jid.endsWith("@g.us")) {
+        feito++;
+        continue;
+      }
+      const a = (g && g.attributes) || g || {};
+      const gm = (g && g.groupMetadata) || (a && a.groupMetadata) || null;
+      const nome = a.name || a.subject || (gm && gm.subject) || null;
+      onProgress(feito, total, nome || jid);
+
+      // participantes: API async; fallback pra metadata do modelo. Registra
+      // a falha em vez de silenciar (try/catch vazio escondia 0 membros).
+      let parts = [];
+      let erroPart = null;
+      try {
+        if (typeof WPP.group.getParticipants === "function") {
+          parts = (await WPP.group.getParticipants(jid)) || [];
+        }
+      } catch (e) {
+        erroPart = (e && e.message) || "falha ao buscar participantes";
+      }
+      if ((!parts || !parts.length) && gm && gm.participants) {
+        parts = Array.isArray(gm.participants)
+          ? gm.participants
+          : arr(gm.participants);
+      }
+      const membros = parts
+        .map((p) => {
+          const pa = (p && p.attributes) || p || {};
+          const pidRaw =
+            (p && p.id && (p.id._serialized || p.id)) ||
+            (pa.id && (pa.id._serialized || pa.id)) ||
+            "";
+          const pj = normJid(String(pidRaw || ""));
+          if (!pj) return null;
+          return {
+            wa_jid: pj,
+            telefone: telDeJid(pj) || null, // null p/ @lid (multi-device)
+            tipo: pj.endsWith("@lid") ? "lid" : "whatsapp",
+            is_admin: !!(pa.isAdmin || pa.isSuperAdmin || p.isAdmin),
+          };
+        })
+        .filter(Boolean);
+
+      const countMeta = (gm && gm.size) || 0;
+      // Registra falha quando NÃO trouxe membros mas o grupo tem gente, OU
+      // quando a API de participantes deu erro.
+      if (erroPart || (membros.length === 0 && countMeta > 0)) {
+        falhas.push({
+          wa_group_id: jid,
+          nome,
+          motivo: erroPart || `0 de ~${countMeta} membros (metadata não carregada)`,
+        });
+      }
+
+      const somosAdmin = !!(gm && (gm.amIAdmin || gm.iAmAdmin));
+      // invite_link best-effort: só onde somos admin (quem pode pegar o código)
+      // e com cap, pra não disparar N chamadas lentas/arriscadas. Não bloqueia.
+      let inviteLink = null;
+      if (somosAdmin && convitesPegos < MAX_CONVITES) {
+        try {
+          if (typeof WPP.group.getInviteCode === "function") {
+            const code = await WPP.group.getInviteCode(jid);
+            if (code) inviteLink = "https://chat.whatsapp.com/" + code;
+            convitesPegos++;
+          }
+        } catch (_) {}
+      }
+      out.push({
+        wa_group_id: jid,
+        nome,
+        descricao: (gm && gm.desc) || a.desc || null,
+        invite_link: inviteLink,
+        participantes_count: membros.length, // count REAL (não mente)
+        count_meta: countMeta, // o que a metadata diz (pra comparar)
+        somos_admin: somosAdmin,
+        membros,
+      });
+      feito++;
+      onProgress(feito, total, nome || jid);
+    }
+    return { grupos: out, falhas };
+  }
+
+  // Cancelar captura em andamento (fire-and-forget): seta a flag cooperativa.
+  window.addEventListener("message", (ev) => {
+    const d = ev.data;
+    if (d && d.source === "nexus-ext" && d.cmd === "cancelar") {
+      window.__nexusCancelarCaptura = true;
+    }
+  });
+
   window.addEventListener("message", (ev) => {
     const d = ev.data;
     if (!d || d.source !== "nexus-ext" || d.cmd !== "scrape") return;
@@ -133,26 +309,85 @@
         { source: "nexus-page", reqId: d.reqId, version: SCRAPE_VERSION, ...payload },
         "*"
       );
-    try {
-      const found = findStore();
-      if (!found) {
-        reply({ error: "store do WhatsApp não encontrado (abra uma conversa e aguarde carregar)" });
-        return;
+    (async () => {
+      try {
+        const found = findStore();
+        if (!found) {
+          reply({
+            error:
+              "store do WhatsApp não encontrado (abra uma conversa e aguarde carregar)",
+          });
+          return;
+        }
+        const S = found.S;
+        if (d.what === "contatos") {
+          reply({ contatos: scrapeContatos(S) });
+        } else if (d.what === "grupos") {
+          // Force-load opcional (rola a lista pra sincronizar mais grupos).
+          window.__nexusCancelarCaptura = false;
+          if (d.carregarTudo) {
+            try {
+              await forcarCarregar(d.scrollIntervalo, d.scrollIncremento, () =>
+                window.__nexusCancelarCaptura === true
+              );
+            } catch (_) {}
+          }
+          // Progresso: emite eventos intermediários (content.js repassa pra UI).
+          const progresso = (feito, total, rotulo) =>
+            window.postMessage(
+              { source: "nexus-progress", reqId: d.reqId, feito, total, rotulo },
+              "*"
+            );
+          // Cancelamento cooperativo: a UI manda cmd "cancelar" → flag booleana.
+          window.__nexusCancelarCaptura = false;
+          const cancelado = () => window.__nexusCancelarCaptura === true;
+
+          let res = null;
+          try {
+            res = await scrapeGruposWpp({ onProgress: progresso, cancelado });
+          } catch (_) {}
+          // Fallback pro store cru (sem progresso/falhas).
+          if (!res) res = { grupos: scrapeGrupos(S), falhas: [] };
+          const grupos = res.grupos || [];
+          const falhas = res.falhas || [];
+          try {
+            const totMembros = grupos.reduce(
+              (n, g) => n + (g.membros ? g.membros.length : 0),
+              0
+            );
+            console.info("[nexus] grupos", {
+              grupos: grupos.length,
+              membros: totMembros,
+              falhas: falhas.length,
+              cancelado: cancelado(),
+            });
+          } catch (_) {}
+          if (cancelado()) window.__nexusCancelarCaptura = null;
+          reply({ grupos, falhas, cancelado: cancelado() });
+        } else {
+          reply({ error: "tipo inválido" });
+        }
+      } catch (e) {
+        reply({ error: "falha no scrape: " + (e && e.message) });
       }
-      const S = found.S;
-      if (d.what === "contatos") reply({ contatos: scrapeContatos(S) });
-      else if (d.what === "grupos") reply({ grupos: scrapeGrupos(S) });
-      else reply({ error: "tipo inválido" });
-    } catch (e) {
-      reply({ error: "falha no scrape: " + (e && e.message) });
-    }
+    })();
   });
 
   // --- Disparo in-browser via WPPConnect (window.WPP, carregado sob demanda
   // pelo content.js). E0: ensure-wpp (sessão pronta?) + send texto. Tipos ricos
   // entram nas próximas slices. ---
   function jidParaChat(telefone) {
-    const digits = String(telefone || "").replace(/\D/g, "");
+    const raw = String(telefone || "").trim();
+    // Já é JID completo? respeita.
+    if (/@(g\.us|c\.us|s\.whatsapp\.net|lid)$/.test(raw)) {
+      return raw.replace("@s.whatsapp.net", "@c.us");
+    }
+    // Group ID formato antigo (com hífen): 1234567890-1234567890 → @g.us
+    if (/^\d{8,}-\d{4,}$/.test(raw)) return raw + "@g.us";
+    const digits = raw.replace(/\D/g, "");
+    // Group ID novo: numérico longo (≥16 díg, ex. 120363…) → @g.us.
+    // Telefones têm ~12-13 díg, então o limiar separa com folga.
+    if (digits.length >= 16) return digits + "@g.us";
     return digits + "@c.us";
   }
 
@@ -164,9 +399,27 @@
       window.postMessage({ source: "nexus-page", reqId: d.reqId, ...payload }, "*");
     (async () => {
       try {
-        const WPP = window.WPP;
+        // Espera o window.WPP aparecer: o vendor/wa-js.js (~502KB) é injetado
+        // via <script> e leva um tempinho pra executar. Sem o poll, o handler
+        // falhava na hora com "WPP não carregado" (race) em vez de aguardar.
+        async function aguardarWPP(timeoutMs) {
+          const fim = Date.now() + timeoutMs;
+          while (!window.WPP && Date.now() < fim) {
+            await new Promise((r) => setTimeout(r, 150));
+          }
+          return window.WPP || null;
+        }
+        let WPP = window.WPP;
         if (!WPP) {
-          reply({ error: "WPP (wa-js) não carregado na página" });
+          // ensure-wpp pode esperar mais (acabou de injetar o script); os
+          // demais comandos só rodam após ensure-wpp, então 5s basta.
+          WPP = await aguardarWPP(d.cmd === "ensure-wpp" ? 20000 : 5000);
+        }
+        if (!WPP) {
+          reply({
+            error:
+              "wa-js não carregou — recarregue o WhatsApp Web e tente de novo.",
+          });
           return;
         }
         if (d.cmd === "validar") {
@@ -191,6 +444,9 @@
           let auth = false;
           try {
             auth = !!(WPP.conn && (await WPP.conn.isAuthenticated()));
+          } catch (_) {}
+          try {
+            console.info("[nexus] WPP pronto", { ready: true, authenticated: auth });
           } catch (_) {}
           reply({ ok: true, ready: true, authenticated: auth });
           return;

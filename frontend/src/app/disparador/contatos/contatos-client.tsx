@@ -23,18 +23,26 @@ import {
   getCapturaLoteAction,
   listContatosAction,
   promoverContatosAction,
+  promoverTodosContatosAction,
 } from "../actions";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const PAGINA = 1000;
 
 export function ContatosClient({
   initial,
+  total: totalInicial,
+  promoviveis: promoviveisInicial,
   evolution,
 }: {
   initial: ContatoCapturado[];
+  total: number;
+  promoviveis: number;
   evolution: Conexao[];
 }) {
   const [contatos, setContatos] = useState<ContatoCapturado[]>(initial);
+  const [total, setTotal] = useState(totalInicial);
+  const [promoviveis, setPromoviveis] = useState(promoviveisInicial);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -62,9 +70,13 @@ export function ContatosClient({
   }
 
   async function carregar() {
-    const r = await listContatosAction();
-    if (r.ok) setContatos(r.data);
-    else setErro(r.error);
+    // recarrega o que já está visível (mantém a página atual)
+    const r = await listContatosAction({ limit: Math.max(PAGINA, contatos.length) });
+    if (r.ok) {
+      setContatos(r.data.items);
+      setTotal(r.data.total);
+      setPromoviveis(r.data.promoviveis);
+    } else setErro(r.error);
   }
 
   function toggle(id: number) {
@@ -104,6 +116,30 @@ export function ContatosClient({
       setSel(new Set());
       await carregar();
     });
+  }
+
+  // Promove TODOS os capturados com telefone (server-side) — não depende da
+  // lista visível, que antes capava em 200.
+  function promoverTodos() {
+    setErro(null);
+    setMsg(null);
+    start(async () => {
+      const r = await promoverTodosContatosAction();
+      if (!r.ok) return setErro(r.error);
+      setMsg(`${r.data} contato(s) promovido(s) para o CRM (todos os elegíveis).`);
+      setSel(new Set());
+      await carregar();
+    });
+  }
+
+  async function carregarMais() {
+    setErro(null);
+    const r = await listContatosAction({ limit: contatos.length + PAGINA });
+    if (r.ok) {
+      setContatos(r.data.items);
+      setTotal(r.data.total);
+      setPromoviveis(r.data.promoviveis);
+    } else setErro(r.error);
   }
 
   function removerDoCrm() {
@@ -229,9 +265,20 @@ export function ContatosClient({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">
-            {contatos.length} contato(s) · {sel.size} selecionado(s)
+            {contatos.length} de {total} contato(s) · {sel.size} selecionado(s)
+            {promoviveis > 0 && ` · ${promoviveis} sem CRM`}
           </CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {contatos.length < total && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={carregarMais}
+              >
+                Carregar mais ({total - contatos.length})
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"
@@ -243,6 +290,17 @@ export function ContatosClient({
             <Button size="sm" disabled={pending || sel.size === 0} onClick={promover}>
               <UserPlus className="mr-1 h-4 w-4" /> Promover p/ CRM
             </Button>
+            {promoviveis > 0 && (
+              <Button
+                size="sm"
+                variant="default"
+                disabled={pending}
+                onClick={promoverTodos}
+                title="Promove todos os contatos com telefone, mesmo os não exibidos"
+              >
+                <UserPlus className="mr-1 h-4 w-4" /> Promover todos ({promoviveis})
+              </Button>
+            )}
             {selPromovidos > 0 && (
               <Button
                 size="sm"

@@ -26,11 +26,35 @@ Para volume sustentável, use o **canal oficial (WABA)** pelo painel.
 ## Uso
 
 1. Abra `https://web.whatsapp.com` e aguarde carregar (abra uma conversa).
-2. Clique no ícone da extensão → aba **Captura (WPP)**:
-   - **Capturar contatos** → envia contatos pro staging.
-   - **Capturar grupos + membros** → envia grupos e seus membros.
+2. Clique no ícone da extensão → aba **Captura**:
+   - **Importar contatos / grupos** → envia pro staging do Nexus.
+   - **Exportar contatos / grupos (CSV)** → baixa um CSV local (sem backend).
 3. No painel: **Disparador → Contatos/Grupos** para ver o que chegou e
    **promover** ao CRM; depois **Campanhas → Nova** para disparar.
+
+### Disparo pela sessão (painel injetado no WhatsApp Web)
+Clique no botão flutuante (canto inferior direito) → aba **Mensagens**: monte a
+lista, a mensagem (com `[nome]`, spintax `{oi|olá}` e **emoji picker**),
+escolha o tipo, anexe arquivos (**grid com preview**), ajuste intervalos e —
+opcional — **Agendar início** (mantenha a aba aberta). Recursos extra:
+- **Ajustar BR (9)**: corrige números brasileiros pela regra do 9 (offline).
+- **Grupos: enviar ao grupo**: dispara 1 mensagem pro grupo inteiro (`@g.us`);
+  **Grupos: membros** adiciona cada participante.
+- Aba **Ligações**: chamadas WaVoIP. ⚠️ disparo por sessão pessoal pode banir o número.
+
+Os **limites do seu plano** (contatos por disparo / mídia) são exibidos nas
+Opções (Testar conexão) e aplicados pelo backend. A extensão envia **telemetria
+própria** (instalação/uso) só pro seu Nexus — sem rastreadores de terceiros.
+
+### Canal oficial (WABA) — popup, aba **Canal oficial**
+Envio por template aprovado, **roteado pelo backend Nexus** (sem token Meta no
+navegador): escolha a conexão WABA, o template, preencha as variáveis, cole os
+números (e opcionalmente agende) → o Nexus dispara e você acompanha em
+**Campanhas**. Requer API key com escopos `dispatch` e `templates`.
+
+## Identidade visual
+A UI segue o design system **Obsidian** do Nexus (laranja `#F97316` + azul
+`#3B82F6`, dark-first) — `nexus-ui.css` (popup/opções) e `panel.css` (painel).
 
 ## Arquitetura
 
@@ -61,7 +85,7 @@ Nenhum outro arquivo precisa mudar.
 - Membros multi-device podem vir como `@lid` (sem telefone) — enviados como
   `wa_jid`; o backend usa `wa_jid` como identidade primária.
 
-## 📞 Ligações de voz (WaVoIP)
+## Ligações de voz (WaVoIP)
 
 A aba **Ligações** do painel faz **ligações de voz automáticas** que tocam um
 **áudio pré-gravado** ao serem atendidas. Usa o SDK oficial **WaVoIP**
@@ -70,7 +94,7 @@ MAIN world sob demanda pelo `content.js`.
 
 - **Pré-requisito**: você precisa de **tokens WaVoIP** — serviço **pago**
   (wavoip.com). Cada token vincula 1 número WhatsApp. Cole os tokens na aba,
-  "Conectar tokens" e confira que o device fica **online (🟢 open)**.
+  "Conectar tokens" e confira que o device fica **online ( open)**.
 - **Mecânica**: `inject.js` registra os tokens (`wavoip.device.add`), intercepta
   o `getUserMedia` pra injetar o áudio no lugar do microfone, inicia a ligação
   (`wavoip.call.start`) e acompanha o estado por `getCallActive()` — ao atender,

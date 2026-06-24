@@ -445,6 +445,51 @@ async def promover_contatos(
     return promovidos
 
 
+async def contar_contatos(pool: AsyncConnectionPool, empresa_id: int) -> dict:
+    """Totais de contatos capturados da empresa (pra UI mostrar 'X de N').
+
+    Returns: {total, promoviveis} — promoviveis = com telefone e ainda não
+    promovidos ao CRM (alvo do 'Promover todos').
+    """
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (
+                         WHERE telefone IS NOT NULL AND cliente_id IS NULL
+                       ) AS promoviveis
+                  FROM contato_capturado WHERE empresa_id = %s
+                """,
+                (empresa_id,),
+            )
+            row = await cur.fetchone() or (0, 0)
+    return {"total": int(row[0]), "promoviveis": int(row[1])}
+
+
+async def promover_todos_contatos(pool: AsyncConnectionPool, empresa_id: int) -> int:
+    """Promove TODOS os contatos elegíveis (com telefone, ainda não promovidos)
+    ao CRM — server-side, sem depender da lista carregada na UI (que era capada
+    em 200). Reusa `promover_contatos` em lotes pra não segurar transação longa.
+    """
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT id FROM contato_capturado
+                 WHERE empresa_id = %s
+                   AND telefone IS NOT NULL AND cliente_id IS NULL
+                 ORDER BY id
+                """,
+                (empresa_id,),
+            )
+            ids = [int(r[0]) for r in await cur.fetchall()]
+    promovidos = 0
+    for i in range(0, len(ids), 500):
+        promovidos += await promover_contatos(pool, empresa_id, ids[i : i + 500])
+    return promovidos
+
+
 async def despromover_contatos(
     pool: AsyncConnectionPool, empresa_id: int, contato_ids: list[int]
 ) -> dict:

@@ -1,165 +1,349 @@
-/* Painel Nexus Disparador injetado no WhatsApp Web (Slice E1). */
+/* Painel Nexus Disparador injetado no WhatsApp Web — Design System "Obsidian".
+ * Tudo escopado em #nexus-panel / #nexus-fab pra NÃO vazar nos estilos do WA. */
+
 #nexus-fab {
   position: fixed;
   right: 18px;
-  bottom: 18px;
+  bottom: 104px; /* acima do compositor/botão de gravação do WhatsApp Web */
   z-index: 2147483646;
-  width: 52px;
-  height: 52px;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
-  background: #075e54;
+  background: #ffffff;
   color: #fff;
-  border: 0;
-  font-size: 22px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 20px -4px rgba(249, 115, 22, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+#nexus-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 26px -6px rgba(249, 115, 22, 0.6);
+}
+#nexus-fab .nx-fab-logo {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+
 #nexus-panel {
   position: fixed;
   right: 18px;
-  bottom: 80px;
+  bottom: 170px; /* acima do FAB (que subiu pra 104px) */
   z-index: 2147483647;
-  width: 360px;
-  max-height: 80vh;
+  width: 372px;
+  max-height: 82vh;
   overflow-y: auto;
-  background: #fff;
-  color: #222;
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  font-family: -apple-system, system-ui, sans-serif;
+  background: #14141a;
+  color: #f5f5f5;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  font-family: "Inter", -apple-system, system-ui, sans-serif;
   font-size: 13px;
   display: none;
 }
-#nexus-panel.open {
-  display: block;
-}
+#nexus-panel.open { display: block; }
+
 #nexus-panel .nx-head {
-  background: #075e54;
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 45%, #3b82f6 100%);
   color: #fff;
-  padding: 10px 12px;
-  font-weight: 600;
-  border-radius: 10px 10px 0 0;
+  padding: 12px 14px;
+  font-weight: 700;
+  border-radius: 14px 14px 0 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
+#nexus-panel .nx-head-brand { display: inline-flex; align-items: center; gap: 7px; }
+#nexus-panel .nx-head-logo { width: 18px; height: 18px; object-fit: contain; display: block; }
 #nexus-panel .nx-head .nx-x {
   cursor: pointer;
-  opacity: 0.85;
+  opacity: 0.9;
+  display: inline-flex;
+  align-items: center;
 }
+#nexus-panel .nx-head .nx-x:hover { opacity: 1; }
+
 #nexus-panel .nx-tabs {
   display: flex;
-  border-bottom: 1px solid #e0e0e0;
+  background: #14141a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 #nexus-panel button.nx-tab {
   flex: 1;
-  padding: 9px 8px;
+  padding: 11px 8px;
   border: none;
-  background: #f0f2f5;
-  color: #555;
+  background: transparent;
+  color: #a3a3a3;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
+#nexus-panel button.nx-tab:hover { color: #f5f5f5; }
 #nexus-panel button.nx-tab.nx-tab-on {
-  background: #fff;
-  color: #075e54;
-  box-shadow: inset 0 -2px 0 #075e54;
+  color: #f97316;
+  border-bottom-color: #f97316;
+  font-weight: 600;
 }
-#nexus-panel .nx-body {
-  padding: 12px;
-}
+
+#nexus-panel .nx-body { padding: 14px; }
+
 #nexus-panel label {
   display: block;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #667;
-  margin: 8px 0 3px;
+  color: #a3a3a3;
+  font-weight: 600;
+  margin: 10px 0 4px;
 }
+
 #nexus-panel textarea,
-#nexus-panel input {
+#nexus-panel input,
+#nexus-panel select {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #ccd;
-  border-radius: 6px;
-  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 8px 10px;
   font-size: 12px;
   font-family: inherit;
+  background: #1c1c24;
+  color: #f5f5f5;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-#nexus-panel textarea {
-  resize: vertical;
+#nexus-panel textarea::placeholder,
+#nexus-panel input::placeholder { color: #737373; }
+#nexus-panel textarea:focus,
+#nexus-panel input:focus,
+#nexus-panel select:focus {
+  outline: none;
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
 }
-#nexus-panel .nx-row {
-  display: flex;
-  gap: 8px;
-}
-#nexus-panel .nx-row > div {
-  flex: 1;
-}
+#nexus-panel textarea { resize: vertical; }
+
+#nexus-panel .nx-row { display: flex; gap: 8px; }
+#nexus-panel .nx-row > div { flex: 1; }
+
 #nexus-panel button.nx-btn {
   width: 100%;
-  padding: 9px;
+  padding: 10px;
   margin-top: 10px;
   border: 0;
-  border-radius: 6px;
-  background: #075e54;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 40%, #3b82f6 100%);
   color: #fff;
   font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+#nexus-panel button.nx-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 22px -6px rgba(249, 115, 22, 0.5);
 }
 #nexus-panel button.nx-btn.nx-stop {
-  background: #c0392b;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
 }
 #nexus-panel button.nx-btn.nx-sec {
-  background: #eee;
-  color: #333;
+  background: rgba(255, 255, 255, 0.05);
+  color: #a3a3a3;
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
-#nexus-panel button.nx-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+#nexus-panel button.nx-btn.nx-sec:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f5f5;
+  box-shadow: none;
 }
-#nexus-panel .nx-ctrls {
-  display: flex;
-  gap: 8px;
-}
-#nexus-panel .nx-ctrls button {
-  margin-top: 10px;
-}
+#nexus-panel button.nx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#nexus-panel .nx-ctrls { display: flex; gap: 8px; }
+#nexus-panel .nx-ctrls button { margin-top: 10px; }
+
 #nexus-panel .nx-log {
   margin-top: 10px;
   font-size: 12px;
   white-space: pre-wrap;
   max-height: 140px;
   overflow-y: auto;
-  background: #f6f7f8;
-  border-radius: 6px;
-  padding: 8px;
+  background: #1c1c24;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 9px;
+  color: #a3a3a3;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
+
 #nexus-panel .nx-bar {
   height: 6px;
   border-radius: 4px;
-  background: #e3e6e8;
+  background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
   margin-top: 8px;
 }
 #nexus-panel .nx-bar > i {
   display: block;
   height: 100%;
-  background: #25d366;
+  background: linear-gradient(90deg, #f97316, #3b82f6);
   width: 0;
   transition: width 0.2s;
 }
+
 #nexus-panel .nx-warn {
   margin-top: 10px;
   font-size: 11px;
-  color: #8a6d3b;
-  background: #fcf8e3;
-  border-radius: 6px;
-  padding: 7px;
+  color: #fb923c;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
 }
-#nexus-panel .nx-hint {
-  font-size: 11px;
-  color: #889;
+#nexus-panel .nx-hint { font-size: 11px; color: #737373; margin-top: 4px; }
+
+#nexus-panel::-webkit-scrollbar,
+#nexus-panel .nx-log::-webkit-scrollbar { width: 6px; }
+#nexus-panel::-webkit-scrollbar-thumb,
+#nexus-panel .nx-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+/* Grid de anexos (thumbnails) */
+#nexus-panel .nx-anexos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+#nexus-panel .nx-anexo {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #24242c;
+}
+#nexus-panel .nx-anexo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+#nexus-panel .nx-anexo-ic {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+#nexus-panel .nx-anexo-tag {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(90deg, #f97316, #ea580c);
+  padding: 1px 0;
+}
+#nexus-panel .nx-anexo-x {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  cursor: pointer;
+}
+#nexus-panel .nx-anexo-x:hover { background: #ef4444; box-shadow: none; transform: none; }
+
+/* Emoji picker (NexusEmoji) — escopo global pq o popover é anexado ao host */
+.nxe-trigger {
+  background: transparent !important;
+  border: 0 !important;
+  cursor: pointer;
+  font-size: 15px !important;
+  padding: 0 4px !important;
+  width: auto !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+  vertical-align: middle;
+}
+.nxe-pop {
+  position: absolute;
+  right: 0;
+  z-index: 2147483647;
+  width: 290px;
+  max-height: 260px;
   margin-top: 4px;
+  background: #1c1c24;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  font-family: "Inter", system-ui, sans-serif;
 }
+.nxe-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.nxe-tab {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: #a3a3a3;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nxe-tab:hover { color: #f5f5f5; background: rgba(255, 255, 255, 0.05); }
+.nxe-tab.on { color: #f97316; background: rgba(249, 115, 22, 0.1); font-weight: 600; }
+.nxe-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.nxe-em {
+  background: transparent;
+  border: 0;
+  font-size: 19px;
+  padding: 3px;
+  cursor: pointer;
+  border-radius: 6px;
+  line-height: 1;
+}
+.nxe-em:hover { background: rgba(255, 255, 255, 0.08); }

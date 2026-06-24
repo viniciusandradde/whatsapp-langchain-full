@@ -2,33 +2,38 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
+    <link rel="stylesheet" href="nexus-ui.css" />
     <style>
-      body { font: 14px system-ui, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
-      h1 { font-size: 18px; }
-      label { display: block; margin: 12px 0 4px; font-weight: 600; }
-      input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-      button { margin-top: 14px; margin-right: 8px; padding: 9px 14px; border: 0; border-radius: 6px;
-        background: #075e54; color: #fff; font-weight: 600; cursor: pointer; }
-      button.sec { background: #eee; color: #333; }
-      #msg { margin-top: 12px; padding: 8px; border-radius: 6px; background: #f6f6f6; }
-      small { color: #666; }
+      body { margin: 0; min-height: 100vh; }
+      .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px; }
+      h1 { font-size: 18px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+      .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
+      .actions { display: flex; gap: 8px; margin-top: 16px; }
+      .actions .nx-btn { width: auto; }
     </style>
   </head>
-  <body>
-    <h1>Nexus Disparador — configuração</h1>
-    <label>URL do backend</label>
-    <input id="backendUrl" placeholder="https://api.vsanexus.com" />
-    <small>Sem barra no final. Ex.: https://api.vsanexus.com</small>
+  <body class="nx-root">
+    <div class="wrap">
+      <h1><img src="icons/vsa-logo.png" class="nx-logo-img" alt="Nexus" /> Nexus Disparador</h1>
+      <div class="sub">Conecte a extensão à sua conta do Nexus.</div>
 
-    <label>API key da empresa</label>
-    <input id="apiKey" type="password" placeholder="nxs_&lt;empresa&gt;_&lt;hex&gt;" />
-    <small>Gere no painel: Disparador → API keys (exibida só uma vez).</small>
+      <label class="nx-label">Servidor</label>
+      <input class="nx-input" id="backendUrl" placeholder="https://api.vsanexus.com" />
+      <div class="nx-hint">Endereço do seu Nexus, sem barra no final.</div>
 
-    <div>
-      <button id="save">Salvar</button>
-      <button class="sec" id="test">Testar conexão</button>
+      <label class="nx-label">API key da empresa</label>
+      <input class="nx-input" id="apiKey" type="password" placeholder="nxs_…" />
+      <div class="nx-hint">
+        Gere no painel em Disparador → API keys (com os escopos capture,
+        dispatch e templates). Ela aparece só uma vez.
+      </div>
+
+      <div class="actions">
+        <button class="nx-btn" id="save">Salvar</button>
+        <button class="nx-btn nx-btn-outline" id="test">Testar conexão</button>
+      </div>
+      <div class="nx-log" id="msg"></div>
     </div>
-    <div id="msg"></div>
 
     <script src="options.js"></script>
   </body>
