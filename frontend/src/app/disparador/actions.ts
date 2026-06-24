@@ -16,6 +16,7 @@ import {
   getGruposCapturados,
   listApiKeys,
   promoverContatos,
+  promoverTodosContatos,
   revokeApiKey,
 } from "@/lib/api";
 
@@ -57,10 +58,25 @@ export async function revokeApiKeyAction(id: number): Promise<Result<true>> {
   }
 }
 
-export async function listContatosAction(): Promise<Result<ContatoCapturado[]>> {
+export async function listContatosAction(opts?: {
+  limit?: number;
+  offset?: number;
+}): Promise<
+  Result<{ items: ContatoCapturado[]; total: number; promoviveis: number }>
+> {
   try {
-    const { items } = await getContatosCapturados();
-    return { ok: true, data: items };
+    const data = await getContatosCapturados(opts);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function promoverTodosContatosAction(): Promise<Result<number>> {
+  try {
+    const { promovidos } = await promoverTodosContatos();
+    revalidatePath("/disparador/contatos");
+    return { ok: true, data: promovidos };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

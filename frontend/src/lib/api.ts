@@ -2862,10 +2862,27 @@ export async function revokeApiKey(id: number): Promise<{ ok: boolean }> {
   });
 }
 
-export async function getContatosCapturados(): Promise<{
+export async function getContatosCapturados(opts?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{
   items: ContatoCapturado[];
+  total: number;
+  promoviveis: number;
 }> {
-  return apiFetch<{ items: ContatoCapturado[] }>(`/api/captura/contatos`);
+  const p = new URLSearchParams();
+  if (opts?.limit != null) p.set("limit", String(opts.limit));
+  if (opts?.offset != null) p.set("offset", String(opts.offset));
+  const qs = p.toString();
+  return apiFetch<{ items: ContatoCapturado[]; total: number; promoviveis: number }>(
+    `/api/captura/contatos${qs ? "?" + qs : ""}`
+  );
+}
+
+export async function promoverTodosContatos(): Promise<{ promovidos: number }> {
+  return apiFetch<{ promovidos: number }>(`/api/captura/promover-todos`, {
+    method: "POST",
+  });
 }
 
 export async function getGruposCapturados(): Promise<{
