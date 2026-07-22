@@ -81,8 +81,11 @@ async def test_get_instance_owner_number_extrai_jid():
         return_value=httpx.Response(
             200,
             json=[
-                {"name": "inst1", "connectionStatus": "open",
-                 "ownerJid": "556784249725@s.whatsapp.net"}
+                {
+                    "name": "inst1",
+                    "connectionStatus": "open",
+                    "ownerJid": "556784249725@s.whatsapp.net",
+                }
             ],
         )
     )
@@ -137,7 +140,9 @@ def test_classify_admin_error_403_missing_key():
 
 def test_classify_admin_error_non_auth_returns_none():
     assert admin.classify_admin_error(admin.EvolutionAdminError(409, "in use")) is None
-    assert admin.classify_admin_error(admin.EvolutionAdminError(403, "Forbidden")) is None
+    assert (
+        admin.classify_admin_error(admin.EvolutionAdminError(403, "Forbidden")) is None
+    )
 
 
 def test_describe_key_source(monkeypatch):

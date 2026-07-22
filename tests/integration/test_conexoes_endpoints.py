@@ -260,7 +260,9 @@ class TestHardDeleteConexao:
         assert row[0] is None  # conexao_id virou NULL
         assert row[1:] == ("Vendas", "+1999", "twilio_prod")  # snapshot intacto
 
-    async def test_historico_mostra_canal_do_snapshot_apos_delete(self, empresa) -> None:
+    async def test_historico_mostra_canal_do_snapshot_apos_delete(
+        self, empresa
+    ) -> None:
         # Mig 129: histórico de um atendimento com conexão apagada ainda mostra
         # o canal via COALESCE(cx.*, snapshot).
         from whatsapp_langchain.shared.db import get_pool

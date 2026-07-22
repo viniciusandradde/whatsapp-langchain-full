@@ -33,6 +33,7 @@ Tests:
 - `make test-demo` / `make test-demo-up` — `docker_demo` marker; needs full Docker stack running
 - `make test-flows` — realistic flow tests (`tests/integration/test_realistic_flows.py`); needs Docker stack
 - pytest is configured `asyncio_mode = "auto"` — async tests don't need `@pytest.mark.asyncio`
+- **Rodando a suite local fora de CI, use `-m "not docker_demo and not twilio_real"`** — os testes `twilio_real` (smoke que envia mensagem real, requer `TWILIO_LIVE_TESTS=1`) + TestClient travam em máquina local por causa do lookup de metadata da cloud
 
 **E2E pós-feature obrigatório** — toda feature nova (sprint/endpoint/fluxo BE+FE) ganha suite no modelo `tests/integration/test_aba_endpoints.py` (canônico, commit `4aebe36`):
 - **TestSmoke** (TestClient, sem DB): 1 test por endpoint validando que existe + exige auth (401 sem service token). Roda em CI.
@@ -80,7 +81,7 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 
 **Frontend / admin auth** — Next.js panel in `frontend/` uses Better Auth against the same Postgres in a separate `auth` schema (migrations `003_auth_schema.sql`, `004_better_auth_tables.sql`). Server-side fetches to `/api/*` go via `INTERNAL_API_URL` + bearer `INTERNAL_SERVICE_TOKEN` (enforced by `verify_service_token` dependency on the admin router). On first `/login` the frontend bootstraps the initial admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` if `auth."user"` is empty. **`INTERNAL_SERVICE_TOKEN` and `BETTER_AUTH_SECRET` must be set even locally** — `Settings.validate_runtime_settings()` raises at API startup otherwise; in production the token is also length-checked (≥32).
 
-**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 109 migration files** numbered up to `115` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem). Recent highlights:
+**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 126 migration files** numbered up to `132` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem). Recent highlights:
 - `022_rate_limit_generic.sql` — generic `rate_limit_bucket` (used by admin endpoints middleware)
 - `023_hook_dead_letter.sql` — DLQ for hooks that exhaust retries
 - `024_user_status.sql` — `auth.user.status` (active/disabled) blocks login + kills sessions
