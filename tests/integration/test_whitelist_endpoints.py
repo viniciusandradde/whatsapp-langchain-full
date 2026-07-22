@@ -200,7 +200,9 @@ class TestE2E:
         self, db_url: str, empresa_id: int, admin_user_id: str
     ) -> None:
         h = _headers(admin_user_id, empresa_id)
-        telefone = f"+55119{_RUN[:8]}"
+        # Só dígitos: normalize_phone remove letras, então sufixo hex do
+        # _RUN mudaria o telefone gravado e quebraria o assert de igualdade.
+        telefone = f"+55119{int(_RUN, 16) % 10**8:08d}"
 
         # 1. POST cria número
         r = httpx.post(
@@ -284,7 +286,7 @@ class TestE2EIsolamento:
         e2_id, e2_user = empresa2
         h1 = _headers(admin_user_id, empresa_id)
         h2 = _headers(e2_user, e2_id)
-        telefone = f"+55118{_RUN[:8]}"
+        telefone = f"+55118{int(_RUN, 16) % 10**8:08d}"
 
         # Empresa 1 cadastra
         r = httpx.post(
