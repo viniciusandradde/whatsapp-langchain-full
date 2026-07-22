@@ -147,7 +147,16 @@ export default async function RootLayout({
   // Tema já no SSR (zero flash): cookie gravado pelo setTheme/init script.
   // Sem cookie válido → DEFAULT_THEME. O THEME_INIT_SCRIPT continua no
   // <head> só como migração (localStorage antigo sem cookie) e correção.
-  const themeCookie = (await cookies()).get(THEME_STORAGE_KEY)?.value;
+  const cookieJar = await cookies();
+  const themeCookie = cookieJar.get(THEME_STORAGE_KEY)?.value;
+  // TEMP DEBUG (remover): diagnosticar cookie sumindo no SSR em prod
+  console.log(
+    "[theme-debug]",
+    JSON.stringify({
+      themeCookie: themeCookie ?? null,
+      names: cookieJar.getAll().map((c) => c.name),
+    })
+  );
   const ssrTheme: ThemeName =
     themeCookie === "light" || themeCookie === "obsidian" || themeCookie === "black"
       ? themeCookie
