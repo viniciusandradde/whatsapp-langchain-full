@@ -16,8 +16,12 @@ export default async function LoginPage() {
 
   return (
     <LoginForm
+      // Pré-preencher o e-mail SÓ no primeiríssimo acesso (admin recém-criado
+      // com o banco vazio). Fora disso o campo vem vazio: a página de login é
+      // pública e pré-carregar o ADMIN_EMAIL vazava o e-mail do admin pra
+      // qualquer visitante.
       defaultEmail={
-        bootstrap.bootstrapConfigured
+        bootstrap.bootstrapped
           ? bootstrap.bootstrapEmail || getBootstrapAdminEmail()
           : ""
       }
