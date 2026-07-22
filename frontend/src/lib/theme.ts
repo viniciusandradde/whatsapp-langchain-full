@@ -5,25 +5,32 @@
  *
  * 3 temas: 'light' (default), 'obsidian' (escuro), 'black' (preto puro).
  *
- * Estado mora em <html data-theme="..."> + localStorage. O script inline
- * em layout.tsx aplica antes do React montar, evitando FOUC. Quem nunca
- * escolheu tema (sem localStorage) cai no DEFAULT_THEME; quem já escolheu
- * mantém a escolha.
+ * Estado mora em <html data-theme="..."> + cookie (SSR) + localStorage.
+ * O SSR já renderiza o data-theme certo a partir do cookie; o script
+ * inline (theme-constants) só migra escolhas antigas de localStorage.
+ *
+ * Constantes moram em theme-constants.ts (módulo neutro): o layout server
+ * NÃO pode importá-las daqui — "use client" vira client-reference no
+ * server e a chave do cookie deixa de ser string (bug do flash de tema).
  */
 
 import { useEffect, useState } from "react";
 
-export type ThemeName = "obsidian" | "light" | "black";
+import {
+  DEFAULT_THEME,
+  THEME_STORAGE_KEY,
+  type ThemeName,
+} from "@/lib/theme-constants";
 
-export const THEME_STORAGE_KEY = "vsa-theme";
-export const DEFAULT_THEME: ThemeName = "light";
-export const THEMES: { id: ThemeName; label: string; emoji: string }[] = [
-  { id: "light", label: "Branco", emoji: "☀️" },
-  { id: "obsidian", label: "Obsidian (escuro)", emoji: "🌑" },
-  { id: "black", label: "Preto puro", emoji: "⬛" },
-];
+export {
+  DEFAULT_THEME,
+  THEME_INIT_SCRIPT,
+  THEME_STORAGE_KEY,
+  THEMES,
+  type ThemeName,
+} from "@/lib/theme-constants";
 
-/** Sincroniza com localStorage no client. SSR retorna o DEFAULT_THEME. */
+/** Sincroniza com o data-theme aplicado (SSR/cookie). */
 export function useTheme(): {
   theme: ThemeName;
   setTheme: (t: ThemeName) => void;
@@ -31,7 +38,7 @@ export function useTheme(): {
   const [theme, setThemeState] = useState<ThemeName>(DEFAULT_THEME);
 
   useEffect(() => {
-    // Lê o valor que o inline script já aplicou pra evitar mismatch
+    // Lê o valor que o SSR/inline script já aplicou pra evitar mismatch
     const current = (document.documentElement.getAttribute("data-theme") ||
       DEFAULT_THEME) as ThemeName;
     setThemeState(current);
@@ -42,9 +49,8 @@ export function useTheme(): {
     document.documentElement.setAttribute("data-theme", next);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, next);
-      // Cookie: permite o SSR renderizar <html data-theme> já certo no
-      // primeiro byte — zero flash em qualquer tema (localStorage só é
-      // legível no client, tarde demais com streaming).
+      // Cookie: o SSR renderiza <html data-theme> a partir dele — zero
+      // flash em qualquer tema (localStorage só é legível no client).
       document.cookie = `${THEME_STORAGE_KEY}=${next}; path=/; max-age=31536000; samesite=lax`;
     } catch {
       /* localStorage indisponível (private mode/iframe) — ok, só não persiste */
@@ -53,20 +59,3 @@ export function useTheme(): {
 
   return { theme, setTheme };
 }
-
-/**
- * String do script inline pra <head>. Aplica o tema persistido ANTES do
- * React montar — sem isso há flash escuro→claro a cada navegação no
- * tema light. Usa try/catch porque localStorage pode quebrar em iframe.
- */
-export const THEME_INIT_SCRIPT = `
-(function(){try{
-  var k=${JSON.stringify(THEME_STORAGE_KEY)};
-  var t=localStorage.getItem(k);
-  if(t!=="light"&&t!=="black"&&t!=="obsidian"){t=${JSON.stringify(DEFAULT_THEME)};}
-  var el=document.documentElement;
-  if(el.getAttribute("data-theme")!==t){el.setAttribute("data-theme",t);}
-  // Migração: garante o cookie pro SSR acertar já no próximo load.
-  document.cookie=k+"="+t+"; path=/; max-age=31536000; samesite=lax";
-}catch(e){}})();
-`.trim();
