@@ -181,3 +181,34 @@ async def test_empresa_context_invalid_header_400():
         with pytest.raises(HTTPException) as exc:
             await get_empresa_context(req)
     assert exc.value.status_code == 400
+
+
+async def test_list_empresas_filtra_status_active_por_default():
+    """Default (switcher): SQL carrega o filtro status='active'."""
+    cur = AsyncMock()
+    cur.fetchall = AsyncMock(return_value=[])
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value=cur)
+    pool = MagicMock()
+    pool.connection.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.connection.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    await list_empresas_of_user(pool, "user-x")
+    sql = conn.execute.await_args.args[0]
+    assert "status = 'active'" in sql
+
+
+async def test_list_empresas_include_inactive_remove_filtro():
+    """include_inactive=True (/companies): suspensas/arquivadas aparecem —
+    sem isso, suspender fazia a empresa sumir da UI sem caminho de volta."""
+    cur = AsyncMock()
+    cur.fetchall = AsyncMock(return_value=[])
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value=cur)
+    pool = MagicMock()
+    pool.connection.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.connection.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    await list_empresas_of_user(pool, "user-x", include_inactive=True)
+    sql = conn.execute.await_args.args[0]
+    assert "status = 'active'" not in sql

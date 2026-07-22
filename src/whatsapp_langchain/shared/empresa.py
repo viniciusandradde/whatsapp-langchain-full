@@ -22,12 +22,18 @@ logger = structlog.get_logger()
 
 
 async def list_empresas_of_user(
-    pool: AsyncConnectionPool, user_id: str
+    pool: AsyncConnectionPool, user_id: str, *, include_inactive: bool = False
 ) -> list[Empresa]:
     """Retorna todas as empresas onde o user é membro, default primeiro.
 
     Inclui `my_role` (role do user na empresa) pra a UI poder decidir
     o que mostrar (botão "Editar" só pra admin etc).
+
+    `include_inactive=False` (default) filtra `status='active'` — é o que o
+    EmpresaSwitcher usa (não dá pra ativar empresa suspensa). A página
+    /companies passa True: sem isso, marcar "suspended" fazia a empresa
+    SUMIR da gestão sem caminho de reativação pela UI (armadilha de mão
+    única — incidente empresa 1018, 2026-07-22).
 
     Sprint A.2 — cross-tenant por design (user pode pertencer a N empresas
     e precisa ver todas). Bypass RLS pra que JOIN em empresa_membro não
@@ -37,10 +43,11 @@ async def list_empresas_of_user(
     """
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
+    status_filter = "" if include_inactive else "AND e.status = 'active'"
     with empresa_scope(None, bypass=True):
         async with pool.connection() as conn:
             cur = await conn.execute(
-                """
+                f"""
                 SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
                        e.config, e.created_at, e.updated_at,
                        e.logo_path, e.nome_exibicao, e.cor_primaria,
@@ -48,7 +55,7 @@ async def list_empresas_of_user(
                   FROM empresa e
                   JOIN empresa_membro m ON m.empresa_id = e.id
                  WHERE m.user_id = %s
-                   AND e.status = 'active'
+                   {status_filter}
                  ORDER BY m.is_default DESC, e.nome ASC
                 """,
                 (user_id,),

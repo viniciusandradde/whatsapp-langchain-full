@@ -1111,8 +1111,11 @@ export async function getQueue(): Promise<QueueResponse> {
   return apiFetch<QueueResponse>("/api/queue");
 }
 
-export async function getMyEmpresas(): Promise<EmpresasResponse> {
-  return apiFetch<EmpresasResponse>("/api/empresas");
+export async function getMyEmpresas(
+  includeInactive: boolean = false
+): Promise<EmpresasResponse> {
+  const qs = includeInactive ? "?include_inactive=true" : "";
+  return apiFetch<EmpresasResponse>(`/api/empresas${qs}`);
 }
 
 export async function createEmpresa(body: EmpresaInput): Promise<Empresa> {

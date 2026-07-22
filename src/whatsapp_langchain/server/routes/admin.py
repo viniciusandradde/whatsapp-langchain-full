@@ -70,16 +70,23 @@ async def list_models() -> dict[str, list[ModelInfo]]:
 
 @router.get("/empresas")
 async def list_my_empresas(
+    include_inactive: bool = False,
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, list[Empresa]]:
     """Lista todas as empresas onde o usuário (Better Auth) é membro.
 
-    Usado pelo `<EmpresaSwitcher>` do frontend pra montar o dropdown.
-    Usuários sem nenhuma empresa retornam lista vazia (sem 403 — o painel
-    decide o que mostrar).
+    Usado pelo `<EmpresaSwitcher>` do frontend pra montar o dropdown
+    (só ativas, default). A página /companies passa
+    `?include_inactive=true` pra exibir suspensas/arquivadas com botão
+    de reativar. Usuários sem nenhuma empresa retornam lista vazia
+    (sem 403 — o painel decide o que mostrar).
     """
     pool = await get_pool()
-    return {"empresas": await list_empresas_of_user(pool, user_id)}
+    return {
+        "empresas": await list_empresas_of_user(
+            pool, user_id, include_inactive=include_inactive
+        )
+    }
 
 
 @router.get("/agents/{agent_id}/config")

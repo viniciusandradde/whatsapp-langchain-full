@@ -33,7 +33,8 @@ export default async function MembersPage({ params }: PageProps) {
   try {
     const [membersList, empresas, perfisResp, deptosResp] = await Promise.all([
       getEmpresaMembers(empresaId),
-      getMyEmpresas().then((r) => r.empresas),
+      // include_inactive: gestão de membros funciona mesmo com empresa suspensa
+      getMyEmpresas(true).then((r) => r.empresas),
       getPerfis().catch(() => ({ items: [] })),
       getDepartamentos().catch(() => ({ departamentos: [] })),
     ]);

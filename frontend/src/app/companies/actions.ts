@@ -28,6 +28,21 @@ function _str(formData: FormData, key: string): string | null {
   return v || null;
 }
 
+export async function reativarEmpresaAction(
+  empresaId: number
+): Promise<Result> {
+  try {
+    await updateEmpresa(empresaId, { status: "active" });
+    revalidatePath("/companies");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao reativar a empresa.",
+    };
+  }
+}
+
 export async function saveEmpresa(
   empresaId: number | null,
   formData: FormData

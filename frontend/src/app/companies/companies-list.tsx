@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Plus, Pencil, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { Loader2, Plus, Pencil, RotateCcw, Users } from "lucide-react";
+
+import { reativarEmpresaAction } from "./actions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,7 +86,16 @@ export function CompaniesList({ empresas }: Props) {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-1.5 text-sm">
-                  <Row label="Status" value={e.status} />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Status</span>
+                    <StatusBadge status={e.status} />
+                  </div>
+                  {e.status !== "active" && (
+                    <p className="text-xs text-amber-500">
+                      Empresa fora do ar: não aparece no seletor de empresas.
+                      {isAdmin && " Use Reativar pra voltar."}
+                    </p>
+                  )}
                   {e.doc && <Row label="Documento" value={e.doc} mono />}
                 </CardContent>
                 <div className="flex items-center justify-end gap-2 px-4 pb-4">
@@ -94,6 +106,9 @@ export function CompaniesList({ empresas }: Props) {
                     <Users className="size-3.5" />
                     Membros
                   </Link>
+                  {isAdmin && e.status !== "active" && (
+                    <ReativarButton empresaId={e.id} nome={e.nome} />
+                  )}
                   {isAdmin && (
                     <Button
                       variant="ghost"
@@ -111,6 +126,67 @@ export function CompaniesList({ empresas }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+const STATUS_STYLES: Record<string, { label: string; className: string }> = {
+  active: {
+    label: "ativa",
+    className: "bg-green-500/15 text-green-700 dark:text-green-400",
+  },
+  suspended: {
+    label: "suspensa",
+    className: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  },
+  archived: {
+    label: "arquivada",
+    className: "bg-muted text-muted-foreground",
+  },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_STYLES[status] ?? {
+    label: status,
+    className: "bg-muted text-muted-foreground",
+  };
+  return (
+    <span
+      className={`inline-flex rounded px-1.5 py-0.5 text-xs ${s.className}`}
+    >
+      {s.label}
+    </span>
+  );
+}
+
+function ReativarButton({
+  empresaId,
+  nome,
+}: {
+  empresaId: number;
+  nome: string;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [, startTransition] = useTransition();
+  const handle = () => {
+    if (!confirm(`Reativar a empresa "${nome}"?`)) return;
+    setBusy(true);
+    startTransition(async () => {
+      const r = await reativarEmpresaAction(empresaId);
+      setBusy(false);
+      if (r.ok) router.refresh();
+      else alert(`Erro: ${r.error}`);
+    });
+  };
+  return (
+    <Button variant="outline" size="sm" onClick={handle} disabled={busy}>
+      {busy ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <RotateCcw className="size-3.5" />
+      )}
+      Reativar
+    </Button>
   );
 }
 

@@ -20,7 +20,9 @@ export default async function CompaniesPage() {
   let error: string | null = null;
 
   try {
-    const data = await getMyEmpresas();
+    // include_inactive: suspensas/arquivadas aparecem aqui (com botão
+    // Reativar) — só o EmpresaSwitcher filtra por ativas.
+    const data = await getMyEmpresas(true);
     empresas = data.empresas;
   } catch (e) {
     error =
