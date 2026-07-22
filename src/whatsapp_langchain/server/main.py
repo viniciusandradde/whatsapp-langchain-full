@@ -143,6 +143,9 @@ from whatsapp_langchain.server.routes.webhook import router as webhook_router
 from whatsapp_langchain.server.routes.webhook_waba import (
     router as webhook_waba_router,
 )
+from whatsapp_langchain.server.routes.whitelist import (
+    router as whitelist_router,
+)
 from whatsapp_langchain.server.routes.workflows import router as workflows_router
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import (
@@ -371,6 +374,7 @@ app.include_router(atendimento_router)
 app.include_router(historico_router)
 app.include_router(aba_router)
 app.include_router(tag_router)
+app.include_router(whitelist_router)
 app.include_router(integracoes_wareline_router)
 app.include_router(integracoes_api_router)
 app.include_router(integracoes_asaas_router)

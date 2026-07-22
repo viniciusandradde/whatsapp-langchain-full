@@ -93,6 +93,7 @@ from whatsapp_langchain.shared.queue import (
     mark_failed,
     upsert_conversation,
 )
+from whatsapp_langchain.shared.whitelist import is_whitelisted
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
     preprocess_incoming_message,
@@ -334,6 +335,12 @@ HANDOFF_HUMANO_MARKER = "[handoff humano — operador respondendo]"
 # mensagem fica registrada e o atendimento segue na fila humana. O drawer
 # filtra rows com este marker pra não exibir como bolha de resposta.
 MODO_MANUAL_MARKER = "[modo manual — IA desligada nesta conexão]"
+
+# Marcador quando o número está na whitelist da empresa (mig 133): IA
+# desligada pra ESTE contato em todas as conexões — nenhuma resposta
+# automática. A mensagem fica na timeline e o atendimento segue na fila
+# humana. O drawer filtra rows com este marker pra não exibir como bolha.
+WHITELIST_BYPASS_MARKER = "[whitelist — número com IA desativada]"
 
 
 async def _resolve_outbound_client(
@@ -2083,6 +2090,27 @@ async def process_message(
                 "worker_skipped_agent_modo_manual",
                 message_id=message.id,
                 conexao_id=conexao.id,
+                atendimento_id=message.atendimento_id,
+                phone=message.phone_number,
+            )
+            return
+
+        # Gate whitelist (mig 133) — número na whitelist da empresa: IA
+        # desligada pra este contato (todas as conexões). Mesmo contrato do
+        # gate de modo manual acima: nada é enviado (sem typing/transcrição/
+        # workflow/menu/agente), a mensagem fica registrada e o atendimento
+        # segue na fila humana. 1 SELECT no índice (empresa_id, telefone).
+        if await is_whitelisted(pool, message.empresa_id, message.phone_number):
+            await mark_done(
+                pool,
+                message.id,
+                WHITELIST_BYPASS_MARKER,
+                normalized_input=None,
+            )
+            logger.info(
+                "worker_skipped_agent_whitelist",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
                 atendimento_id=message.atendimento_id,
                 phone=message.phone_number,
             )

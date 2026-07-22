@@ -1048,7 +1048,8 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
   // sutil pra deixar claro que o agente foi pulado.
   const isHandoff =
     m.response?.startsWith("[handoff humano") ||
-    m.response?.startsWith("[modo manual");
+    m.response?.startsWith("[modo manual") ||
+    m.response?.startsWith("[whitelist");
   if (m.response && !isHandoff) {
     bubbles.push({ side: "out", kind: "text", text: m.response });
   }

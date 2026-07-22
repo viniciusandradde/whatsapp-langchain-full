@@ -93,6 +93,21 @@ def _patch_outbound_resolution(mock_twilio):
 
 
 @pytest.fixture(autouse=True)
+def _sem_whitelist():
+    """Default: nenhum número na whitelist (gate mig 133 não dispara).
+
+    Sem este patch, o pool AsyncMock devolveria fetchone() truthy e TODOS os
+    testes virariam "whitelisted". TestWhitelist re-patcha por cima nos casos
+    de hit.
+    """
+    with patch(
+        "whatsapp_langchain.worker.processor.is_whitelisted",
+        new=AsyncMock(return_value=False),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _patch_early_handlers():
     """Neutraliza os handlers que rodam ANTES do agente no `process_message`.
 
@@ -725,3 +740,122 @@ class TestModoManual:
             mock_load.assert_not_awaited()
             mock_done.assert_awaited_once()
             assert mock_done.await_args.args[2] != MODO_MANUAL_MARKER
+
+
+# === Gate whitelist (mig 133 — bypass da IA por número) ===
+
+
+class TestWhitelist:
+    """Número na whitelist da empresa: bypass total da IA (silêncio).
+
+    Mesmo contrato do modo manual, porém por número: mensagem registrada,
+    atendimento na fila humana, nenhuma resposta automática.
+    """
+
+    async def test_whitelist_hit_silencio_total(self, message, mock_twilio):
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0] as mock_pre,
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            patch(
+                "whatsapp_langchain.worker.processor.is_whitelisted",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            from whatsapp_langchain.worker.processor import (
+                WHITELIST_BYPASS_MARKER,
+                process_message,
+            )
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+            )
+
+            # Silêncio total: nada enviado, agente nem carregado, mídia
+            # nem pré-processada (não gasta token de transcrição).
+            mock_twilio.send_message.assert_not_awaited()
+            mock_twilio.send_typing.assert_not_awaited()
+            mock_load.assert_not_awaited()
+            mock_pre.assert_not_awaited()
+            mock_done.assert_awaited_once()
+            assert mock_done.await_args.args[2] == WHITELIST_BYPASS_MARKER
+            mock_failed.assert_not_awaited()
+
+    async def test_whitelist_miss_segue_fluxo_ia(self, message, mock_twilio):
+        """Fora da whitelist (default da fixture autouse): agente responde."""
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta do agente")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+            )
+
+            mock_twilio.send_message.assert_awaited_once_with(
+                "+5511999999999", "Resposta do agente"
+            )
+            mock_done.assert_awaited_once()
+            mock_failed.assert_not_awaited()
+
+    async def test_modo_manual_ganha_da_whitelist(self, message, mock_twilio):
+        """Ordem dos gates: conexão manual curto-circuita antes do SELECT da
+        whitelist — marker gravado é o de modo manual (silêncio idêntico)."""
+        conexao_manual = SimpleNamespace(id=77, tipo_atendimento="manual")
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1],
+            patches[2] as mock_done,
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            patch(
+                "whatsapp_langchain.worker.processor._resolve_outbound_client",
+                new=AsyncMock(return_value=(mock_twilio, conexao_manual)),
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor.is_whitelisted",
+                new=AsyncMock(return_value=True),
+            ) as mock_wl,
+        ):
+            from whatsapp_langchain.worker.processor import (
+                MODO_MANUAL_MARKER,
+                process_message,
+            )
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+            )
+
+            mock_done.assert_awaited_once()
+            assert mock_done.await_args.args[2] == MODO_MANUAL_MARKER
+            mock_wl.assert_not_awaited()

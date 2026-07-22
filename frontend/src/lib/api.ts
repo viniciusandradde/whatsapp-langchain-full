@@ -2045,6 +2045,47 @@ export async function deleteTag(tagId: number): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/tags/${tagId}`, { method: "DELETE" });
 }
 
+// --- Whitelist de números (bypass da IA por número, mig 133) ---
+
+export interface WhitelistNumero {
+  id: number;
+  telefone: string;
+  nome: string | null;
+  created_at: string | null;
+}
+
+export async function getWhitelist(): Promise<{ items: WhitelistNumero[] }> {
+  return apiFetch<{ items: WhitelistNumero[] }>("/api/whitelist");
+}
+
+export async function createWhitelistNumero(payload: {
+  telefone: string;
+  nome?: string | null;
+}): Promise<WhitelistNumero> {
+  return apiFetch<WhitelistNumero>("/api/whitelist", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateWhitelistNumero(
+  id: number,
+  payload: { nome?: string | null }
+): Promise<WhitelistNumero> {
+  return apiFetch<WhitelistNumero>(`/api/whitelist/${id}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
+export async function deleteWhitelistNumero(
+  id: number
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/whitelist/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getTagsAtendimento(
   atendimentoId: number
 ): Promise<{ items: AtendimentoTag[] }> {

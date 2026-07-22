@@ -54,6 +54,7 @@ export const NAV_TABS_BY_GROUP: Record<string, NavTab[]> = {
     { label: "Base de Conhecimento", href: "/settings/pastas", requires: "base_conhecimento.read" },
     { label: "Variáveis", href: "/settings/variaveis", requires: "variavel.read" },
     { label: "Modelo por agente", href: "/models", requires: "agente.config" },
+    { label: "Whitelist IA", href: "/whitelist", requires: "whitelist.manage" },
   ],
   conectividade: [
     { label: "Conexões", href: "/connections", requires: "conexao.read" },
@@ -119,6 +120,7 @@ export const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
       "/modelos",
       "/settings/pastas",
       "/settings/variaveis",
+      "/whitelist",
     ],
   },
   {
