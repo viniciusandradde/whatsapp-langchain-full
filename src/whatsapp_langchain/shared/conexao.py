@@ -267,7 +267,7 @@ async def upsert_conexao(
             INSERT INTO conexao (empresa_id, provider, sid, from_number,
                                  display_name, default_agent_id, status,
                                  is_default, payload_json, tipo_atendimento)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, COALESCE(%s, 'ia'))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, COALESCE(%s, 'manual'))
             ON CONFLICT (empresa_id, from_number) DO UPDATE SET
                 provider = EXCLUDED.provider,
                 sid = EXCLUDED.sid,
@@ -276,9 +276,10 @@ async def upsert_conexao(
                 status = EXCLUDED.status,
                 is_default = EXCLUDED.is_default,
                 payload_json = EXCLUDED.payload_json,
-                tipo_atendimento = COALESCE(
-                    EXCLUDED.tipo_atendimento, conexao.tipo_atendimento
-                ),
+                -- NÃO usar EXCLUDED aqui: o VALUES aplica COALESCE(%s,'manual'),
+                -- então EXCLUDED nunca é NULL e resetaria conexões existentes
+                -- pro default a cada reconexão (Evolution/WABA re-upsertam).
+                tipo_atendimento = COALESCE(%s, conexao.tipo_atendimento),
                 updated_at = NOW()
             RETURNING {_SELECT_COLS}
             """,
@@ -292,6 +293,7 @@ async def upsert_conexao(
                 data.status,
                 data.is_default,
                 json.dumps(data.payload_json),
+                data.tipo_atendimento,
                 data.tipo_atendimento,
             ),
         )

@@ -48,9 +48,11 @@ class TestResolveOutboundClientPerConexao:
                 new=AsyncMock(return_value=(fake_client, "real")),
             ) as mock_build,
         ):
-            client = await _resolve_outbound_client(AsyncMock(), _msg(7))
+            client, conexao = await _resolve_outbound_client(AsyncMock(), _msg(7))
 
         assert client is fake_client
+        # conexão resolvida volta junto — o gate de modo manual usa ela
+        assert conexao is fake_conexao
         # cliente construído a partir da conexão do DB (id 7), não de env
         assert mock_build.await_args.args[1].id == 7
 

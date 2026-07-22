@@ -7,6 +7,7 @@ Garante que:
 - Falha no auto-response entra em retry via mark_failed
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -79,11 +80,14 @@ def mock_clients(mock_twilio, mock_evolution):
 def _patch_outbound_resolution(mock_twilio):
     """O worker agora monta o client de envio POR-CONEXÃO
     (`build_outbound_client` lê credenciais da conexão no DB). Nos testes,
-    curto-circuitamos a resolução pra devolver o mock Twilio direto.
+    curto-circuitamos a resolução pra devolver o mock Twilio direto, junto
+    com uma conexão em modo 'ia' (o gate de modo manual fica inerte e o
+    fluxo segue pro agente — TestModoManual cobre o outro lado).
     """
+    conexao_ia = SimpleNamespace(id=77, tipo_atendimento="ia")
     with patch(
         "whatsapp_langchain.worker.processor._resolve_outbound_client",
-        new=AsyncMock(return_value=mock_twilio),
+        new=AsyncMock(return_value=(mock_twilio, conexao_ia)),
     ):
         yield
 
@@ -593,3 +597,131 @@ class TestHandoffHumano:
             mock_load.assert_awaited_once()
             mock_done.assert_awaited_once()
             mock_failed.assert_not_awaited()
+
+
+# === Gate modo manual (mig 132 — IA desligada por conexão) ===
+
+
+class TestModoManual:
+    """Conexão `tipo_atendimento='manual'` não dispara resposta automática.
+
+    Empresa nova nasce com a conexão em modo manual; o worker registra a
+    mensagem (mark_done com marker), o atendimento segue na fila humana e
+    NADA é enviado ao cliente — nem typing, nem transcrição de mídia.
+    """
+
+    @staticmethod
+    def _resolve_manual(mock_twilio):
+        conexao_manual = SimpleNamespace(id=77, tipo_atendimento="manual")
+        return patch(
+            "whatsapp_langchain.worker.processor._resolve_outbound_client",
+            new=AsyncMock(return_value=(mock_twilio, conexao_manual)),
+        )
+
+    async def test_manual_marca_done_sem_responder(self, message, mock_twilio):
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0] as mock_pre,
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            self._resolve_manual(mock_twilio),
+        ):
+            from whatsapp_langchain.worker.processor import (
+                MODO_MANUAL_MARKER,
+                process_message,
+            )
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+            )
+
+            # Silêncio total: nada enviado, agente nem carregado, mídia
+            # nem pré-processada (não gasta token de transcrição).
+            mock_twilio.send_message.assert_not_awaited()
+            mock_twilio.send_typing.assert_not_awaited()
+            mock_load.assert_not_awaited()
+            mock_pre.assert_not_awaited()
+            # Fila liberada com o marker (drawer não renderiza como bolha).
+            mock_done.assert_awaited_once()
+            assert mock_done.await_args.args[2] == MODO_MANUAL_MARKER
+            mock_failed.assert_not_awaited()
+
+    async def test_hibrido_segue_fluxo_ia(self, message, mock_twilio):
+        """`hibrido` (por ora) se comporta como `ia`: agente responde."""
+        conexao_hibrido = SimpleNamespace(id=77, tipo_atendimento="hibrido")
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            patch(
+                "whatsapp_langchain.worker.processor._resolve_outbound_client",
+                new=AsyncMock(return_value=(mock_twilio, conexao_hibrido)),
+            ),
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta do agente")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(
+                message,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+            )
+
+            mock_twilio.send_message.assert_awaited_once_with(
+                "+5511999999999", "Resposta do agente"
+            )
+            mock_done.assert_awaited_once()
+            mock_failed.assert_not_awaited()
+
+    async def test_opt_out_tem_prioridade_sobre_modo_manual(self, message, mock_twilio):
+        """STOP/PARAR é compliance anti-ban: responde mesmo com IA desligada."""
+        parar = message.model_copy(update={"incoming_message": "PARAR"})
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            self._resolve_manual(mock_twilio),
+        ):
+            from whatsapp_langchain.worker.processor import (
+                MODO_MANUAL_MARKER,
+                process_message,
+            )
+
+            await process_message(
+                parar,
+                AsyncMock(),
+                checkpointer=AsyncMock(),
+            )
+
+            # Confirmação de opt-out enviada (única exceção ao silêncio).
+            mock_twilio.send_message.assert_awaited_once()
+            sent = mock_twilio.send_message.await_args.args[1]
+            assert "não receberá mais mensagens" in sent
+            # Agente não rodou e o marker de modo manual não foi usado.
+            mock_load.assert_not_awaited()
+            mock_done.assert_awaited_once()
+            assert mock_done.await_args.args[2] != MODO_MANUAL_MARKER

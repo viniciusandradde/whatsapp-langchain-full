@@ -86,7 +86,7 @@ from whatsapp_langchain.shared.menu_chatbot import (
     parse_numero_opcao,
     registrar_historico,
 )
-from whatsapp_langchain.shared.models import MessageQueue
+from whatsapp_langchain.shared.models import Conexao, MessageQueue
 from whatsapp_langchain.shared.outbound import OutboundError, build_outbound_client
 from whatsapp_langchain.shared.queue import (
     mark_done,
@@ -329,12 +329,19 @@ async def _try_handle_approval(
 # como bolha de resposta automática.
 HANDOFF_HUMANO_MARKER = "[handoff humano — operador respondendo]"
 
+# Marcador quando a conexão está em modo manual (`tipo_atendimento='manual'`):
+# IA desligada — nenhuma resposta automática (workflow/menu/agente/CSAT). A
+# mensagem fica registrada e o atendimento segue na fila humana. O drawer
+# filtra rows com este marker pra não exibir como bolha de resposta.
+MODO_MANUAL_MARKER = "[modo manual — IA desligada nesta conexão]"
+
 
 async def _resolve_outbound_client(
     pool: AsyncConnectionPool, message: MessageQueue
-) -> OutboundClient:
+) -> tuple[OutboundClient, Conexao]:
     """Monta o cliente outbound a partir da CONEXÃO do banco (cadastrada na
-    UI), não de config via env.
+    UI), não de config via env. Retorna também a conexão resolvida — o
+    caller usa `tipo_atendimento` pro gate de modo manual sem re-consultar.
 
     A conexão é resolvida por `message.conexao_id` e o cliente é construído
     com as credenciais cifradas / payload da conexão (mesmo builder do envio
@@ -351,7 +358,7 @@ async def _resolve_outbound_client(
             f"conexão {message.conexao_id} não existe (removida da UI?)"
         )
     client, _mode = await build_outbound_client(pool, conexao)
-    return client
+    return client, conexao
 
 
 def _attach_arquivo(msg: str, menu) -> str:
@@ -2031,7 +2038,7 @@ async def process_message(
         store: Store LangGraph compartilhado (None se memória desabilitada).
     """
     try:
-        outbound = await _resolve_outbound_client(pool, message)
+        outbound, conexao = await _resolve_outbound_client(pool, message)
     except OutboundError as exc:
         # Conexão sumiu / sem credenciais → não há por onde enviar. Marca
         # failed (retry/falha definitiva) em vez de derrubar o worker ou
@@ -2056,6 +2063,29 @@ async def process_message(
         # Compliance (Disparador): STOP/PARAR → supressão. Antes de tudo pra
         # garantir que o pedido de saída sempre tem prioridade.
         if await _try_handle_opt_out(message, pool, outbound):
+            return
+
+        # Gate modo manual (mig 132) — conexão com tipo_atendimento='manual'
+        # não dispara NENHUMA resposta automática (workflow/menu/agente/CSAT):
+        # a mensagem fica na timeline e o atendimento segue na fila humana
+        # (criado no webhook com status 'aguardando'). Só o opt-out acima
+        # passa antes — compliance anti-ban não depende do modo da conexão.
+        # Empresa nova nasce assim; o admin liga a IA no select de /connections
+        # quando terminar de configurar o agente.
+        if conexao.tipo_atendimento == "manual":
+            await mark_done(
+                pool,
+                message.id,
+                MODO_MANUAL_MARKER,
+                normalized_input=None,
+            )
+            logger.info(
+                "worker_skipped_agent_modo_manual",
+                message_id=message.id,
+                conexao_id=conexao.id,
+                atendimento_id=message.atendimento_id,
+                phone=message.phone_number,
+            )
             return
 
         # S4: detecta resposta APROVAR/REJEITAR <token> do gestor ANTES de

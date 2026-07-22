@@ -322,6 +322,14 @@ export function ConnectionsList({ initialConexoes }: Props) {
                       <option value="manual">Manual (só disparo)</option>
                       <option value="hibrido">Híbrido</option>
                     </select>
+                    {(c.tipo_atendimento || "ia") === "manual" && (
+                      <div
+                        className="mt-0.5 text-[10px] leading-tight text-amber-500"
+                        title="Mensagens entram na fila humana sem resposta automática. Configure o agente e mude para IA quando estiver pronto."
+                      >
+                        IA desligada
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <button

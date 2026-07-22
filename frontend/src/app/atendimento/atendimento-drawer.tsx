@@ -1042,10 +1042,13 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
     bubbles.push({ side: "in", kind: "text", text: m.incoming_message });
   }
 
-  // Marker do handoff humano — o worker grava no `response` quando pula o
-  // agente IA. Não renderiza como bolha (a inbound já fica visível); só
-  // exibe um divider sutil pra deixar claro que o agente foi pulado.
-  const isHandoff = m.response?.startsWith("[handoff humano");
+  // Markers de skip do agente — o worker grava no `response` quando pula o
+  // agente IA (handoff humano ou conexão em modo manual/IA desligada). Não
+  // renderiza como bolha (a inbound já fica visível); só exibe um divider
+  // sutil pra deixar claro que o agente foi pulado.
+  const isHandoff =
+    m.response?.startsWith("[handoff humano") ||
+    m.response?.startsWith("[modo manual");
   if (m.response && !isHandoff) {
     bubbles.push({ side: "out", kind: "text", text: m.response });
   }

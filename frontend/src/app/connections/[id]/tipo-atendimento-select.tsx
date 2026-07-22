@@ -49,6 +49,13 @@ export function TipoAtendimentoSelect({
           </option>
         ))}
       </select>
+      {valor === "manual" && (
+        <p className="mt-1 text-xs text-amber-500">
+          IA desligada — as mensagens entram na fila de atendimento humano sem
+          resposta automática. Configure o agente e mude para IA quando estiver
+          pronto.
+        </p>
+      )}
       {msg && (
         <span
           className={
