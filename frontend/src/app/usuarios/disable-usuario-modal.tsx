@@ -75,8 +75,8 @@ export function DisableUsuarioModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-white/10 bg-obsidian-900 shadow-vsa-xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+      <div className="w-full max-w-md rounded-xl border border-foreground/10 bg-obsidian-900 shadow-vsa-xl">
+        <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
             <PowerOff className="size-4" />
             Desativar {usuario.nome || usuario.email}
@@ -115,7 +115,7 @@ export function DisableUsuarioModal({
                 <select
                   value={targetUser}
                   onChange={(e) => setTargetUser(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-white/10 bg-obsidian-800 px-2 py-1 text-sm"
+                  className="mt-1 block w-full rounded-md border border-foreground/10 bg-obsidian-800 px-2 py-1 text-sm"
                 >
                   <option value="">Selecione…</option>
                   {atendentes.map((a) => (
@@ -145,7 +145,7 @@ export function DisableUsuarioModal({
                   onChange={(e) =>
                     setDeptoId(e.target.value ? Number(e.target.value) : "")
                   }
-                  className="mt-1 block w-full rounded-md border border-white/10 bg-obsidian-800 px-2 py-1 text-sm"
+                  className="mt-1 block w-full rounded-md border border-foreground/10 bg-obsidian-800 px-2 py-1 text-sm"
                 >
                   <option value="">Selecione…</option>
                   {departamentos.map((d) => (
@@ -161,7 +161,7 @@ export function DisableUsuarioModal({
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-white/10 px-4 py-3">
+        <div className="flex justify-end gap-2 border-t border-foreground/10 px-4 py-3">
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>

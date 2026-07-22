@@ -125,7 +125,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
-  themeColor: "#0d0d10",
+  // Barra do browser mobile segue o tema default (light). Quem usa tema
+  // escuro só percebe na cor da barra — cosmético, sem media query por tema.
+  themeColor: "#ffffff",
 };
 
 export default async function RootLayout({

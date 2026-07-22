@@ -35,7 +35,7 @@ export function SenhaGeradaModal({ password, userName, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-xl border border-amber-500/30 bg-obsidian-900 shadow-2xl">
-        <div className="flex items-start justify-between border-b border-white/10 p-4">
+        <div className="flex items-start justify-between border-b border-foreground/10 p-4">
           <div className="flex items-center gap-2">
             <KeyRound className="size-5 text-amber-400" />
             <h2 className="text-lg font-semibold">Senha gerada</h2>
@@ -77,7 +77,7 @@ export function SenhaGeradaModal({ password, userName, onClose }: Props) {
           </div>
         </div>
 
-        <div className="flex justify-end border-t border-white/10 p-4">
+        <div className="flex justify-end border-t border-foreground/10 p-4">
           <Button onClick={onClose}>Entendi, já copiei</Button>
         </div>
       </div>

@@ -52,7 +52,7 @@ function _fmtData(iso: string | null): string {
 }
 
 const INPUT_CLASS =
-  "w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm " +
+  "w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm " +
   "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30";
 
 export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Props) {
@@ -237,9 +237,9 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-white/10 bg-obsidian-900 shadow-2xl">
+      <div className="w-full max-w-2xl rounded-xl border border-foreground/10 bg-obsidian-900 shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 p-4">
+        <div className="flex items-center justify-between border-b border-foreground/10 p-4">
           <h2 className="flex items-center gap-2 text-lg font-semibold">
             <User className="size-4 text-brand-primary" />
             {isEdit ? `Editar — ${usuario.nome || usuario.email}` : "Novo usuário"}
@@ -250,7 +250,7 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-white/10 px-4">
+        <div className="flex gap-1 border-b border-foreground/10 px-4">
           {(
             [
               { id: "dados" as const, label: "Dados básicos" },
@@ -289,7 +289,7 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
                       <img
                         src={avatarPreview}
                         alt="Avatar"
-                        className="size-20 rounded-full object-cover border border-white/15"
+                        className="size-20 rounded-full object-cover border border-foreground/15"
                       />
                     ) : (
                       <div className="size-20 rounded-full bg-brand-primary/15 border border-brand-primary/30 flex items-center justify-center text-2xl font-medium text-brand-primary">
@@ -377,11 +377,11 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
                     {perfisDisponiveis.length === 0 ? (
                       <p className="text-xs text-muted-foreground italic">Nenhum perfil cadastrado.</p>
                     ) : (
-                      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 max-h-48 overflow-y-auto rounded-md border border-white/10 p-2">
+                      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 max-h-48 overflow-y-auto rounded-md border border-foreground/10 p-2">
                         {perfisDisponiveis.map((p) => (
                           <label
                             key={p.id}
-                            className="flex items-center gap-2 rounded p-1.5 text-sm cursor-pointer hover:bg-white/[0.04]"
+                            className="flex items-center gap-2 rounded p-1.5 text-sm cursor-pointer hover:bg-foreground/[0.04]"
                           >
                             <input
                               type="checkbox"
@@ -404,11 +404,11 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
                     {deptsDisponiveis.length === 0 ? (
                       <p className="text-xs text-muted-foreground italic">Nenhum departamento cadastrado.</p>
                     ) : (
-                      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 max-h-48 overflow-y-auto rounded-md border border-white/10 p-2">
+                      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 max-h-48 overflow-y-auto rounded-md border border-foreground/10 p-2">
                         {deptsDisponiveis.map((d) => (
                           <label
                             key={d.id}
-                            className="flex items-center gap-2 rounded p-1.5 text-sm cursor-pointer hover:bg-white/[0.04]"
+                            className="flex items-center gap-2 rounded p-1.5 text-sm cursor-pointer hover:bg-foreground/[0.04]"
                           >
                             <input
                               type="checkbox"
@@ -458,13 +458,13 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
                 ) : conexoesDisponiveis.length === 0 ? (
                   <p className="text-xs text-muted-foreground italic">Nenhuma conexão cadastrada.</p>
                 ) : (
-                  <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-white/10 p-2">
+                  <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-foreground/10 p-2">
                     {conexoesDisponiveis.map((c) => {
                       const sel = conexoesSel.find((x) => x.id === c.id);
                       return (
                         <div
                           key={c.id}
-                          className="flex items-center gap-2 rounded p-1.5 text-sm hover:bg-white/[0.04]"
+                          className="flex items-center gap-2 rounded p-1.5 text-sm hover:bg-foreground/[0.04]"
                         >
                           <input
                             type="checkbox"
@@ -543,7 +543,7 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-white/10 p-4">
+        <div className="flex items-center justify-between border-t border-foreground/10 p-4">
           <div className="text-sm">
             {error && <span className="text-destructive">{error}</span>}
           </div>

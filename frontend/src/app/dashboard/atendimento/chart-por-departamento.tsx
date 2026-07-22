@@ -67,7 +67,7 @@ export function ChartPorDepartamento({
       <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
         <svg viewBox="0 0 160 160" className="size-40 shrink-0">
           {arcs.map((a, i) => (
-            <path key={i} d={a.path} fill={a.color} stroke="rgb(15 15 15)" strokeWidth="1">
+            <path key={i} d={a.path} fill={a.color} stroke="var(--background)" strokeWidth="1">
               <title>{`${a.label}: ${a.total} (${a.pct.toFixed(1)}%)`}</title>
             </path>
           ))}

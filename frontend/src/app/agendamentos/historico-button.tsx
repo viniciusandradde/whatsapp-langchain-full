@@ -86,7 +86,7 @@ export function HistoricoButton({ agendamentoId }: { agendamentoId: number }) {
                 {items.map((h) => (
                   <li
                     key={h.id}
-                    className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3 text-sm"
+                    className="rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3 text-sm"
                   >
                     <div className="mb-1 flex items-center justify-between">
                       <span className="font-medium">

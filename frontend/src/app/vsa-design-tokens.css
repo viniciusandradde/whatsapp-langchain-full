@@ -189,7 +189,8 @@
  * pra esses raw, mudar aqui propaga em cascata sem reescrever 100+
  * componentes. Brand orange/blue mantém em todos os temas.
  *
- * Default (sem data-theme): "obsidian" (atual).
+ * Default via JS (THEME_INIT_SCRIPT sempre seta data-theme): "light".
+ * O :root base (sem data-theme) segue obsidian só como fallback no-JS.
  * ============================================================= */
 
 /* PALETA LIGHT — branca/clara */

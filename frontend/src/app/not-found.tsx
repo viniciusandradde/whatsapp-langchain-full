@@ -25,7 +25,7 @@ export default function NotFound() {
         </Link>
         <Link
           href="/atendimento"
-          className="inline-flex h-9 items-center justify-center rounded-md border border-white/15 bg-transparent px-4 text-sm font-medium hover:bg-white/5"
+          className="inline-flex h-9 items-center justify-center rounded-md border border-foreground/15 bg-transparent px-4 text-sm font-medium hover:bg-foreground/5"
         >
           Ver Atendimentos
         </Link>

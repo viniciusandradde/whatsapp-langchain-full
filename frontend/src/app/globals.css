@@ -188,17 +188,18 @@
 }
 
 .glass-panel:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  /* Tokens (não branco fixo): em fundo claro o hover branco sumia. */
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  border-color: var(--border-default);
 }
 
-/* Skeleton shimmer */
+/* Skeleton shimmer — foreground com alpha (adapta aos 3 temas) */
 .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.03) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.03) 75%
+    color-mix(in srgb, var(--foreground) 3%, transparent) 25%,
+    color-mix(in srgb, var(--foreground) 8%, transparent) 50%,
+    color-mix(in srgb, var(--foreground) 3%, transparent) 75%
   );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.5s ease-in-out infinite;

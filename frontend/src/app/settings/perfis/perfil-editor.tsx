@@ -225,7 +225,7 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   disabled={mode === "edit" || isSystem || isPending}
-                  className="mt-1.5 w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm disabled:opacity-50"
+                  className="mt-1.5 w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm disabled:opacity-50"
                 />
                 {mode === "edit" && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
@@ -244,7 +244,7 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
                   disabled={isSystem || isPending}
-                  className="mt-1.5 w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm disabled:opacity-50"
+                  className="mt-1.5 w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm disabled:opacity-50"
                 />
               </div>
 
@@ -261,12 +261,12 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Buscar permissão…"
                       disabled={isPending}
-                      className="w-56 rounded-md border border-white/10 bg-obsidian-800 py-1.5 pl-8 pr-3 text-xs"
+                      className="w-56 rounded-md border border-foreground/10 bg-obsidian-800 py-1.5 pl-8 pr-3 text-xs"
                     />
                   </div>
                 </div>
                 {search && grouped.length === 0 && (
-                  <p className="mt-3 rounded-md border border-white/10 bg-white/5 p-3 text-xs text-muted-foreground italic">
+                  <p className="mt-3 rounded-md border border-foreground/10 bg-foreground/5 p-3 text-xs text-muted-foreground italic">
                     Nenhuma permissão encontrada pra &ldquo;{search}&rdquo;.
                   </p>
                 )}
@@ -277,7 +277,7 @@ export function PerfilEditor({ mode, perfilId, catalogo, onClose }: Props) {
                     return (
                       <div
                         key={modulo}
-                        className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3"
+                        className="rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3"
                       >
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold">
                           <input

@@ -35,7 +35,7 @@ interface Props {
 }
 
 const INPUT_CLASS =
-  "w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm " +
+  "w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm " +
   "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30";
 
 const SELECT_CLASS = INPUT_CLASS;
@@ -227,7 +227,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
       </CardHeader>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-white/10 px-6">
+      <div className="flex gap-1 border-b border-foreground/10 px-6">
         {(
           [
             { id: "basico", label: "Básico" },
@@ -333,7 +333,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
               )}
 
               {/* Identidade visual (white-label) */}
-              <div className="space-y-3 rounded-lg border border-white/10 bg-obsidian-800/40 p-4 md:col-span-2">
+              <div className="space-y-3 rounded-lg border border-foreground/10 bg-obsidian-800/40 p-4 md:col-span-2">
                 <p className="text-sm font-medium">
                   Identidade visual{" "}
                   <span className="text-xs font-normal text-muted-foreground">
@@ -342,7 +342,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                 </p>
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="space-y-2">
-                    <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-white/15 bg-obsidian-900">
+                    <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-foreground/15 bg-obsidian-900">
                       {logoPreview ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -354,7 +354,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                         <Building2 className="h-7 w-7 text-muted-foreground" />
                       )}
                     </div>
-                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-white/15 px-2 py-1 text-xs hover:bg-white/5">
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-foreground/15 px-2 py-1 text-xs hover:bg-foreground/5">
                       <input
                         type="file"
                         accept="image/png,image/jpeg,image/webp,image/gif"
@@ -390,7 +390,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                           type="color"
                           value={corPrimaria || "#f97316"}
                           onChange={(e) => setCorPrimaria(e.target.value)}
-                          className="h-10 w-full rounded-md border border-white/10 bg-obsidian-800"
+                          className="h-10 w-full rounded-md border border-foreground/10 bg-obsidian-800"
                           disabled={isPending}
                         />
                       </Field>
@@ -399,7 +399,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                           type="color"
                           value={corSecundaria || "#3b82f6"}
                           onChange={(e) => setCorSecundaria(e.target.value)}
-                          className="h-10 w-full rounded-md border border-white/10 bg-obsidian-800"
+                          className="h-10 w-full rounded-md border border-foreground/10 bg-obsidian-800"
                           disabled={isPending}
                         />
                       </Field>
@@ -568,7 +568,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                 </select>
               </Field>
 
-              <div className="rounded-md border border-white/10 bg-obsidian-800/50 p-3 text-sm">
+              <div className="rounded-md border border-foreground/10 bg-obsidian-800/50 p-3 text-sm">
                 <p className="font-medium text-foreground">{planoInfo.label}</p>
                 <p className="mt-1 text-muted-foreground">{planoInfo.descricao}</p>
                 <p className="mt-2 text-xs text-amber-500">

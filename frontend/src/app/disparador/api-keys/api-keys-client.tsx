@@ -77,7 +77,8 @@ export function ApiKeysClient({ initial }: { initial: DisparadorApiKey[] }) {
             Copie agora — esta chave NÃO será exibida novamente:
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 break-all rounded bg-white px-2 py-1 font-mono">
+            {/* Caixa emerald-50 é fixa (clara nos 3 temas) → texto escuro fixo */}
+            <code className="flex-1 break-all rounded bg-white px-2 py-1 font-mono text-slate-900">
               {novaChave}
             </code>
             <Button

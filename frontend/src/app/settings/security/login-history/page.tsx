@@ -69,9 +69,9 @@ export default async function LoginHistoryPage() {
               Nenhum evento registrado. Tentativas de login passarão a aparecer aqui.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
+            <div className="overflow-x-auto rounded-lg border border-foreground/[0.06]">
               <table className="w-full text-sm">
-                <thead className="bg-white/[0.02] text-left text-muted-foreground">
+                <thead className="bg-foreground/[0.02] text-left text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 font-medium">Quando</th>
                     <th className="px-3 py-2 font-medium">Evento</th>
@@ -83,7 +83,7 @@ export default async function LoginHistoryPage() {
                 </thead>
                 <tbody>
                   {events.map((e) => (
-                    <tr key={e.id} className="border-t border-white/[0.06]">
+                    <tr key={e.id} className="border-t border-foreground/[0.06]">
                       <td className="px-3 py-2 text-xs whitespace-nowrap">
                         {formatDateTime(e.created_at)}
                       </td>

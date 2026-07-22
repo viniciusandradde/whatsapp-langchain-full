@@ -46,11 +46,11 @@ interface Props {
 }
 
 const SELECT_CLASS =
-  "rounded-md border border-white/10 bg-obsidian-800 px-2 py-1 text-xs " +
+  "rounded-md border border-foreground/10 bg-obsidian-800 px-2 py-1 text-xs " +
   "focus:outline-none focus:ring-2 focus:ring-brand-primary/30";
 
 const INPUT_CLASS =
-  "rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm " +
+  "rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm " +
   "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30";
 
 export function MembersList({
@@ -202,9 +202,9 @@ export function MembersList({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
+      <div className="overflow-x-auto rounded-lg border border-foreground/[0.06]">
         <table className="w-full text-sm">
-          <thead className="bg-white/[0.02] text-left text-muted-foreground">
+          <thead className="bg-foreground/[0.02] text-left text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-medium">Email</th>
               <th className="px-3 py-2 font-medium">Role</th>
@@ -218,7 +218,7 @@ export function MembersList({
             {members.map((m) => {
               const isDisabled = m.status === "disabled";
               return (
-                <tr key={m.user_id} className="border-t border-white/[0.06]">
+                <tr key={m.user_id} className="border-t border-foreground/[0.06]">
                   <td className="px-3 py-2">
                     <div className="text-sm">{m.email ?? "(sem email)"}</div>
                     <div className="font-mono text-[10px] text-muted-foreground">

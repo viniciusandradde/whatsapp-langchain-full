@@ -186,7 +186,7 @@ export function ApiError({
             <div className="pt-1.5">
               <a
                 href="/billing"
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-white/15 px-3 text-xs font-medium hover:bg-white/5"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-foreground/15 px-3 text-xs font-medium hover:bg-foreground/5"
               >
                 <ArrowUpCircle className="size-3.5" />
                 Upgrade pra {parsed.upgradeTo.charAt(0).toUpperCase() + parsed.upgradeTo.slice(1)}
@@ -205,7 +205,7 @@ export function ApiError({
               <summary className="cursor-pointer text-muted-foreground">
                 Detalhes técnicos
               </summary>
-              <pre className="mt-1 max-h-32 overflow-auto rounded border border-white/10 bg-obsidian-800 p-2">
+              <pre className="mt-1 max-h-32 overflow-auto rounded border border-foreground/10 bg-obsidian-800 p-2">
                 {JSON.stringify(parsed.raw, null, 2)}
               </pre>
             </details>

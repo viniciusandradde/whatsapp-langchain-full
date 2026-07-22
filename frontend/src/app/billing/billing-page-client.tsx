@@ -207,7 +207,7 @@ function PlanoAtualCard({
 }) {
   const ativa = !!status.asaas_subscription_id;
   return (
-    <div className="rounded-xl border border-white/10 bg-obsidian-900 p-4">
+    <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -271,7 +271,7 @@ function PlanoCard({
         "rounded-xl border p-4 space-y-3 " +
         (plano.destaque
           ? "border-brand-primary/50 bg-brand-primary/5"
-          : "border-white/10 bg-obsidian-900")
+          : "border-foreground/10 bg-obsidian-900")
       }
     >
       <div className="flex items-center justify-between">
@@ -296,7 +296,7 @@ function PlanoCard({
             <Check className="h-3 w-3 text-emerald-500" /> {l}
           </p>
         ))}
-        <div className="my-2 h-px bg-white/5" />
+        <div className="my-2 h-px bg-foreground/5" />
         {plano.features.map((f) => (
           <p key={f} className="flex items-center gap-2 text-xs text-foreground">
             <CheckCircle2 className="h-3 w-3 text-emerald-500" /> {f}
@@ -331,7 +331,7 @@ function PlanoCard({
 
 function HistoricoTable({ items }: { items: BillingTransacao[] }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-obsidian-900 p-4">
+    <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
         <History className="h-4 w-4" /> Histórico de cobranças
       </h2>
@@ -343,7 +343,7 @@ function HistoricoTable({ items }: { items: BillingTransacao[] }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase text-muted-foreground">
+              <tr className="border-b border-foreground/10 text-xs uppercase text-muted-foreground">
                 <th className="text-left py-2">Data</th>
                 <th className="text-left">Descrição</th>
                 <th className="text-left">Plano</th>
@@ -354,7 +354,7 @@ function HistoricoTable({ items }: { items: BillingTransacao[] }) {
             </thead>
             <tbody>
               {items.map((t) => (
-                <tr key={t.id} className="border-b border-white/5">
+                <tr key={t.id} className="border-b border-foreground/5">
                   <td className="py-2 text-xs text-muted-foreground">
                     {new Date(t.created_at).toLocaleString("pt-BR", {
                       day: "2-digit", month: "2-digit", year: "numeric",

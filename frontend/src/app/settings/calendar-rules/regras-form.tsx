@@ -95,7 +95,7 @@ export function RegrasForm({ initial }: Props) {
               type="time"
               value={horaInicio}
               onChange={(e) => setHoraInicio(e.target.value)}
-              className="mt-1.5 w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm font-mono"
+              className="mt-1.5 w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm font-mono"
               disabled={isPending}
             />
           </div>
@@ -108,7 +108,7 @@ export function RegrasForm({ initial }: Props) {
               type="time"
               value={horaFim}
               onChange={(e) => setHoraFim(e.target.value)}
-              className="mt-1.5 w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm font-mono"
+              className="mt-1.5 w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm font-mono"
               disabled={isPending}
             />
           </div>
@@ -125,7 +125,7 @@ export function RegrasForm({ initial }: Props) {
             min={0}
             value={antecedencia}
             onChange={(e) => setAntecedencia(Number(e.target.value))}
-            className="mt-1.5 w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm"
+            className="mt-1.5 w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm"
             disabled={isPending}
           />
           <p className="mt-1 text-xs text-muted-foreground">
@@ -146,7 +146,7 @@ export function RegrasForm({ initial }: Props) {
                 className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
                   diasSemana.includes(d.v)
                     ? "border-brand-primary bg-brand-primary/20 text-brand-primary"
-                    : "border-white/10 bg-obsidian-800 text-muted-foreground"
+                    : "border-foreground/10 bg-obsidian-800 text-muted-foreground"
                 }`}
               >
                 {d.label}
@@ -166,7 +166,7 @@ export function RegrasForm({ initial }: Props) {
             value={diasBloqueadosStr}
             onChange={(e) => setDiasBloqueadosStr(e.target.value)}
             placeholder="2026-12-25, 2026-12-31"
-            className="mt-1.5 w-full rounded-md border border-white/10 bg-obsidian-800 px-3 py-2 text-sm font-mono"
+            className="mt-1.5 w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm font-mono"
             disabled={isPending}
           />
           <p className="mt-1 text-xs text-muted-foreground">
@@ -175,7 +175,7 @@ export function RegrasForm({ initial }: Props) {
         </div>
 
         {/* Requer aprovação */}
-        <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3">
+        <div className="rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3">
           <label className="flex items-center gap-3">
             <input
               type="checkbox"

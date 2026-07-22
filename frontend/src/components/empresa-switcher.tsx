@@ -68,12 +68,12 @@ export function EmpresaSwitcher({
         disabled={isPending}
         className={cn(
           "flex w-full items-center justify-between gap-2 rounded-lg",
-          "border border-white/[0.08] bg-white/[0.02] px-3 py-2",
+          "border border-foreground/[0.08] bg-foreground/[0.02] px-3 py-2",
           "text-left text-sm text-foreground transition-all",
-          "hover:bg-white/[0.05] hover:border-white/15",
+          "hover:bg-foreground/[0.05] hover:border-foreground/15",
           "focus:outline-none focus:ring-2 focus:ring-brand-primary/30",
           isPending && "opacity-60 pointer-events-none",
-          open && "bg-white/[0.05] border-white/15"
+          open && "bg-foreground/[0.05] border-foreground/15"
         )}
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -90,7 +90,7 @@ export function EmpresaSwitcher({
 
       {open && (
         <div
-          className="absolute left-0 right-0 top-full mt-1 z-50 overflow-hidden rounded-lg border border-white/10 bg-obsidian-800 shadow-vsa-xl"
+          className="absolute left-0 right-0 top-full mt-1 z-50 overflow-hidden rounded-lg border border-foreground/10 bg-obsidian-800 shadow-vsa-xl"
           onMouseLeave={() => setOpen(false)}
         >
           <ul className="py-1 max-h-64 overflow-auto">
@@ -105,7 +105,7 @@ export function EmpresaSwitcher({
                       "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
                       isActive
                         ? "bg-brand-primary/10 text-brand-primary"
-                        : "text-foreground/80 hover:bg-white/[0.05] hover:text-foreground"
+                        : "text-foreground/80 hover:bg-foreground/[0.05] hover:text-foreground"
                     )}
                   >
                     {isActive && (

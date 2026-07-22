@@ -70,7 +70,7 @@ export function EmptyState({
     >
       <div
         className={cn(
-          "flex items-center justify-center rounded-full bg-white/[0.04]",
+          "flex items-center justify-center rounded-full bg-foreground/[0.04]",
           iconWrapSize
         )}
       >
@@ -103,7 +103,7 @@ export function EmptyState({
             (secondaryAction.href ? (
               <a
                 href={secondaryAction.href}
-                className="inline-flex h-8 items-center justify-center rounded-md border border-white/15 px-3 text-xs font-medium hover:bg-white/5"
+                className="inline-flex h-8 items-center justify-center rounded-md border border-foreground/15 px-3 text-xs font-medium hover:bg-foreground/5"
               >
                 {secondaryAction.label}
               </a>

@@ -1,6 +1,6 @@
 /**
  * VSA Tecnologia - Component Styles (Obsidian v2.0)
- * Dark-first component styles
+ * Component styles theme-aware (tokens raw — adaptam via data-theme)
  */
 
 .vsa-btn {
@@ -61,15 +61,15 @@
 }
 
 .vsa-btn-outline {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
   color: var(--text-secondary);
   border: 1px solid var(--border-default);
 }
 
 .vsa-btn-outline:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: color-mix(in srgb, var(--text-primary) 15%, transparent);
 }
 
 .vsa-btn-ghost {
@@ -78,7 +78,7 @@
 }
 
 .vsa-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
   color: var(--text-primary);
 }
 
@@ -156,7 +156,7 @@
 }
 
 .vsa-input:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: color-mix(in srgb, var(--text-primary) 15%, transparent);
 }
 
 .vsa-input:focus {
@@ -219,7 +219,7 @@
 }
 
 .vsa-badge-gray {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
   color: var(--text-secondary);
 }
 
@@ -247,7 +247,7 @@
 }
 
 .vsa-sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
   color: var(--text-primary);
 }
 
@@ -299,7 +299,7 @@
 .vsa-spinner {
   width: 24px;
   height: 24px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
+  border: 3px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
   border-top-color: var(--brand-primary);
   border-radius: 50%;
   animation: vsa-spin 0.8s linear infinite;
@@ -429,7 +429,7 @@
 
 .vsa-session:hover {
   border-color: var(--border-default);
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
 }
 
 .vsa-session-active {

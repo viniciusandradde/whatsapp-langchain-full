@@ -294,7 +294,7 @@ export function AgenteEditor({
           </div>
         </div>
 
-        <nav className="mt-3 flex flex-wrap gap-1 border-b border-white/[0.06]">
+        <nav className="mt-3 flex flex-wrap gap-1 border-b border-foreground/[0.06]">
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
@@ -623,7 +623,7 @@ function TabModelo({
         ]}
       />
 
-      <div className="rounded-md border border-white/[0.06] bg-white/[0.02] p-3 text-xs">
+      <div className="rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3 text-xs">
         <p className="font-medium">Valores efetivos:</p>
         <p>
           Temperatura: <code>{a.temperatura_efetiva.toFixed(2)}</code>
@@ -686,7 +686,7 @@ function TabTools({ a }: { a: AgenteIA }) {
         <ul className="grid grid-cols-1 gap-1 md:grid-cols-2">
           {TOOLS_DISPONIVEIS.map((t) => (
             <li key={t.slug}>
-              <label className="flex items-start gap-2 rounded-md border border-white/[0.04] bg-white/[0.02] p-2 text-xs">
+              <label className="flex items-start gap-2 rounded-md border border-foreground/[0.04] bg-foreground/[0.02] p-2 text-xs">
                 <input
                   type="checkbox"
                   name={`tool_${t.slug}`}
@@ -837,7 +837,7 @@ function TabKbMcp({ a, pastas }: { a: AgenteIA; pastas: Pasta[] }) {
         placeholder="(MCP ainda não implementado)"
       />
 
-      <div className="border-t border-white/[0.06] pt-3">
+      <div className="border-t border-foreground/[0.06] pt-3">
         <FieldSelect
           label="Limite de custo: ação ao atingir limite mensal da empresa"
           name="limite_custo_acao"

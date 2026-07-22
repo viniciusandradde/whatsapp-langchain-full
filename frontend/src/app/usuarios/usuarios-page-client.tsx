@@ -184,13 +184,13 @@ export function UsuariosPageClient() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nome, email ou telefone…"
-            className="h-9 w-72 rounded-md border border-white/10 bg-obsidian-800 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+            className="h-9 w-72 rounded-md border border-foreground/10 bg-obsidian-800 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          className="h-9 rounded-md border border-white/10 bg-obsidian-800 px-3 text-sm"
+          className="h-9 rounded-md border border-foreground/10 bg-obsidian-800 px-3 text-sm"
         >
           <option value="todos">Todos status</option>
           <option value="active">Ativos</option>
@@ -220,10 +220,10 @@ export function UsuariosPageClient() {
           }}
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-obsidian-900">
+        <div className="overflow-hidden rounded-xl border border-foreground/10 bg-obsidian-900">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr className="border-b border-foreground/10 text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 text-left">Usuário</th>
                 <th className="px-4 py-3 text-left">Contato</th>
                 <th className="px-4 py-3 text-left">Perfis</th>
@@ -235,7 +235,7 @@ export function UsuariosPageClient() {
             </thead>
             <tbody>
               {filtered.map((u) => (
-                <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                <tr key={u.id} className="border-b border-foreground/5 hover:bg-foreground/[0.02]">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <UserAvatar usuario={u} />
@@ -288,7 +288,7 @@ export function UsuariosPageClient() {
                         {u.departamentos.slice(0, 2).map((d) => (
                           <span
                             key={d.id}
-                            className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[11px]"
+                            className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[11px]"
                           >
                             {d.nome}
                           </span>
@@ -365,7 +365,7 @@ export function UsuariosPageClient() {
           </table>
 
           {/* Paginação */}
-          <div className="flex items-center justify-between border-t border-white/10 px-4 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between border-t border-foreground/10 px-4 py-2 text-xs text-muted-foreground">
             <span>
               {total === 0
                 ? "0 usuários"
@@ -462,7 +462,7 @@ function UserAvatar({ usuario }: { usuario: Usuario }) {
       <img
         src={src}
         alt={usuario.nome || "Avatar"}
-        className="size-9 shrink-0 rounded-full object-cover border border-white/10"
+        className="size-9 shrink-0 rounded-full object-cover border border-foreground/10"
       />
     );
   }
@@ -486,7 +486,7 @@ function StatusBadge({ usuario }: { usuario: Usuario }) {
     ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
     : usuario.atendente_status === "ausente"
       ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-      : "border-white/10 bg-white/5 text-muted-foreground";
+      : "border-foreground/10 bg-foreground/5 text-muted-foreground";
   const label = online
     ? "Online"
     : usuario.atendente_status === "ausente"

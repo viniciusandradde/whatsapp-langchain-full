@@ -101,7 +101,7 @@ export function CompaniesList({ empresas }: Props) {
                 <div className="flex items-center justify-end gap-2 px-4 pb-4">
                   <Link
                     href={`/companies/${e.id}/members`}
-                    className="inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-[0.8rem] text-muted-foreground transition-all hover:bg-white/[0.05] hover:text-foreground"
+                    className="inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-[0.8rem] text-muted-foreground transition-all hover:bg-foreground/[0.05] hover:text-foreground"
                   >
                     <Users className="size-3.5" />
                     Membros

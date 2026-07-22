@@ -180,7 +180,7 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
         </div>
 
         {/* Tabs nav */}
-        <nav className="mt-3 flex flex-wrap gap-1 border-b border-white/[0.06]">
+        <nav className="mt-3 flex flex-wrap gap-1 border-b border-foreground/[0.06]">
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;

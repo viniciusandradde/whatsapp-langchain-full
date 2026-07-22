@@ -14,12 +14,12 @@ const buttonVariants = cva(
         default:
           "bg-vsa-brand text-white font-semibold shadow-vsa-orange hover:bg-vsa-brand-hover hover:shadow-glow-orange-lg hover:-translate-y-px active:translate-y-0",
         outline:
-          "border-white/10 bg-white/[0.04] text-foreground hover:bg-white/[0.08] hover:border-white/20 hover:-translate-y-px",
+          "border-foreground/10 bg-foreground/[0.04] text-foreground hover:bg-foreground/[0.08] hover:border-foreground/20 hover:-translate-y-px",
         // Secondary — gradient blue.
         secondary:
           "bg-vsa-blue-gradient text-white font-semibold shadow-vsa-blue hover:shadow-glow-blue-lg hover:-translate-y-px active:translate-y-0",
         ghost:
-          "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground aria-expanded:bg-white/[0.08] aria-expanded:text-foreground",
+          "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground aria-expanded:bg-foreground/[0.08] aria-expanded:text-foreground",
         destructive:
           "bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/25 hover:border-destructive/50 focus-visible:ring-destructive/30",
         link: "text-brand-primary underline-offset-4 hover:underline hover:text-brand-primary-light",

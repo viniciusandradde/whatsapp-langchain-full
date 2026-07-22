@@ -106,7 +106,7 @@ export function AuditList({ items, limit, offset, filters }: Props) {
               {items.map((it) => (
                 <li
                   key={it.id}
-                  className="cursor-pointer p-3 hover:bg-white/[0.02]"
+                  className="cursor-pointer p-3 hover:bg-foreground/[0.02]"
                   onClick={() =>
                     setExpandedId(expandedId === it.id ? null : it.id)
                   }
@@ -136,7 +136,7 @@ export function AuditList({ items, limit, offset, filters }: Props) {
                     </div>
                   </div>
                   {expandedId === it.id && (
-                    <pre className="mt-3 max-h-80 overflow-auto rounded bg-white/[0.04] p-3 font-mono text-[11px]">
+                    <pre className="mt-3 max-h-80 overflow-auto rounded bg-foreground/[0.04] p-3 font-mono text-[11px]">
                       {JSON.stringify(it.payload_diff, null, 2)}
                     </pre>
                   )}

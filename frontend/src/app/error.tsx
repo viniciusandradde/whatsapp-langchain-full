@@ -43,7 +43,7 @@ export default function GlobalError({
 
       {/* Digest pra suporte (Next gera automaticamente em prod) */}
       {error.digest && (
-        <div className="rounded-md border border-white/10 bg-obsidian-800 px-3 py-1.5 text-xs">
+        <div className="rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-xs">
           <span className="text-muted-foreground">Código: </span>
           <code className="font-mono text-foreground">{error.digest}</code>
         </div>
@@ -55,7 +55,7 @@ export default function GlobalError({
           <summary className="cursor-pointer text-muted-foreground">
             Detalhes do erro (apenas dev)
           </summary>
-          <pre className="mt-2 overflow-auto rounded-md border border-white/10 bg-obsidian-800 p-3 text-destructive">
+          <pre className="mt-2 overflow-auto rounded-md border border-foreground/10 bg-obsidian-800 p-3 text-destructive">
             {error.message}
             {error.stack && "\n\n" + error.stack}
           </pre>
@@ -69,7 +69,7 @@ export default function GlobalError({
         </Button>
         <Link
           href="/dashboard/atendimento"
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-white/15 bg-transparent px-4 text-sm font-medium hover:bg-white/5"
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-foreground/15 bg-transparent px-4 text-sm font-medium hover:bg-foreground/5"
         >
           <Home className="size-4" />
           Voltar pra Home

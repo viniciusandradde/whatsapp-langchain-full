@@ -298,7 +298,7 @@ export function CampanhaDetailClient({
               </p>
             </div>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-foreground/[0.06]">
             <div
               className="h-full bg-emerald-500 transition-all"
               style={{ width: `${progress}%` }}
@@ -312,7 +312,7 @@ export function CampanhaDetailClient({
           <CardTitle className="text-base">Mensagem</CardTitle>
         </CardHeader>
         <CardContent>
-          <pre className="whitespace-pre-wrap rounded-md bg-white/[0.04] p-3 text-sm">
+          <pre className="whitespace-pre-wrap rounded-md bg-foreground/[0.04] p-3 text-sm">
             {c.mensagem}
           </pre>
         </CardContent>

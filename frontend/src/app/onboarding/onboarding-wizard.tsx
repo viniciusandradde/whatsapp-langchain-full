@@ -150,14 +150,14 @@ export function OnboardingWizard() {
       </div>
 
       {/* Progress */}
-      <div className="rounded-xl border border-white/10 bg-obsidian-900 p-4 space-y-2">
+      <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4 space-y-2">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">
             Progresso: {done} de {total} passos
           </span>
           <span className="text-muted-foreground">{percent}%</span>
         </div>
-        <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+        <div className="h-2 rounded-full bg-foreground/5 overflow-hidden">
           <div
             className="h-full bg-emerald-500 transition-all"
             style={{ width: `${percent}%` }}
@@ -177,7 +177,7 @@ export function OnboardingWizard() {
                 "rounded-xl border p-4 transition-colors",
                 ok
                   ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-white/10 bg-obsidian-900"
+                  : "border-foreground/10 bg-obsidian-900"
               )}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -185,7 +185,7 @@ export function OnboardingWizard() {
                   <div
                     className={cn(
                       "flex size-10 shrink-0 items-center justify-center rounded-full",
-                      ok ? "bg-emerald-500/20" : "bg-white/[0.04]"
+                      ok ? "bg-emerald-500/20" : "bg-foreground/[0.04]"
                     )}
                   >
                     {ok ? (
@@ -196,7 +196,7 @@ export function OnboardingWizard() {
                   </div>
                   <div className="space-y-1 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <span className="rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                         Passo {step.numero}
                       </span>
                       {ok && (
@@ -225,14 +225,14 @@ export function OnboardingWizard() {
       </div>
 
       {/* Skip */}
-      <div className="flex items-center justify-between border-t border-white/5 pt-4">
+      <div className="flex items-center justify-between border-t border-foreground/5 pt-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Circle className="size-3" />
           Configurações podem ser feitas a qualquer momento
         </div>
         <Link
           href="/dashboard/atendimento"
-          className="inline-flex h-8 items-center justify-center gap-1 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground"
+          className="inline-flex h-8 items-center justify-center gap-1 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
         >
           Pular pra agora <ArrowRight className="size-3" />
         </Link>

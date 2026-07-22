@@ -75,9 +75,9 @@ export function QuotaCard({ empresaId }: Props) {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-white/10 bg-obsidian-900 p-4">
-        <div className="h-4 w-32 animate-pulse rounded bg-white/10" />
-        <div className="mt-3 h-16 animate-pulse rounded bg-white/5" />
+      <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4">
+        <div className="h-4 w-32 animate-pulse rounded bg-foreground/10" />
+        <div className="mt-3 h-16 animate-pulse rounded bg-foreground/5" />
       </div>
     );
   }
@@ -100,7 +100,7 @@ export function QuotaCard({ empresaId }: Props) {
   );
 
   return (
-    <div className="rounded-xl border border-white/10 bg-obsidian-900 p-4 space-y-4">
+    <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4 space-y-4">
       {/* Header: plano atual + upgrade */}
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-1">
@@ -148,7 +148,7 @@ export function QuotaCard({ empresaId }: Props) {
 
       {/* Recursos avançados habilitados (badges) */}
       {Object.keys(quota.features).length > 0 && (
-        <div className="space-y-1.5 border-t border-white/5 pt-3">
+        <div className="space-y-1.5 border-t border-foreground/5 pt-3">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Recursos avançados
           </p>
@@ -225,7 +225,7 @@ function QuotaRow({
           <span className="ml-1 text-muted-foreground">({p.toFixed(0)}%)</span>
         </span>
       </div>
-      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-foreground/5 overflow-hidden">
         <div
           className={"h-full transition-all " + color}
           style={{ width: `${widthPct}%` }}

@@ -99,7 +99,7 @@ export function Sidebar({
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 md:hidden text-white"
+        className="fixed top-4 left-4 z-50 md:hidden text-foreground"
         onClick={() => setOpen(!open)}
       >
         {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

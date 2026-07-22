@@ -126,7 +126,7 @@ export function NewConnectionModal({ onClose }: Props) {
             <div className="flex-1">
               <div className="flex items-center gap-2 font-medium">
                 Twilio
-                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-muted-foreground">
+                <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-muted-foreground">
                   Legado
                 </span>
               </div>
