@@ -42,6 +42,10 @@ export function useTheme(): {
     document.documentElement.setAttribute("data-theme", next);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, next);
+      // Cookie: permite o SSR renderizar <html data-theme> já certo no
+      // primeiro byte — zero flash em qualquer tema (localStorage só é
+      // legível no client, tarde demais com streaming).
+      document.cookie = `${THEME_STORAGE_KEY}=${next}; path=/; max-age=31536000; samesite=lax`;
     } catch {
       /* localStorage indisponível (private mode/iframe) — ok, só não persiste */
     }
@@ -57,10 +61,12 @@ export function useTheme(): {
  */
 export const THEME_INIT_SCRIPT = `
 (function(){try{
-  var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
+  var k=${JSON.stringify(THEME_STORAGE_KEY)};
+  var t=localStorage.getItem(k);
   if(t!=="light"&&t!=="black"&&t!=="obsidian"){t=${JSON.stringify(DEFAULT_THEME)};}
-  document.documentElement.setAttribute("data-theme",t);
-}catch(e){
-  document.documentElement.setAttribute("data-theme",${JSON.stringify(DEFAULT_THEME)});
-}})();
+  var el=document.documentElement;
+  if(el.getAttribute("data-theme")!==t){el.setAttribute("data-theme",t);}
+  // Migração: garante o cookie pro SSR acertar já no próximo load.
+  document.cookie=k+"="+t+"; path=/; max-age=31536000; samesite=lax";
+}catch(e){}})();
 `.trim();

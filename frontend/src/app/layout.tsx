@@ -12,7 +12,12 @@ import {
   SIDEBAR_INIT_SCRIPT,
 } from "@/components/sidebar-context";
 import { getMyEmpresas, getMyPermissions } from "@/lib/api";
-import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import {
+  DEFAULT_THEME,
+  THEME_INIT_SCRIPT,
+  THEME_STORAGE_KEY,
+  type ThemeName,
+} from "@/lib/theme";
 import "./globals.css";
 
 const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
@@ -138,8 +143,18 @@ export default async function RootLayout({
     resolveInitialPermissions(),
   ]);
   const brandCss = brandStyleVars(brand);
+
+  // Tema já no SSR (zero flash): cookie gravado pelo setTheme/init script.
+  // Sem cookie válido → DEFAULT_THEME. O THEME_INIT_SCRIPT continua no
+  // <head> só como migração (localStorage antigo sem cookie) e correção.
+  const themeCookie = (await cookies()).get(THEME_STORAGE_KEY)?.value;
+  const ssrTheme: ThemeName =
+    themeCookie === "light" || themeCookie === "obsidian" || themeCookie === "black"
+      ? themeCookie
+      : DEFAULT_THEME;
+
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" data-theme={ssrTheme} suppressHydrationWarning>
       <head>
         {/* Anti-FOUC: aplica data-theme do localStorage antes do React
             montar. Sem isso há flash escuro→claro no carregamento. */}

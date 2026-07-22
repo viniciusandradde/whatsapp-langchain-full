@@ -170,7 +170,9 @@
     color: var(--foreground);
     min-height: 100dvh;
     font-family: var(--vsa-font-body);
-    transition: background-color 200ms ease, color 200ms ease;
+    /* SEM transition aqui: com streaming SSR o data-theme pode ser
+       aplicado logo após o first paint e a transition transformava isso
+       num fade escuro→claro visível a cada load (FOUC animado). */
   }
   html {
     @apply font-sans;

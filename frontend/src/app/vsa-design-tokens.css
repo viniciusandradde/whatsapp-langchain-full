@@ -1,15 +1,18 @@
 /**
  * VSA Tecnologia - Design System "Obsidian v2.0"
- * Dark-first design tokens
+ * Light-first: o :root base é o tema CLARO (default de novos usuários) —
+ * assim a PRIMEIRA pintura já sai certa sem depender do THEME_INIT_SCRIPT
+ * (que em streaming SSR pode rodar depois do first paint → flash escuro).
+ * Os temas escuros moram em [data-theme="obsidian"|"black"] abaixo.
  */
 
 :root {
-  /* OBSIDIAN SCALE — suavizado pra reduzir contraste extremo do void puro */
-  --obsidian-950: #0d0d10;
-  --obsidian-900: #14141a;
-  --obsidian-800: #1c1c24;
-  --obsidian-700: #24242c;
-  --obsidian-600: #2e2e36;
+  /* SURFACE SCALE (light) — nomes "obsidian-*" mantidos por compat */
+  --obsidian-950: #ffffff;            /* canvas */
+  --obsidian-900: #f8fafc;            /* sidebar */
+  --obsidian-800: #f1f5f9;            /* surface elevada */
+  --obsidian-700: #e2e8f0;            /* borders fortes */
+  --obsidian-600: #cbd5e1;            /* divisores */
 
   /* BRAND */
   --brand-primary: #F97316;
@@ -42,26 +45,26 @@
   --vsa-blue-800: #1E40AF;
   --vsa-blue-900: #1E3A8A;
 
-  /* TEXT (dark mode) */
-  --text-primary: #f5f5f5;
-  --text-secondary: #a3a3a3;
-  --text-muted: #737373;
+  /* TEXT (light) */
+  --text-primary: #0f172a;
+  --text-secondary: #1e293b;
+  --text-muted: #475569;
 
-  /* BORDERS (dark mode) */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.10);
+  /* BORDERS (light) */
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.10);
 
-  /* GLASS (white-base for crystalline depth on #050505) */
-  --glass-bg: rgba(255, 255, 255, 0.03);
-  --glass-border: rgba(255, 255, 255, 0.05);
+  /* GLASS (light) */
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.06);
   --glass-blur: 20px;
 
-  /* GLOW (vibrant neon on deep void) */
-  --glow-orange: 0 0 30px -5px rgba(249, 115, 22, 0.3);
-  --glow-orange-lg: 0 0 40px -10px rgba(249, 115, 22, 0.4);
-  --glow-blue: 0 0 30px -5px rgba(59, 130, 246, 0.3);
-  --glow-blue-lg: 0 0 40px -10px rgba(59, 130, 246, 0.4);
-  --glow-brand: 0 0 40px -10px rgba(249, 115, 22, 0.4);
+  /* GLOW (discretos em fundo claro) */
+  --glow-orange: 0 4px 14px rgba(249, 115, 22, 0.18);
+  --glow-orange-lg: 0 8px 24px rgba(249, 115, 22, 0.22);
+  --glow-blue: 0 4px 14px rgba(59, 130, 246, 0.18);
+  --glow-blue-lg: 0 8px 24px rgba(59, 130, 246, 0.22);
+  --glow-brand: 0 8px 24px rgba(249, 115, 22, 0.20);
 
   /* SEMÂNTICAS */
   --vsa-success-light: #D1FAE5;
@@ -108,13 +111,13 @@
   --vsa-space-6: 1.5rem;
   --vsa-space-8: 2rem;
 
-  /* SOMBRAS */
-  --vsa-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --vsa-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
-  --vsa-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
-  --vsa-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5), 0 4px 6px rgba(0, 0, 0, 0.3);
-  --vsa-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5), 0 8px 10px rgba(0, 0, 0, 0.3);
-  --vsa-shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.6);
+  /* SOMBRAS (light) */
+  --vsa-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --vsa-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --vsa-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.05);
+  --vsa-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08), 0 4px 6px rgba(0, 0, 0, 0.04);
+  --vsa-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.10), 0 8px 10px rgba(0, 0, 0, 0.04);
+  --vsa-shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.15);
   --vsa-shadow-orange: 0 4px 14px rgba(249, 115, 22, 0.25);
   --vsa-shadow-orange-lg: 0 8px 24px rgba(249, 115, 22, 0.35);
   --vsa-shadow-blue: 0 4px 14px rgba(59, 130, 246, 0.25);
@@ -166,12 +169,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: var(--vsa-radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 ::selection {
@@ -189,46 +192,52 @@
  * pra esses raw, mudar aqui propaga em cascata sem reescrever 100+
  * componentes. Brand orange/blue mantém em todos os temas.
  *
- * Default via JS (THEME_INIT_SCRIPT sempre seta data-theme): "light".
- * O :root base (sem data-theme) segue obsidian só como fallback no-JS.
+ * Default: "light" — que é o PRÓPRIO :root base (primeira pintura já sai
+ * clara sem JS). O SSR renderiza <html data-theme> a partir do cookie
+ * `vsa-theme`; o THEME_INIT_SCRIPT só migra localStorage antigo → cookie.
  * ============================================================= */
 
-/* PALETA LIGHT — branca/clara */
+/* PALETA LIGHT — igual ao :root base (explícito pra quem salvou "light") */
 :root[data-theme="light"] {
-  --obsidian-950: #ffffff;            /* canvas */
-  --obsidian-900: #f8fafc;            /* sidebar */
-  --obsidian-800: #f1f5f9;            /* surface elevada */
-  --obsidian-700: #e2e8f0;            /* borders fortes */
-  --obsidian-600: #cbd5e1;            /* divisores */
+  --obsidian-950: #ffffff;
+}
 
-  --text-primary: #0f172a;
-  /* slate-800 (em vez de slate-600) pra que opacities baixas (/40, /50, /60)
-     usadas no sidebar ainda dêem contraste razoável em fundo branco. */
-  --text-secondary: #1e293b;
-  /* slate-600 (em vez de slate-400) pra que --muted-foreground em chunks
-     de help-text fique legível (5.7:1 vs antes 2.5:1). */
-  --text-muted: #475569;
+/* Tokens ESCUROS compartilhados por obsidian + black (glows neon e
+   sombras profundas — antes moravam no :root base dark-first; com o base
+   claro, os dois temas escuros precisam deles aqui). */
+:root[data-theme="obsidian"],
+:root[data-theme="black"] {
+  --glow-orange: 0 0 30px -5px rgba(249, 115, 22, 0.3);
+  --glow-orange-lg: 0 0 40px -10px rgba(249, 115, 22, 0.4);
+  --glow-blue: 0 0 30px -5px rgba(59, 130, 246, 0.3);
+  --glow-blue-lg: 0 0 40px -10px rgba(59, 130, 246, 0.4);
+  --glow-brand: 0 0 40px -10px rgba(249, 115, 22, 0.4);
 
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-default: rgba(0, 0, 0, 0.10);
+  --vsa-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --vsa-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5), 0 4px 6px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5), 0 8px 10px rgba(0, 0, 0, 0.3);
+  --vsa-shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.6);
+}
 
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(0, 0, 0, 0.06);
+/* PALETA OBSIDIAN — escuro suavizado (ex-default) */
+:root[data-theme="obsidian"] {
+  --obsidian-950: #0d0d10;
+  --obsidian-900: #14141a;
+  --obsidian-800: #1c1c24;
+  --obsidian-700: #24242c;
+  --obsidian-600: #2e2e36;
 
-  /* Glows discretos em fundo claro */
-  --glow-orange: 0 4px 14px rgba(249, 115, 22, 0.18);
-  --glow-orange-lg: 0 8px 24px rgba(249, 115, 22, 0.22);
-  --glow-blue: 0 4px 14px rgba(59, 130, 246, 0.18);
-  --glow-blue-lg: 0 8px 24px rgba(59, 130, 246, 0.22);
-  --glow-brand: 0 8px 24px rgba(249, 115, 22, 0.20);
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
+  --text-muted: #737373;
 
-  /* Sombras mais visíveis em fundo branco */
-  --vsa-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --vsa-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --vsa-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.05);
-  --vsa-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.08), 0 4px 6px rgba(0, 0, 0, 0.04);
-  --vsa-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.10), 0 8px 10px rgba(0, 0, 0, 0.04);
-  --vsa-shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.05);
 }
 
 /* PALETA BLACK — preto puro AMOLED, contraste alto */
@@ -250,10 +259,13 @@
   --glass-border: rgba(255, 255, 255, 0.08);
 }
 
-/* Scrollbar adaptativa: thumb escuro em fundo claro */
-:root[data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
+/* Scrollbar adaptativa: base é clara (thumb escuro); temas escuros
+   precisam de thumb claro. */
+:root[data-theme="obsidian"] ::-webkit-scrollbar-thumb,
+:root[data-theme="black"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
 }
-:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
+:root[data-theme="obsidian"] ::-webkit-scrollbar-thumb:hover,
+:root[data-theme="black"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
