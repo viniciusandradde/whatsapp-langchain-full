@@ -476,12 +476,18 @@ async def testar_agente_endpoint(
             await store_stack.aclose()
         await ckpt_stack.aclose()
 
+    from whatsapp_langchain.shared.sanitize_resposta import (
+        sanitize_resposta_agente,
+    )
+
     mensagens = result.get("messages", [])
     resposta = mensagens[-1].content if mensagens else ""
     if isinstance(resposta, list):  # blocos multimodais → só texto
         resposta = " ".join(
             b.get("text", "") for b in resposta if isinstance(b, dict)
         ).strip()
+    if isinstance(resposta, str):
+        resposta = sanitize_resposta_agente(resposta)
 
     return {
         "resposta": resposta,

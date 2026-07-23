@@ -2488,6 +2488,15 @@ async def process_message(
 
         # 4. Extrair resposta
         response_text = result["messages"][-1].content
+        # Defesa da plataforma: modelos fracos vazam blocos de raciocínio
+        # (<raciocinio_interno>...) na resposta — remove antes de qualquer
+        # coisa chegar perto do cliente (incidente Luis Fernando 2026-07-23).
+        from whatsapp_langchain.shared.sanitize_resposta import (
+            sanitize_resposta_agente,
+        )
+
+        if isinstance(response_text, str):
+            response_text = sanitize_resposta_agente(response_text)
 
         # Sprint O — Guardrails de output
         try:
