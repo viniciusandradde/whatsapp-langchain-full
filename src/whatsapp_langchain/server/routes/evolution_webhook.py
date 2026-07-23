@@ -284,7 +284,10 @@ async def webhook_evolution(
                 get_credentials_decrypted,
             )
 
-            creds = await get_credentials_decrypted(pool, conexao.id) or {}
+            try:
+                creds = await get_credentials_decrypted(pool, conexao.id) or {}
+            except Exception:  # best-effort: sem creds na conexão → env
+                creds = {}
             res = await download_evolution_media_b64(
                 instance,
                 msg_key_id,
