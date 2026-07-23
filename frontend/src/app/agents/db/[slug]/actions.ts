@@ -51,3 +51,33 @@ export async function deleteAgenteAction(slug: string): Promise<OkResult> {
     return { ok: false, error: toError(e) };
   }
 }
+
+export async function testarAgenteAction(
+  slug: string,
+  mensagem: string
+): Promise<
+  | { ok: true; data: import("@/lib/api").TestarAgenteResult }
+  | { ok: false; error: string }
+> {
+  try {
+    const { testarAgente } = await import("@/lib/api");
+    return { ok: true, data: await testarAgente(slug, { mensagem }) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao testar o agente.",
+    };
+  }
+}
+
+export async function resetarTesteAgenteAction(
+  slug: string
+): Promise<{ ok: boolean }> {
+  try {
+    const { testarAgente } = await import("@/lib/api");
+    await testarAgente(slug, { mensagem: "", resetar: true });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}

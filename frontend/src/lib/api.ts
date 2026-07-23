@@ -3484,6 +3484,24 @@ export async function getAgentesIA(opts?: {
   return apiFetch<{ items: AgenteIA[] }>(`/api/v1/agentes${q}`);
 }
 
+
+export interface TestarAgenteResult {
+  resposta: string;
+  tools_chamadas: string[];
+  duracao_ms: number;
+  thread_id: string;
+}
+
+export async function testarAgente(
+  slug: string,
+  payload: { mensagem: string; resetar?: boolean }
+): Promise<TestarAgenteResult> {
+  return apiFetch<TestarAgenteResult>(
+    `/api/v1/agentes/${encodeURIComponent(slug)}/testar`,
+    { method: "POST", body: payload }
+  );
+}
+
 export async function getAgenteIA(slug: string): Promise<AgenteIA> {
   return apiFetch<AgenteIA>(`/api/v1/agentes/${slug}`);
 }

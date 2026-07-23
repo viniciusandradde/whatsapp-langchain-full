@@ -374,3 +374,118 @@ async def replace_perfis_endpoint(
         "entries": entries,
         "modo": "whitelist" if entries else "compat",
     }
+
+
+# --- Módulo Teste de Agente (chat no painel, sem WhatsApp) ---
+#
+# Conversa com o agente REAL (prompt renderizado + variáveis + memória + KB)
+# usando o mesmo pipeline do worker (resolve_agente_runtime → load_graph →
+# ainvoke), mas em thread isolada `teste:{user}:{slug}`:
+# - NÃO passa atendimento_id → tools CRM degradam graciosamente ("contexto
+#   incompleto") sem tocar cliente/atendimento real
+# - NÃO envia nada pro WhatsApp (sem outbound)
+# - Memória/checkpoint persistem entre mensagens do teste até o reset
+
+
+class TestarAgenteInput(BaseModel):
+    mensagem: str = Field(default="", max_length=4000)
+    resetar: bool = False
+
+
+def _extrair_tools_chamadas(messages: list, desde: int) -> list[str]:
+    """Nomes das tools chamadas nas mensagens novas deste turno."""
+    tools: list[str] = []
+    for m in messages[desde:]:
+        for tc in getattr(m, "tool_calls", None) or []:
+            nome = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+            if nome:
+                tools.append(str(nome))
+    return tools
+
+
+@router.post("/{slug}/testar")
+async def testar_agente_endpoint(
+    slug: str,
+    body: TestarAgenteInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
+) -> dict:
+    import time as _time
+
+    from langchain_core.messages import HumanMessage
+
+    from whatsapp_langchain.agents.loader import load_graph
+    from whatsapp_langchain.shared.agente import resolve_agente_runtime
+    from whatsapp_langchain.shared.db import open_checkpointer, open_store
+
+    pool = await get_pool()
+    agente = await get_agente_by_slug(pool, empresa_id, slug)
+    if agente is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+
+    thread_id = f"teste:{user_id}:{empresa_id}:{slug}"
+
+    if body.resetar:
+        async with pool.connection() as conn:
+            for tabela in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                await conn.execute(
+                    f"DELETE FROM {tabela} WHERE thread_id = %s",  # noqa: S608
+                    (thread_id,),
+                )
+            await conn.commit()
+        if not body.mensagem.strip():
+            return {"ok": True, "resetado": True}
+
+    if not body.mensagem.strip():
+        raise HTTPException(status_code=400, detail="Mensagem vazia.")
+
+    runtime = await resolve_agente_runtime(pool, empresa_id, slug)
+
+    inicio = _time.monotonic()
+    ckpt_stack, checkpointer = await open_checkpointer()
+    store_stack, store = await open_store()
+    try:
+        graph = await load_graph(
+            slug,
+            checkpointer=checkpointer,
+            store=store,
+            pool=pool,
+            empresa_id=empresa_id,
+            agente_runtime=runtime,
+        )
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+                "user_id": thread_id,
+                "empresa_id": empresa_id,
+                "base_conhecimento_ids": (
+                    list(runtime.base_conhecimento_ids) if runtime else []
+                ),
+            }
+        }
+        estado_previo = await graph.aget_state(config)
+        n_previas = len((estado_previo.values or {}).get("messages", []))
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content=body.mensagem)]},
+            config=config,
+        )
+    finally:
+        if store_stack is not None:
+            await store_stack.aclose()
+        await ckpt_stack.aclose()
+
+    mensagens = result.get("messages", [])
+    resposta = mensagens[-1].content if mensagens else ""
+    if isinstance(resposta, list):  # blocos multimodais → só texto
+        resposta = " ".join(
+            b.get("text", "") for b in resposta if isinstance(b, dict)
+        ).strip()
+
+    return {
+        "resposta": resposta,
+        "tools_chamadas": _extrair_tools_chamadas(mensagens, n_previas),
+        "duracao_ms": int((_time.monotonic() - inicio) * 1000),
+        "thread_id": thread_id,
+    }

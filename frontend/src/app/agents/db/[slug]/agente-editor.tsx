@@ -12,6 +12,10 @@ import {
   Sparkles,
   Star,
   Trash2,
+  FlaskConical,
+  RotateCcw,
+  Send,
+  Loader2,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +56,7 @@ interface Props {
   pastas?: Pasta[];
 }
 
-type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp";
+type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp" | "testar";
 
 const TABS: { id: TabId; label: string; icon: typeof Bot }[] = [
   { id: "identidade", label: "Identidade", icon: Bot },
@@ -60,6 +64,7 @@ const TABS: { id: TabId; label: string; icon: typeof Bot }[] = [
   { id: "prompt", label: "Prompt", icon: MessageSquareText },
   { id: "tools", label: "Tools & Mídia", icon: Cog },
   { id: "kb_mcp", label: "KB / MCP / Custo", icon: FileText },
+  { id: "testar", label: "Testar", icon: FlaskConical },
 ];
 
 const ESTILO_OPTIONS: { v: EstiloResposta; l: string; hint: string }[] = [
@@ -328,6 +333,11 @@ export function AgenteEditor({
         )}
         {success && <p className="mb-3 text-sm text-emerald-300">{success}</p>}
 
+        {/* Tab Testar vive FORA do <form> de config: chat interativo não
+            pode disputar Enter/submit com o botão Salvar. */}
+        {tab === "testar" && <TabTestar slug={a.slug} />}
+
+        {tab !== "testar" && (
         <form onSubmit={handleSubmit} className="space-y-4">
           {tab === "identidade" && (
             <TabIdentidade
@@ -354,6 +364,7 @@ export function AgenteEditor({
             </Button>
           </div>
         </form>
+        )}
       </CardContent>
     </Card>
   );
@@ -959,6 +970,144 @@ function FieldSelect({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+// ---- Tab Testar — chat com o agente real, sem WhatsApp ----
+//
+// Conversa com o pipeline real (prompt + variáveis + memória + KB) numa
+// thread isolada de teste no servidor. Nada é enviado ao WhatsApp e nenhum
+// cliente/atendimento é tocado (tools CRM viram no-op sem atendimento).
+
+type MsgTeste = {
+  role: "user" | "agente";
+  texto: string;
+  tools?: string[];
+  ms?: number;
+};
+
+function TabTestar({ slug }: { slug: string }) {
+  const [msgs, setMsgs] = React.useState<MsgTeste[]>([]);
+  const [texto, setTexto] = React.useState("");
+  const [enviando, setEnviando] = React.useState(false);
+  const [erro, setErro] = React.useState<string | null>(null);
+  const fimRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    fimRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs, enviando]);
+
+  async function enviar() {
+    const t = texto.trim();
+    if (!t || enviando) return;
+    setErro(null);
+    setTexto("");
+    setMsgs((m) => [...m, { role: "user", texto: t }]);
+    setEnviando(true);
+    const { testarAgenteAction } = await import("./actions");
+    const r = await testarAgenteAction(slug, t);
+    setEnviando(false);
+    if (r.ok) {
+      setMsgs((m) => [
+        ...m,
+        {
+          role: "agente",
+          texto: r.data.resposta || "(resposta vazia)",
+          tools: r.data.tools_chamadas,
+          ms: r.data.duracao_ms,
+        },
+      ]);
+    } else {
+      setErro(r.error);
+    }
+  }
+
+  async function reiniciar() {
+    if (msgs.length && !confirm("Reiniciar a conversa de teste? A memória desta sessão será apagada.")) return;
+    const { resetarTesteAgenteAction } = await import("./actions");
+    await resetarTesteAgenteAction(slug);
+    setMsgs([]);
+    setErro(null);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Ambiente de teste — nada é enviado ao WhatsApp nem toca clientes
+          reais. A conversa usa o prompt/variáveis/memória atuais do agente
+          (salve as alterações antes de testar).
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={reiniciar}>
+          <RotateCcw className="size-3.5" />
+          Reiniciar
+        </Button>
+      </div>
+
+      <div className="h-[420px] overflow-y-auto rounded-lg border bg-background/50 p-3 space-y-2">
+        {msgs.length === 0 && !enviando && (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            Envie uma mensagem como se você fosse o cliente no WhatsApp.
+          </p>
+        )}
+        {msgs.map((m, i) => (
+          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+            <div
+              className={
+                "max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap " +
+                (m.role === "user" ? "bg-primary/15" : "bg-secondary")
+              }
+            >
+              {m.texto}
+              {m.role === "agente" && (
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {(m.tools ?? []).map((t) => (
+                    <Badge key={t} variant="outline" className="text-[10px]">
+                      🔧 {t}
+                    </Badge>
+                  ))}
+                  {m.ms != null && (
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {(m.ms / 1000).toFixed(1)}s
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {enviando && (
+          <div className="flex justify-start">
+            <div className="rounded-2xl bg-secondary px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="inline size-3.5 animate-spin" /> digitando…
+            </div>
+          </div>
+        )}
+        <div ref={fimRef} />
+      </div>
+
+      {erro && <p className="text-sm text-destructive">{erro}</p>}
+
+      <div className="flex gap-2">
+        <textarea
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void enviar();
+            }
+          }}
+          rows={2}
+          placeholder="Digite como se fosse o cliente… (Enter envia, Shift+Enter quebra linha)"
+          className="flex-1 resize-none rounded-md border border-foreground/10 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+        />
+        <Button type="button" onClick={() => void enviar()} disabled={enviando || !texto.trim()}>
+          <Send className="size-3.5" />
+          Enviar
+        </Button>
+      </div>
     </div>
   );
 }
