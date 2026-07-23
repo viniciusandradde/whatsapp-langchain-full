@@ -20,6 +20,24 @@ from dataclasses import dataclass
 _CPF_RE = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 _CNPJ_RE = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
 _EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
+
+# E-mails institucionais/de suporte NÃO são PII a esconder: o agente
+# PRECISA fornecê-los ao cliente (ex.: biomedicina@unigran.br pra atestados).
+# Mascará-los quebrava a resposta (incidente agente Luis Fernando 2026-07-23).
+# Vem de env EMAIL_ALLOWLIST_DOMINIOS (csv), + defaults comuns de suporte.
+import os as _os
+
+_EMAIL_ALLOWLIST = {
+    d.strip().lower()
+    for d in (_os.environ.get("EMAIL_ALLOWLIST_DOMINIOS", "") or "").split(",")
+    if d.strip()
+}
+
+
+def _email_isento(endereco: str) -> bool:
+    """True se o domínio do e-mail está na allowlist institucional."""
+    dominio = endereco.rpartition("@")[2].lower()
+    return any(dominio == d or dominio.endswith("." + d) for d in _EMAIL_ALLOWLIST)
 _PHONE_BR_RE = re.compile(r"(?:\+?55\s*)?\(?\d{2}\)?\s*9?\s*\d{4,5}[-\s]?\d{4}")
 _CARD_RE = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
 
@@ -60,9 +78,12 @@ def redact_pii(text: str, *, mode: str = "mask") -> PIIRedactResult:
         return "[CNPJ]" if mode == "block" else ""
 
     def _replace_email(m: re.Match) -> str:
+        endereco = m.group(0)
+        if _email_isento(endereco):
+            return endereco  # institucional — não mascara, não conta
         counts["email"] += 1
         if mode == "mask":
-            local, _, domain = m.group(0).partition("@")
+            local, _, domain = endereco.partition("@")
             return f"{local[0]}***@***.{domain.split('.')[-1]}"
         return "[EMAIL]" if mode == "block" else ""
 
