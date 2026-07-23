@@ -1,0 +1,24 @@
+# Contexto de build enxuto — os Dockerfiles copiam paths específicos, mas
+# isso evita upload de lixo pro daemon/CI e acidentes de COPY amplo.
+.git
+.github
+.next
+node_modules
+frontend/node_modules
+frontend/.next
+__pycache__
+**/__pycache__
+.venv
+.pytest_cache
+.ruff_cache
+docs/
+# Exceção: Dockerfile.tests copia os eval-runs do agente
+!docs/agente/eval-runs/
+patch/
+extension/
+*.zip
+*.log
+dump*
+.env
+.env.*
+.claude
