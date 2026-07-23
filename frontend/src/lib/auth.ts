@@ -163,7 +163,10 @@ export const auth = betterAuth({
     window: 60, // 60s window default
     max: 30,    // 30 req/min por IP em qualquer rota auth
     customRules: {
-      "/sign-in/email": { window: 900, max: 5 },         // 5 tentativas / 15 min
+      // 15/15min: o contador é cego pro sucesso (login válido também conta),
+      // então 5 travava testes de RBAC e escritórios com IP compartilhado.
+      // 15 em 15 min segue inviável pra força bruta.
+      "/sign-in/email": { window: 900, max: 15 },
       "/sign-up/email": { window: 900, max: 3 },         // 3 / 15 min (mesmo com disableSignUp)
       "/forget-password": { window: 3600, max: 3 },      // 3 / hora
       "/reset-password": { window: 3600, max: 5 },       // 5 / hora
