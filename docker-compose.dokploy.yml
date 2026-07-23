@@ -5,14 +5,20 @@
 # - POSTGRES_PASSWORD obrigatório (sem default)
 # - `name: chat-nexus` pra containers virem com prefixo chat-nexus-* em vez
 #   do auto-gerado pelo Dokploy (projetos-chatvsanexus-er02mp-*).
+#
+# CI/CD (2026-07-23): SEM `build:` — as imagens vêm prontas do registry
+# privado (registry.vsanexus.com), buildadas pelo GitHub Actions
+# (.github/workflows/deploy.yml). O deploy do Dokploy só faz pull +
+# recreate (~segundos), nada compila na máquina de produção (o build
+# derrubava o nó Swarm — ver docs/DEPLOY.md e gotcha_deploy_sob_carga).
+# IMAGE_TAG vem do env do Dokploy (default latest); o CI atualiza pra
+# fixar o SHA de cada release quando configurado.
 
 name: chat-nexus
 
 services:
   db:
-    build:
-      context: .
-      dockerfile: Dockerfile.db
+    image: registry.vsanexus.com/chatnexus/db:${IMAGE_TAG:-latest}
     environment:
       POSTGRES_DB: whatsapp_langchain
       POSTGRES_USER: postgres
@@ -26,9 +32,7 @@ services:
     restart: unless-stopped
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
+    image: registry.vsanexus.com/chatnexus/api:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
@@ -56,9 +60,7 @@ services:
       - disparador_media:/app/uploads/disparador
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
+    image: registry.vsanexus.com/chatnexus/worker:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
@@ -77,13 +79,10 @@ services:
           memory: 512M
 
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      args:
-        # Build-time: o rewrite /uploads/* (next.config standalone) congela a
-        # destination no route-manifest. Tem que bater com o runtime abaixo.
-        INTERNAL_API_URL: http://api:8000
+    # Build-time ARG INTERNAL_API_URL=http://api:8000 é aplicado no CI
+    # (o rewrite /uploads/* congela a destination no route-manifest e tem
+    # que bater com o runtime abaixo).
+    image: registry.vsanexus.com/chatnexus/frontend:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       INTERNAL_API_URL: http://api:8000
@@ -98,9 +97,7 @@ services:
   # admin conseguir disparar via UI em https://chat.vsanexus.com/relatorios/allure.
   # Imagem da API permanece leve (Java/allure só vivem nessa imagem).
   tests:
-    build:
-      context: .
-      dockerfile: Dockerfile.tests
+    image: registry.vsanexus.com/chatnexus/tests:${IMAGE_TAG:-latest}
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain

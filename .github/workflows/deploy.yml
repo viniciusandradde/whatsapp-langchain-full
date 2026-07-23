@@ -1,0 +1,139 @@
+# CI/CD ChatNexus — builda as imagens FORA da máquina de produção.
+#
+# Motivação (incidente 2026-07-23): o docker build no servidor OCI (4 vCPU)
+# derrubava o heartbeat do Swarm e o Dokploy cancelava o próprio deploy.
+# Agora: GitHub Actions builda (QEMU arm64) → push pro registry privado
+# (registry.vsanexus.com) → webhook dispara o Dokploy, que só faz
+# pull + recreate (docker-compose.dokploy.yml não tem mais `build:`).
+#
+# Custo zero: runners ubuntu-latest (2.000 min/mês grátis em repo privado),
+# com paths-filter (só builda o que mudou) e cache de layers no registry.
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   REGISTRY_USER / REGISTRY_PASSWORD — auth do registry.vsanexus.com
+#   DOKPLOY_WEBHOOK_URL — URL de deploy do compose no Dokploy
+
+name: deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-master
+  cancel-in-progress: true
+
+env:
+  REGISTRY: registry.vsanexus.com
+  PREFIX: registry.vsanexus.com/chatnexus
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      db: ${{ steps.filter.outputs.db }}
+      tests: ${{ steps.filter.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'Dockerfile.api'
+              - 'Dockerfile.worker'
+              - 'langgraph.json'
+            frontend:
+              - 'frontend/**'
+              - 'Dockerfile.frontend'
+            db:
+              - 'Dockerfile.db'
+            tests:
+              - 'tests/**'
+              - 'Dockerfile.tests'
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+
+  build:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            dockerfile: Dockerfile.api
+            context: .
+            when: ${{ needs.changes.outputs.backend }}
+          - image: worker
+            dockerfile: Dockerfile.worker
+            context: .
+            when: ${{ needs.changes.outputs.backend }}
+          - image: frontend
+            dockerfile: Dockerfile.frontend
+            context: .
+            when: ${{ needs.changes.outputs.frontend }}
+          - image: db
+            dockerfile: Dockerfile.db
+            context: .
+            when: ${{ needs.changes.outputs.db }}
+          - image: tests
+            dockerfile: Dockerfile.tests
+            context: .
+            when: ${{ needs.changes.outputs.tests }}
+    steps:
+      - name: Skip se não mudou
+        if: matrix.when != 'true'
+        run: echo "sem mudanças pra ${{ matrix.image }} — skip"
+
+      - uses: actions/checkout@v4
+        if: matrix.when == 'true'
+
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.when == 'true'
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+        if: matrix.when == 'true'
+
+      - uses: docker/login-action@v3
+        if: matrix.when == 'true'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - uses: docker/build-push-action@v6
+        if: matrix.when == 'true'
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.PREFIX }}/${{ matrix.image }}:latest
+            ${{ env.PREFIX }}/${{ matrix.image }}:${{ github.sha }}
+          # Gotcha load-bearing: o rewrite /uploads/* do Next congela a
+          # destination no build — ARG obrigatório (docs no CLAUDE.md).
+          build-args: |
+            INTERNAL_API_URL=http://api:8000
+          cache-from: type=registry,ref=${{ env.PREFIX }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.PREFIX }}/${{ matrix.image }}:buildcache,mode=max
+
+  deploy:
+    needs: [changes, build]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispara deploy no Dokploy (pull + recreate)
+        run: |
+          curl -fsS -X POST "${{ secrets.DOKPLOY_WEBHOOK_URL }}"
+          echo "deploy disparado — Dokploy faz git pull do compose + docker pull das imagens"
