@@ -13,12 +13,16 @@
 # derrubava o nó Swarm — ver docs/DEPLOY.md e gotcha_deploy_sob_carga).
 # IMAGE_TAG vem do env do Dokploy (default latest); o CI atualiza pra
 # fixar o SHA de cada release quando configurado.
+# pull_policy: always é OBRIGATÓRIO com tag :latest — sem ele o compose
+# up reutiliza a imagem local antiga e o deploy "passa" sem atualizar
+# nada (aconteceu no primeiro deploy da esteira, 2026-07-23).
 
 name: chat-nexus
 
 services:
   db:
     image: registry.vsanexus.com/chatnexus/db:${IMAGE_TAG:-latest}
+    pull_policy: always
     environment:
       POSTGRES_DB: whatsapp_langchain
       POSTGRES_USER: postgres
@@ -33,6 +37,7 @@ services:
 
   api:
     image: registry.vsanexus.com/chatnexus/api:${IMAGE_TAG:-latest}
+    pull_policy: always
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
@@ -61,6 +66,7 @@ services:
 
   worker:
     image: registry.vsanexus.com/chatnexus/worker:${IMAGE_TAG:-latest}
+    pull_policy: always
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
@@ -83,6 +89,7 @@ services:
     # (o rewrite /uploads/* congela a destination no route-manifest e tem
     # que bater com o runtime abaixo).
     image: registry.vsanexus.com/chatnexus/frontend:${IMAGE_TAG:-latest}
+    pull_policy: always
     env_file: .env
     environment:
       INTERNAL_API_URL: http://api:8000
@@ -98,6 +105,7 @@ services:
   # Imagem da API permanece leve (Java/allure só vivem nessa imagem).
   tests:
     image: registry.vsanexus.com/chatnexus/tests:${IMAGE_TAG:-latest}
+    pull_policy: always
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/whatsapp_langchain
