@@ -276,8 +276,21 @@ async def webhook_evolution(
         msg_key_id = str(key.get("id") or "").strip()
         remote_jid_raw = str(key.get("remoteJid") or "").strip()
         if msg_key_id and remote_jid_raw:
+            # Credenciais DA CONEXÃO (mesmo padrão do outbound) — o env
+            # global EVOLUTION_API_KEY pode divergir da chave real do
+            # servidor (deu 401 silencioso: áudio/PDF nunca entravam na
+            # fila — caso Luis Fernando 2026-07-23).
+            from whatsapp_langchain.shared.conexao import (
+                get_credentials_decrypted,
+            )
+
+            creds = await get_credentials_decrypted(pool, conexao.id) or {}
             res = await download_evolution_media_b64(
-                instance, msg_key_id, remote_jid_raw
+                instance,
+                msg_key_id,
+                remote_jid_raw,
+                base_url=creds.get("api_url") or None,
+                api_key=creds.get("api_key") or None,
             )
             if res is not None:
                 b64, mime_real = res

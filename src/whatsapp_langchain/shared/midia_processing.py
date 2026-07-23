@@ -16,8 +16,11 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+import structlog
 
 from whatsapp_langchain.shared.config import settings
+
+logger = structlog.get_logger()
 
 # Auth Twilio (API Key) só é anexada para hosts da Twilio — evita vazar a
 # credencial pra um destino arbitrário num redirect malicioso.
@@ -201,7 +204,16 @@ async def download_evolution_media_b64(
             if isinstance(b64, str) and b64:
                 return (b64, mime)
             return None
-    except Exception:
+    except Exception as exc:
+        # Sem raise: mídia é best-effort (mensagem segue só com texto).
+        # Mas o motivo PRECISA aparecer no log — um 401 silencioso aqui
+        # custou horas de diagnóstico.
+        logger.warning(
+            "evolution_media_download_failed",
+            instance=instance,
+            message_key_id=message_key_id,
+            error=str(exc)[:200],
+        )
         return None
 
 
