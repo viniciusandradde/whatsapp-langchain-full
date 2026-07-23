@@ -62,6 +62,14 @@ ALLOWLIST: list[tuple[str, str]] = [
     # Disparador in-browser (extensão) — autenticado por API key da empresa
     # (require_scope("dispatch")), não RBAC de user. Mesmo padrão de webhook.
     ("POST", "/api/disparador/ext/"),
+    # Captura da extensão Chrome — autenticada por API key da empresa
+    # (require_scope("capture")), não RBAC de user. Mesmo padrão do ext/.
+    ("POST", "/api/captura/"),
+    # Config global Asaas — superadmin only via _require_superadmin (é
+    # plataforma, não empresa: require_permission não se aplica, mesmo
+    # racional do bloco /api/billing acima). Cobre PUT config + POST testar.
+    ("PUT", "/api/admin/integracoes/asaas"),
+    ("POST", "/api/admin/integracoes/asaas"),
 ]
 
 # Snapshot de tech-debt — endpoints LEGADOS sem require_permission detectados

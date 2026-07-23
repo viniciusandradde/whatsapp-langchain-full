@@ -4,6 +4,7 @@ Verifica que processor.py e webhook_sync.py respeitam
 settings.memory_enabled para decidir se criam store.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from whatsapp_langchain.shared.config import settings
@@ -146,9 +147,20 @@ class TestProcessorMemoryFlag:
 
             # Worker monta o client por-conexão (build_outbound_client do DB);
             # curto-circuita a resolução pro mock.
-            with patch(
-                "whatsapp_langchain.worker.processor._resolve_outbound_client",
-                new=AsyncMock(return_value=mock_twilio),
+            with (
+                patch(
+                    "whatsapp_langchain.worker.processor._resolve_outbound_client",
+                    new=AsyncMock(
+                        return_value=(
+                            mock_twilio,
+                            SimpleNamespace(id=77, tipo_atendimento="ia"),
+                        )
+                    ),
+                ),
+                patch(
+                    "whatsapp_langchain.worker.processor.is_whitelisted",
+                    new=AsyncMock(return_value=False),
+                ),
             ):
                 await process_message(
                     message,

@@ -164,6 +164,43 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "Gerenciar conexões de API (qualquer provider do catálogo)",
         "integracao",
     ),
+    # Campanhas / Disparador (mig 122 criou na tabela; catálogo veio depois —
+    # sem estas entries a UI de perfis não exibia nem deixava atribuir)
+    (
+        "disparador.disparar",
+        "Criar/disparar campanhas de mensagens em massa",
+        "disparador",
+    ),
+    (
+        "disparador.capturar",
+        "Capturar/importar contatos e grupos (extensão Chrome)",
+        "disparador",
+    ),
+    (
+        "disparador.api_key.manage",
+        "Gerenciar API keys da extensão do Disparador",
+        "disparador",
+    ),
+    (
+        "disparador.template.manage",
+        "Gerenciar templates de mensagem do Disparador",
+        "disparador",
+    ),
+    # Templates HSM WABA (mig 109) — módulo 'conexao' (mesma tela)
+    ("waba_template.read", "Ver templates HSM (WABA/Twilio)", "conexao"),
+    (
+        "waba_template.write",
+        "Criar/submeter/sincronizar templates HSM",
+        "conexao",
+    ),
+    # Whitelist IA (mig 133)
+    (
+        "whitelist.manage",
+        "CRUD da whitelist de números com IA desativada",
+        "whitelist",
+    ),
+    # LGPD
+    ("lgpd.audit.read", "Ver auditoria/logs LGPD", "lgpd"),
 ]
 
 
@@ -213,6 +250,14 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "integracao.wareline.manage",
             "integracao.manage",
             "security.audit.read",
+            # Campanhas/Disparador + templates + whitelist — paridade exata
+            # com as grants das migs 093/122/133 pros Gestores existentes
+            # (api_key/template.manage do disparador ficam Admin-only).
+            "disparador.disparar",
+            "disparador.capturar",
+            "waba_template.read",
+            "waba_template.write",
+            "whitelist.manage",
         ],
     ),
     (

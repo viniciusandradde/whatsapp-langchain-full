@@ -53,6 +53,7 @@ async def capturar_contatos(
     conexao_id: int,
     background_tasks: BackgroundTasks,
     empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("disparador.capturar")),
     user_id: str = Depends(get_user_id_from_request),
 ) -> CapturaResponse:
     """Inicia captura de contatos da instância Evolution (background)."""
@@ -77,6 +78,7 @@ async def capturar_grupos(
     background_tasks: BackgroundTasks,
     com_membros: bool = True,
     empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("disparador.capturar")),
     user_id: str = Depends(get_user_id_from_request),
 ) -> CapturaResponse:
     """Inicia captura de grupos (e membros) da instância Evolution (background)."""

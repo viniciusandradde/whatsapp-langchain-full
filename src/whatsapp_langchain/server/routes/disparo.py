@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import disparo as disp
 from whatsapp_langchain.shared import opt_out as oo
 from whatsapp_langchain.shared.campanha import normalize_phone
@@ -34,6 +35,7 @@ router = APIRouter(
 async def preview(
     body: disp.PreviewRequest,
     empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("disparador.disparar")),
 ) -> disp.PreviewResultado:
     """Resolve a origem e devolve contagens + amostra (estágio 'Preparar')."""
     pool = await get_pool()
@@ -59,7 +61,9 @@ async def listar_opt_out(empresa_id: int = Depends(get_empresa_context)) -> dict
 
 @router.post("/opt-out", status_code=201)
 async def adicionar_opt_out(
-    body: OptOutInput, empresa_id: int = Depends(get_empresa_context)
+    body: OptOutInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("disparador.disparar")),
 ) -> dict:
     """Adiciona manualmente um telefone à supressão."""
     pool = await get_pool()
@@ -80,7 +84,9 @@ async def adicionar_opt_out(
 
 @router.delete("/opt-out/{opt_out_id}")
 async def remover_opt_out(
-    opt_out_id: int, empresa_id: int = Depends(get_empresa_context)
+    opt_out_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("disparador.disparar")),
 ) -> dict:
     """Remove um telefone da supressão (re-permite contato)."""
     pool = await get_pool()

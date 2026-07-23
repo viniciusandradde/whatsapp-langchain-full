@@ -889,6 +889,7 @@ async def regenerate_pairing_code(
     conexao_id: int,
     body: PairingCodeInput,
     empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("conexao.write")),
 ) -> PairingCodeResponse:
     """Gera um novo código de pareamento (Evolution) pro número informado.
 

@@ -15,6 +15,7 @@ const MODULO_TITULO: Record<string, string> = {
   cliente: "Clientes",
   conexao: "Conexões WhatsApp",
   departamento: "Departamentos",
+  disparador: "Campanhas / Disparador",
   empresa: "Empresa",
   horario: "Horários",
   hook: "Webhooks",
@@ -26,6 +27,7 @@ const MODULO_TITULO: Record<string, string> = {
   tag: "Tags",
   variavel: "Variáveis",
   waba_template: "Templates WhatsApp HSM",
+  whitelist: "Whitelist IA",
 };
 
 // Verbo CRUD inferido do sufixo do código

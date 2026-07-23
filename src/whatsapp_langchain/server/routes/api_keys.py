@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import api_key as ak
 from whatsapp_langchain.shared.db import get_pool
 
@@ -45,6 +46,7 @@ async def criar(
     body: ApiKeyCreate,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("disparador.api_key.manage")),
 ) -> dict:
     """Cria uma chave e retorna o segredo UMA única vez (`key`)."""
     pool = await get_pool()
@@ -55,7 +57,11 @@ async def criar(
 
 
 @router.post("/{key_id}/revoke")
-async def revogar(key_id: int, empresa_id: int = Depends(get_empresa_context)) -> dict:
+async def revogar(
+    key_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("disparador.api_key.manage")),
+) -> dict:
     """Revoga (soft) uma chave."""
     pool = await get_pool()
     if not await ak.revoke_api_key(pool, empresa_id, key_id):
