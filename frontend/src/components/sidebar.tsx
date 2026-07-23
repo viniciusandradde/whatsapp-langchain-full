@@ -80,11 +80,20 @@ export function Sidebar({
     if (tabs.length === 0) return !g.requires || hasPerm(g.requires);
     return tabs.some(tabPermitida);
   });
-  // O clique no grupo leva pra PRIMEIRA aba que o user pode acessar —
-  // o href fixo podia apontar pra uma rota 403 (ex. /agents sem
-  // agente.config).
-  const groupHref = (g: (typeof NAV_GROUPS)[number]) =>
-    (NAV_TABS_BY_GROUP[g.grupo] ?? []).find(tabPermitida)?.href ?? g.href;
+  // O clique no grupo leva pra primeira aba permitida QUE RESOLVE pro
+  // próprio grupo (resolveGroup) — senão cai em rotas tipo /dashboard/ia,
+  // que o mapa de prefixos classifica como "visao", e a barra de abas
+  // troca de grupo (admin via "IA & Conteúdo" só com o dashboard).
+  // Fallback: qualquer aba permitida; por fim o href fixo do grupo.
+  const groupHref = (g: (typeof NAV_GROUPS)[number]) => {
+    const tabs = NAV_TABS_BY_GROUP[g.grupo] ?? [];
+    const permitidas = tabs.filter(tabPermitida);
+    return (
+      permitidas.find((t) => resolveGroup(t.href) === g.grupo)?.href ??
+      permitidas[0]?.href ??
+      g.href
+    );
+  };
 
   // Active state por GRUPO: destaca o grupo cuja resolveGroup() bate com a
   // URL atual. Isso garante consistência com TopNavTabs (mesma lógica).
