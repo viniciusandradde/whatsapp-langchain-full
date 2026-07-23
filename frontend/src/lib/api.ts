@@ -1111,6 +1111,24 @@ export async function getQueue(): Promise<QueueResponse> {
   return apiFetch<QueueResponse>("/api/queue");
 }
 
+export interface PlanoCatalogo {
+  nome: string;
+  slug: string;
+  descricao: string | null;
+  preco_mensal_brl: number | null;
+  preco_anual_brl: number | null;
+  limite_usuarios: number | null;
+  limite_conexoes: number | null;
+  limite_atendimentos_mes: number | null;
+  limite_orcamento_ia_usd: number | null;
+  limite_documentos_kb: number | null;
+  features: Record<string, boolean | number>;
+}
+
+export async function getPlanosCatalogo(): Promise<{ items: PlanoCatalogo[] }> {
+  return apiFetch<{ items: PlanoCatalogo[] }>("/api/billing/planos");
+}
+
 export async function getMyEmpresas(
   includeInactive: boolean = false
 ): Promise<EmpresasResponse> {
@@ -4651,7 +4669,7 @@ export interface CheckoutResult {
   plano: string;
 }
 
-export async function billingCheckout(plano: "pro" | "enterprise"): Promise<CheckoutResult> {
+export async function billingCheckout(plano: string): Promise<CheckoutResult> {
   return apiFetch<CheckoutResult>("/api/billing/checkout", {
     method: "POST",
     body: { plano },

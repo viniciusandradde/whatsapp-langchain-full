@@ -19,12 +19,13 @@ import type { BillingStatus, BillingTransacao } from "@/lib/api";
 import {
   cancelSubscriptionAction,
   checkoutAction,
+  loadPlanosCatalogoAction,
   loadBillingHistoricoAction,
   loadBillingStatusAction,
 } from "./actions";
 
 interface Plano {
-  slug: "free" | "pro" | "enterprise";
+  slug: string;
   nome: string;
   preco: string;
   destaque?: boolean;
@@ -32,13 +33,20 @@ interface Plano {
   limites: string[];
 }
 
-const PLANOS: Plano[] = [
+const PLANOS_FALLBACK: Plano[] = [
   {
     slug: "free",
     nome: "Free",
     preco: "R$ 0",
     features: ["Suporte por email"],
     limites: ["1 conexão WhatsApp", "2 usuários", "100 atendimentos/mês", "5 docs KB"],
+  },
+  {
+    slug: "pessoal",
+    nome: "Pessoal",
+    preco: "R$ 97/mês",
+    features: ["IA com consumo controlado", "Suporte por email"],
+    limites: ["1 conexão WhatsApp", "2 usuários", "500 atendimentos/mês", "20 docs KB"],
   },
   {
     slug: "pro",
@@ -57,8 +65,46 @@ const PLANOS: Plano[] = [
   },
 ];
 
+const FEATURE_LABELS: Record<string, string> = {
+  calendar: "Google Calendar",
+  rbac: "RBAC granular",
+  menu_moderno: "Menu chatbot moderno",
+  mcp: "MCP custom",
+  white_label: "White label",
+  disparador: "Disparador",
+  disparador_media: "Disparador com mídia",
+};
+
+function mapCatalogoToCard(p: import("@/lib/api").PlanoCatalogo): Plano {
+  const inf = (v: number | null, singular: string, plural?: string) =>
+    v == null ? `${plural ?? singular} ∞` : `${v} ${v === 1 ? singular : (plural ?? singular)}`;
+  return {
+    slug: p.slug,
+    nome: p.nome,
+    preco: p.preco_mensal_brl ? `R$ ${p.preco_mensal_brl.toFixed(0)}/mês` : "R$ 0",
+    destaque: p.slug === "pro",
+    features: Object.entries(p.features || {})
+      .filter(([, v]) => v === true)
+      .map(([k]) => FEATURE_LABELS[k] ?? k)
+      .concat(
+        p.limite_orcamento_ia_usd
+          ? [`IA até US$${p.limite_orcamento_ia_usd.toFixed(0)}/mês`]
+          : []
+      ),
+    limites: [
+      inf(p.limite_conexoes, "conexão WhatsApp", "conexões WhatsApp"),
+      inf(p.limite_usuarios, "usuário", "usuários"),
+      p.limite_atendimentos_mes == null
+        ? "Atendimentos ∞"
+        : `${p.limite_atendimentos_mes} atendimentos/mês`,
+      p.limite_documentos_kb == null ? "Docs KB ∞" : `${p.limite_documentos_kb} docs KB`,
+    ],
+  };
+}
+
 export function BillingPageClient() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [planos, setPlanos] = useState<Plano[]>(PLANOS_FALLBACK);
   const [historico, setHistorico] = useState<BillingTransacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
@@ -68,12 +114,14 @@ export function BillingPageClient() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [s, h] = await Promise.all([
+    const [s, h, pl] = await Promise.all([
       loadBillingStatusAction(),
       loadBillingHistoricoAction(),
+      loadPlanosCatalogoAction(),
     ]);
     if (s.ok) setStatus(s.data);
     if (h.ok) setHistorico(h.data);
+    if (pl.ok && pl.data.length > 0) setPlanos(pl.data.map(mapCatalogoToCard));
     setLoading(false);
   }, []);
 
@@ -81,7 +129,7 @@ export function BillingPageClient() {
     loadAll();
   }, [loadAll]);
 
-  function handleUpgrade(plano: "pro" | "enterprise") {
+  function handleUpgrade(plano: string) {
     setFeedback(null);
     startTransition(async () => {
       const r = await checkoutAction(plano);
@@ -175,14 +223,14 @@ export function BillingPageClient() {
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
           Planos disponíveis
         </h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {PLANOS.map((p) => (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {planos.map((p) => (
             <PlanoCard
               key={p.slug}
               plano={p}
               atual={status?.plano_atual === p.slug}
               onUpgrade={
-                p.slug !== "free" ? () => handleUpgrade(p.slug as "pro" | "enterprise") : undefined
+                p.slug !== "free" ? () => handleUpgrade(p.slug) : undefined
               }
               pending={pending}
             />

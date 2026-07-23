@@ -64,7 +64,46 @@ async def _require_admin(empresa_id: int, user_id: str) -> None:
 
 
 class CheckoutInput(BaseModel):
-    plano: str = Field(..., pattern=r"^(pro|enterprise)$")
+    # Slug livre: a validação real (plano existe/ativo/pago) mora em
+    # create_subscription_for_plano — hardcodar os slugs aqui fazia todo
+    # plano novo (ex. 'pessoal', mig 134) ficar incomprável até editar código.
+    plano: str = Field(..., pattern=r"^[a-z][a-z0-9_-]{1,40}$")
+
+
+@router.get("/planos")
+async def list_planos_catalogo(
+    empresa_id: int = Depends(get_empresa_context),
+) -> dict:
+    """Catálogo de planos ativos (data-driven — UI de billing e form de
+    empresa montam os selects daqui; sem hardcode de slug no frontend)."""
+    pool = await get_pool()
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT nome, slug, descricao, preco_mensal_brl,
+                       preco_anual_brl, limite_usuarios, limite_conexoes,
+                       limite_atendimentos_mes, limite_orcamento_ia_usd,
+                       limite_documentos_kb, features
+                  FROM plano WHERE ativo = TRUE
+                 ORDER BY ordem NULLS LAST, preco_mensal_brl
+                """
+            )
+            rows = await cur.fetchall()
+    keys = [
+        "nome", "slug", "descricao", "preco_mensal_brl", "preco_anual_brl",
+        "limite_usuarios", "limite_conexoes", "limite_atendimentos_mes",
+        "limite_orcamento_ia_usd", "limite_documentos_kb", "features",
+    ]
+    items = []
+    for r in rows:
+        d = dict(zip(keys, r, strict=True))
+        for campo in ("preco_mensal_brl", "preco_anual_brl", "limite_orcamento_ia_usd"):
+            d[campo] = float(d[campo]) if d[campo] is not None else None
+        items.append(d)
+    return {"items": items}
 
 
 @router.post("/checkout")

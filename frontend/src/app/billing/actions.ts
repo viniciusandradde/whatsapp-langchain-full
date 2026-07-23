@@ -39,12 +39,24 @@ export async function loadBillingHistoricoAction(): Promise<
 }
 
 export async function checkoutAction(
-  plano: "pro" | "enterprise"
+  plano: string
 ): Promise<Result<CheckoutResult>> {
   try {
     const r = await billingCheckout(plano);
     revalidatePath("/billing");
     return { ok: true, data: r };
+  } catch (e) {
+    return { ok: false, error: _err(e) };
+  }
+}
+
+export async function loadPlanosCatalogoAction(): Promise<
+  Result<import("@/lib/api").PlanoCatalogo[]>
+> {
+  try {
+    const { getPlanosCatalogo } = await import("@/lib/api");
+    const { items } = await getPlanosCatalogo();
+    return { ok: true, data: items };
   } catch (e) {
     return { ok: false, error: _err(e) };
   }

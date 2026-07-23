@@ -28,6 +28,22 @@ function _str(formData: FormData, key: string): string | null {
   return v || null;
 }
 
+export async function loadPlanosCatalogoAction(): Promise<
+  | { ok: true; data: import("@/lib/api").PlanoCatalogo[] }
+  | { ok: false; error: string }
+> {
+  try {
+    const { getPlanosCatalogo } = await import("@/lib/api");
+    const { items } = await getPlanosCatalogo();
+    return { ok: true, data: items };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao carregar planos.",
+    };
+  }
+}
+
 export async function reativarEmpresaAction(
   empresaId: number
 ): Promise<Result> {

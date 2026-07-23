@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Empresa, EmpresaCsatConfig } from "@/lib/api";
+import type { Empresa, EmpresaCsatConfig, PlanoCatalogo } from "@/lib/api";
 import {
   formatCEP,
   formatCPFOrCNPJ,
@@ -45,6 +45,11 @@ const PLANO_INFO: Record<string, { label: string; descricao: string }> = {
   free: {
     label: "Free",
     descricao: "Até 1 conexão, 1 agente IA, 100 atendimentos/mês. Grátis.",
+  },
+  pessoal: {
+    label: "Pessoal",
+    descricao:
+      "Uso pessoal/MEI: 1 conexão, 2 usuários, 500 atendimentos/mês, IA com teto US$10. R$ 97/mês.",
   },
   pro: {
     label: "Pro",
@@ -90,6 +95,18 @@ export function EmpresaForm({ initial, onDone }: Props) {
   const [cepError, setCepError] = useState<string | null>(null);
 
   const [plano, setPlano] = useState(initial?.plano ?? "free");
+  // Catálogo data-driven (GET /api/billing/planos) — plano novo na tabela
+  // aparece aqui sem mexer em código. PLANO_INFO fica só de fallback.
+  const [planosCatalogo, setPlanosCatalogo] = useState<PlanoCatalogo[] | null>(
+    null
+  );
+  useEffect(() => {
+    import("./actions").then(({ loadPlanosCatalogoAction }) =>
+      loadPlanosCatalogoAction().then((r) => {
+        if (r.ok && r.data.length > 0) setPlanosCatalogo(r.data);
+      })
+    );
+  }, []);
 
   // White-label (mig 115)
   const [nomeExibicao, setNomeExibicao] = useState(initial?.nome_exibicao ?? "");
@@ -562,15 +579,35 @@ export function EmpresaForm({ initial, onDone }: Props) {
                   className={SELECT_CLASS}
                   disabled={isPending}
                 >
-                  <option value="free">Free — R$ 0</option>
-                  <option value="pro">Pro — R$ 299/mês</option>
-                  <option value="enterprise">Enterprise — R$ 1.499/mês</option>
+                  {planosCatalogo ? (
+                    planosCatalogo.map((p) => (
+                      <option key={p.slug} value={p.slug}>
+                        {p.nome} —{" "}
+                        {p.preco_mensal_brl
+                          ? `R$ ${p.preco_mensal_brl.toFixed(0)}/mês`
+                          : "R$ 0"}
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="free">Free — R$ 0</option>
+                      <option value="pessoal">Pessoal — R$ 97/mês</option>
+                      <option value="pro">Pro — R$ 299/mês</option>
+                      <option value="enterprise">Enterprise — R$ 1.499/mês</option>
+                    </>
+                  )}
                 </select>
               </Field>
 
               <div className="rounded-md border border-foreground/10 bg-obsidian-800/50 p-3 text-sm">
-                <p className="font-medium text-foreground">{planoInfo.label}</p>
-                <p className="mt-1 text-muted-foreground">{planoInfo.descricao}</p>
+                <p className="font-medium text-foreground">
+                  {planosCatalogo?.find((p) => p.slug === plano)?.nome ??
+                    planoInfo.label}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {planosCatalogo?.find((p) => p.slug === plano)?.descricao ??
+                    planoInfo.descricao}
+                </p>
                 <p className="mt-2 text-xs text-amber-500">
                   ⚠️ Billing (ASAAS) ainda não integrado — plano hoje é só
                   display. Cobranca real entra na próxima sprint.
