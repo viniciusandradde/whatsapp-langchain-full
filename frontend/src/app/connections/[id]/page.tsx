@@ -7,6 +7,7 @@ import { getConexao } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { AntiBanPanel } from "./anti-ban-panel";
+import { DefaultAgentSelect } from "./default-agent-select";
 import { TipoAtendimentoSelect } from "./tipo-atendimento-select";
 
 export const dynamic = "force-dynamic";
@@ -103,7 +104,10 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
                 : conexao.from_number
             }
           />
-          <Field label="Agente padrão" value={conexao.default_agent_id || "—"} />
+          <DefaultAgentSelect
+            conexaoId={conexao.id}
+            initial={conexao.default_agent_id || ""}
+          />
           <TipoAtendimentoSelect
             conexaoId={conexao.id}
             initial={conexao.tipo_atendimento || "ia"}

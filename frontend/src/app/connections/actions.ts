@@ -220,3 +220,22 @@ export async function refreshConexaoAction(conexaoId: number) {
     return { ok: false as const, error: safeError(e) };
   }
 }
+
+export async function loadAgentesEmpresaAction(): Promise<
+  | { ok: true; data: { slug: string; nome: string }[] }
+  | { ok: false; error: string }
+> {
+  try {
+    const { getAgentesIA } = await import("@/lib/api");
+    const { items } = await getAgentesIA({ onlyActive: true });
+    return {
+      ok: true,
+      data: items.map((a) => ({ slug: a.slug, nome: a.nome })),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao carregar agentes.",
+    };
+  }
+}
