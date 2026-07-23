@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { MyStatusToggle } from "@/components/my-status-toggle";
 import { usePermissionsContext } from "@/components/permissions-context";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { resolveGroup } from "@/components/top-nav-tabs";
+import { NAV_TABS_BY_GROUP, resolveGroup } from "@/components/top-nav-tabs";
 import { useSidebar } from "@/components/sidebar-context";
 import { signOut } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -69,9 +69,22 @@ export function Sidebar({
   const [signingOut, setSigningOut] = useState(false);
   const { collapsed, toggle } = useSidebar();
   const { hasPerm } = usePermissionsContext();
-  const navGroupsVisiveis = NAV_GROUPS.filter(
-    (g) => !g.requires || hasPerm(g.requires)
-  );
+  // Grupo visível se o user tem acesso a QUALQUER aba dele (mesma regra do
+  // TopNavTabs) — não a uma perm "representante" fixa. Sem isso, quem tinha
+  // ex. whitelist.manage mas não agente.config perdia o grupo IA inteiro
+  // (caso Luis Fernando: perms liberadas no RBAC e menu invisível).
+  const tabPermitida = (t: { requires?: string | string[] }) =>
+    !t.requires || hasPerm(t.requires);
+  const navGroupsVisiveis = NAV_GROUPS.filter((g) => {
+    const tabs = NAV_TABS_BY_GROUP[g.grupo] ?? [];
+    if (tabs.length === 0) return !g.requires || hasPerm(g.requires);
+    return tabs.some(tabPermitida);
+  });
+  // O clique no grupo leva pra PRIMEIRA aba que o user pode acessar —
+  // o href fixo podia apontar pra uma rota 403 (ex. /agents sem
+  // agente.config).
+  const groupHref = (g: (typeof NAV_GROUPS)[number]) =>
+    (NAV_TABS_BY_GROUP[g.grupo] ?? []).find(tabPermitida)?.href ?? g.href;
 
   // Active state por GRUPO: destaca o grupo cuja resolveGroup() bate com a
   // URL atual. Isso garante consistência com TopNavTabs (mesma lógica).
@@ -187,7 +200,7 @@ export function Sidebar({
             {navGroupsVisiveis.map((g) => (
               <Link
                 key={g.grupo}
-                href={g.href}
+                href={groupHref(g)}
                 onClick={() => setOpen(false)}
                 title={collapsed ? g.label : undefined}
                 className={cn(
