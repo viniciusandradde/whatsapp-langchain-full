@@ -28,6 +28,33 @@ function _str(formData: FormData, key: string): string | null {
   return v || null;
 }
 
+export async function loadResumoDiarioAction(empresaId: number): Promise<
+  | { ok: true; config: import("@/lib/api").EmpresaResumoDiarioConfig }
+  | { ok: false; error: string }
+> {
+  try {
+    const { getEmpresaResumoDiario } = await import("@/lib/api");
+    return { ok: true, config: await getEmpresaResumoDiario(empresaId) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+export async function saveResumoDiarioAction(
+  empresaId: number,
+  body: import("@/lib/api").EmpresaResumoDiarioConfig
+): Promise<
+  | { ok: true; config: import("@/lib/api").EmpresaResumoDiarioConfig }
+  | { ok: false; error: string }
+> {
+  try {
+    const { updateEmpresaResumoDiario } = await import("@/lib/api");
+    return { ok: true, config: await updateEmpresaResumoDiario(empresaId, body) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
 export async function loadPlanosCatalogoAction(): Promise<
   | { ok: true; data: import("@/lib/api").PlanoCatalogo[] }
   | { ok: false; error: string }

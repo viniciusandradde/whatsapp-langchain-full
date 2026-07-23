@@ -4413,6 +4413,33 @@ export interface EmpresaCsatConfig {
   csat_solicita_comentario: boolean;
 }
 
+
+export interface EmpresaResumoDiarioConfig {
+  resumo_diario_ativo: boolean;
+  resumo_diario_telefone: string | null;
+  resumo_diario_horario: string;
+  resumo_diario_dias: number[];
+  resumo_diario_tz: string;
+}
+
+export async function getEmpresaResumoDiario(
+  empresaId: number
+): Promise<EmpresaResumoDiarioConfig> {
+  return apiFetch<EmpresaResumoDiarioConfig>(
+    `/api/empresas/${empresaId}/resumo-diario`
+  );
+}
+
+export async function updateEmpresaResumoDiario(
+  empresaId: number,
+  body: EmpresaResumoDiarioConfig
+): Promise<EmpresaResumoDiarioConfig> {
+  return apiFetch<EmpresaResumoDiarioConfig>(
+    `/api/empresas/${empresaId}/resumo-diario`,
+    { method: "PUT", body }
+  );
+}
+
 export async function getEmpresaCsat(
   empresaId: number
 ): Promise<EmpresaCsatConfig> {

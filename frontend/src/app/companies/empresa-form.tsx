@@ -806,3 +806,152 @@ export function CsatConfigSection({ empresaId }: { empresaId: number }) {
     </Card>
   );
 }
+
+export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
+  const [config, setConfig] =
+    useState<import("@/lib/api").EmpresaResumoDiarioConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, startSaving] = useTransition();
+  const [feedback, setFeedback] = useState<
+    { kind: "ok" } | { kind: "err"; message: string } | null
+  >(null);
+
+  useEffect(() => {
+    setLoading(true);
+    import("./actions").then(({ loadResumoDiarioAction }) =>
+      loadResumoDiarioAction(empresaId)
+        .then((r) => {
+          if (r.ok) setConfig(r.config);
+        })
+        .finally(() => setLoading(false))
+    );
+  }, [empresaId]);
+
+  if (loading || config === null) {
+    return (
+      <Card className="mt-4">
+        <CardContent className="py-6 text-sm text-muted-foreground">
+          Carregando config do resumo diário…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const DIAS = [
+    { n: 1, label: "Seg" },
+    { n: 2, label: "Ter" },
+    { n: 3, label: "Qua" },
+    { n: 4, label: "Qui" },
+    { n: 5, label: "Sex" },
+    { n: 6, label: "Sáb" },
+    { n: 7, label: "Dom" },
+  ];
+
+  function toggleDia(n: number) {
+    if (!config) return;
+    const dias = config.resumo_diario_dias.includes(n)
+      ? config.resumo_diario_dias.filter((d) => d !== n)
+      : [...config.resumo_diario_dias, n].sort();
+    setConfig({ ...config, resumo_diario_dias: dias });
+  }
+
+  function handleSave() {
+    if (!config) return;
+    setFeedback(null);
+    startSaving(async () => {
+      const { saveResumoDiarioAction } = await import("./actions");
+      const r = await saveResumoDiarioAction(empresaId, config);
+      if (r.ok) {
+        setConfig(r.config);
+        setFeedback({ kind: "ok" });
+      } else {
+        setFeedback({ kind: "err", message: r.error });
+      }
+    });
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="text-base">
+          Resumo diário por WhatsApp
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Envia, no horário configurado, um resumo dos atendimentos do dia
+          (novos, resolvidos, pendentes) pro número abaixo — saindo pela
+          conexão padrão da empresa.
+        </p>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={config.resumo_diario_ativo}
+            onChange={(e) =>
+              setConfig({ ...config, resumo_diario_ativo: e.target.checked })
+            }
+          />
+          Ativar resumo diário
+        </label>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+              Telefone de destino
+            </label>
+            <input
+              type="tel"
+              value={config.resumo_diario_telefone ?? ""}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  resumo_diario_telefone: e.target.value || null,
+                })
+              }
+              placeholder="+5567999068963"
+              className="h-9 w-full rounded-md border bg-background px-3 font-mono text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
+              Horário (fuso {config.resumo_diario_tz})
+            </label>
+            <input
+              type="time"
+              value={config.resumo_diario_horario}
+              onChange={(e) =>
+                setConfig({ ...config, resumo_diario_horario: e.target.value })
+              }
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {DIAS.map((d) => (
+            <button
+              key={d.n}
+              type="button"
+              onClick={() => toggleDia(d.n)}
+              className={`rounded-md border px-2.5 py-1 text-xs ${
+                config.resumo_diario_dias.includes(d.n)
+                  ? "border-brand-primary bg-brand-primary/15 text-brand-primary"
+                  : "border-border text-muted-foreground"
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        {feedback?.kind === "ok" && (
+          <p className="text-sm text-emerald-500">Configuração salva.</p>
+        )}
+        {feedback?.kind === "err" && (
+          <p className="text-sm text-destructive">{feedback.message}</p>
+        )}
+        <Button onClick={handleSave} disabled={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Salvar resumo diário
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}

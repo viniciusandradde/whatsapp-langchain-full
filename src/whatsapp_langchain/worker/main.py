@@ -131,6 +131,9 @@ async def main() -> None:
     # sem resposta) a cada 6h. Override por empresa via empresa.config.
     cleanup_task = asyncio.create_task(_cleanup_zumbis_loop(pool))
 
+    # Resumo diário por WhatsApp (mig 135) — envia no horário configurado
+    resumo_task = asyncio.create_task(_resumo_diario_loop(pool))
+
     # Sprint A.2.5 — importa context manager pra RLS
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -185,7 +188,8 @@ async def main() -> None:
         sync_task.cancel()
         idle_task.cancel()
         cleanup_task.cancel()
-        for t in (sync_task, idle_task, cleanup_task):
+        resumo_task.cancel()
+        for t in (sync_task, idle_task, cleanup_task, resumo_task):
             try:
                 await t
             except asyncio.CancelledError:
@@ -319,6 +323,26 @@ async def _cleanup_zumbis_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("cleanup_zumbis_loop_error", error=str(e))
         await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+
+
+async def _resumo_diario_loop(pool) -> None:
+    """Checa a cada 60s se alguma empresa está no horário do resumo diário.
+
+    O check é barato (1 SELECT nas empresas com resumo ativo); o guard de
+    idempotência (`resumo_diario_last_sent`, claim atômico) garante 1 envio
+    por dia por empresa mesmo com múltiplos workers.
+    """
+    from whatsapp_langchain.shared.resumo_diario import run_resumo_diario_all
+
+    # Aguarda o boot estabilizar (migrations/bootstrap)
+    await asyncio.sleep(120)
+
+    while True:
+        try:
+            await run_resumo_diario_all(pool)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("resumo_diario_loop_error", error=str(e))
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":

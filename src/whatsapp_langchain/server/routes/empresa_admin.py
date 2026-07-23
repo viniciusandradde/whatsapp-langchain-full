@@ -275,6 +275,105 @@ class CsatConfig(BaseModel):
     csat_solicita_comentario: bool = True
 
 
+class ResumoDiarioConfig(BaseModel):
+    resumo_diario_ativo: bool
+    resumo_diario_telefone: str | None = Field(default=None, max_length=32)
+    resumo_diario_horario: str = Field(default="22:30", pattern=r"^\d{2}:\d{2}$")
+    resumo_diario_dias: list[int] = Field(default=[1, 2, 3, 4, 5])
+    resumo_diario_tz: str = Field(default="America/Campo_Grande", max_length=64)
+
+
+@router.get("/{empresa_id}/resumo-diario", response_model=ResumoDiarioConfig)
+async def get_resumo_diario_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Config do resumo diário por WhatsApp (mig 135). Membro lê."""
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """SELECT resumo_diario_ativo, resumo_diario_telefone,
+                      resumo_diario_horario, resumo_diario_dias,
+                      resumo_diario_tz FROM empresa WHERE id = %s""",
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    return ResumoDiarioConfig(
+        resumo_diario_ativo=bool(row[0]),
+        resumo_diario_telefone=row[1],
+        resumo_diario_horario=row[2].strftime("%H:%M") if row[2] else "22:30",
+        resumo_diario_dias=list(row[3] or [1, 2, 3, 4, 5]),
+        resumo_diario_tz=row[4] or "America/Campo_Grande",
+    )
+
+
+@router.put("/{empresa_id}/resumo-diario", response_model=ResumoDiarioConfig)
+async def update_resumo_diario_endpoint(
+    empresa_id: int,
+    body: ResumoDiarioConfig,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Atualiza config do resumo diário. Só admin local ou superadmin."""
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
+    if body.resumo_diario_ativo and not (body.resumo_diario_telefone or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Informe o telefone de destino pra ativar o resumo.",
+        )
+    dias = sorted({d for d in body.resumo_diario_dias if 1 <= d <= 7})
+    if body.resumo_diario_ativo and not dias:
+        raise HTTPException(
+            status_code=400, detail="Selecione pelo menos um dia da semana."
+        )
+    from whatsapp_langchain.shared.campanha import normalize_phone
+
+    telefone = (
+        normalize_phone(body.resumo_diario_telefone)
+        if body.resumo_diario_telefone
+        else None
+    )
+    if body.resumo_diario_ativo and not telefone:
+        raise HTTPException(status_code=400, detail="Telefone inválido.")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """UPDATE empresa SET
+                   resumo_diario_ativo = %s,
+                   resumo_diario_telefone = %s,
+                   resumo_diario_horario = %s::time,
+                   resumo_diario_dias = %s,
+                   resumo_diario_tz = %s,
+                   updated_at = NOW()
+                 WHERE id = %s""",
+            (
+                body.resumo_diario_ativo,
+                telefone,
+                body.resumo_diario_horario,
+                dias or [1, 2, 3, 4, 5],
+                body.resumo_diario_tz,
+                empresa_id,
+            ),
+        )
+        await conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    return ResumoDiarioConfig(
+        resumo_diario_ativo=body.resumo_diario_ativo,
+        resumo_diario_telefone=telefone,
+        resumo_diario_horario=body.resumo_diario_horario,
+        resumo_diario_dias=dias or [1, 2, 3, 4, 5],
+        resumo_diario_tz=body.resumo_diario_tz,
+    )
+
+
 @router.get("/{empresa_id}/csat", response_model=CsatConfig)
 async def get_empresa_csat_endpoint(
     empresa_id: int,

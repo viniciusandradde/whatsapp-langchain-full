@@ -62,6 +62,11 @@ ALLOWLIST: list[tuple[str, str]] = [
     # Disparador in-browser (extensão) — autenticado por API key da empresa
     # (require_scope("dispatch")), não RBAC de user. Mesmo padrão de webhook.
     ("POST", "/api/disparador/ext/"),
+    # Resumo diário (mig 135) — valida is_admin_of da empresa-ALVO do path
+    # (padrão do router empresa_admin: role-guard explícito por endpoint;
+    # require_permission checaria a empresa ATIVA do header, que pode ser
+    # outra — mesmo racional do CSAT).
+    ("PUT", "/api/empresas/{empresa_id}/resumo-diario"),
     # Captura da extensão Chrome — autenticada por API key da empresa
     # (require_scope("capture")), não RBAC de user. Mesmo padrão do ext/.
     ("POST", "/api/captura/"),
