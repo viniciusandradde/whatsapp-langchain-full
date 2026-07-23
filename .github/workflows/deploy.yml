@@ -11,7 +11,7 @@
 #
 # Secrets necessários (Settings → Secrets and variables → Actions):
 #   REGISTRY_USER / REGISTRY_PASSWORD — auth do registry.vsanexus.com
-#   DOKPLOY_WEBHOOK_URL — URL de deploy do compose no Dokploy
+#   DOKPLOY_API_KEY / DOKPLOY_COMPOSE_ID — deploy via API do Dokploy
 
 name: deploy
 
@@ -135,5 +135,9 @@ jobs:
     steps:
       - name: Dispara deploy no Dokploy (pull + recreate)
         run: |
-          curl -fsS -X POST "${{ secrets.DOKPLOY_WEBHOOK_URL }}"
+          curl -fsS -X POST \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"composeId":"${{ secrets.DOKPLOY_COMPOSE_ID }}","title":"ci: ${{ github.sha }}"}' \
+            "https://dockploy.vsatecnologia.com.br/api/compose.deploy"
           echo "deploy disparado — Dokploy faz git pull do compose + docker pull das imagens"
