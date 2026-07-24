@@ -93,9 +93,17 @@ async def list_planos_catalogo(
             )
             rows = await cur.fetchall()
     keys = [
-        "nome", "slug", "descricao", "preco_mensal_brl", "preco_anual_brl",
-        "limite_usuarios", "limite_conexoes", "limite_atendimentos_mes",
-        "limite_orcamento_ia_usd", "limite_documentos_kb", "features",
+        "nome",
+        "slug",
+        "descricao",
+        "preco_mensal_brl",
+        "preco_anual_brl",
+        "limite_usuarios",
+        "limite_conexoes",
+        "limite_atendimentos_mes",
+        "limite_orcamento_ia_usd",
+        "limite_documentos_kb",
+        "features",
     ]
     items = []
     for r in rows:

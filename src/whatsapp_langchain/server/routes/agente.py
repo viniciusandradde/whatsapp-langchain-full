@@ -438,7 +438,9 @@ def _erro_modelo_amigavel(erro: str, modelo: str | None) -> str:
             "ou teste outro modelo."
         )
     if "429" in low or "rate limit" in low:
-        return f"{nome}: limite de requisições do provedor atingido. Tente em instantes."
+        return (
+            f"{nome}: limite de requisições do provedor atingido. Tente em instantes."
+        )
     if "insufficient" in low or "credit" in low or "quota" in low:
         return f"{nome}: sem créditos/quota no provedor."
     if "timeout" in low or "timed out" in low:
@@ -481,9 +483,7 @@ def _custo_usd(
     return round((tin / 1_000_000) * ci + (tout / 1_000_000) * co, 6)
 
 
-async def _catalogo_precos(
-    pool, empresa_id: int
-) -> dict[str, tuple[float, float]]:
+async def _catalogo_precos(pool, empresa_id: int) -> dict[str, tuple[float, float]]:
     """{nome_modelo: (custo_input_mtok, custo_output_mtok)} do catálogo."""
     from whatsapp_langchain.shared.catalogo import list_modelos_llm
 
@@ -677,9 +677,7 @@ async def testar_bateria_endpoint(
                 "turnos": len(rs),
                 "erros": sum(1 for r in rs if "erro" in r),
                 "tempo_medio_ms": int(sum(r.get("duracao_ms", 0) for r in ok) / n_ok),
-                "custo_total_usd": round(
-                    sum(r.get("custo_usd") or 0 for r in ok), 6
-                ),
+                "custo_total_usd": round(sum(r.get("custo_usd") or 0 for r in ok), 6),
                 "vazamentos": sum(1 for r in ok if r.get("raciocinio_vazado")),
                 "linhas_media": round(sum(r.get("linhas", 0) for r in ok) / n_ok, 1),
                 "turnos_com_tools": sum(1 for r in ok if r.get("tools_chamadas")),

@@ -38,6 +38,8 @@ def _email_isento(endereco: str) -> bool:
     """True se o domínio do e-mail está na allowlist institucional."""
     dominio = endereco.rpartition("@")[2].lower()
     return any(dominio == d or dominio.endswith("." + d) for d in _EMAIL_ALLOWLIST)
+
+
 _PHONE_BR_RE = re.compile(r"(?:\+?55\s*)?\(?\d{2}\)?\s*9?\s*\d{4,5}[-\s]?\d{4}")
 _CARD_RE = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
 

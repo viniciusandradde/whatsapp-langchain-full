@@ -79,3 +79,9 @@ webscap/
 
 # Claude Code — settings locais por máquina
 .claude/settings.local.json
+
+# Material de curso / binários pesados (não versionar — GH rejeita >100MB)
+docs/Baileys/
+docs/extenção/
+disparador-*.zip
+*.mp4
