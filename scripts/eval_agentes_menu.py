@@ -269,10 +269,59 @@ def _resolve_samples_from_langsmith(
     return samples, str(dataset.id), dataset_name, discarded
 
 
+async def _resolve_samples_from_fewshot(
+    empresa_id: int, per_agent: int, filter_agente: str | None
+) -> tuple[list, str, str]:
+    """Golden set direto do fewshot_example local (status=ready, success).
+
+    Cada few-shot vira Example {inputs:{cliente_msg,agente_slug},
+    outputs:{agente_resposta_esperada}} — mesma forma dos goldens. Amostra
+    até per_agent por agente (ORDER BY csat_nota DESC pra pegar os melhores).
+    """
+    from whatsapp_langchain.shared.db import get_pool
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    pool = await get_pool()
+    where_ag = "AND agente_slug = %s" if filter_agente else ""
+    params: list = [empresa_id]
+    if filter_agente:
+        params.append(filter_agente)
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                SELECT agente_slug, cliente_msg, agente_resposta, csat_nota
+                  FROM (
+                    SELECT agente_slug, cliente_msg, agente_resposta, csat_nota,
+                           ROW_NUMBER() OVER (
+                             PARTITION BY agente_slug
+                             ORDER BY csat_nota DESC NULLS LAST, id DESC
+                           ) AS rn
+                      FROM fewshot_example
+                     WHERE empresa_id = %s AND status = 'ready'
+                       AND outcome = 'success' {where_ag}
+                  ) t
+                 WHERE rn <= {int(per_agent)}
+                """,
+                tuple(params),
+            )
+            rows = await cur.fetchall()
+    samples = [
+        SimpleNamespace(
+            inputs={"cliente_msg": r[1], "agente_slug": r[0]},
+            outputs={"agente_resposta_esperada": r[2]},
+            metadata={"csat_nota": r[3], "source": "fewshot"},
+        )
+        for r in rows
+    ]
+    return samples, f"fewshot-empresa-{empresa_id}", "fewshot_local"
+
+
 async def evaluate_agentes(
     *,
     source: str = "local",
     per_agent: int = 3,
+    empresa_id: int = EMPRESA_ID,
     max_pool: int = 1500,
     seed: int = 42,
     judge: str = "continuous",
@@ -317,6 +366,12 @@ async def evaluate_agentes(
         )
         if verbose:
             print(f"\nTotal sampled: {len(samples)} (cap {per_agent}/agente)\n")
+    elif source == "fewshot":
+        samples, dataset_id_str, ds_name = await _resolve_samples_from_fewshot(
+            empresa_id, per_agent, filter_agente
+        )
+        if verbose:
+            print(f"=== Eval Agentes (fewshot local, {len(samples)} exemplos) ===")
     else:
         raise ValueError(f"source inválido: {source}")
 
@@ -406,13 +461,13 @@ async def evaluate_agentes(
             print(f"[{i}/{len(samples)}] {slug} :: {cliente_msg[:60]}", flush=True)
 
         try:
-            runtime = await resolve_agente_runtime(pool_db, EMPRESA_ID, slug)
+            runtime = await resolve_agente_runtime(pool_db, empresa_id, slug)
             graph = await load_graph(
                 slug,
                 checkpointer=None,
                 store=None,
                 pool=pool_db,
-                empresa_id=EMPRESA_ID,
+                empresa_id=empresa_id,
                 agente_runtime=runtime,
             )
             result = await graph.ainvoke(
@@ -421,7 +476,7 @@ async def evaluate_agentes(
                     "configurable": {
                         "thread_id": f"eval-menu-{i}",
                         "user_id": "eval-langsmith",
-                        "empresa_id": EMPRESA_ID,
+                        "empresa_id": empresa_id,
                         "atendimento_id": None,
                         "media_url": None,
                         "media_type": None,

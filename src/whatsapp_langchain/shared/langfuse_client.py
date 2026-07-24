@@ -200,6 +200,62 @@ def post_score(
         )
 
 
+def list_scores(
+    name: str | None = None,
+    from_timestamp: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Lista scores via REST (`GET /api/public/scores`, basic-auth pk:sk).
+
+    Usado pra auto-dataset: pega os scores (ex.: NPS 0-10) de um período pra
+    descobrir QUAIS traces foram bem avaliadas — o conteúdo do diálogo vem do
+    banco local (message_queue.langfuse_trace_id). Best-effort: `[]` se off.
+
+    Cada item: {traceId, name, value, comment, timestamp, ...}. Pagina até
+    esgotar (o público de scores costuma ser pequeno; cap defensivo em 20 pgs).
+    """
+    if not settings.langfuse_enabled:
+        return []
+    pub = settings.langfuse_public_key
+    sec = settings.langfuse_secret_key
+    if pub is None or sec is None:
+        return []
+    try:
+        import httpx
+
+        host = settings.langfuse_host.rstrip("/")
+        auth = (pub.get_secret_value(), sec.get_secret_value())
+        out: list[dict[str, Any]] = []
+        page = 1
+        with httpx.Client(timeout=15.0) as client:
+            while page <= 20:
+                params: dict[str, str] = {
+                    "limit": str(max(1, min(limit, 100))),
+                    "page": str(page),
+                }
+                if name:
+                    params["name"] = name
+                if from_timestamp:
+                    params["fromTimestamp"] = from_timestamp
+                resp = client.get(
+                    f"{host}/api/public/scores",
+                    params=params,
+                    auth=auth,
+                )
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+                if not isinstance(data, list) or not data:
+                    break
+                out.extend(data)
+                if len(data) < int(params["limit"]):
+                    break
+                page += 1
+        return out
+    except Exception as exc:
+        logger.warning("langfuse_list_scores_failed", error=str(exc))
+        return []
+
+
 def trace_url(trace_id: str) -> str:
     """Short-link pra UI do trace (redireciona pro projeto certo, sem precisar
     do project_id)."""

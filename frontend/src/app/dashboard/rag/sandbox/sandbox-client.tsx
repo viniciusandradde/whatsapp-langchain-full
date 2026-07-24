@@ -56,6 +56,58 @@ export function SandboxClient({ initialSuggestions }: Props) {
   const [success, setSuccess] = useState<string | null>(null);
   const [isBulkPending, startBulkTransition] = useTransition();
   const [importing, setImporting] = useState(false);
+  // Fase 1 — auto-dataset Langfuse + eval
+  const [minScore, setMinScore] = useState(8);
+  const [dias, setDias] = useState(30);
+  const [ingesting, setIngesting] = useState(false);
+  const [ingestMsg, setIngestMsg] = useState<string | null>(null);
+  const [rodandoEval, setRodandoEval] = useState(false);
+  const [evalPlacar, setEvalPlacar] = useState<
+    { agente: string; score: number }[] | null
+  >(null);
+
+  async function handleIngestLangfuse(dryRun: boolean) {
+    setIngestMsg(null);
+    setIngesting(true);
+    const { ingestFromLangfuseAction } = await import("./actions");
+    const r = await ingestFromLangfuseAction({
+      min_score: minScore,
+      days: dias,
+      dry_run: dryRun,
+    });
+    setIngesting(false);
+    if (r.ok) {
+      const d = r.data as {
+        scores_lidos: number;
+        cruzados: number;
+        novos: number;
+        skipped: number;
+      };
+      setIngestMsg(
+        `${dryRun ? "Prévia" : "Feito"}: ${d.scores_lidos} scores lidos, ${d.cruzados} com conversa no banco, ${d.novos} ${dryRun ? "seriam adicionados" : "adicionados"}, ${d.skipped} já existiam.`
+      );
+    } else {
+      setIngestMsg("Erro: " + r.error);
+    }
+  }
+
+  async function handleRunEval() {
+    setEvalPlacar(null);
+    setRodandoEval(true);
+    const { runEvalAction } = await import("./actions");
+    const r = await runEvalAction({ per_agent: 5 });
+    setRodandoEval(false);
+    if (r.ok) {
+      const by = (r.data.by_agent_avg || {}) as Record<string, number>;
+      setEvalPlacar(
+        Object.entries(by)
+          .map(([agente, score]) => ({ agente, score: Number(score) }))
+          .sort((a, b) => b.score - a.score)
+      );
+    } else {
+      setError(r.error);
+    }
+  }
   const [cleanPreview, setCleanPreview] = useState<{
     total: number;
     greetings: number;
@@ -239,6 +291,107 @@ export function SandboxClient({ initialSuggestions }: Props) {
   }
 
   return (
+    <div className="space-y-4">
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Dataset & Eval (empresa ativa)</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Gera golden examples das conversas melhor avaliadas (score de
+          satisfação no Langfuse) e roda avaliação automática. Usa a empresa
+          selecionada no topo — não a sandbox.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-3">
+          <label className="flex flex-col gap-1 text-xs">
+            Score mínimo (NPS)
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={minScore}
+              onChange={(e) => setMinScore(Number(e.target.value))}
+              className="h-8 w-20 rounded-md border border-border/40 bg-background px-2 text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            Últimos dias
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={dias}
+              onChange={(e) => setDias(Number(e.target.value))}
+              className="h-8 w-20 rounded-md border border-border/40 bg-background px-2 text-sm"
+            />
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handleIngestLangfuse(true)}
+            disabled={ingesting}
+          >
+            {ingesting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            Prévia
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => handleIngestLangfuse(false)}
+            disabled={ingesting}
+          >
+            {ingesting ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+            Gerar dataset do Langfuse
+          </Button>
+          <div className="ml-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRunEval}
+              disabled={rodandoEval}
+            >
+              {rodandoEval ? <Loader2 className="size-3.5 animate-spin" /> : <FlaskConical className="size-3.5" />}
+              {rodandoEval ? "Avaliando…" : "Rodar eval"}
+            </Button>
+          </div>
+        </div>
+        {ingestMsg && (
+          <p className="text-sm text-muted-foreground">{ingestMsg}</p>
+        )}
+        {evalPlacar && (
+          <div className="overflow-hidden rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left">Agente</th>
+                  <th className="px-3 py-2 text-right">Score médio (0–10)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evalPlacar.length === 0 && (
+                  <tr>
+                    <td colSpan={2} className="px-3 py-4 text-center text-muted-foreground">
+                      Sem exemplos no dataset ainda — gere do Langfuse primeiro.
+                    </td>
+                  </tr>
+                )}
+                {evalPlacar.map((p) => (
+                  <tr key={p.agente} className="border-t">
+                    <td className="px-3 py-2 font-medium">{p.agente}</td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {(p.score * 10).toFixed(1)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -432,7 +585,7 @@ export function SandboxClient({ initialSuggestions }: Props) {
               </Button>
             )}
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Marca status='disabled' (reversível). Não deleta.
+              Marca status=&apos;disabled&apos; (reversível). Não deleta.
             </p>
           </div>
         </div>
@@ -560,5 +713,6 @@ export function SandboxClient({ initialSuggestions }: Props) {
         )}
       </CardContent>
     </Card>
+    </div>
   );
 }

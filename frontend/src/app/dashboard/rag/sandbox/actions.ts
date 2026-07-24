@@ -243,3 +243,55 @@ export async function importDatasetAction(
     return { ok: false, error: toError(e) };
   }
 }
+
+// Fase 1 — Auto-dataset via Langfuse + eval sob demanda.
+// Usa a empresa ATIVA (cookie active_empresa_id) — não a sandbox 999.
+async function _postAtivaEmpresa(
+  path: string,
+  body: unknown
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
+  try {
+    const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:8000";
+    const token = process.env.INTERNAL_SERVICE_TOKEN || "";
+    const { headers: nh, cookies } = await import("next/headers");
+    const reqHeaders = await nh();
+    const { auth } = await import("@/lib/auth");
+    const session = await auth.api.getSession({ headers: reqHeaders });
+    if (!session?.user?.id) return { ok: false, error: "Sem sessão." };
+    const empresa = (await cookies()).get("active_empresa_id")?.value;
+    const hdrs: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+      "X-User-Id": session.user.id,
+      "Content-Type": "application/json",
+    };
+    if (empresa) hdrs["X-Empresa-Id"] = empresa;
+    const r = await fetch(`${apiUrl}${path}`, {
+      method: "POST",
+      headers: hdrs,
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      console.error("[rag-fase1]", r.status, txt.slice(0, 300));
+      return { ok: false, error: friendlyError(r.status, txt) };
+    }
+    return { ok: true, data: await r.json() };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function ingestFromLangfuseAction(input: {
+  min_score: number;
+  days: number;
+  dry_run: boolean;
+}) {
+  return _postAtivaEmpresa("/api/admin/rag/dataset/from-langfuse", input);
+}
+
+export async function runEvalAction(input: {
+  agente_slug?: string | null;
+  per_agent: number;
+}) {
+  return _postAtivaEmpresa("/api/admin/rag/eval/run", input);
+}

@@ -19,6 +19,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -392,6 +393,64 @@ async def fewshot_backfill(
     pool = await get_pool()
     updated = await backfill_embeddings(pool, batch=batch)
     return {"ok": True, "updated": updated}
+
+
+class IngestLangfuseInput(BaseModel):
+    score_name: str = "nps"
+    min_score: float = 8.0
+    days: int = 30
+    dry_run: bool = False
+
+
+@router.post("/dataset/from-langfuse")
+async def ingest_langfuse_endpoint(
+    body: IngestLangfuseInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Auto-dataset (Fase 1): traces bem avaliadas (score >= min_score no
+    período) viram few-shots golden, idempotente (re-run só insere novos).
+    Depois roda o backfill de embeddings (pending → ready)."""
+    from whatsapp_langchain.shared.fewshot import backfill_embeddings
+    from whatsapp_langchain.shared.langfuse_dataset import ingest_from_langfuse
+
+    pool = await get_pool()
+    resultado = await ingest_from_langfuse(
+        pool,
+        empresa_id,
+        score_name=body.score_name,
+        min_score=body.min_score,
+        days=body.days,
+        dry_run=body.dry_run,
+    )
+    if not body.dry_run and resultado.get("novos", 0) > 0:
+        resultado["embeddings_gerados"] = await backfill_embeddings(pool, batch=200)
+    return {"ok": True, **resultado}
+
+
+class RunEvalInput(BaseModel):
+    agente_slug: str | None = None
+    per_agent: int = 5
+
+
+@router.post("/eval/run")
+async def run_eval_endpoint(
+    body: RunEvalInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Roda eval sob demanda sobre o dataset local de few-shots (source
+    'fewshot'). LLM-as-judge (2 juízes) via evaluate_agentes; retorna a média
+    por agente."""
+    from scripts.eval_agentes_menu import evaluate_agentes
+
+    resultado = await evaluate_agentes(
+        source="fewshot",
+        per_agent=body.per_agent,
+        filter_agente=body.agente_slug,
+        empresa_id=empresa_id,
+    )
+    return {"ok": True, **resultado}
 
 
 @router.post("/learner/run", response_model=RunLearnerResponse)
