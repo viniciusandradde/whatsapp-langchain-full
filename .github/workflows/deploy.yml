@@ -31,6 +31,7 @@ env:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -64,6 +65,7 @@ jobs:
   build:
     needs: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -132,6 +134,7 @@ jobs:
     needs: [changes, build]
     if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Dispara deploy no Dokploy (pull + recreate)
         run: |
