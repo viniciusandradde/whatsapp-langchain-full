@@ -43,3 +43,38 @@ class TestSmokeBateria:
             json={"mensagem": "oi", "modelo": "gpt-4o-mini"},
         )
         assert resp.status_code == 401
+
+
+class TestContratoBateria:
+    """Contrato de 1 a 4 modelos (comparação simultânea na aba Testar)."""
+
+    def test_aceita_ate_4_modelos(self) -> None:
+        from whatsapp_langchain.server.routes.agente import TestarBateriaInput
+
+        body = TestarBateriaInput(
+            modelos=[
+                "google/gemini-2.5-flash",
+                "deepseek/deepseek-v3.2",
+                "z-ai/glm-4.7-flash",
+                "anthropic/claude-haiku-4.5",
+            ]
+        )
+        assert len(body.modelos) == 4
+
+    def test_rejeita_lista_vazia(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from whatsapp_langchain.server.routes.agente import TestarBateriaInput
+
+        with pytest.raises(ValidationError):
+            TestarBateriaInput(modelos=[])
+
+    def test_rejeita_mais_de_4_modelos(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        from whatsapp_langchain.server.routes.agente import TestarBateriaInput
+
+        with pytest.raises(ValidationError):
+            TestarBateriaInput(modelos=["a", "b", "c", "d", "e"])

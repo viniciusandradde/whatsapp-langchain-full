@@ -17,6 +17,8 @@ import {
   Send,
   Loader2,
   FileDown,
+  Plus,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -994,11 +996,16 @@ import type {
   TestarBateriaResult,
 } from "@/lib/api";
 
-type MsgTeste = { role: "user"; texto: string } | {
-  role: "agente";
-  a?: TestarAgenteResult | { erro: string };
-  b?: TestarAgenteResult | { erro: string };
-};
+type Resposta = TestarAgenteResult | { erro: string };
+type MsgTeste =
+  | { role: "user"; texto: string }
+  | {
+      role: "agente";
+      // 1 entrada (modo simples) ou N (modo comparação, até 4), alinhadas
+      // posicionalmente com `modelos` (null = modelo próprio do agente).
+      respostas: (Resposta | undefined)[];
+      modelos: (string | null)[];
+    };
 
 // Export PDF sem dependência: monta HTML estruturado numa janela nova e
 // dispara o "Salvar como PDF" nativo do navegador. Zero lib no bundle/CI.
@@ -1157,9 +1164,11 @@ function TabTestar({
 }) {
   const primeiro = modelos[0] ? `${modelos[0].provedor}/${modelos[0].nome}` : "";
   const segundo = modelos[1] ? `${modelos[1].provedor}/${modelos[1].nome}` : "";
-  const [ab, setAb] = React.useState(false);
-  const [modeloA, setModeloA] = React.useState<string>(modeloAtual ?? primeiro);
-  const [modeloB, setModeloB] = React.useState<string>(segundo);
+  const [comparar, setComparar] = React.useState(false);
+  // Modelos selecionados p/ comparação (2 a 4). Alinhado com LETTERS (A/B/C/D).
+  const [modelosSel, setModelosSel] = React.useState<string[]>(
+    [modeloAtual ?? primeiro, segundo].filter(Boolean)
+  );
   const [msgs, setMsgs] = React.useState<MsgTeste[]>([]);
   const [texto, setTexto] = React.useState("");
   const [enviando, setEnviando] = React.useState(false);
@@ -1176,6 +1185,36 @@ function TabTestar({
   }, [msgs, enviando]);
 
   const opcoes = modelos.map((m) => ({ v: `${m.provedor}/${m.nome}`, l: `${m.nome}` }));
+  const LETTERS = ["A", "B", "C", "D"];
+
+  const rotuloModelo = (modelo: string | null, idx: number) =>
+    modelo ? `${LETTERS[idx] ?? idx + 1} · ${modelo.split("/").pop()}` : "Assistente";
+
+  function proximoLivre(atual: string[]): string {
+    const usados = new Set(atual);
+    return opcoes.find((o) => !usados.has(o.v))?.v ?? "";
+  }
+  function addSlot() {
+    setModelosSel((s) => {
+      if (s.length >= 4) return s;
+      const novo = proximoLivre(s);
+      return novo ? [...s, novo] : s;
+    });
+  }
+  function removeSlot(i: number) {
+    setModelosSel((s) => (s.length > 2 ? s.filter((_, idx) => idx !== i) : s));
+  }
+  function setSlot(i: number, v: string) {
+    setModelosSel((s) => s.map((x, idx) => (idx === i ? v : x)));
+  }
+  // Valida a seleção de comparação: 2 a 4 modelos, todos distintos.
+  function validarSelecao(): string | null {
+    const ativos = modelosSel.filter(Boolean);
+    if (ativos.length < 2) return "Selecione pelo menos 2 modelos para comparar.";
+    if (new Set(ativos).size !== ativos.length)
+      return "Há modelos repetidos — escolha modelos diferentes.";
+    return null;
+  }
 
   function exportarConversa() {
     if (msgs.length === 0) return;
@@ -1184,23 +1223,29 @@ function TabTestar({
         if (m.role === "user") {
           return `<div class="u"><span>Cliente: ${esc(m.texto)}</span></div>`;
         }
-        const bolha = (res: TestarAgenteResult | { erro: string } | undefined, rot: string) => {
+        const bolha = (res: Resposta | undefined, rot: string) => {
           if (!res) return "";
           if ("erro" in res)
             return `<div class="cenario"><div class="pergunta">${esc(rot)}</div><div class="erro">${esc(res.erro)}</div></div>`;
           return `<div class="cenario"><div class="pergunta">${esc(rot)}</div><div class="resposta">${esc(res.resposta || "(vazio)")}</div>${indHtml(res)}</div>`;
         };
-        if (ab) {
-          return `<div style="display:flex;gap:8px">
-            <div style="flex:1">${bolha(m.a, "A · " + (modeloA.split("/").pop() || ""))}</div>
-            <div style="flex:1">${bolha(m.b, "B · " + (modeloB.split("/").pop() || ""))}</div>
-          </div>`;
+        if (m.respostas.length > 1) {
+          const cols = m.respostas
+            .map(
+              (res, idx) =>
+                `<div style="flex:1">${bolha(res, rotuloModelo(m.modelos[idx] ?? null, idx))}</div>`
+            )
+            .join("");
+          return `<div style="display:flex;gap:8px">${cols}</div>`;
         }
-        return bolha(m.a, "Assistente");
+        return bolha(m.respostas[0], "Assistente");
       })
       .join("");
-    const titulo = ab
-      ? `Teste A/B — ${slug} (${modeloA.split("/").pop()} vs ${modeloB.split("/").pop()})`
+    const nomes = comparar
+      ? modelosSel.map((x) => x.split("/").pop()).join(" vs ")
+      : null;
+    const titulo = nomes
+      ? `Teste comparativo — ${slug} (${nomes})`
       : `Teste do agente — ${slug}`;
     abrirPdf(titulo, corpo);
   }
@@ -1241,24 +1286,32 @@ function TabTestar({
   async function enviar() {
     const t = texto.trim();
     if (!t || enviando) return;
+    if (comparar) {
+      const v = validarSelecao();
+      if (v) { setErro(v); return; }
+    }
     setErro(null);
     setTexto("");
     setMsgs((m) => [...m, { role: "user", texto: t }]);
     setEnviando(true);
     const { testarAgenteAction } = await import("./actions");
-    if (ab) {
-      const [ra, rb] = await Promise.all([
-        testarAgenteAction(slug, t, modeloA || null),
-        testarAgenteAction(slug, t, modeloB || null),
-      ]);
+    if (comparar) {
+      const usados = [...modelosSel];
+      const rs = await Promise.all(
+        usados.map((mm) => testarAgenteAction(slug, t, mm || null))
+      );
       setMsgs((m) => [...m, {
         role: "agente",
-        a: ra.ok ? ra.data : { erro: ra.error },
-        b: rb.ok ? rb.data : { erro: rb.error },
+        respostas: rs.map((r) => (r.ok ? r.data : { erro: r.error })),
+        modelos: usados,
       }]);
     } else {
       const r = await testarAgenteAction(slug, t, null);
-      setMsgs((m) => [...m, { role: "agente", a: r.ok ? r.data : { erro: r.error } }]);
+      setMsgs((m) => [...m, {
+        role: "agente",
+        respostas: [r.ok ? r.data : { erro: r.error }],
+        modelos: [null],
+      }]);
     }
     setEnviando(false);
   }
@@ -1266,11 +1319,10 @@ function TabTestar({
   async function reiniciar() {
     if (msgs.length && !confirm("Reiniciar a conversa de teste? A memória desta sessão será apagada.")) return;
     const { resetarTesteAgenteAction } = await import("./actions");
-    if (ab) {
-      await Promise.all([
-        resetarTesteAgenteAction(slug, modeloA || null),
-        resetarTesteAgenteAction(slug, modeloB || null),
-      ]);
+    if (comparar) {
+      await Promise.all(
+        modelosSel.map((mm) => resetarTesteAgenteAction(slug, mm || null))
+      );
     } else {
       await resetarTesteAgenteAction(slug, null);
     }
@@ -1280,12 +1332,13 @@ function TabTestar({
   }
 
   async function rodarBateria() {
-    if (!modeloA || !modeloB) { setErro("Selecione os dois modelos."); return; }
+    const v = validarSelecao();
+    if (v) { setErro(v); return; }
     setErro(null);
     setRodandoBateria(true);
     setPlacar(null);
     const { testarBateriaAction } = await import("./actions");
-    const r = await testarBateriaAction(slug, [modeloA, modeloB]);
+    const r = await testarBateriaAction(slug, modelosSel);
     setRodandoBateria(false);
     if (r.ok) {
       setPlacar(r.data.placar);
@@ -1312,8 +1365,8 @@ function TabTestar({
         </p>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1 text-xs">
-            <input type="checkbox" checked={ab} onChange={(e) => { setAb(e.target.checked); setMsgs([]); setPlacar(null); }} />
-            Comparar 2 modelos (A/B)
+            <input type="checkbox" checked={comparar} onChange={(e) => { setComparar(e.target.checked); setMsgs([]); setPlacar(null); }} />
+            Comparar modelos (até 4)
           </label>
           {msgs.length > 0 && (
             <Button type="button" variant="outline" size="sm" onClick={exportarConversa}>
@@ -1328,23 +1381,47 @@ function TabTestar({
         </div>
       </div>
 
-      {ab && (
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Modelo A</span>
-            <select value={modeloA} onChange={(e) => setModeloA(e.target.value)} className="h-8 rounded-md border border-border/40 bg-background px-2 text-sm">
-              {opcoes.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Modelo B</span>
-            <select value={modeloB} onChange={(e) => setModeloB(e.target.value)} className="h-8 rounded-md border border-border/40 bg-background px-2 text-sm">
-              {opcoes.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
-            </select>
+      {comparar && (
+        <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+          <div className="flex flex-wrap items-end gap-3">
+            {modelosSel.map((mv, idx) => (
+              <div key={idx} className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Modelo {LETTERS[idx] ?? idx + 1}
+                </span>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={mv}
+                    onChange={(e) => setSlot(idx, e.target.value)}
+                    className="h-8 rounded-md border border-border/40 bg-background px-2 text-sm"
+                  >
+                    {opcoes.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+                  </select>
+                  {modelosSel.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeSlot(idx)}
+                      title="Remover modelo"
+                      className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {modelosSel.length < 4 && opcoes.length > modelosSel.length && (
+              <Button type="button" variant="outline" size="sm" onClick={addSlot}>
+                <Plus className="size-3.5" />
+                Modelo
+              </Button>
+            )}
           </div>
           <Button type="button" variant="outline" size="sm" onClick={rodarBateria} disabled={rodandoBateria}>
             {rodandoBateria ? <Loader2 className="size-3.5 animate-spin" /> : <FlaskConical className="size-3.5" />}
-            {rodandoBateria ? "Rodando bateria…" : "Rodar bateria (12 cenários)"}
+            {rodandoBateria
+              ? "Rodando bateria…"
+              : `Rodar bateria (${modelosSel.length} modelos × 12 cenários)`}
           </Button>
         </div>
       )}
@@ -1415,7 +1492,7 @@ function TabTestar({
         {msgs.length === 0 && !enviando && (
           <p className="py-10 text-center text-sm text-muted-foreground">
             Envie uma mensagem como se você fosse o cliente no WhatsApp.
-            {ab && " No modo A/B, cada mensagem gera as duas respostas lado a lado."}
+            {comparar && " No modo comparação, cada mensagem gera a resposta de todos os modelos lado a lado."}
           </p>
         )}
         {msgs.map((m, i) =>
@@ -1423,20 +1500,24 @@ function TabTestar({
             <div key={i} className="flex justify-end">
               <div className="max-w-[80%] rounded-2xl bg-primary/15 px-3 py-2 text-sm whitespace-pre-wrap">{m.texto}</div>
             </div>
-          ) : ab ? (
-            <div key={i} className="grid grid-cols-2 gap-2">
-              <div>
-                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">A · {modeloA.split("/").pop()}</p>
-                <BolhaAgente res={m.a} />
-              </div>
-              <div>
-                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">B · {modeloB.split("/").pop()}</p>
-                <BolhaAgente res={m.b} />
-              </div>
+          ) : m.respostas.length > 1 ? (
+            <div
+              key={i}
+              className="grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${m.respostas.length}, minmax(0, 1fr))` }}
+            >
+              {m.respostas.map((res, idx) => (
+                <div key={idx}>
+                  <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+                    {rotuloModelo(m.modelos[idx] ?? null, idx)}
+                  </p>
+                  <BolhaAgente res={res} />
+                </div>
+              ))}
             </div>
           ) : (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[80%]"><BolhaAgente res={m.a} /></div>
+              <div className="max-w-[80%]"><BolhaAgente res={m.respostas[0]} /></div>
             </div>
           )
         )}
