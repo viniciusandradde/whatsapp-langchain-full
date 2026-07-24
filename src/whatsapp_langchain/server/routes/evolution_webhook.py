@@ -233,6 +233,15 @@ async def webhook_evolution(
         )
         return Response(status_code=200)
 
+    # RLS context ANTES de qualquer leitura tenant-scoped. O download de
+    # mídia (get_credentials_decrypted, mais abaixo) lê as credenciais
+    # cifradas da conexão — sem context, o RLS STRICT bloqueava e caía no
+    # fallback env (chave errada → 401, áudio/PDF nunca chegavam). Setar
+    # aqui, logo após resolver a conexão, cobre credenciais + enqueue.
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
+    set_request_context(conexao.empresa_id)
+
     phone_number = _resolve_sender_phone(key)
     if not phone_number:
         # Payload sem JID válido — raro, descartar silenciosamente.
@@ -323,14 +332,8 @@ async def webhook_evolution(
     empresa_id = conexao.empresa_id
     conexao_id = conexao.id
     requested_agent = conexao.default_agent_id
-
-    # Sprint A.2 — após resolver empresa via conexao, seta context RLS.
-    # Webhook não passa pelo middleware FastAPI (sem X-Empresa-Id de
-    # provider externo). Daí em diante, qualquer pool.connection()
-    # injeta SET app.empresa_id via _RlsAwarePool.
-    from whatsapp_langchain.shared.rls_context import set_request_context
-
-    set_request_context(empresa_id)
+    # set_request_context(empresa_id) já foi chamado acima (após resolver a
+    # conexão) pra cobrir também o download de mídia.
 
     # A.6 — resolve via agente_ia table primeiro; cai pro catálogo se ausente.
     runtime = await resolve_agente_runtime(pool, empresa_id, requested_agent)
