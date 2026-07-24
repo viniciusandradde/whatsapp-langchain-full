@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Send,
   Loader2,
+  FileDown,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -999,6 +1000,60 @@ type MsgTeste = { role: "user"; texto: string } | {
   b?: TestarAgenteResult | { erro: string };
 };
 
+// Export PDF sem dependência: monta HTML estruturado numa janela nova e
+// dispara o "Salvar como PDF" nativo do navegador. Zero lib no bundle/CI.
+function esc(s: string): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function abrirPdf(titulo: string, corpoHtml: string) {
+  const dataHora = new Date().toLocaleString("pt-BR");
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) {
+    alert("Permita pop-ups para exportar o PDF.");
+    return;
+  }
+  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>${esc(titulo)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #111; margin: 32px; font-size: 12px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .meta { color: #666; font-size: 11px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 20px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; font-size: 11px; }
+  th { background: #f4f4f5; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .win { background: #ecfdf5; }
+  .cenario { border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; margin: 6px 0; page-break-inside: avoid; }
+  .pergunta { color: #444; font-weight: 600; margin-bottom: 4px; }
+  .resposta { white-space: pre-wrap; background: #f8f8f8; padding: 6px 8px; border-radius: 4px; }
+  .ind { color: #666; font-size: 10px; margin-top: 4px; }
+  .erro { color: #b91c1c; background: #fef2f2; padding: 6px 8px; border-radius: 4px; }
+  .badge { display: inline-block; background: #eef; border: 1px solid #ccd; border-radius: 4px; padding: 0 4px; font-size: 10px; margin-right: 3px; }
+  .vaz { background: #fee; border-color: #fcc; color: #b91c1c; }
+  h2 { font-size: 13px; margin: 18px 0 6px; border-bottom: 1px solid #eee; padding-bottom: 3px; }
+  .u { text-align: right; margin: 8px 0 2px; }
+  .u span { background: #eef2ff; border-radius: 8px; padding: 3px 8px; font-size: 11px; }
+  @media print { body { margin: 12mm; } }
+</style></head><body>
+<h1>${esc(titulo)}</h1>
+<div class="meta">Chat Nexus · Módulo de Teste de Agente · gerado em ${esc(dataHora)}</div>
+${corpoHtml}
+<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 150); };</script>
+</body></html>`);
+  w.document.close();
+}
+
+function indHtml(r: TestarAgenteResult): string {
+  const tools = (r.tools_chamadas || []).map((t) => `<span class="badge">🔧 ${esc(t)}</span>`).join("");
+  const vaz = r.raciocinio_vazado ? `<span class="badge vaz">⚠ vazou raciocínio</span>` : "";
+  return `<div class="ind">${tools}${vaz} ⏱ ${(r.duracao_ms / 1000).toFixed(1)}s · 📏 ${r.linhas}L · 💲 ${fmtCusto(r.custo_usd)}</div>`;
+}
+
 function fmtCusto(u: number | null | undefined): string {
   if (u == null) return "—";
   return u < 0.01 ? `$${u.toFixed(5)}` : `$${u.toFixed(4)}`;
@@ -1122,6 +1177,67 @@ function TabTestar({
 
   const opcoes = modelos.map((m) => ({ v: `${m.provedor}/${m.nome}`, l: `${m.nome}` }));
 
+  function exportarConversa() {
+    if (msgs.length === 0) return;
+    const corpo = msgs
+      .map((m) => {
+        if (m.role === "user") {
+          return `<div class="u"><span>Cliente: ${esc(m.texto)}</span></div>`;
+        }
+        const bolha = (res: TestarAgenteResult | { erro: string } | undefined, rot: string) => {
+          if (!res) return "";
+          if ("erro" in res)
+            return `<div class="cenario"><div class="pergunta">${esc(rot)}</div><div class="erro">${esc(res.erro)}</div></div>`;
+          return `<div class="cenario"><div class="pergunta">${esc(rot)}</div><div class="resposta">${esc(res.resposta || "(vazio)")}</div>${indHtml(res)}</div>`;
+        };
+        if (ab) {
+          return `<div style="display:flex;gap:8px">
+            <div style="flex:1">${bolha(m.a, "A · " + (modeloA.split("/").pop() || ""))}</div>
+            <div style="flex:1">${bolha(m.b, "B · " + (modeloB.split("/").pop() || ""))}</div>
+          </div>`;
+        }
+        return bolha(m.a, "Assistente");
+      })
+      .join("");
+    const titulo = ab
+      ? `Teste A/B — ${slug} (${modeloA.split("/").pop()} vs ${modeloB.split("/").pop()})`
+      : `Teste do agente — ${slug}`;
+    abrirPdf(titulo, corpo);
+  }
+
+  function exportarBateria() {
+    if (!placar || !resultadosBat) return;
+    const tabela = `<h2>Placar comparativo</h2><table>
+      <tr><th>Modelo</th><th>Erros</th><th>Vazamentos</th><th>Linhas (méd)</th><th>Escalou</th><th>Tempo (méd)</th><th>Custo total</th></tr>
+      ${placar
+        .map(
+          (p) => `<tr class="${p.modelo === melhor ? "win" : ""}">
+        <td>${esc(p.modelo.split("/").pop() || "")}${p.modelo === melhor ? " ★" : ""}</td>
+        <td class="num">${p.erros}</td><td class="num">${p.vazamentos}</td>
+        <td class="num">${p.linhas_media}</td><td class="num">${p.turnos_com_tools}</td>
+        <td class="num">${(p.tempo_medio_ms / 1000).toFixed(1)}s</td>
+        <td class="num">${fmtCusto(p.custo_total_usd)}</td></tr>`
+        )
+        .join("")}
+    </table>`;
+    const detalhes = placar
+      .map((p) => {
+        const linhas = resultadosBat.filter((r) => r.modelo === p.modelo);
+        const cen = linhas
+          .map((l, i) => {
+            const falhou = "erro" in l && (l as unknown as { erro?: string }).erro;
+            const corpo = falhou
+              ? `<div class="erro">${esc((l as unknown as { erro: string }).erro)}</div>`
+              : `<div class="resposta">${esc(l.resposta || "(vazio)")}</div>${indHtml(l as TestarAgenteResult)}`;
+            return `<div class="cenario"><div class="pergunta">${i + 1}. Cliente: ${esc(l.cenario)}</div>${corpo}</div>`;
+          })
+          .join("");
+        return `<h2>${esc(p.modelo.split("/").pop() || "")} — ${linhas.length} cenários</h2>${cen}`;
+      })
+      .join("");
+    abrirPdf(`Bateria de teste — ${slug}`, tabela + detalhes);
+  }
+
   async function enviar() {
     const t = texto.trim();
     if (!t || enviando) return;
@@ -1199,6 +1315,12 @@ function TabTestar({
             <input type="checkbox" checked={ab} onChange={(e) => { setAb(e.target.checked); setMsgs([]); setPlacar(null); }} />
             Comparar 2 modelos (A/B)
           </label>
+          {msgs.length > 0 && (
+            <Button type="button" variant="outline" size="sm" onClick={exportarConversa}>
+              <FileDown className="size-3.5" />
+              Exportar PDF
+            </Button>
+          )}
           <Button type="button" variant="outline" size="sm" onClick={reiniciar}>
             <RotateCcw className="size-3.5" />
             Reiniciar
@@ -1280,6 +1402,12 @@ function TabTestar({
           <p className="border-t bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
             Vencedor por menor vazamento de raciocínio, depois objetividade. Custo é dos {placar[0]?.turnos} cenários — no volume real, centavos/mês.
           </p>
+          <div className="flex justify-end border-t bg-muted/10 px-3 py-2">
+            <Button type="button" variant="outline" size="sm" onClick={exportarBateria}>
+              <FileDown className="size-3.5" />
+              Exportar bateria em PDF
+            </Button>
+          </div>
         </div>
       )}
 
