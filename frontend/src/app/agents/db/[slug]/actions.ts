@@ -55,14 +55,24 @@ export async function deleteAgenteAction(slug: string): Promise<OkResult> {
 export async function testarAgenteAction(
   slug: string,
   mensagem: string,
-  modelo?: string | null
+  modelo?: string | null,
+  midia?: { base64: string; tipo: string; nome: string } | null
 ): Promise<
   | { ok: true; data: import("@/lib/api").TestarAgenteResult }
   | { ok: false; error: string }
 > {
   try {
     const { testarAgente } = await import("@/lib/api");
-    return { ok: true, data: await testarAgente(slug, { mensagem, modelo }) };
+    return {
+      ok: true,
+      data: await testarAgente(slug, {
+        mensagem,
+        modelo,
+        midia_base64: midia?.base64 ?? null,
+        midia_tipo: midia?.tipo ?? null,
+        midia_nome: midia?.nome ?? null,
+      }),
+    };
   } catch (e) {
     return {
       ok: false,

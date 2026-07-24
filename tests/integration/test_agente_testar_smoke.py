@@ -78,3 +78,26 @@ class TestContratoBateria:
 
         with pytest.raises(ValidationError):
             TestarBateriaInput(modelos=["a", "b", "c", "d", "e"])
+
+
+class TestContratoMidia:
+    """Contrato do anexo de mídia (áudio/documento/imagem) no chat de teste."""
+
+    def test_input_aceita_midia(self) -> None:
+        from whatsapp_langchain.server.routes.agente import TestarAgenteInput
+
+        body = TestarAgenteInput(
+            mensagem="",
+            midia_base64="QUJD",
+            midia_tipo="audio/ogg",
+            midia_nome="nota.ogg",
+        )
+        assert body.midia_tipo == "audio/ogg"
+        assert body.midia_nome == "nota.ogg"
+
+    def test_input_sem_midia_default_none(self) -> None:
+        from whatsapp_langchain.server.routes.agente import TestarAgenteInput
+
+        body = TestarAgenteInput(mensagem="oi")
+        assert body.midia_base64 is None
+        assert body.midia_tipo is None

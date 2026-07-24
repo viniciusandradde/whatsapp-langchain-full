@@ -19,6 +19,7 @@ import {
   FileDown,
   Plus,
   X,
+  Paperclip,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -997,8 +998,10 @@ import type {
 } from "@/lib/api";
 
 type Resposta = TestarAgenteResult | { erro: string };
+// Anexo do chat de teste (áudio/documento/imagem) — base64 puro + MIME.
+type MidiaTeste = { base64: string; tipo: string; nome: string };
 type MsgTeste =
-  | { role: "user"; texto: string }
+  | { role: "user"; texto: string; midia?: { nome: string; tipo: string } }
   | {
       role: "agente";
       // 1 entrada (modo simples) ou N (modo comparação, até 4), alinhadas
@@ -1006,6 +1009,31 @@ type MsgTeste =
       respostas: (Resposta | undefined)[];
       modelos: (string | null)[];
     };
+
+// Rótulo curto do tipo de mídia pra UI (chip do anexo).
+function tipoMidiaLabel(mime: string): string {
+  const m = (mime || "").toLowerCase();
+  if (m.startsWith("audio/")) return "Áudio";
+  if (m.startsWith("image/")) return "Imagem";
+  if (m.includes("pdf")) return "PDF";
+  if (m.includes("word") || m.includes("msword") || m.endsWith("document"))
+    return "Documento";
+  if (m.startsWith("text/")) return "Texto";
+  return "Arquivo";
+}
+
+// Lê um File como base64 puro (sem o prefixo data:...;base64,).
+function lerArquivoBase64(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = String(reader.result || "");
+      resolve(r.includes(",") ? r.slice(r.indexOf(",") + 1) : r);
+    };
+    reader.onerror = () => reject(new Error("Falha ao ler o arquivo."));
+    reader.readAsDataURL(f);
+  });
+}
 
 // Export PDF sem dependência: monta HTML estruturado numa janela nova e
 // dispara o "Salvar como PDF" nativo do navegador. Zero lib no bundle/CI.
@@ -1190,7 +1218,31 @@ function TabTestar({
     React.useState<TestarBateriaResult["resultados"] | null>(null);
   const [detalheModelo, setDetalheModelo] = React.useState<string | null>(null);
   const [rodandoBateria, setRodandoBateria] = React.useState(false);
+  const [midia, setMidia] = React.useState<MidiaTeste | null>(null);
   const fimRef = React.useRef<HTMLDivElement | null>(null);
+  const fileRef = React.useRef<HTMLInputElement | null>(null);
+
+  async function onArquivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // permite re-selecionar o mesmo arquivo
+    if (!f) return;
+    const MAX = 8 * 1024 * 1024; // 8 MB
+    if (f.size > MAX) {
+      setErro("Arquivo muito grande (máximo 8 MB).");
+      return;
+    }
+    setErro(null);
+    try {
+      const base64 = await lerArquivoBase64(f);
+      setMidia({
+        base64,
+        tipo: f.type || "application/octet-stream",
+        nome: f.name,
+      });
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Falha ao ler o arquivo.");
+    }
+  }
 
   React.useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1233,7 +1285,10 @@ function TabTestar({
     const corpo = msgs
       .map((m) => {
         if (m.role === "user") {
-          return `<div class="u"><span>Cliente: ${esc(m.texto)}</span></div>`;
+          const anexo = m.midia
+            ? ` <span style="opacity:.7">[anexo: ${esc(m.midia.nome)} · ${esc(tipoMidiaLabel(m.midia.tipo))}]</span>`
+            : "";
+          return `<div class="u"><span>Cliente: ${esc(m.texto || "(mídia)")}${anexo}</span></div>`;
         }
         const bolha = (res: Resposta | undefined, rot: string) => {
           if (!res) return "";
@@ -1297,20 +1352,26 @@ function TabTestar({
 
   async function enviar() {
     const t = texto.trim();
-    if (!t || enviando) return;
+    if ((!t && !midia) || enviando) return;
     if (comparar) {
       const v = validarSelecao();
       if (v) { setErro(v); return; }
     }
     setErro(null);
+    const midiaAtual = midia;
     setTexto("");
-    setMsgs((m) => [...m, { role: "user", texto: t }]);
+    setMidia(null);
+    setMsgs((m) => [...m, {
+      role: "user",
+      texto: t,
+      midia: midiaAtual ? { nome: midiaAtual.nome, tipo: midiaAtual.tipo } : undefined,
+    }]);
     setEnviando(true);
     const { testarAgenteAction } = await import("./actions");
     if (comparar) {
       const usados = [...modelosSel];
       const rs = await Promise.all(
-        usados.map((mm) => testarAgenteAction(slug, t, mm || null))
+        usados.map((mm) => testarAgenteAction(slug, t, mm || null, midiaAtual))
       );
       setMsgs((m) => [...m, {
         role: "agente",
@@ -1318,7 +1379,7 @@ function TabTestar({
         modelos: usados,
       }]);
     } else {
-      const r = await testarAgenteAction(slug, t, null);
+      const r = await testarAgenteAction(slug, t, null, midiaAtual);
       setMsgs((m) => [...m, {
         role: "agente",
         respostas: [r.ok ? r.data : { erro: r.error }],
@@ -1330,6 +1391,7 @@ function TabTestar({
 
   async function reiniciar() {
     if (msgs.length && !confirm("Reiniciar a conversa de teste? A memória desta sessão será apagada.")) return;
+    setMidia(null);
     const { resetarTesteAgenteAction } = await import("./actions");
     if (comparar) {
       await Promise.all(
@@ -1503,14 +1565,24 @@ function TabTestar({
       <div className="h-[380px] overflow-y-auto rounded-lg border bg-background/50 p-3 space-y-2">
         {msgs.length === 0 && !enviando && (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Envie uma mensagem como se você fosse o cliente no WhatsApp.
+            Envie uma mensagem como se você fosse o cliente no WhatsApp — dá pra
+            anexar áudio, documento (PDF/DOCX/TXT) ou imagem no clipe.
             {comparar && " No modo comparação, cada mensagem gera a resposta de todos os modelos lado a lado."}
           </p>
         )}
         {msgs.map((m, i) =>
           m.role === "user" ? (
-            <div key={i} className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl bg-primary/15 px-3 py-2 text-sm whitespace-pre-wrap">{m.texto}</div>
+            <div key={i} className="flex flex-col items-end gap-1">
+              {m.midia && (
+                <div className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] text-muted-foreground">
+                  <Paperclip className="size-3" />
+                  <span className="max-w-[220px] truncate">{m.midia.nome}</span>
+                  <span className="opacity-70">· {tipoMidiaLabel(m.midia.tipo)}</span>
+                </div>
+              )}
+              {m.texto && (
+                <div className="max-w-[80%] rounded-2xl bg-primary/15 px-3 py-2 text-sm whitespace-pre-wrap">{m.texto}</div>
+              )}
             </div>
           ) : m.respostas.length > 1 ? (
             <div
@@ -1545,7 +1617,42 @@ function TabTestar({
 
       {erro && <p className="text-sm text-destructive">{erro}</p>}
 
+      {midia && (
+        <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs">
+          <Paperclip className="size-3.5 text-muted-foreground" />
+          <span className="flex-1 truncate">{midia.nome}</span>
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {tipoMidiaLabel(midia.tipo)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMidia(null)}
+            title="Remover anexo"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
       <div className="flex gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="audio/*,application/pdf,image/*,.doc,.docx,.txt,.md"
+          className="hidden"
+          onChange={(e) => void onArquivo(e)}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => fileRef.current?.click()}
+          disabled={enviando}
+          title="Anexar áudio, documento ou imagem"
+        >
+          <Paperclip className="size-3.5" />
+        </Button>
         <textarea
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
@@ -1556,7 +1663,7 @@ function TabTestar({
           placeholder="Digite como se fosse o cliente… (Enter envia, Shift+Enter quebra linha)"
           className="flex-1 resize-none rounded-md border border-foreground/10 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
         />
-        <Button type="button" onClick={() => void enviar()} disabled={enviando || !texto.trim()}>
+        <Button type="button" onClick={() => void enviar()} disabled={enviando || (!texto.trim() && !midia)}>
           <Send className="size-3.5" />
           Enviar
         </Button>

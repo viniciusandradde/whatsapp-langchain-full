@@ -3517,7 +3517,16 @@ export interface TestarBateriaResult {
 
 export async function testarAgente(
   slug: string,
-  payload: { mensagem: string; resetar?: boolean; modelo?: string | null }
+  payload: {
+    mensagem: string;
+    resetar?: boolean;
+    modelo?: string | null;
+    // Mídia opcional (base64 puro + MIME) — testa áudio/documento/imagem
+    // pelo mesmo pipeline do worker.
+    midia_base64?: string | null;
+    midia_tipo?: string | null;
+    midia_nome?: string | null;
+  }
 ): Promise<TestarAgenteResult> {
   return apiFetch<TestarAgenteResult>(
     `/api/v1/agentes/${encodeURIComponent(slug)}/testar`,

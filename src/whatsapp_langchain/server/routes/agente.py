@@ -393,6 +393,13 @@ class TestarAgenteInput(BaseModel):
     # Override de modelo (A/B) — testa com este modelo sem alterar o agente
     # salvo. Cada modelo roda numa thread própria pra não misturar memória.
     modelo: str | None = Field(default=None, max_length=120)
+    # Mídia opcional (áudio/documento/imagem) pra testar como no WhatsApp real.
+    # base64 puro (sem prefixo data:) + MIME type. Passa pelo MESMO pipeline do
+    # worker (transcrição/OCR/extração de texto) antes de chegar no agente.
+    # ~12M chars de base64 ≈ arquivo de ~9MB.
+    midia_base64: str | None = Field(default=None, max_length=12_000_000)
+    midia_tipo: str | None = Field(default=None, max_length=120)
+    midia_nome: str | None = Field(default=None, max_length=255)
 
 
 class TestarBateriaInput(BaseModel):
@@ -622,18 +629,42 @@ async def testar_agente_endpoint(
         raise HTTPException(status_code=404, detail="Agente não encontrado.")
 
     thread_id = _thread_teste(user_id, empresa_id, slug, body.modelo)
+    tem_midia = bool(body.midia_base64 and body.midia_tipo)
 
     if body.resetar:
         await _reset_thread_teste(pool, thread_id)
-        if not body.mensagem.strip():
+        if not body.mensagem.strip() and not tem_midia:
             return {"ok": True, "resetado": True}
 
-    if not body.mensagem.strip():
+    if not body.mensagem.strip() and not tem_midia:
         raise HTTPException(status_code=400, detail="Mensagem vazia.")
+
+    # Mídia: pré-processa (transcreve áudio / OCR+extrai documento / descreve
+    # imagem) pelo MESMO pipeline do worker e usa o texto normalizado como
+    # entrada do agente — assim o teste reflete o WhatsApp real.
+    mensagem = body.mensagem
+    if tem_midia:
+        from whatsapp_langchain.worker.media import preprocess_incoming_message
+
+        data_url = f"data:{body.midia_tipo};base64,{body.midia_base64}"
+        pre = await preprocess_incoming_message(
+            body=body.mensagem,
+            media_url=data_url,
+            media_type=body.midia_tipo,
+        )
+        if not pre.should_invoke_agent or not pre.normalized_text:
+            return {
+                "erro": (
+                    pre.auto_response or "Não foi possível processar a mídia enviada."
+                ),
+                "modelo_usado": body.modelo,
+                "duracao_ms": 0,
+            }
+        mensagem = pre.normalized_text
 
     catalogo = await _catalogo_precos(pool, empresa_id)
     return await _rodar_turno(
-        pool, empresa_id, slug, body.mensagem, thread_id, body.modelo, catalogo
+        pool, empresa_id, slug, mensagem, thread_id, body.modelo, catalogo
     )
 
 
