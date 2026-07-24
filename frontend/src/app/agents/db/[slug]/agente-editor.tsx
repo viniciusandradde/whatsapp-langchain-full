@@ -1115,8 +1115,11 @@ function TabTestar({
   }
 
   const melhor = placar
-    ? [...placar].sort(
-        (x, y) => x.vazamentos - y.vazamentos || x.linhas_media - y.linhas_media
+    ? [...placar].filter((p) => p.erros < p.turnos).sort(
+        (x, y) =>
+          x.erros - y.erros ||
+          x.vazamentos - y.vazamentos ||
+          x.linhas_media - y.linhas_media
       )[0]?.modelo
     : null;
 
@@ -1166,6 +1169,7 @@ function TabTestar({
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">Modelo</th>
+                <th className="px-3 py-2 text-right">✕ Erros</th>
                 <th className="px-3 py-2 text-right">⚠ Vazamentos</th>
                 <th className="px-3 py-2 text-right">📏 Linhas (méd)</th>
                 <th className="px-3 py-2 text-right">🔧 Escalou</th>
@@ -1180,6 +1184,7 @@ function TabTestar({
                     {p.modelo.split("/").pop()}
                     {p.modelo === melhor && <span className="ml-1 text-emerald-500">★ recomendado</span>}
                   </td>
+                  <td className={"px-3 py-2 text-right " + (p.erros > 0 ? "text-destructive" : "")}>{p.erros}</td>
                   <td className={"px-3 py-2 text-right " + (p.vazamentos > 0 ? "text-destructive" : "")}>{p.vazamentos}</td>
                   <td className="px-3 py-2 text-right">{p.linhas_media}</td>
                   <td className="px-3 py-2 text-right">{p.turnos_com_tools}</td>

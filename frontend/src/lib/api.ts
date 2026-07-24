@@ -3501,6 +3501,7 @@ export interface TestarAgenteResult {
 export interface BateriaPlacar {
   modelo: string;
   turnos: number;
+  erros: number;
   tempo_medio_ms: number;
   custo_total_usd: number;
   vazamentos: number;

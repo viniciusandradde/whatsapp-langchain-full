@@ -427,6 +427,25 @@ _VAZAMENTO_RE = re.compile(
 )
 
 
+def _erro_modelo_amigavel(erro: str, modelo: str | None) -> str:
+    """Traduz erros comuns de provedor pra frase acionável na UI de teste."""
+    low = erro.lower()
+    nome = (modelo or "modelo").split("/")[-1]
+    if "data policy" in low or "guardrail restrictions" in low or "no endpoints" in low:
+        return (
+            f"{nome} está bloqueado pela política de privacidade da conta "
+            "OpenRouter. Habilite os endpoints em openrouter.ai/settings/privacy "
+            "ou teste outro modelo."
+        )
+    if "429" in low or "rate limit" in low:
+        return f"{nome}: limite de requisições do provedor atingido. Tente em instantes."
+    if "insufficient" in low or "credit" in low or "quota" in low:
+        return f"{nome}: sem créditos/quota no provedor."
+    if "timeout" in low or "timed out" in low:
+        return f"{nome}: o provedor demorou demais para responder."
+    return f"{nome}: falha ao chamar o modelo ({erro[:120]})."
+
+
 def _extrair_tools_chamadas(messages: list, desde: int) -> list[str]:
     """Nomes das tools chamadas nas mensagens novas deste turno."""
     tools: list[str] = []
@@ -532,6 +551,21 @@ async def _rodar_turno(
             {"messages": [HumanMessage(content=mensagem)]},
             config=config,
         )
+    except Exception as exc:  # noqa: BLE001
+        # Erro do provedor (modelo indisponível, política OpenRouter, timeout)
+        # NÃO pode virar 500 nem derrubar a bateria A/B — vira erro amigável
+        # deste turno pra UI mostrar e continuar comparando os outros modelos.
+        logger.warning(
+            "teste_agente_turno_falhou",
+            slug=slug,
+            modelo=modelo_usado,
+            error=str(exc)[:300],
+        )
+        return {
+            "erro": _erro_modelo_amigavel(str(exc), modelo_usado),
+            "modelo_usado": modelo_usado,
+            "duracao_ms": int((_time.monotonic() - inicio) * 1000),
+        }
     finally:
         if store_stack is not None:
             await store_stack.aclose()
@@ -635,18 +669,20 @@ async def testar_bateria_endpoint(
     placar: list[dict] = []
     for modelo in body.modelos:
         rs = [r for r in resultados if r["modelo"] == modelo]
-        n = len(rs) or 1
+        ok = [r for r in rs if "erro" not in r]  # turnos sem falha de provedor
+        n_ok = len(ok) or 1
         placar.append(
             {
                 "modelo": modelo,
                 "turnos": len(rs),
-                "tempo_medio_ms": int(sum(r["duracao_ms"] for r in rs) / n),
+                "erros": sum(1 for r in rs if "erro" in r),
+                "tempo_medio_ms": int(sum(r.get("duracao_ms", 0) for r in ok) / n_ok),
                 "custo_total_usd": round(
-                    sum(r["custo_usd"] or 0 for r in rs), 6
+                    sum(r.get("custo_usd") or 0 for r in ok), 6
                 ),
-                "vazamentos": sum(1 for r in rs if r["raciocinio_vazado"]),
-                "linhas_media": round(sum(r["linhas"] for r in rs) / n, 1),
-                "turnos_com_tools": sum(1 for r in rs if r["tools_chamadas"]),
+                "vazamentos": sum(1 for r in ok if r.get("raciocinio_vazado")),
+                "linhas_media": round(sum(r.get("linhas", 0) for r in ok) / n_ok, 1),
+                "turnos_com_tools": sum(1 for r in ok if r.get("tools_chamadas")),
             }
         )
 
