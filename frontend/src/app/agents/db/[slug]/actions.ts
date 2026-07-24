@@ -54,14 +54,15 @@ export async function deleteAgenteAction(slug: string): Promise<OkResult> {
 
 export async function testarAgenteAction(
   slug: string,
-  mensagem: string
+  mensagem: string,
+  modelo?: string | null
 ): Promise<
   | { ok: true; data: import("@/lib/api").TestarAgenteResult }
   | { ok: false; error: string }
 > {
   try {
     const { testarAgente } = await import("@/lib/api");
-    return { ok: true, data: await testarAgente(slug, { mensagem }) };
+    return { ok: true, data: await testarAgente(slug, { mensagem, modelo }) };
   } catch (e) {
     return {
       ok: false,
@@ -70,12 +71,31 @@ export async function testarAgenteAction(
   }
 }
 
+export async function testarBateriaAction(
+  slug: string,
+  modelos: string[]
+): Promise<
+  | { ok: true; data: import("@/lib/api").TestarBateriaResult }
+  | { ok: false; error: string }
+> {
+  try {
+    const { testarBateriaAgente } = await import("@/lib/api");
+    return { ok: true, data: await testarBateriaAgente(slug, modelos) };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erro ao rodar a bateria.",
+    };
+  }
+}
+
 export async function resetarTesteAgenteAction(
-  slug: string
+  slug: string,
+  modelo?: string | null
 ): Promise<{ ok: boolean }> {
   try {
     const { testarAgente } = await import("@/lib/api");
-    await testarAgente(slug, { mensagem: "", resetar: true });
+    await testarAgente(slug, { mensagem: "", resetar: true, modelo });
     return { ok: true };
   } catch {
     return { ok: false };

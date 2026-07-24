@@ -335,7 +335,13 @@ export function AgenteEditor({
 
         {/* Tab Testar vive FORA do <form> de config: chat interativo não
             pode disputar Enter/submit com o botão Salvar. */}
-        {tab === "testar" && <TabTestar slug={a.slug} />}
+        {tab === "testar" && (
+          <TabTestar
+            slug={a.slug}
+            modeloAtual={a.modelo ?? a.modelo_nome ?? null}
+            modelos={modelosChat}
+          />
+        )}
 
         {tab !== "testar" && (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -974,29 +980,86 @@ function FieldSelect({
   );
 }
 
-// ---- Tab Testar — chat com o agente real, sem WhatsApp ----
+
+// ---- Tab Testar — chat com o agente real, sem WhatsApp (+ A/B de modelo) ----
 //
 // Conversa com o pipeline real (prompt + variáveis + memória + KB) numa
 // thread isolada de teste no servidor. Nada é enviado ao WhatsApp e nenhum
-// cliente/atendimento é tocado (tools CRM viram no-op sem atendimento).
+// cliente/atendimento é tocado. Modo A/B compara dois modelos lado a lado.
 
-type MsgTeste = {
-  role: "user" | "agente";
-  texto: string;
-  tools?: string[];
-  ms?: number;
+import type { TestarAgenteResult, BateriaPlacar } from "@/lib/api";
+
+type MsgTeste = { role: "user"; texto: string } | {
+  role: "agente";
+  a?: TestarAgenteResult | { erro: string };
+  b?: TestarAgenteResult | { erro: string };
 };
 
-function TabTestar({ slug }: { slug: string }) {
+function fmtCusto(u: number | null | undefined): string {
+  if (u == null) return "—";
+  return u < 0.01 ? `$${u.toFixed(5)}` : `$${u.toFixed(4)}`;
+}
+
+function IndicadoresResposta({ r }: { r: TestarAgenteResult }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {r.tools_chamadas.map((t) => (
+        <Badge key={t} variant="outline" className="text-[10px]">
+          🔧 {t}
+        </Badge>
+      ))}
+      {r.raciocinio_vazado && (
+        <Badge variant="outline" className="text-[10px] text-destructive border-destructive/50">
+          ⚠ vazou raciocínio
+        </Badge>
+      )}
+      <span className="font-mono text-[10px] text-muted-foreground">
+        ⏱ {(r.duracao_ms / 1000).toFixed(1)}s · 📏 {r.linhas}L · 💲 {fmtCusto(r.custo_usd)}
+      </span>
+    </div>
+  );
+}
+
+function BolhaAgente({ res }: { res?: TestarAgenteResult | { erro: string } }) {
+  if (!res) return null;
+  if ("erro" in res) {
+    return <div className="rounded-2xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{res.erro}</div>;
+  }
+  return (
+    <div className="rounded-2xl bg-secondary px-3 py-2 text-sm whitespace-pre-wrap">
+      {res.resposta || "(vazio)"}
+      <IndicadoresResposta r={res} />
+    </div>
+  );
+}
+
+function TabTestar({
+  slug,
+  modeloAtual,
+  modelos,
+}: {
+  slug: string;
+  modeloAtual: string | null;
+  modelos: ModeloLLM[];
+}) {
+  const primeiro = modelos[0] ? `${modelos[0].provedor}/${modelos[0].nome}` : "";
+  const segundo = modelos[1] ? `${modelos[1].provedor}/${modelos[1].nome}` : "";
+  const [ab, setAb] = React.useState(false);
+  const [modeloA, setModeloA] = React.useState<string>(modeloAtual ?? primeiro);
+  const [modeloB, setModeloB] = React.useState<string>(segundo);
   const [msgs, setMsgs] = React.useState<MsgTeste[]>([]);
   const [texto, setTexto] = React.useState("");
   const [enviando, setEnviando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
+  const [placar, setPlacar] = React.useState<BateriaPlacar[] | null>(null);
+  const [rodandoBateria, setRodandoBateria] = React.useState(false);
   const fimRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     fimRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, enviando]);
+
+  const opcoes = modelos.map((m) => ({ v: `${m.provedor}/${m.nome}`, l: `${m.nome}` }));
 
   async function enviar() {
     const t = texto.trim();
@@ -1006,77 +1069,161 @@ function TabTestar({ slug }: { slug: string }) {
     setMsgs((m) => [...m, { role: "user", texto: t }]);
     setEnviando(true);
     const { testarAgenteAction } = await import("./actions");
-    const r = await testarAgenteAction(slug, t);
-    setEnviando(false);
-    if (r.ok) {
-      setMsgs((m) => [
-        ...m,
-        {
-          role: "agente",
-          texto: r.data.resposta || "(resposta vazia)",
-          tools: r.data.tools_chamadas,
-          ms: r.data.duracao_ms,
-        },
+    if (ab) {
+      const [ra, rb] = await Promise.all([
+        testarAgenteAction(slug, t, modeloA || null),
+        testarAgenteAction(slug, t, modeloB || null),
       ]);
+      setMsgs((m) => [...m, {
+        role: "agente",
+        a: ra.ok ? ra.data : { erro: ra.error },
+        b: rb.ok ? rb.data : { erro: rb.error },
+      }]);
     } else {
-      setErro(r.error);
+      const r = await testarAgenteAction(slug, t, null);
+      setMsgs((m) => [...m, { role: "agente", a: r.ok ? r.data : { erro: r.error } }]);
     }
+    setEnviando(false);
   }
 
   async function reiniciar() {
     if (msgs.length && !confirm("Reiniciar a conversa de teste? A memória desta sessão será apagada.")) return;
     const { resetarTesteAgenteAction } = await import("./actions");
-    await resetarTesteAgenteAction(slug);
+    if (ab) {
+      await Promise.all([
+        resetarTesteAgenteAction(slug, modeloA || null),
+        resetarTesteAgenteAction(slug, modeloB || null),
+      ]);
+    } else {
+      await resetarTesteAgenteAction(slug, null);
+    }
     setMsgs([]);
     setErro(null);
+    setPlacar(null);
   }
+
+  async function rodarBateria() {
+    if (!modeloA || !modeloB) { setErro("Selecione os dois modelos."); return; }
+    setErro(null);
+    setRodandoBateria(true);
+    setPlacar(null);
+    const { testarBateriaAction } = await import("./actions");
+    const r = await testarBateriaAction(slug, [modeloA, modeloB]);
+    setRodandoBateria(false);
+    if (r.ok) setPlacar(r.data.placar);
+    else setErro(r.error);
+  }
+
+  const melhor = placar
+    ? [...placar].sort(
+        (x, y) => x.vazamentos - y.vazamentos || x.linhas_media - y.linhas_media
+      )[0]?.modelo
+    : null;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           Ambiente de teste — nada é enviado ao WhatsApp nem toca clientes
-          reais. A conversa usa o prompt/variáveis/memória atuais do agente
-          (salve as alterações antes de testar).
+          reais. Salve as alterações do agente antes de testar.
         </p>
-        <Button type="button" variant="outline" size="sm" onClick={reiniciar}>
-          <RotateCcw className="size-3.5" />
-          Reiniciar
-        </Button>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-xs">
+            <input type="checkbox" checked={ab} onChange={(e) => { setAb(e.target.checked); setMsgs([]); setPlacar(null); }} />
+            Comparar 2 modelos (A/B)
+          </label>
+          <Button type="button" variant="outline" size="sm" onClick={reiniciar}>
+            <RotateCcw className="size-3.5" />
+            Reiniciar
+          </Button>
+        </div>
       </div>
 
-      <div className="h-[420px] overflow-y-auto rounded-lg border bg-background/50 p-3 space-y-2">
+      {ab && (
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Modelo A</span>
+            <select value={modeloA} onChange={(e) => setModeloA(e.target.value)} className="h-8 rounded-md border border-border/40 bg-background px-2 text-sm">
+              {opcoes.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Modelo B</span>
+            <select value={modeloB} onChange={(e) => setModeloB(e.target.value)} className="h-8 rounded-md border border-border/40 bg-background px-2 text-sm">
+              {opcoes.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={rodarBateria} disabled={rodandoBateria}>
+            {rodandoBateria ? <Loader2 className="size-3.5 animate-spin" /> : <FlaskConical className="size-3.5" />}
+            {rodandoBateria ? "Rodando bateria…" : "Rodar bateria (12 cenários)"}
+          </Button>
+        </div>
+      )}
+
+      {placar && (
+        <div className="overflow-hidden rounded-lg border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Modelo</th>
+                <th className="px-3 py-2 text-right">⚠ Vazamentos</th>
+                <th className="px-3 py-2 text-right">📏 Linhas (méd)</th>
+                <th className="px-3 py-2 text-right">🔧 Escalou</th>
+                <th className="px-3 py-2 text-right">⏱ Tempo (méd)</th>
+                <th className="px-3 py-2 text-right">💲 Custo total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {placar.map((p) => (
+                <tr key={p.modelo} className={"border-t " + (p.modelo === melhor ? "bg-emerald-500/10" : "")}>
+                  <td className="px-3 py-2 font-medium">
+                    {p.modelo.split("/").pop()}
+                    {p.modelo === melhor && <span className="ml-1 text-emerald-500">★ recomendado</span>}
+                  </td>
+                  <td className={"px-3 py-2 text-right " + (p.vazamentos > 0 ? "text-destructive" : "")}>{p.vazamentos}</td>
+                  <td className="px-3 py-2 text-right">{p.linhas_media}</td>
+                  <td className="px-3 py-2 text-right">{p.turnos_com_tools}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">{(p.tempo_medio_ms / 1000).toFixed(1)}s</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">{fmtCusto(p.custo_total_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="border-t bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+            Vencedor por menor vazamento de raciocínio, depois objetividade. Custo é dos {placar[0]?.turnos} cenários — no volume real, centavos/mês.
+          </p>
+        </div>
+      )}
+
+      <div className="h-[380px] overflow-y-auto rounded-lg border bg-background/50 p-3 space-y-2">
         {msgs.length === 0 && !enviando && (
           <p className="py-10 text-center text-sm text-muted-foreground">
             Envie uma mensagem como se você fosse o cliente no WhatsApp.
+            {ab && " No modo A/B, cada mensagem gera as duas respostas lado a lado."}
           </p>
         )}
-        {msgs.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
-            <div
-              className={
-                "max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap " +
-                (m.role === "user" ? "bg-primary/15" : "bg-secondary")
-              }
-            >
-              {m.texto}
-              {m.role === "agente" && (
-                <div className="mt-1 flex flex-wrap items-center gap-1">
-                  {(m.tools ?? []).map((t) => (
-                    <Badge key={t} variant="outline" className="text-[10px]">
-                      🔧 {t}
-                    </Badge>
-                  ))}
-                  {m.ms != null && (
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {(m.ms / 1000).toFixed(1)}s
-                    </span>
-                  )}
-                </div>
-              )}
+        {msgs.map((m, i) =>
+          m.role === "user" ? (
+            <div key={i} className="flex justify-end">
+              <div className="max-w-[80%] rounded-2xl bg-primary/15 px-3 py-2 text-sm whitespace-pre-wrap">{m.texto}</div>
             </div>
-          </div>
-        ))}
+          ) : ab ? (
+            <div key={i} className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">A · {modeloA.split("/").pop()}</p>
+                <BolhaAgente res={m.a} />
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">B · {modeloB.split("/").pop()}</p>
+                <BolhaAgente res={m.b} />
+              </div>
+            </div>
+          ) : (
+            <div key={i} className="flex justify-start">
+              <div className="max-w-[80%]"><BolhaAgente res={m.a} /></div>
+            </div>
+          )
+        )}
         {enviando && (
           <div className="flex justify-start">
             <div className="rounded-2xl bg-secondary px-3 py-2 text-sm text-muted-foreground">
@@ -1094,10 +1241,7 @@ function TabTestar({ slug }: { slug: string }) {
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void enviar();
-            }
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void enviar(); }
           }}
           rows={2}
           placeholder="Digite como se fosse o cliente… (Enter envia, Shift+Enter quebra linha)"

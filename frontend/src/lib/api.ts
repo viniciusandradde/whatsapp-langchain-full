@@ -3487,18 +3487,50 @@ export async function getAgentesIA(opts?: {
 
 export interface TestarAgenteResult {
   resposta: string;
+  modelo_usado: string | null;
   tools_chamadas: string[];
   duracao_ms: number;
-  thread_id: string;
+  raciocinio_vazado: boolean;
+  tokens_in: number;
+  tokens_out: number;
+  custo_usd: number | null;
+  chars: number;
+  linhas: number;
+}
+
+export interface BateriaPlacar {
+  modelo: string;
+  turnos: number;
+  tempo_medio_ms: number;
+  custo_total_usd: number;
+  vazamentos: number;
+  linhas_media: number;
+  turnos_com_tools: number;
+}
+
+export interface TestarBateriaResult {
+  resultados: (TestarAgenteResult & { modelo: string; cenario: string })[];
+  placar: BateriaPlacar[];
+  cenarios: string[];
 }
 
 export async function testarAgente(
   slug: string,
-  payload: { mensagem: string; resetar?: boolean }
+  payload: { mensagem: string; resetar?: boolean; modelo?: string | null }
 ): Promise<TestarAgenteResult> {
   return apiFetch<TestarAgenteResult>(
     `/api/v1/agentes/${encodeURIComponent(slug)}/testar`,
     { method: "POST", body: payload }
+  );
+}
+
+export async function testarBateriaAgente(
+  slug: string,
+  modelos: string[]
+): Promise<TestarBateriaResult> {
+  return apiFetch<TestarBateriaResult>(
+    `/api/v1/agentes/${encodeURIComponent(slug)}/testar-bateria`,
+    { method: "POST", body: { modelos } }
   );
 }
 

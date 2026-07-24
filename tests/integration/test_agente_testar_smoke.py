@@ -27,3 +27,19 @@ class TestSmoke:
             json={"mensagem": "", "resetar": True},
         )
         assert resp.status_code == 401
+
+
+class TestSmokeBateria:
+    def test_bateria_sem_auth_401(self) -> None:
+        resp = _client().post(
+            "/api/v1/agentes/qualquer/testar-bateria",
+            json={"modelos": ["google/gemini-2.5-flash"]},
+        )
+        assert resp.status_code == 401
+
+    def test_testar_com_modelo_sem_auth_401(self) -> None:
+        resp = _client().post(
+            "/api/v1/agentes/qualquer/testar",
+            json={"mensagem": "oi", "modelo": "gpt-4o-mini"},
+        )
+        assert resp.status_code == 401
