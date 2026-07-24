@@ -197,7 +197,8 @@ class Settings(BaseSettings):
     # Todas as chamadas LLM, embeddings e transcrição usam OpenRouter
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "x-ai/grok-4.1-fast"
+    # ID OpenRouter válido (grok-4.1-fast foi aposentado); prod sobrescreve via env
+    openrouter_model: str = "google/gemini-2.5-flash-lite"
     # Modelo dedicado ao pré-processamento de mídia (imagem/áudio)
     openrouter_midia_model: str = "google/gemini-2.5-flash-lite"
 

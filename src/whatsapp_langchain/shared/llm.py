@@ -25,14 +25,23 @@ _RATE_LIMITERS: dict[tuple[float, int], InMemoryRateLimiter] = {}
 # Mantenha em sincronia com o frontend (/models) — qualquer string é aceita
 # pelo backend, mas só essas aparecem no select.
 CURATED_MODELS: list[dict[str, str]] = [
-    {"id": "x-ai/grok-4.1-fast", "label": "Grok 4.1 Fast", "type": "chat"},
-    {"id": "x-ai/grok-4.1", "label": "Grok 4.1", "type": "chat"},
+    {"id": "x-ai/grok-4.5", "label": "Grok 4.5", "type": "chat"},
+    {"id": "x-ai/grok-4.3", "label": "Grok 4.3", "type": "chat"},
     {"id": "openai/gpt-4o-mini", "label": "GPT-4o Mini", "type": "chat"},
     {"id": "openai/gpt-4o", "label": "GPT-4o", "type": "chat"},
     {"id": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "type": "chat"},
-    {"id": "anthropic/claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "type": "chat"},
+    {"id": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6", "type": "chat"},
     {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash", "type": "chat"},
+    {
+        "id": "google/gemini-3.1-flash-lite-preview",
+        "label": "Gemini 3.1 Flash Lite",
+        "type": "chat",
+    },
     {"id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "type": "chat"},
+    {"id": "deepseek/deepseek-v3.2", "label": "DeepSeek V3.2", "type": "chat"},
+    {"id": "z-ai/glm-4.5-air", "label": "GLM 4.5 Air", "type": "chat"},
+    {"id": "z-ai/glm-4.7-flash", "label": "GLM 4.7 Flash", "type": "chat"},
+    {"id": "tencent/hy3-preview", "label": "Tencent HY3 Preview", "type": "chat"},
     {
         "id": "meta-llama/llama-3.3-70b-instruct",
         "label": "Llama 3.3 70B",
@@ -49,6 +58,16 @@ CURATED_MODELS: list[dict[str, str]] = [
     {
         "id": "anthropic/claude-haiku-4.5",
         "label": "Claude Haiku 4.5",
+        "type": "media",
+    },
+    {
+        "id": "qwen/qwen2.5-vl-72b-instruct",
+        "label": "Qwen2.5 VL 72B",
+        "type": "media",
+    },
+    {
+        "id": "qwen/qwen3-vl-30b-a3b-instruct",
+        "label": "Qwen3 VL 30B",
         "type": "media",
     },
 ]
