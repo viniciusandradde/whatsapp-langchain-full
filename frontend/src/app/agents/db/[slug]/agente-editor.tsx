@@ -1056,14 +1056,27 @@ ${corpoHtml}
 }
 
 function indHtml(r: TestarAgenteResult): string {
-  const tools = (r.tools_chamadas || []).map((t) => `<span class="badge">🔧 ${esc(t)}</span>`).join("");
-  const vaz = r.raciocinio_vazado ? `<span class="badge vaz">⚠ vazou raciocínio</span>` : "";
-  return `<div class="ind">${tools}${vaz} ⏱ ${(r.duracao_ms / 1000).toFixed(1)}s · 📏 ${r.linhas}L · 💲 ${fmtCusto(r.custo_usd)}</div>`;
+  const tools = (r.tools_chamadas || []).map((t) => `<span class="badge">${esc(t)}</span>`).join("");
+  const vaz = r.raciocinio_vazado ? `<span class="badge vaz">vazou raciocínio</span>` : "";
+  return `<div class="ind">${tools}${vaz} ${esc(fmtMetricas(r))}</div>`;
 }
 
 function fmtCusto(u: number | null | undefined): string {
   if (u == null) return "—";
+  if (u === 0) return "$0";
   return u < 0.01 ? `$${u.toFixed(5)}` : `$${u.toFixed(4)}`;
+}
+
+// Linha de métricas da resposta — texto limpo, sem ícones. Usada no chat,
+// no detalhe da bateria e na exportação em PDF (mesma string nos 3).
+function fmtMetricas(r: TestarAgenteResult): string {
+  const tempo =
+    r.duracao_ms >= 1000
+      ? `${(r.duracao_ms / 1000).toFixed(1)} s`
+      : `${r.duracao_ms} ms`;
+  const tok = (r.tokens_in || 0) + (r.tokens_out || 0);
+  const linhas = `${r.linhas} ${r.linhas === 1 ? "linha" : "linhas"}`;
+  return `${tempo} · ${tok} tok · ${linhas} · ${fmtCusto(r.custo_usd)}`;
 }
 
 function IndicadoresResposta({ r }: { r: TestarAgenteResult }) {
@@ -1071,16 +1084,16 @@ function IndicadoresResposta({ r }: { r: TestarAgenteResult }) {
     <div className="mt-1 flex flex-wrap items-center gap-1">
       {r.tools_chamadas.map((t) => (
         <Badge key={t} variant="outline" className="text-[10px]">
-          🔧 {t}
+          {t}
         </Badge>
       ))}
       {r.raciocinio_vazado && (
         <Badge variant="outline" className="text-[10px] text-destructive border-destructive/50">
-          ⚠ vazou raciocínio
+          vazou raciocínio
         </Badge>
       )}
       <span className="font-mono text-[10px] text-muted-foreground">
-        ⏱ {(r.duracao_ms / 1000).toFixed(1)}s · 📏 {r.linhas}L · 💲 {fmtCusto(r.custo_usd)}
+        {fmtMetricas(r)}
       </span>
     </div>
   );
@@ -1115,7 +1128,7 @@ function DetalheBateria({
                 <div className="mt-1 flex flex-wrap items-center gap-1">
                   {l.tools_chamadas?.map((t) => (
                     <Badge key={t} variant="outline" className="text-[10px]">
-                      🔧 {t}
+                      {t}
                     </Badge>
                   ))}
                   {l.raciocinio_vazado && (
@@ -1123,12 +1136,11 @@ function DetalheBateria({
                       variant="outline"
                       className="text-[10px] text-destructive border-destructive/50"
                     >
-                      ⚠ vazou raciocínio
+                      vazou raciocínio
                     </Badge>
                   )}
                   <span className="font-mono text-[10px] text-muted-foreground">
-                    ⏱ {(l.duracao_ms / 1000).toFixed(1)}s · 📏 {l.linhas}L · 💲{" "}
-                    {fmtCusto(l.custo_usd)}
+                    {fmtMetricas(l)}
                   </span>
                 </div>
               </>
@@ -1432,12 +1444,12 @@ function TabTestar({
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">Modelo</th>
-                <th className="px-3 py-2 text-right">✕ Erros</th>
-                <th className="px-3 py-2 text-right">⚠ Vazamentos</th>
-                <th className="px-3 py-2 text-right">📏 Linhas (méd)</th>
-                <th className="px-3 py-2 text-right">🔧 Escalou</th>
-                <th className="px-3 py-2 text-right">⏱ Tempo (méd)</th>
-                <th className="px-3 py-2 text-right">💲 Custo total</th>
+                <th className="px-3 py-2 text-right">Erros</th>
+                <th className="px-3 py-2 text-right">Vazamentos</th>
+                <th className="px-3 py-2 text-right">Linhas (méd)</th>
+                <th className="px-3 py-2 text-right">Escalou</th>
+                <th className="px-3 py-2 text-right">Tempo (méd)</th>
+                <th className="px-3 py-2 text-right">Custo total</th>
               </tr>
             </thead>
             <tbody>
