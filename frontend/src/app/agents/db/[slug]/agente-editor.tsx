@@ -987,7 +987,11 @@ function FieldSelect({
 // thread isolada de teste no servidor. Nada é enviado ao WhatsApp e nenhum
 // cliente/atendimento é tocado. Modo A/B compara dois modelos lado a lado.
 
-import type { TestarAgenteResult, BateriaPlacar } from "@/lib/api";
+import type {
+  TestarAgenteResult,
+  BateriaPlacar,
+  TestarBateriaResult,
+} from "@/lib/api";
 
 type MsgTeste = { role: "user"; texto: string } | {
   role: "agente";
@@ -1016,6 +1020,60 @@ function IndicadoresResposta({ r }: { r: TestarAgenteResult }) {
       <span className="font-mono text-[10px] text-muted-foreground">
         ⏱ {(r.duracao_ms / 1000).toFixed(1)}s · 📏 {r.linhas}L · 💲 {fmtCusto(r.custo_usd)}
       </span>
+    </div>
+  );
+}
+
+function DetalheBateria({
+  linhas,
+}: {
+  linhas: (TestarAgenteResult & { modelo: string; cenario: string })[];
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">
+        {linhas.length} cenários testados — pergunta → resposta do agente:
+      </p>
+      {linhas.map((l, i) => {
+        const falhou = "erro" in l && (l as unknown as { erro?: string }).erro;
+        return (
+          <div key={i} className="rounded-md border bg-background/60 p-2 text-sm">
+            <p className="mb-1 text-xs font-medium text-muted-foreground">
+              {i + 1}. Cliente: <span className="text-foreground">{l.cenario}</span>
+            </p>
+            {falhou ? (
+              <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                {(l as unknown as { erro: string }).erro}
+              </p>
+            ) : (
+              <>
+                <p className="whitespace-pre-wrap rounded bg-secondary px-2 py-1">
+                  {l.resposta || "(vazio)"}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {l.tools_chamadas?.map((t) => (
+                    <Badge key={t} variant="outline" className="text-[10px]">
+                      🔧 {t}
+                    </Badge>
+                  ))}
+                  {l.raciocinio_vazado && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] text-destructive border-destructive/50"
+                    >
+                      ⚠ vazou raciocínio
+                    </Badge>
+                  )}
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    ⏱ {(l.duracao_ms / 1000).toFixed(1)}s · 📏 {l.linhas}L · 💲{" "}
+                    {fmtCusto(l.custo_usd)}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1052,6 +1110,9 @@ function TabTestar({
   const [enviando, setEnviando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
   const [placar, setPlacar] = React.useState<BateriaPlacar[] | null>(null);
+  const [resultadosBat, setResultadosBat] =
+    React.useState<TestarBateriaResult["resultados"] | null>(null);
+  const [detalheModelo, setDetalheModelo] = React.useState<string | null>(null);
   const [rodandoBateria, setRodandoBateria] = React.useState(false);
   const fimRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -1110,8 +1171,11 @@ function TabTestar({
     const { testarBateriaAction } = await import("./actions");
     const r = await testarBateriaAction(slug, [modeloA, modeloB]);
     setRodandoBateria(false);
-    if (r.ok) setPlacar(r.data.placar);
-    else setErro(r.error);
+    if (r.ok) {
+      setPlacar(r.data.placar);
+      setResultadosBat(r.data.resultados);
+      setDetalheModelo(null);
+    } else setErro(r.error);
   }
 
   const melhor = placar
@@ -1179,8 +1243,17 @@ function TabTestar({
             </thead>
             <tbody>
               {placar.map((p) => (
-                <tr key={p.modelo} className={"border-t " + (p.modelo === melhor ? "bg-emerald-500/10" : "")}>
+                <React.Fragment key={p.modelo}>
+                <tr
+                  className={
+                    "cursor-pointer border-t hover:bg-muted/30 " +
+                    (p.modelo === melhor ? "bg-emerald-500/10" : "")
+                  }
+                  onClick={() => setDetalheModelo(detalheModelo === p.modelo ? null : p.modelo)}
+                  title="Clique para ver os 12 cenários deste modelo"
+                >
                   <td className="px-3 py-2 font-medium">
+                    <span className="mr-1 text-muted-foreground">{detalheModelo === p.modelo ? "▾" : "▸"}</span>
                     {p.modelo.split("/").pop()}
                     {p.modelo === melhor && <span className="ml-1 text-emerald-500">★ recomendado</span>}
                   </td>
@@ -1191,6 +1264,16 @@ function TabTestar({
                   <td className="px-3 py-2 text-right font-mono text-xs">{(p.tempo_medio_ms / 1000).toFixed(1)}s</td>
                   <td className="px-3 py-2 text-right font-mono text-xs">{fmtCusto(p.custo_total_usd)}</td>
                 </tr>
+                {detalheModelo === p.modelo && resultadosBat && (
+                  <tr>
+                    <td colSpan={7} className="bg-muted/20 px-3 py-3">
+                      <DetalheBateria
+                        linhas={resultadosBat.filter((r) => r.modelo === p.modelo)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
