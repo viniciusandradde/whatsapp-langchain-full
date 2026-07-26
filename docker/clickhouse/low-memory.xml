@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<!--
+  Perfil de memória enxuto pro ClickHouse do Langfuse self-hosted.
+
+  Contexto: host de 11GB rodando ChatNexus + Langfuse + Dokploy + Evolution.
+  O ClickHouse sozinho segurava 1,06GB — os defaults dele são dimensionados
+  pra máquina dedicada (mark_cache 5GB, uncompressed_cache 8GB) e ele
+  reserva conforme a RAM que enxerga.
+
+  Combina com `mem_limit: 1g` no compose. O ClickHouse 24.3 lê o limite do
+  cgroup, mas os caches abaixo são explícitos pra não depender disso.
+
+  Volume real: dezenas de traces/dia. Se a ingestão começar a acusar
+  MEMORY_LIMIT_EXCEEDED, subir max_server_memory_usage junto com o mem_limit.
+-->
+<clickhouse>
+    <!-- Teto duro do servidor (1.5GB), abaixo do mem_limit de 2g do container
+         pra sobrar folga pro alocador e evitar OOM-kill do Docker.
+
+         NÃO baixe isso sem medir. Com 750MB (tentado em 2026-07-26) os merges
+         de background passaram a estourar o limite, falhar e RETENTAR em
+         loop infinito: 52k erros MEMORY_LIMIT_EXCEEDED e 141% de CPU num
+         host de 4 vCPUs. Merge que não cabe na memória não é pulado — ele
+         volta pra fila pra sempre. O piso prático é o tamanho do maior merge,
+         não o working set em repouso. -->
+    <max_server_memory_usage>1610612736</max_server_memory_usage>
+
+    <!-- Caches: defaults são 5GB/8GB. Aqui, 256MB/0. -->
+    <mark_cache_size>268435456</mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+
+    <!-- ATENÇÃO: `max_memory_usage` (teto por query) NÃO entra aqui. É
+         user-level setting — no top level o ClickHouse se recusa a subir com
+         UNKNOWN_ELEMENT_IN_CONFIG (que sai como código 137, fácil de
+         confundir com OOM-kill do Docker). Ele vive em
+         users-low-memory.xml, montado em users.d/. -->
+
+    <!-- Teto de queries simultâneas (default 100). Host compartilhado, e o
+         Langfuse recebe dezenas de traces/dia — 16 sobra.
+
+         NÃO mexer em `background_pool_size` aqui: ele é validado contra
+         `number_of_free_entries_in_pool_to_execute_mutation` (20 por default)
+         e o servidor recusa o boot com BAD_ARGUMENTS se
+         background_pool_size * background_merges_mutations_concurrency_ratio
+         ficar abaixo disso. O ganho de RAM dele é marginal perto dos caches
+         acima; não vale o acoplamento. -->
+    <max_concurrent_queries>16</max_concurrent_queries>
+
+    <!-- Retenção dos logs internos: sem isso as tabelas system.*_log crescem
+         indefinidamente em disco e mantêm buffers em RAM. -->
+    <query_log>
+        <ttl>event_date + INTERVAL 14 DAY DELETE</ttl>
+    </query_log>
+    <trace_log>
+        <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+    </trace_log>
+
+    <!-- metric_log/asynchronous_metric_log são telemetria INTERNA do
+         ClickHouse, gravada a cada segundo. Numa instância que recebe
+         dezenas de traces/dia elas viram a maior tabela do banco e geram
+         merge de background sem parar — foi justamente um merge de
+         system.metric_log que entrou em loop de falha aqui. O Langfuse não
+         lê nenhuma das duas. Removendo, some a churn e sobra disco. -->
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+</clickhouse>

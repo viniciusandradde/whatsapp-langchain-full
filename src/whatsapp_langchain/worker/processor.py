@@ -34,6 +34,7 @@ Uso:
 """
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -101,6 +102,35 @@ from whatsapp_langchain.worker.media import (
 from whatsapp_langchain.worker.outbound_client import OutboundClient
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class _WorkerHealth:
+    """Contador de falhas consecutivas de processamento.
+
+    Existe por causa do incidente 2026-07-26: o worker pode entrar em estado
+    zumbi — loop rodando, fila sendo consumida, container `Up` e
+    `restarts=0` — enquanto TODA mensagem que chega no agente falha. Ali foi
+    a conexão morta do checkpointer; amanhã pode ser outra dependência
+    quebrada no boot. Como `process_message` engole a exception e chama
+    `mark_failed`, o loop em `worker/main.py` não tem como perceber sozinho.
+
+    O loop lê `consecutive_failures` e se mata quando estoura o teto; o
+    `restart: unless-stopped` do compose reconstrói o processo (e com ele
+    todas as conexões de boot). Falha barulhenta > falha silenciosa.
+    """
+
+    consecutive_failures: int = 0
+
+    def record_success(self) -> None:
+        self.consecutive_failures = 0
+
+    def record_failure(self) -> None:
+        self.consecutive_failures += 1
+
+
+# Estado compartilhado com o loop do worker (processo único por container).
+WORKER_HEALTH = _WorkerHealth()
 
 
 # S4 / E2.E: detecta resposta do gestor pra aprovação de agendamento.
@@ -2637,6 +2667,7 @@ async def process_message(
             agent_id=message.agent_id,
             response_length=len(response_text),
         )
+        WORKER_HEALTH.record_success()
 
     except Exception as e:
         # Detalhe técnico (stack-like) FICA APENAS NO LOG. O que vai
@@ -2657,3 +2688,4 @@ async def process_message(
         # log via `error_type`, sem expor detalhe interno.
         safe_db_error = f"processing_failed:{type(e).__name__}"
         await mark_failed(pool, message.id, safe_db_error)
+        WORKER_HEALTH.record_failure()

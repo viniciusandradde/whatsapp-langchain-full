@@ -76,9 +76,33 @@ services:
       LOG_JSON: "true"
     depends_on:
       - db
+    # `unless-stopped` é load-bearing: o worker se mata de propósito quando
+    # acumula MAX_CONSECUTIVE_FAILURES (circuit breaker anti-zumbi em
+    # worker/main.py). Sem restart automático ele fica morto de vez.
     restart: unless-stopped
     deploy:
-      replicas: 4
+      # 2 réplicas, não 4. Os 4 ficavam a 85% do teto de 512M cada e
+      # empurravam a máquina (11GB) pro swap — foi o que degradou o host no
+      # incidente 2026-07-26.
+      #
+      # Por que 2 e não 1: o loop do worker é ESTRITAMENTE SERIAL (claim de
+      # 1 mensagem → `await process_message` → repete), então cada réplica
+      # processa uma mensagem por vez. Medido sobre 2727 mensagens reais de
+      # 90 dias: média 6,85s, p50 3,43s, p95 15,73s. Logo 1 réplica ≈ 8,8
+      # msg/min, e o pico de chegada dos últimos 30 dias foi 10 msg/min —
+      # ficaria na borda. Pior: uma mensagem lenta (p95 ≈ 16s) segura a fila
+      # de TODAS as empresas enquanto roda. Com 2 réplicas a vazão vai a
+      # ~17,6 msg/min, acima de qualquer pico já observado (o maior em 90
+      # dias foi 23 msg/min, num burst de maio), e uma mensagem lenta não
+      # bloqueia o resto sozinha.
+      #
+      # Quando mexer: medir antes de chutar —
+      #   SELECT count(*), min(created_at) FROM message_queue
+      #    WHERE status = 'queued';
+      # Linhas esperando de forma sustentada = subir. O claim usa
+      # FOR UPDATE SKIP LOCKED, então escalar é seguro: réplicas não brigam
+      # pela mesma mensagem.
+      replicas: 2
       resources:
         limits:
           cpus: "0.5"
@@ -128,8 +152,11 @@ services:
     deploy:
       resources:
         limits:
+          # Ocioso o runner fica em ~80MB; 1GB era teto pra bateria pesada e
+          # reservava RAM que faltava pro resto do host. Se a suite completa
+          # começar a ser morta por OOM, subir de novo.
           cpus: "0.5"
-          memory: 1024M
+          memory: 512M
 
 volumes:
   postgres_data:
