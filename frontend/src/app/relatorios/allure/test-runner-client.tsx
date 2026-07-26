@@ -296,9 +296,7 @@ export function TestRunnerClient({ initialRuns }: Props) {
               Nenhum run ainda. Clique em "Iniciar" pra disparar a primeira bateria.
             </p>
           ) : (
-            // Container rolavel: sem ele as colunas somem em 375px.
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground">
                 <tr>
                   <th className="py-2 pr-2 text-left font-normal">#</th>
@@ -368,7 +366,6 @@ export function TestRunnerClient({ initialRuns }: Props) {
                 })}
               </tbody>
             </table>
-            </div>
           )}
         </CardContent>
       </Card>

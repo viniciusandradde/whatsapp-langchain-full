@@ -218,8 +218,8 @@ function TabelaRanking({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{titulo}</CardTitle>
       </CardHeader>
-      <CardContent className="overflow-x-auto p-0">
-        <table className="w-full min-w-[560px] text-sm">
+      <CardContent className="p-0">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
               {cols.map((c, i) => (
