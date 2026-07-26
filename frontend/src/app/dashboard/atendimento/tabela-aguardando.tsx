@@ -31,7 +31,9 @@ export function TabelaAguardando({ rows }: { rows: RowAguardando[] }) {
           🎉 Fila vazia! Nenhum cliente aguardando.
         </div>
       ) : (
-        <table className="w-full text-xs">
+        // Container rolavel: sem ele as colunas somem em 375px.
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-xs">
           <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
             <tr className="border-b border-border/20">
               <th className="px-3 py-1.5 text-left">Cliente</th>
@@ -68,6 +70,7 @@ export function TabelaAguardando({ rows }: { rows: RowAguardando[] }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

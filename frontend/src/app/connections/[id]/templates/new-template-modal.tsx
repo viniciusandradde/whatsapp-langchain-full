@@ -112,7 +112,7 @@ export function NewTemplateModal({ conexaoId, onClose }: Props) {
         </div>
 
         <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Nome *

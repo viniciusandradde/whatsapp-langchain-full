@@ -43,7 +43,12 @@ export function AppShell({
       <Sidebar empresaSwitcher={empresaSwitcher} brand={brand} />
       <main
         className={cn(
-          "min-h-screen p-6 pt-16 md:pt-6",
+          // p-4 no mobile: em 375px, 24px de padding de cada lado comem 13%
+          // da largura util. Volta a p-6 a partir de md.
+          "min-h-screen p-4 pt-16 md:p-6 md:pt-6",
+          // Respeita notch/barra de gestos quando instalado como PWA no iOS.
+          // Em browser comum env() resolve 0px e nada muda. Ver globals.css.
+          "app-safe-area",
           "transition-[margin] duration-200 ease-out",
           collapsed ? "md:ml-16" : "md:ml-64"
         )}

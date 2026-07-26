@@ -220,8 +220,9 @@ export function UsuariosPageClient() {
           }}
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-foreground/10 bg-obsidian-900">
-          <table className="w-full text-sm">
+        // overflow-x-auto (nao -hidden): -hidden corta coluna em 375px.
+        <div className="overflow-x-auto rounded-xl border border-foreground/10 bg-obsidian-900">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-foreground/10 text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 text-left">Usuário</th>

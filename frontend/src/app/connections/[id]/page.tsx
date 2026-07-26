@@ -86,7 +86,7 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
       </div>
 
       <div className="rounded-lg border border-border/40 p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
           <Field label="Provider" value={PROVIDER_LABEL[conexao.provider] || conexao.provider} />
           <Field
             label="Estado"

@@ -361,8 +361,9 @@ export function SandboxClient({ initialSuggestions }: Props) {
           <p className="text-sm text-muted-foreground">{ingestMsg}</p>
         )}
         {evalPlacar && (
-          <div className="overflow-hidden rounded-lg border">
-            <table className="w-full text-sm">
+          // overflow-x-auto (nao -hidden): -hidden corta coluna em 375px.
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full min-w-[560px] text-sm">
               <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 text-left">Agente</th>
@@ -540,6 +541,9 @@ export function SandboxClient({ initialSuggestions }: Props) {
             </div>
             {cleanPreview ? (
               <div className="space-y-2">
+                {/* responsive-ok: par rotulo/valor com texto de 11px — em
+                    375px cada coluna fica com ~180px, sobra folga. Quebrar em
+                    1 coluna separaria o rotulo do numero. */}
                 <div className="grid grid-cols-2 gap-1 text-[11px]">
                   <span>Total ativo:</span>
                   <span className="text-right font-mono">{cleanPreview.total}</span>

@@ -739,7 +739,7 @@ function TabTools({ a }: { a: AgenteIA }) {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Tipos de mídia aceita
         </p>
-        <ul className="grid grid-cols-3 gap-2">
+        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <li>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -1501,8 +1501,9 @@ function TabTestar({
       )}
 
       {placar && (
-        <div className="overflow-hidden rounded-lg border">
-          <table className="w-full text-sm">
+        // overflow-x-auto (nao -hidden): -hidden corta coluna em 375px.
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="w-full min-w-[600px] text-sm">
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">Modelo</th>
