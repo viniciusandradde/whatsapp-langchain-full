@@ -55,7 +55,15 @@ async def dashboard_ia_endpoint(
         cur = await conn.execute(
             """
             SELECT COUNT(*), COALESCE(SUM(tokens_input), 0),
-                   COALESCE(SUM(tokens_output), 0), COALESCE(SUM(custo_total), 0)
+                   COALESCE(SUM(tokens_output), 0), COALESCE(SUM(custo_total), 0),
+                   -- Quantas chamadas com custo apurado vieram MEDIDAS da
+                   -- OpenRouter (`usage.cost`) e não estimadas por tabela.
+                   -- Sem expor isso, um desvio de preço volta a passar
+                   -- despercebido como o de +91% que originou a mig 139.
+                   COUNT(*) FILTER (
+                       WHERE custo_fonte = 'openrouter' AND custo_total IS NOT NULL
+                   ),
+                   COUNT(*) FILTER (WHERE custo_total IS NOT NULL)
               FROM ia_execucao
              WHERE empresa_id = %s AND created_at >= %s AND status = 'success'
             """,
@@ -66,6 +74,8 @@ async def dashboard_ia_endpoint(
         total_input = int(r[1]) if r else 0
         total_output = int(r[2]) if r else 0
         custo_periodo = float(r[3]) if r else 0.0
+        custo_medido_calls = int(r[4]) if r else 0
+        custo_apurado_calls = int(r[5]) if r else 0
 
         # Custo do mês atual (sempre o mês corrente, independente de days)
         ano_mes = datetime.now().strftime("%Y-%m")
@@ -165,6 +175,16 @@ async def dashboard_ia_endpoint(
             "total_tokens_output": total_output,
             "custo_periodo_usd": custo_periodo,
             "custo_mes_atual_usd": custo_mes,
+            # Proveniência: quantas das chamadas com custo apurado vieram
+            # MEDIDAS da OpenRouter. Abaixo de 100% o valor tem estimativa
+            # misturada e a UI deve sinalizar.
+            "custo_medido_calls": custo_medido_calls,
+            "custo_apurado_calls": custo_apurado_calls,
+            "custo_medido_pct": (
+                round(100.0 * custo_medido_calls / custo_apurado_calls, 1)
+                if custo_apurado_calls
+                else None
+            ),
         },
         "serie_diaria": serie_diaria,
         "top_modelos": top_modelos,
