@@ -14,9 +14,16 @@
   MEMORY_LIMIT_EXCEEDED, subir max_server_memory_usage junto com o mem_limit.
 -->
 <clickhouse>
-    <!-- Teto duro do servidor (~750MB), abaixo do mem_limit de 1g do container
-         pra sobrar folga pro alocador e evitar OOM-kill do Docker. -->
-    <max_server_memory_usage>786432000</max_server_memory_usage>
+    <!-- Teto duro do servidor (1.5GB), abaixo do mem_limit de 2g do container
+         pra sobrar folga pro alocador e evitar OOM-kill do Docker.
+
+         NÃO baixe isso sem medir. Com 750MB (tentado em 2026-07-26) os merges
+         de background passaram a estourar o limite, falhar e RETENTAR em
+         loop infinito: 52k erros MEMORY_LIMIT_EXCEEDED e 141% de CPU num
+         host de 4 vCPUs. Merge que não cabe na memória não é pulado — ele
+         volta pra fila pra sempre. O piso prático é o tamanho do maior merge,
+         não o working set em repouso. -->
+    <max_server_memory_usage>1610612736</max_server_memory_usage>
 
     <!-- Caches: defaults são 5GB/8GB. Aqui, 256MB/0. -->
     <mark_cache_size>268435456</mark_cache_size>
@@ -47,4 +54,13 @@
     <trace_log>
         <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
     </trace_log>
+
+    <!-- metric_log/asynchronous_metric_log são telemetria INTERNA do
+         ClickHouse, gravada a cada segundo. Numa instância que recebe
+         dezenas de traces/dia elas viram a maior tabela do banco e geram
+         merge de background sem parar — foi justamente um merge de
+         system.metric_log que entrou em loop de falha aqui. O Langfuse não
+         lê nenhuma das duas. Removendo, some a churn e sobra disco. -->
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
 </clickhouse>

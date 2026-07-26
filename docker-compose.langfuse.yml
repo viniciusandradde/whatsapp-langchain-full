@@ -69,10 +69,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    # Teto do container acima do max_server_memory_usage (750MB) do XML, pra
+    # Teto do container acima do max_server_memory_usage (1.5GB) do XML, pra
     # o ClickHouse bater no limite dele e retornar erro de query em vez de
     # apanhar OOM-kill do Docker no meio de um merge.
-    mem_limit: 1g
+    mem_limit: 2g
     restart: unless-stopped
 
   langfuse-redis:
@@ -182,6 +182,9 @@ services:
       # Traefik tentando alcançar via dokploy-network recebe Connection
       # refused / Bad Gateway.
       HOSTNAME: "0.0.0.0"
+      # Heap explícito — não deixa o V8 derivar do cgroup (ver nota no
+      # mem_limit abaixo). 1024MB de heap dentro de 1536MB de container.
+      NODE_OPTIONS: "--max-old-space-size=1024"
       NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-langfuse_dev_nextauth_secret_change_min_32!!}
       LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
@@ -208,9 +211,20 @@ services:
     networks:
       - default
       - dokploy-network
-    # Next.js/Node cresce até o heap default (que ele deriva da RAM do host,
-    # não do container). Teto explícito impede o painel de sozinho comer 1GB+.
-    mem_limit: 1g
+    # ATENÇÃO — não baixe `mem_limit` sem ajustar `--max-old-space-size` junto.
+    # O Node 18+ lê o limite do cgroup e dimensiona o heap em ~50% dele. Com
+    # `mem_limit: 1g` (tentado em 2026-07-26) o heap virou ~512MB, abaixo do
+    # working set real do painel (~620MB): o processo entrou em crash loop com
+    # `FATAL ERROR: Reached heap limit Allocation failed`, 510 restarts, e o
+    # boot repetido do Next.js sozinho levou o load do host de ~1 pra ~6.
+    #
+    # O sintoma engana: `OOMKilled=false` e o container aparece `running`,
+    # porque quem mata é o V8 (heap), não o cgroup. Diagnóstico está no
+    # `docker logs`, não no `docker inspect`.
+    #
+    # Heap explícito < limite do container, com folga pro que não é heap
+    # (buffers, native, stacks).
+    mem_limit: 1536m
     restart: unless-stopped
 
 # Rede externa do Traefik (criada pelo Dokploy). Compose plain reusa.
