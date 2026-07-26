@@ -17,7 +17,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from langchain_openai import OpenAIEmbeddings
@@ -25,6 +25,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from langgraph.store.postgres.base import PostgresIndexConfig
 from psycopg import AsyncConnection
+from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
 from pydantic import SecretStr
 
@@ -37,6 +38,10 @@ logger = structlog.get_logger()
 pool: AsyncConnectionPool | None = None
 MIGRATIONS_LOCK_ID = 8_642_000
 LANGGRAPH_BOOTSTRAP_LOCK_ID = 8_642_001
+
+# Pools do LangGraph (checkpointer/store) são pequenos: um worker processa
+# uma mensagem por vez, o teto só cobre o overlap de checkpoint + store.
+LANGGRAPH_POOL_MAX_SIZE = 3
 
 
 def _resolve_migrations_dir() -> Path:
@@ -368,13 +373,56 @@ def resolve_store_index_config() -> PostgresIndexConfig:
     }
 
 
+async def _open_langgraph_pool(
+    purpose: str,
+) -> AsyncConnectionPool[AsyncConnection[DictRow]]:
+    """Abre um pool dedicado ao LangGraph (checkpointer ou store).
+
+    Por que pool e não `from_conn_string()`: aquele helper abre UMA
+    `AsyncConnection` crua, sem reconexão. Como o worker mantém o
+    checkpointer/store abertos por toda a vida do processo, um crash recovery
+    do Postgres (que derruba todas as conexões) matava essa conexão pra
+    sempre — o worker seguia consumindo a fila (o pool da app reconecta) mas
+    toda mensagem que chegava no agente morria com
+    `OperationalError: the connection is closed`. Container `Up`, zero
+    restart, zero resposta ao cliente. Pool reabre conexão sob demanda.
+
+    Por que pool SEPARADO do `get_pool()` da aplicação: o LangGraph exige
+    `autocommit=True` + `row_factory=dict_row` + `prepare_threshold=0`; o pool
+    da app é transacional e passa pelo wrapper RLS (`SET app.empresa_id`).
+    Compartilhar quebraria os dois.
+    """
+    pool = AsyncConnectionPool(
+        conninfo=settings.database_url,
+        min_size=1,
+        max_size=LANGGRAPH_POOL_MAX_SIZE,
+        open=False,
+        kwargs={
+            "autocommit": True,
+            "prepare_threshold": 0,
+            "row_factory": dict_row,
+        },
+    )
+    await pool.open()
+    logger.info(
+        "langgraph_pool_created",
+        purpose=purpose,
+        max_size=LANGGRAPH_POOL_MAX_SIZE,
+        database_url=settings.database_url.split("@")[-1],
+    )
+    # `row_factory=dict_row` está em `kwargs` (aplicado a cada conexão que o
+    # pool cria), mas o pyright não consegue inferir o parâmetro genérico a
+    # partir de um dict. O cast declara o que os kwargs acima garantem em
+    # runtime — que é o `DictRow` exigido pelo LangGraph.
+    return cast("AsyncConnectionPool[AsyncConnection[DictRow]]", pool)
+
+
 async def open_checkpointer() -> tuple[AsyncExitStack, AsyncPostgresSaver]:
     """Abre checkpointer PostgreSQL com ciclo de vida explícito."""
     stack = AsyncExitStack()
-    checkpointer = await stack.enter_async_context(
-        AsyncPostgresSaver.from_conn_string(settings.database_url)
-    )
-    return stack, checkpointer
+    pool = await _open_langgraph_pool("checkpointer")
+    stack.push_async_callback(pool.close)
+    return stack, AsyncPostgresSaver(conn=pool)
 
 
 async def open_store() -> tuple[AsyncExitStack, AsyncPostgresStore] | tuple[None, None]:
@@ -387,13 +435,9 @@ async def open_store() -> tuple[AsyncExitStack, AsyncPostgresStore] | tuple[None
         return None, None
 
     stack = AsyncExitStack()
-    store = await stack.enter_async_context(
-        AsyncPostgresStore.from_conn_string(
-            settings.database_url,
-            index=resolve_store_index_config(),
-        )
-    )
-    return stack, store
+    pool = await _open_langgraph_pool("store")
+    stack.push_async_callback(pool.close)
+    return stack, AsyncPostgresStore(conn=pool, index=resolve_store_index_config())
 
 
 async def bootstrap_langgraph_schema() -> None:

@@ -42,6 +42,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 256m
     restart: unless-stopped
 
   langfuse-clickhouse:
@@ -53,6 +54,12 @@ services:
     volumes:
       - langfuse_clickhouse_data:/var/lib/clickhouse
       - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      # Perfil de memória enxuto — os defaults do ClickHouse assumem máquina
+      # dedicada (mark_cache 5GB) e ele sozinho segurava 1,06GB num host de
+      # 11GB compartilhado. Ver comentários no XML.
+      - ./docker/clickhouse/low-memory.xml:/etc/clickhouse-server/config.d/low-memory.xml:ro
+      # User settings vão em users.d/ — no config.d/ o servidor recusa o boot.
+      - ./docker/clickhouse/users-low-memory.xml:/etc/clickhouse-server/users.d/low-memory.xml:ro
     ulimits:
       nofile:
         soft: 262144
@@ -62,6 +69,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # Teto do container acima do max_server_memory_usage (750MB) do XML, pra
+    # o ClickHouse bater no limite dele e retornar erro de query em vez de
+    # apanhar OOM-kill do Docker no meio de um merge.
+    mem_limit: 1g
     restart: unless-stopped
 
   langfuse-redis:
@@ -72,6 +83,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 128m
     restart: unless-stopped
 
   langfuse-minio:
@@ -87,6 +99,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 256m
     restart: unless-stopped
 
   langfuse-minio-init:
@@ -142,6 +155,7 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: minio_dev_password
       LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+    mem_limit: 512m
     restart: unless-stopped
 
   langfuse-web:
@@ -194,6 +208,9 @@ services:
     networks:
       - default
       - dokploy-network
+    # Next.js/Node cresce até o heap default (que ele deriva da RAM do host,
+    # não do container). Teto explícito impede o painel de sozinho comer 1GB+.
+    mem_limit: 1g
     restart: unless-stopped
 
 # Rede externa do Traefik (criada pelo Dokploy). Compose plain reusa.

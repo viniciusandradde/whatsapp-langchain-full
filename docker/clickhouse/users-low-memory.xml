@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!--
+  Settings de USUÁRIO do ClickHouse (perfil `default`).
+
+  Separado de low-memory.xml porque o ClickHouse distingue server settings
+  (config.d/) de user settings (users.d/). Colocar um user setting no top
+  level do config faz o servidor recusar o boot com UNKNOWN_ELEMENT_IN_CONFIG
+  — que ele reporta como código 137, indistinguível à primeira vista de um
+  OOM-kill do Docker (exit 137). Se este container entrar em crash loop com
+  137, leia clickhouse-server.err.log antes de mexer em mem_limit.
+-->
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Teto por query (~512MB). Impede que uma agregação pesada do
+                 painel do Langfuse consuma o orçamento inteiro do servidor. -->
+            <max_memory_usage>536870912</max_memory_usage>
+        </default>
+    </profiles>
+</clickhouse>

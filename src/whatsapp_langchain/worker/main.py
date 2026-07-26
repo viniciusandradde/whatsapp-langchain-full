@@ -25,9 +25,14 @@ from whatsapp_langchain.shared.db import (
 from whatsapp_langchain.shared.observability import setup_logging
 from whatsapp_langchain.shared.queue import renew_lease
 from whatsapp_langchain.worker.consumer import claim_next_message
-from whatsapp_langchain.worker.processor import process_message
+from whatsapp_langchain.worker.processor import WORKER_HEALTH, process_message
 
 logger = structlog.get_logger()
+
+# Teto de falhas consecutivas antes do worker se matar pra ser reiniciado.
+# Alto o bastante pra não reagir a erro transitório (LLM instável, Evolution
+# fora do ar), baixo o bastante pra não passar horas sem responder cliente.
+MAX_CONSECUTIVE_FAILURES = 10
 
 
 async def _lease_heartbeat(pool, message) -> None:
@@ -151,11 +156,19 @@ async def main() -> None:
 
                 # Sprint A.2.5: seta RLS context da empresa da msg antes
                 # de processar. Qualquer pool.connection() dentro de
-                # process_message (helpers shared/*.py, agente IA tools,
-                # checkpointer, store) herda app.empresa_id automaticamente
-                # via _RlsAwarePool wrapper. Garante isolamento entre
-                # mensagens de empresas diferentes processadas pelo mesmo
-                # worker.
+                # process_message (helpers shared/*.py, agente IA tools)
+                # herda app.empresa_id automaticamente via _RlsAwarePool
+                # wrapper. Garante isolamento entre mensagens de empresas
+                # diferentes processadas pelo mesmo worker.
+                #
+                # Checkpointer e store ficam FORA disso: têm pool próprio
+                # (`_open_langgraph_pool`), sem o wrapper RLS. Não é furo de
+                # isolamento — as tabelas do LangGraph não têm `empresa_id`,
+                # o escopo delas é o `thread_id`
+                # (`{phone_number}:{agent_id}`) e o namespace do store
+                # (`(user_id, "memories")`). Se algum dia uma tabela do
+                # LangGraph ganhar `empresa_id`, esse pool precisa passar a
+                # setar o contexto.
                 with empresa_scope(empresa_id=message.empresa_id):
                     # R7: heartbeat renova o lease em background enquanto a IA
                     # processa, pra IA lenta (>lease) não disparar reclaim +
@@ -173,6 +186,22 @@ async def main() -> None:
                         heartbeat.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await heartbeat
+
+                # Circuit breaker anti-zumbi. `process_message` engole a
+                # exception e chama mark_failed, então o loop segue rodando
+                # feliz enquanto nenhum cliente é respondido — foi assim que
+                # o incidente 2026-07-26 passou 40h despercebido (container
+                # `Up`, restarts=0, checkpointer com conexão morta). Falhar
+                # ruidosamente devolve o processo pro `restart:
+                # unless-stopped`, que reabre as conexões de boot.
+                if WORKER_HEALTH.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    logger.error(
+                        "worker_unhealthy_exiting",
+                        consecutive_failures=WORKER_HEALTH.consecutive_failures,
+                        threshold=MAX_CONSECUTIVE_FAILURES,
+                        reason="falhas consecutivas; reiniciando pra recriar conexões",
+                    )
+                    raise SystemExit(1)
             except (KeyboardInterrupt, asyncio.CancelledError):
                 raise
             except Exception:
