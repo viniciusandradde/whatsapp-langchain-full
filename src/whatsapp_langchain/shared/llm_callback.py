@@ -16,6 +16,8 @@ from langchain_core.outputs import LLMResult
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.governanca_ia import (
+    CUSTO_FONTE_OPENROUTER,
+    CUSTO_FONTE_TABELA,
     acrescentar_consumo,
     calc_custo,
     get_custo_modelo,
@@ -106,6 +108,8 @@ class IaExecucaoCallback(AsyncCallbackHandler):
         tokens_input = 0
         tokens_output = 0
         tokens_cached = 0
+        custo_openrouter: float | None = None
+        generation_id: str | None = None
         if response.llm_output:
             usage = response.llm_output.get("token_usage") or {}
             tokens_input = usage.get("prompt_tokens", 0) or 0
@@ -113,13 +117,36 @@ class IaExecucaoCallback(AsyncCallbackHandler):
             # OpenAI prompt cache
             cached = usage.get("prompt_tokens_details", {}) or {}
             tokens_cached = cached.get("cached_tokens", 0) or 0
+            # Custo REAL cobrado pela OpenRouter. Ela sempre devolve isso no
+            # `usage` (o antigo `usage: {include: true}` foi depreciado), e o
+            # campo sobrevive até aqui porque o SDK da OpenAI usa
+            # `extra="allow"` e o langchain_openai repassa o dict inteiro.
+            custo_openrouter = usage.get("cost")
+            # Permite auditar a linha depois via GET /api/v1/generation?id=
+            generation_id = response.llm_output.get("id")
 
-        # Cálculo de custo (lookup cached por call — OK em escala
-        # média; pode-se memoizar depois)
-        custo_in, custo_out = await get_custo_modelo(
-            self.pool, self.empresa_id, provedor, nome
-        )
-        custo_total = calc_custo(tokens_input, tokens_output, custo_in, custo_out)
+        # `usage.cost` é o valor efetivamente cobrado: já embute desconto de
+        # cache, BYOK e o preço do provedor upstream que a OpenRouter escolheu
+        # no roteamento. Nenhuma tabela local acompanha isso — medimos
+        # 0.2072 USD/Mtok de prompt no deepseek-v3.2 contra 0.269 no catálogo.
+        # A tabela fica só como rede de segurança.
+        custo_total: float | None
+        if custo_openrouter is not None and custo_openrouter > 0:
+            custo_total = float(custo_openrouter)
+            custo_fonte = CUSTO_FONTE_OPENROUTER
+        else:
+            custo_in, custo_out, custo_cache = await get_custo_modelo(
+                self.pool, self.empresa_id, provedor, nome
+            )
+            custo_total = calc_custo(
+                tokens_input,
+                tokens_output,
+                custo_in,
+                custo_out,
+                tokens_cached=tokens_cached,
+                custo_cache_mtok=custo_cache,
+            )
+            custo_fonte = CUSTO_FONTE_TABELA if custo_total is not None else None
 
         # Registra ia_execucao + atualiza budget
         tools_snap = list(self._tools_call)
@@ -138,6 +165,8 @@ class IaExecucaoCallback(AsyncCallbackHandler):
             atendimento_id=self.atendimento_id,
             agente_ia_id=self.agente_ia_id,
             langfuse_trace_id=self.langfuse_trace_id,
+            custo_fonte=custo_fonte,
+            openrouter_generation_id=generation_id,
         )
         if custo_total is not None and custo_total > 0:
             await acrescentar_consumo(self.pool, self.empresa_id, custo_total)
