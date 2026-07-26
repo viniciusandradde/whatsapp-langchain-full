@@ -24,4 +24,33 @@ RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \
     && uv pip install --system -r requirements.txt \
     && uv pip install --system --no-deps .
 
+# Tuning do alocador (glibc) — contém o RSS do worker de longa duração.
+#
+# Sintoma que motivou isto (incidente 2026-07-26): worker sobe em ~100MB e
+# estaciona em ~435MB depois de ~40h, encostando nos 85% do limite de 512M e
+# vazando pro swap. Investigado com harness dedicado; NÃO é vazamento de
+# referência:
+#   - loop ocioso (144k polls em 40h) → só 11MB projetados
+#   - compilação de grafo → 0.10MB por chamada
+#   - o RSS estaciona (marca d'água), não cresce sem parar
+#   - gc.collect() não devolve nada; malloc_trim() devolve
+#
+# Causa real: o worker faz alocações ÚNICAS de vários MB ao pré-processar
+# mídia (áudio/imagem/PDF baixados pra memória e convertidos em base64, 1.33x,
+# pro OpenRouter multimodal). 40% das mensagens da janela eram mídia. Blocos
+# acima de M_MMAP_THRESHOLD vêm de mmap e voltam pro SO no free — MAS o glibc
+# sobe esse limiar sozinho (até 32MB) a cada bloco mmap'd liberado, apostando
+# que o padrão vai se repetir. A partir daí as alocações grandes saem da heap,
+# que não volta pro SO. O RSS sobe em degraus e fica na marca d'água.
+#
+# Medido com 22 mídias de 6MB (mesmo volume da janela do incidente):
+#   threshold dinâmico (default) → +15.4MB retidos
+#   MALLOC_MMAP_THRESHOLD_ fixo  →  +1.5MB retidos   (10x menos)
+#
+# Custo: alocações >128KB passam a fazer syscall de mmap/munmap sempre. Num
+# worker de dezenas de mensagens/dia é irrelevante perto de 300MB de RSS.
+# MALLOC_ARENA_MAX limita arenas por thread — padrão recomendado em container.
+ENV MALLOC_MMAP_THRESHOLD_=131072 \
+    MALLOC_ARENA_MAX=2
+
 CMD ["python", "-m", "whatsapp_langchain.worker.main"]
