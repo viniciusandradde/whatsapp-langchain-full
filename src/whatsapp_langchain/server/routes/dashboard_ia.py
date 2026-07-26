@@ -57,9 +57,14 @@ async def dashboard_ia_endpoint(
             SELECT COUNT(*), COALESCE(SUM(tokens_input), 0),
                    COALESCE(SUM(tokens_output), 0), COALESCE(SUM(custo_total), 0),
                    -- Quantas chamadas com custo apurado vieram MEDIDAS da
-                   -- OpenRouter (`usage.cost`) e não estimadas por tabela.
-                   -- Sem expor isso, um desvio de preço volta a passar
-                   -- despercebido como o de +91% que originou a mig 139.
+                   -- OpenRouter (`usage.cost`) e nao estimadas por tabela.
+                   -- Sem expor isso, um desvio de preco volta a passar
+                   -- despercebido como o que originou a mig 139.
+                   --
+                   -- NAO use o caractere de porcentagem aqui: o psycopg varre
+                   -- placeholders no texto inteiro da query, comentario SQL
+                   -- incluso, e um simbolo solto quebra com
+                   -- "incomplete placeholder". Se precisar, dobre ele.
                    COUNT(*) FILTER (
                        WHERE custo_fonte = 'openrouter' AND custo_total IS NOT NULL
                    ),
