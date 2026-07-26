@@ -77,7 +77,7 @@ export function AntiBanPanel({
 
       {/* Uso de hoje */}
       {quota && (
-        <div className="grid grid-cols-1 gap-3 rounded-md border border-border/30 bg-muted/10 p-3 text-sm sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-3 rounded-md border border-border/30 bg-muted/10 p-3 text-sm">
           <Stat label="Teto de hoje" value={quota.cap == null ? "∞" : quota.cap} />
           <Stat label="Enviados hoje" value={quota.usados} />
           <Stat

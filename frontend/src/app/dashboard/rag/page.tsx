@@ -150,9 +150,7 @@ export default async function DashboardRAGPage() {
             Sem dados. Os agentes ainda não chamaram a tool de busca.
           </p>
         ) : (
-          // Container rolavel: sem ele as colunas somem em 375px.
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
+          <table className="w-full text-sm">
             <thead className="border-b text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-normal">Agente</th>
@@ -183,7 +181,6 @@ export default async function DashboardRAGPage() {
               ))}
             </tbody>
           </table>
-          </div>
         )}
       </div>
 
@@ -245,9 +242,7 @@ export default async function DashboardRAGPage() {
         {recent.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">Sem queries ainda.</p>
         ) : (
-          // Container rolavel: sem ele as colunas somem em 375px.
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px] text-sm">
+          <table className="w-full text-sm">
             <thead className="border-b text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-normal">Quando</th>
@@ -289,7 +284,6 @@ export default async function DashboardRAGPage() {
               ))}
             </tbody>
           </table>
-          </div>
         )}
       </div>
     </div>

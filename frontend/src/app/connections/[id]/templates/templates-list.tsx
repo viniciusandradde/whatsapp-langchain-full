@@ -162,9 +162,7 @@ export function TemplatesList({ conexaoId, initialTemplates }: Props) {
             <p>Nenhum template cadastrado.</p>
           </div>
         ) : (
-          // Container rolavel: sem ele as colunas somem em 375px.
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-sm">
+          <table className="w-full text-sm">
             <thead className="border-b border-border/40 bg-muted/20">
               <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2 font-medium">Nome</th>
@@ -243,7 +241,6 @@ export function TemplatesList({ conexaoId, initialTemplates }: Props) {
               ))}
             </tbody>
           </table>
-          </div>
         )}
       </div>
 

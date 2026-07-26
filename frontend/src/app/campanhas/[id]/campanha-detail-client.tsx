@@ -280,7 +280,7 @@ export function CampanhaDetailClient({
           <CardTitle className="text-base">Progresso</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-3 text-sm">
             <div>
               <p className="text-xs text-muted-foreground">Total</p>
               <p className="text-2xl font-semibold">{c.total_destinatarios}</p>
