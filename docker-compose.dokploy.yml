@@ -81,12 +81,18 @@ services:
     # worker/main.py). Sem restart automático ele fica morto de vez.
     restart: unless-stopped
     deploy:
-      # 2 réplicas, não 4. O volume real é de dezenas de mensagens/dia com
-      # picos de ~270; 4 workers ficavam a 85% do teto de 512M cada e
-      # empurravam a máquina (11GB) pro swap — foi o que degradou o host no
-      # incidente 2026-07-26. Subir de novo só com evidência de fila
-      # acumulando (`SELECT count(*) FROM message_queue WHERE status='queued'`).
-      replicas: 2
+      # 1 réplica, não 4. O volume real é de dezenas de mensagens/dia com
+      # picos de ~270 — um worker dá conta com folga. Os 4 ficavam a 85% do
+      # teto de 512M cada e empurravam a máquina (11GB) pro swap, que foi o
+      # que degradou o host no incidente 2026-07-26.
+      #
+      # Quando subir: só com evidência de fila acumulando —
+      #   SELECT count(*), min(created_at) FROM message_queue
+      #    WHERE status = 'queued';
+      # Se houver linhas esperando há mais de alguns segundos de forma
+      # sustentada, aumentar aqui. O claim usa FOR UPDATE SKIP LOCKED, então
+      # escalar é seguro: réplicas não brigam pela mesma mensagem.
+      replicas: 1
       resources:
         limits:
           cpus: "0.5"
