@@ -130,6 +130,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
+  // Obrigatorio pro PWA instalado no iPhone: sem `viewport-fit: cover` o iOS
+  // NAO expoe as variaveis env(safe-area-inset-*), e o app renderiza embaixo
+  // do notch e da barra de gestos. O padding que consome essas variaveis fica
+  // em globals.css (.app-safe-area).
+  viewportFit: "cover",
   // Barra do browser mobile segue o tema default (light). Quem usa tema
   // escuro só percebe na cor da barra — cosmético, sem media query por tema.
   themeColor: "#ffffff",

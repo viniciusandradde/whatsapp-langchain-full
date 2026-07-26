@@ -58,8 +58,9 @@ export function TagsAdmin({ initialTags }: Props) {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <table className="w-full text-sm">
+      {/* overflow-x-auto (nao -hidden): -hidden corta coluna em 375px. */}
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left">Tag</th>

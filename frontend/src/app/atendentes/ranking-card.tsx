@@ -35,8 +35,8 @@ export function RankingCard({ items, dias }: Props) {
           </CardTitle>
         </div>
       </CardHeader>
-      <CardContent>
-        <table className="w-full text-sm">
+      <CardContent className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
           <thead className="text-xs text-muted-foreground">
             <tr className="border-b">
               <th className="py-1 pr-2 text-left font-normal">#</th>

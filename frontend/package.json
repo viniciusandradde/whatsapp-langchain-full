@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:responsive": "node scripts/check-responsive.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

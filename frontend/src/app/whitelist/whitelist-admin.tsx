@@ -47,8 +47,11 @@ export function WhitelistAdmin({ initialItems }: Props) {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <table className="w-full text-sm">
+      {/* overflow-x-auto (nao -hidden): em 375px as 4 colunas nao cabem, e
+          -hidden CORTA a coluna de acoes em vez de deixar rolar. min-w segura
+          a largura util pra tabela rolar em vez de espremer o telefone. */}
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[560px] text-sm">
           <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left">Telefone</th>
