@@ -198,6 +198,7 @@ export function AgenteEditor({
       patch.aceita_imagem = getBool("aceita_imagem");
       patch.aceita_audio = getBool("aceita_audio");
       patch.aceita_documento = getBool("aceita_documento");
+      patch.anuncia_transferencia = getBool("anuncia_transferencia");
     }
     if (tab === "kb_mcp") {
       const kbStr = getStr("base_conhecimento_ids") ?? "";
@@ -793,6 +794,30 @@ function TabTools({ a }: { a: AgenteIA }) {
             </label>
           </li>
         </ul>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Transferência
+        </p>
+        <label className="flex items-start gap-2 rounded-md border border-foreground/[0.04] bg-foreground/[0.02] p-2 text-sm">
+          <input
+            type="checkbox"
+            name="anuncia_transferencia"
+            defaultChecked={a.anuncia_transferencia}
+            className="mt-0.5 size-4"
+          />
+          <span className="min-w-0 flex-1">
+            Avisar o cliente sobre o departamento
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Envia a mensagem oficial ao transferir: &quot;Seu atendimento foi
+              transferido para o departamento de X. Protocolo: …&quot;. Desligue
+              em assistente pessoal, onde vocabulário de departamento soa
+              corporativo — a transferência acontece igual, o cliente lê só a
+              frase do próprio agente.
+            </span>
+          </span>
+        </label>
       </div>
     </div>
   );

@@ -3477,6 +3477,8 @@ export interface AgenteIA {
   aceita_imagem: boolean;
   aceita_audio: boolean;
   aceita_documento: boolean;
+  /** false = nao manda a mensagem de sistema citando o departamento (mig 143) */
+  anuncia_transferencia: boolean;
   base_conhecimento_ids: number[];
   variavel_ids: number[];
   mcp_server_ids: number[];
