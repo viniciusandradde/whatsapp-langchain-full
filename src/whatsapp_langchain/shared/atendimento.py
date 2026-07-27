@@ -666,3 +666,67 @@ async def set_coleta_resumo(
             "updated_at = NOW() WHERE id = %s",
             (payload, atendimento_id),
         )
+
+
+# Prefixos que o worker grava em `message_queue.response` quando PULA o agente
+# (worker/processor.py). Mensagem nesse estado ficou sem resposta pro cliente,
+# então é candidata a reprocesso.
+#
+# `[handoff humano` fica de fora de propósito: ali um atendente assumiu a
+# conversa, e reprocessar faria a IA responder por cima dele.
+MARKERS_REPROCESSAVEIS = ("[modo manual", "[whitelist")
+
+
+async def reenfileirar_mensagem(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    atendimento_id: int,
+    message_id: int,
+) -> bool:
+    """Devolve uma mensagem pra fila pro agente responder.
+
+    Espelha o reset que antes era feito à mão no Postgres: zera o estado de
+    processamento e solta a linha pro claim do worker.
+
+    O `WHERE` é a trava anti-duplicata — só atualiza se a linha AINDA estiver
+    num estado reprocessável. Dois operadores clicando junto: o primeiro
+    reenfileira, o segundo não acha linha e recebe False, em vez de o cliente
+    receber a mesma resposta duas vezes.
+
+    Também confina por empresa e atendimento (anti-tenant escape).
+
+    Returns:
+        True se reenfileirou; False se a linha não estava mais elegível.
+    """
+    like_markers = [f"{m}%" for m in MARKERS_REPROCESSAVEIS]
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE message_queue
+               SET status = 'queued',
+                   attempts = 0,
+                   response = NULL,
+                   error = NULL,
+                   processed_at = NULL,
+                   lease_until = NULL,
+                   process_after = NOW(),
+                   updated_at = NOW()
+             WHERE id = %s
+               AND empresa_id = %s
+               AND atendimento_id = %s
+               AND (status = 'failed' OR response LIKE ANY(%s))
+            RETURNING id
+            """,
+            (message_id, empresa_id, atendimento_id, like_markers),
+        )
+        row = await cur.fetchone()
+        await conn.commit()
+
+    reenfileirou = row is not None
+    logger.info(
+        "mensagem_reenfileirada" if reenfileirou else "reenfileirar_sem_efeito",
+        message_id=message_id,
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+    )
+    return reenfileirou

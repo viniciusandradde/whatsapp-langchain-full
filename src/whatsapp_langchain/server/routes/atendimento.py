@@ -25,11 +25,13 @@ from whatsapp_langchain.shared.aba import (
     count_atendimentos_por_aba,
 )
 from whatsapp_langchain.shared.atendimento import (
+    MARKERS_REPROCESSAVEIS,
     claim_atendimento,
     close_atendimento,
     get_atendimento_by_id,
     list_atendimento_mensagens,
     list_atendimentos,
+    reenfileirar_mensagem,
     transfer_atendimento,
     transfer_atendimento_to_departamento,
 )
@@ -44,6 +46,7 @@ from whatsapp_langchain.shared.atendimento_tag import (
 )
 from whatsapp_langchain.shared.atendimento_visualizacao import marcar_lido
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
+from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
@@ -61,6 +64,7 @@ from whatsapp_langchain.shared.permissoes import (
 )
 from whatsapp_langchain.shared.queue import reset_thread_checkpoint
 from whatsapp_langchain.shared.variavel import build_render_context, render_template
+from whatsapp_langchain.shared.whitelist import is_whitelisted
 
 
 async def _resolve_perms_cached(
@@ -764,6 +768,102 @@ async def reset_thread(
         "rows_deleted": rows_deleted,
         "thread_id": f"{cliente.telefone}:{atd.agente_atual}",
     }
+
+
+@router.post("/{atendimento_id}/mensagens/{message_id}/reprocessar")
+async def reprocessar_mensagem(
+    atendimento_id: int,
+    message_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.reprocessar")),
+) -> dict:
+    """Devolve à fila uma mensagem que a IA pulou ou que falhou.
+
+    Casos cobertos: `status='failed'`, `[modo manual` e `[whitelist`.
+    `[handoff humano` fica de fora — ali um atendente assumiu, e a IA
+    responder por cima seria pior que o problema.
+
+    Revalida os gates ANTES de reenfileirar. O botão aparecer não basta: a
+    condição pode continuar valendo, e sem estas checagens a mensagem voltaria
+    pra fila só pra ser pulada de novo, gastando token e confundindo o
+    operador. Cada recusa diz o que fazer.
+
+    Envia WhatsApp real ao cliente e consome tokens.
+    """
+    pool = await get_pool()
+    atd = await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+
+    # Handoff: humano no controle. Vale pro atendimento inteiro, não só pra
+    # mensagem — por isso checa aqui e não pelo marker.
+    if atd.status == "em_andamento" and atd.assigned_to_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Atendimento está com um atendente humano. "
+                "Reprocessar faria a IA responder por cima dele."
+            ),
+        )
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT phone_number, status, response, conexao_id "
+            "FROM message_queue WHERE id = %s AND empresa_id = %s "
+            "AND atendimento_id = %s",
+            (message_id, empresa_id, atendimento_id),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Mensagem não encontrada.")
+
+    phone, status, response, conexao_id = row
+
+    elegivel = status == "failed" or any(
+        (response or "").startswith(m) for m in MARKERS_REPROCESSAVEIS
+    )
+    if not elegivel:
+        raise HTTPException(
+            status_code=409,
+            detail="Essa mensagem já foi respondida ou não pode ser reprocessada.",
+        )
+
+    # Gates que continuam valendo → reprocessar só repetiria o skip.
+    if conexao_id is not None:
+        conexao = await get_conexao_by_id(pool, conexao_id)
+        if conexao is not None and conexao.tipo_atendimento == "manual":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A conexão está em modo manual. "
+                    "Ligue a IA na conexão antes de reprocessar."
+                ),
+            )
+
+    if await is_whitelisted(pool, empresa_id, phone):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Esse número está na lista de bloqueio da IA. "
+                "Remova-o da whitelist antes de reprocessar."
+            ),
+        )
+
+    # Corrida entre dois operadores: quem chegar depois não reenfileira de
+    # novo — evita o cliente receber a mesma resposta duas vezes.
+    if not await reenfileirar_mensagem(pool, empresa_id, atendimento_id, message_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Mensagem já foi reprocessada por outra pessoa.",
+        )
+
+    logger.info(
+        "mensagem_reprocessada_manual",
+        empresa_id=empresa_id,
+        atendimento_id=atendimento_id,
+        message_id=message_id,
+        actor_user_id=user_id,
+    )
+    return {"ok": True, "message_id": message_id}
 
 
 @router.get("/{atendimento_id}/tags")
