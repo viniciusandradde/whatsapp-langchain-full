@@ -904,7 +904,20 @@ const SERVICE_TOKEN = process.env.INTERNAL_SERVICE_TOKEN || "";
 
 interface ApiFetchOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-  body?: unknown;
+  /**
+   * Payload como OBJETO — o apiFetch serializa internamente.
+   *
+   * O tipo exclui `string` de propósito: passar `JSON.stringify(...)` aqui
+   * gera double-encoding, e o FastAPI recebe uma string onde espera dict,
+   * devolvendo 422 "Input should be a valid dictionary". Era `unknown`, o que
+   * deixava o erro passar pelo tsc e só aparecer em runtime — aconteceu no
+   * PUT /api/traces/config.
+   *
+   * `object` e não `Record<string, unknown>`: interface sem index signature
+   * não satisfaz Record, o que quebraria dezenas de call sites legítimos.
+   * `object` já basta pra barrar string/number/boolean.
+   */
+  body?: object;
 }
 
 export async function apiFetch<T>(
@@ -1605,9 +1618,12 @@ export async function getTracesConfig(): Promise<TracesConfig> {
 export async function setTracesProvider(
   provider: ObsProvider
 ): Promise<{ preferido: ObsProvider; provider: string | null }> {
+  // `body` vai como OBJETO: o apiFetch serializa internamente. Passar
+  // JSON.stringify aqui gera double-encoding e o FastAPI recebe uma string
+  // onde espera dict → 422 "Input should be a valid dictionary".
   return apiFetch("/api/traces/config", {
     method: "PUT",
-    body: JSON.stringify({ provider }),
+    body: { provider },
   });
 }
 
