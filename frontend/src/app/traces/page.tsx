@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Activity, ExternalLink } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { getTraces, getTracesConfig } from "@/lib/api";
+import { getTraces, getTracesConfig, type ObsProvider } from "@/lib/api";
 import { requireSession } from "@/lib/session";
+
+import { ProviderSwitch } from "./provider-switch";
 
 const PROVIDER_LABEL: Record<string, string> = {
   langfuse: "Langfuse",
@@ -32,15 +34,23 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
 
   let traces: Awaited<ReturnType<typeof getTraces>>["traces"] = [];
   let provider: string | null = null;
+  let preferido: ObsProvider = "auto";
+  let disponiveis = { langfuse: false, langsmith: false };
   let error: string | null = null;
 
-  try {
-    const [data, cfg] = await Promise.all([
-      getTraces({ limit: 50, thread_id: sp.thread_id }),
-      getTracesConfig().catch(() => ({ provider: null, enabled: false })),
-    ]);
-    traces = data.traces;
+  // A config é buscada FORA do try da lista: quando o provider está fora do ar
+  // a lista falha, e sem isto o switch sumiria justamente na hora em que ele é
+  // necessário pra trocar de fonte.
+  const cfg = await getTracesConfig().catch(() => null);
+  if (cfg) {
     provider = cfg.provider;
+    preferido = cfg.preferido ?? "auto";
+    disponiveis = cfg.disponiveis ?? disponiveis;
+  }
+
+  try {
+    const data = await getTraces({ limit: 50, thread_id: sp.thread_id });
+    traces = data.traces;
   } catch (e) {
     error = e instanceof Error ? e.message : "Erro desconhecido ao buscar traces.";
   }
@@ -60,7 +70,7 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
           </Badge>
         </div>
         <span className="text-sm text-muted-foreground">
-          {traces.length} runs
+          {traces.length} runs{/* switch logo abaixo do cabeçalho */}
           {sp.thread_id ? (
             <>
               {" · thread "}
@@ -69,6 +79,12 @@ export default async function TracesPage({ searchParams }: TracesPageProps) {
           ) : null}
         </span>
       </div>
+
+      <ProviderSwitch
+        preferido={preferido}
+        efetivo={provider}
+        disponiveis={disponiveis}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
