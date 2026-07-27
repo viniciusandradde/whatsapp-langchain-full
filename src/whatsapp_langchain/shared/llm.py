@@ -33,7 +33,17 @@ CURATED_MODELS: list[dict[str, str]] = [
     {"id": "anthropic/claude-sonnet-4.6", "label": "Claude Sonnet 4.6", "type": "chat"},
     {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash", "type": "chat"},
     {
-        "id": "google/gemini-3.1-flash-lite-preview",
+        "id": "google/gemini-2.5-flash-lite",
+        "label": "Gemini 2.5 Flash Lite",
+        "type": "chat",
+    },
+    {
+        # Variante GA, NÃO a `-preview`: o sufixo -preview exige opt-in de
+        # compartilhamento de dados na conta OpenRouter e devolve 404
+        # ("No endpoints available matching your guardrail restrictions and
+        # data policy") sem ele. Mesmo preço, mesma janela, mesmas
+        # modalidades. Ver mig 140.
+        "id": "google/gemini-3.1-flash-lite",
         "label": "Gemini 3.1 Flash Lite",
         "type": "chat",
     },
