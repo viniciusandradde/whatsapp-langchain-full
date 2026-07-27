@@ -143,6 +143,8 @@ def _make_agente(**overrides):
         "aceita_imagem": True,
         "aceita_audio": True,
         "aceita_documento": True,
+        # mig 143 — default do banco é TRUE (anuncia o departamento ao cliente)
+        "anuncia_transferencia": True,
         "base_conhecimento_ids": [],
         "variavel_ids": [],
         "mcp_server_ids": [],

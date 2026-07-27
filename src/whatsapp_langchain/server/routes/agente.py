@@ -87,6 +87,8 @@ class UpdateAgenteInput(BaseModel):
     aceita_imagem: bool | None = None
     aceita_audio: bool | None = None
     aceita_documento: bool | None = None
+    # mig 143 — False suprime a mensagem de sistema citando o departamento
+    anuncia_transferencia: bool | None = None
     base_conhecimento_ids: list[int] | None = None
     variavel_ids: list[int] | None = None
     mcp_server_ids: list[int] | None = None

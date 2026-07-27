@@ -519,41 +519,57 @@ async def transfer_to_human(
         )
 
     # 4. Mensagem oficial ao cliente (Sprint B.1 — system outbound)
-    try:
-        from whatsapp_langchain.shared.outbound import send_system_outbound
-
-        protocolo = atd_updated.protocolo or f"#{atendimento_id}"
-        if atendente_user_id and atendente_nome:
-            # Sprint I — atendente já atribuído; mensagem reflete isso.
-            msg_oficial = (
-                f"Você foi transferido para o departamento *{dep.nome}*. "
-                f"Atendente *{atendente_nome}* irá dar continuidade. "
-                f"Protocolo: {protocolo}.\n\n"
-                "Caso deseje finalizar o atendimento digite: "
-                "*encerrar atendimento* e confirme."
-            )
-        else:
-            # Fila vazia — cliente aguarda claim manual
-            msg_oficial = (
-                f"Seu atendimento foi transferido para o departamento de "
-                f"*{dep.nome}*. Em breve um atendente dará continuidade. "
-                f"Protocolo: {protocolo}.\n\n"
-                "Caso deseje finalizar o atendimento digite: "
-                "*encerrar atendimento* e confirme."
-            )
-        await send_system_outbound(
-            pool,
+    #
+    # Opt-out por agente (mig 143): vocabulário de departamento serve operação
+    # de call center, não assistente pessoal. Com `anuncia_transferencia=False`
+    # o cliente lê só a frase de acolhimento do próprio agente. A transferência
+    # (roteamento, fila, auto-claim) acontece igual — muda só o que ele lê.
+    #
+    # Some junto o protocolo e a dica "digite *encerrar atendimento*"; é o
+    # preço aceito por não soar corporativo.
+    if not getattr(agente, "anuncia_transferencia", True):
+        logger.info(
+            "transfer_anuncio_suprimido",
             atendimento_id=atendimento_id,
             empresa_id=empresa_id,
-            conteudo=msg_oficial,
+            motivo="agente_ia.anuncia_transferencia=False",
         )
-    except Exception as exc:
-        # Não quebra a transferência se outbound falhar — só loga.
-        logger.warning(
-            "transfer_outbound_failed",
-            atendimento_id=atendimento_id,
-            error=str(exc),
-        )
+    else:
+        try:
+            from whatsapp_langchain.shared.outbound import send_system_outbound
+
+            protocolo = atd_updated.protocolo or f"#{atendimento_id}"
+            if atendente_user_id and atendente_nome:
+                # Sprint I — atendente já atribuído; mensagem reflete isso.
+                msg_oficial = (
+                    f"Você foi transferido para o departamento *{dep.nome}*. "
+                    f"Atendente *{atendente_nome}* irá dar continuidade. "
+                    f"Protocolo: {protocolo}.\n\n"
+                    "Caso deseje finalizar o atendimento digite: "
+                    "*encerrar atendimento* e confirme."
+                )
+            else:
+                # Fila vazia — cliente aguarda claim manual
+                msg_oficial = (
+                    f"Seu atendimento foi transferido para o departamento de "
+                    f"*{dep.nome}*. Em breve um atendente dará continuidade. "
+                    f"Protocolo: {protocolo}.\n\n"
+                    "Caso deseje finalizar o atendimento digite: "
+                    "*encerrar atendimento* e confirme."
+                )
+            await send_system_outbound(
+                pool,
+                atendimento_id=atendimento_id,
+                empresa_id=empresa_id,
+                conteudo=msg_oficial,
+            )
+        except Exception as exc:
+            # Não quebra a transferência se outbound falhar — só loga.
+            logger.warning(
+                "transfer_outbound_failed",
+                atendimento_id=atendimento_id,
+                error=str(exc),
+            )
 
     # 5. Hook event payload rico (Sprint B.2 + I)
     try:

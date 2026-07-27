@@ -372,6 +372,14 @@ MODO_MANUAL_MARKER = "[modo manual — IA desligada nesta conexão]"
 # humana. O drawer filtra rows com este marker pra não exibir como bolha.
 WHITELIST_BYPASS_MARKER = "[whitelist — número com IA desativada]"
 
+# Marcador quando a IA já triou e transferiu pro departamento, e o atendimento
+# aguarda um atendente puxar. A conversa saiu do escopo da IA por decisão dela
+# mesma — responder de novo atropelaria a espera pelo humano.
+#
+# NÃO entra em `MARKERS_REPROCESSAVEIS` (shared/atendimento.py): ficar na fila
+# é intencional, não é falha. Reprocessar traria a IA de volta por cima.
+FILA_DEPARTAMENTO_MARKER = "[fila do departamento — aguardando atendente]"
+
 
 async def _resolve_outbound_client(
     pool: AsyncConnectionPool, message: MessageQueue
@@ -2252,6 +2260,42 @@ async def process_message(
         # visível na timeline do drawer (incoming_message preservado).
         if message.atendimento_id is not None:
             atd = await get_atendimento_by_id(pool, message.atendimento_id)
+
+            # 1.5.b Fila do departamento: a IA já triou e transferiu, e o
+            # atendimento aguarda um atendente puxar. Sem este ramo o agente
+            # voltava a responder na mensagem SEGUINTE — a transferência
+            # limpa `assigned_to_user_id` e volta pra `aguardando`, então
+            # nenhuma das condições do handoff acima batia.
+            #
+            # `departamento_id` é o que desambigua `aguardando`: atendimento
+            # novo nasce sem ele (medido: 0 de 62 fora da empresa 1018), só a
+            # transferência preenche. Sem essa coluna no teste, todo
+            # atendimento novo pararia de falar com a IA.
+            na_fila_do_departamento = (
+                atd is not None
+                and atd.status == "aguardando"
+                and atd.departamento_id is not None
+                and not atd.assigned_to_user_id
+            )
+            if na_fila_do_departamento:
+                assert atd is not None  # garantido pela condição acima
+                await mark_done(
+                    pool,
+                    message.id,
+                    FILA_DEPARTAMENTO_MARKER,
+                    normalized_input=pre.normalized_text,
+                    media_processing_status=pre.media_processing_status,
+                    media_processing_error=pre.media_processing_error,
+                )
+                logger.info(
+                    "worker_skipped_agent_fila_departamento",
+                    message_id=message.id,
+                    atendimento_id=message.atendimento_id,
+                    departamento_id=atd.departamento_id,
+                    phone=message.phone_number,
+                )
+                return
+
             if (
                 atd is not None
                 and atd.status == "em_andamento"

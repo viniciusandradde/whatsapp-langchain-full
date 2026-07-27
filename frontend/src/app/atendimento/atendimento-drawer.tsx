@@ -1116,7 +1116,11 @@ function MessageBubbles({
   const isHandoff =
     m.response?.startsWith("[handoff humano") ||
     m.response?.startsWith("[modo manual") ||
-    m.response?.startsWith("[whitelist");
+    m.response?.startsWith("[whitelist") ||
+    // Marker novo (mig 143 / gate da fila): a IA já transferiu e o
+    // atendimento aguarda atendente. Sem esta linha o texto interno
+    // vazaria como bolha de resposta na timeline do operador.
+    m.response?.startsWith("[fila do departamento");
 
   // Mensagem que ficou SEM resposta pro cliente. Handoff fica de fora: lá um
   // atendente assumiu, e a IA responder por cima seria pior que o problema.

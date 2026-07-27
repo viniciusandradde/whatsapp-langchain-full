@@ -60,7 +60,7 @@ _COLS = (
     "id, empresa_id, slug, nome, descricao, template_catalog, "
     "prompt_override, modelo, estilo_resposta, temperatura_override, "
     "max_tokens, top_p_override, tools_enabled, tools_config, "
-    "aceita_imagem, aceita_audio, aceita_documento, "
+    "aceita_imagem, aceita_audio, aceita_documento, anuncia_transferencia, "
     "base_conhecimento_ids, variavel_ids, mcp_server_ids, "
     "limite_custo_acao, ativo, is_default, "
     "created_by_user_id, created_at, updated_at, "
@@ -92,6 +92,9 @@ class AgenteIA:
     aceita_imagem: bool
     aceita_audio: bool
     aceita_documento: bool
+    # Quando False, transfer_to_human nao manda a mensagem de sistema
+    # citando o departamento (mig 143). A transferencia ocorre igual.
+    anuncia_transferencia: bool
     base_conhecimento_ids: list[int]
     variavel_ids: list[int]
     mcp_server_ids: list[int]
@@ -136,6 +139,7 @@ class AgenteIA:
             "aceita_imagem": self.aceita_imagem,
             "aceita_audio": self.aceita_audio,
             "aceita_documento": self.aceita_documento,
+            "anuncia_transferencia": self.anuncia_transferencia,
             "base_conhecimento_ids": list(self.base_conhecimento_ids or []),
             "variavel_ids": list(self.variavel_ids or []),
             "mcp_server_ids": list(self.mcp_server_ids or []),
