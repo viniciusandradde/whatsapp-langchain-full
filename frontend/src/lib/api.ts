@@ -1586,13 +1586,29 @@ export async function getTraces(params: {
   return apiFetch<TracesResponse>(`/api/traces${qs ? `?${qs}` : ""}`);
 }
 
+export type ObsProvider = "auto" | "langfuse" | "langsmith";
+
 export interface TracesConfig {
+  /** Provider que vale de fato (já checou credencial). */
   provider: "langfuse" | "langsmith" | null;
   enabled: boolean;
+  /** O que está gravado em `app_setting` — pode ser "auto". */
+  preferido?: ObsProvider;
+  /** Quais têm credencial configurada; o resto fica desabilitado no switch. */
+  disponiveis?: { langfuse: boolean; langsmith: boolean };
 }
 
 export async function getTracesConfig(): Promise<TracesConfig> {
   return apiFetch<TracesConfig>("/api/traces/config");
+}
+
+export async function setTracesProvider(
+  provider: ObsProvider
+): Promise<{ preferido: ObsProvider; provider: string | null }> {
+  return apiFetch("/api/traces/config", {
+    method: "PUT",
+    body: JSON.stringify({ provider }),
+  });
 }
 
 export interface AtendimentoTraceLink {

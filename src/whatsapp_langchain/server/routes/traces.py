@@ -21,7 +21,14 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import langfuse_client
+from whatsapp_langchain.shared.app_setting import (
+    CHAVE_OBS_PROVIDER,
+    OBS_PROVIDER_VALIDOS,
+    get_obs_provider_preferido,
+    set_setting,
+)
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import TraceInfo
@@ -35,13 +42,49 @@ router = APIRouter(
 )
 
 
+def _langfuse_configurado() -> bool:
+    return settings.langfuse_enabled
+
+
+def _langsmith_configurado() -> bool:
+    return bool(settings.langchain_api_key and settings.langchain_project)
+
+
 def _active_provider() -> str | None:
-    """langfuse > langsmith > None (nenhum configurado)."""
-    if settings.langfuse_enabled:
+    """Resolução automática: langfuse > langsmith > None."""
+    if _langfuse_configurado():
         return "langfuse"
-    if settings.langchain_api_key and settings.langchain_project:
+    if _langsmith_configurado():
         return "langsmith"
     return None
+
+
+async def _provider_efetivo() -> str | None:
+    """Provider a usar, considerando a preferência gravada na UI (mig 141).
+
+    Existe porque a resolução por env é uma armadilha operacional: desligar os
+    containers do Langfuse NÃO muda `settings.langfuse_enabled` (as chaves
+    seguem no .env), então `/traces` continuaria apontando pro host morto.
+
+    `auto` mantém o comportamento antigo. Escolha explícita que aponta pra
+    provider sem credencial cai no automático em vez de devolver nada — o
+    admin vê a lista do outro provider, não uma tela vazia sem explicação.
+    """
+    pool = await get_pool()
+    preferido = await get_obs_provider_preferido(pool)
+
+    if preferido == "langfuse" and _langfuse_configurado():
+        return "langfuse"
+    if preferido == "langsmith" and _langsmith_configurado():
+        return "langsmith"
+
+    if preferido != "auto":
+        logger.warning(
+            "obs_provider_preferido_sem_credencial",
+            preferido=preferido,
+            acao="caindo pra resolucao automatica",
+        )
+    return _active_provider()
 
 
 # ----------------------------- Langfuse ------------------------------
@@ -115,9 +158,52 @@ def _fetch_runs(api_key: str, project: str, limit: int) -> list:
 
 @router.get("/config")
 async def traces_config() -> dict[str, Any]:
-    """Fonte de observabilidade ativa — o frontend usa pra badge + deep-links."""
-    provider = _active_provider()
-    return {"provider": provider, "enabled": provider is not None}
+    """Fonte ativa + o que o switch da UI precisa pra montar as opções.
+
+    `preferido` é o que está gravado (pode ser `auto`); `provider` é o que
+    vale de fato depois de checar credencial. Os dois diferem quando alguém
+    escolhe um provider sem chave configurada.
+    """
+    pool = await get_pool()
+    preferido = await get_obs_provider_preferido(pool)
+    provider = await _provider_efetivo()
+    return {
+        "provider": provider,
+        "enabled": provider is not None,
+        "preferido": preferido,
+        "disponiveis": {
+            "langfuse": _langfuse_configurado(),
+            "langsmith": _langsmith_configurado(),
+        },
+    }
+
+
+@router.put("/config")
+async def set_traces_config(
+    body: dict[str, Any],
+    empresa_id: int = Depends(get_empresa_context),  # noqa: ARG001 — só autentica
+    # Preferência é GLOBAL (infra compartilhada), então exige permissão de
+    # integração — mesma usada em conexao.py e integracoes_api.py. Sem isto o
+    # invariante `test_no_new_mutator_endpoints_without_permission_dep` acusa,
+    # e com razão: qualquer membro trocaria a observabilidade de todo mundo.
+    _perm: None = Depends(require_permission("integracao.manage")),
+) -> dict[str, Any]:
+    """Troca o provider de observabilidade pela UI, sem redeploy.
+
+    Aceita provider sem credencial de propósito: o admin pode preparar a
+    troca antes de subir o outro stack. O `/config` deixa a divergência
+    visível (`preferido` != `provider`).
+    """
+    escolhido = str(body.get("provider") or "").strip().lower()
+    if escolhido not in OBS_PROVIDER_VALIDOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"provider inválido: {escolhido or '(vazio)'}",
+        )
+    pool = await get_pool()
+    await set_setting(pool, CHAVE_OBS_PROVIDER, escolhido, updated_by="painel")
+    provider = await _provider_efetivo()
+    return {"preferido": escolhido, "provider": provider}
 
 
 @router.get("/atendimento/{atendimento_id}")
@@ -131,7 +217,7 @@ async def trace_link_for_atendimento(
     atendimento na `message_queue` — garante match com o `session_id` no
     Langfuse. Retorna também a URL direta do trace quando há `langfuse_trace_id`.
     """
-    provider = _active_provider()
+    provider = await _provider_efetivo()
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -198,7 +284,7 @@ async def list_traces(
     store é global por instância, então filtrar por tenant é obrigatório pra não
     vazar dados (incl. telefones) de outras empresas.
     """
-    provider = _active_provider()
+    provider = await _provider_efetivo()
     if provider is None:
         raise HTTPException(
             status_code=503,

@@ -123,11 +123,21 @@ services:
       - api
     restart: unless-stopped
 
-  # Test Runner E2E (Sprint L) — container dedicado pra rodar bateria.
-  # Não está atrás de profile aqui em prod — sobe junto com o stack pra
-  # admin conseguir disparar via UI em https://chat.vsanexus.com/relatorios/allure.
-  # Imagem da API permanece leve (Java/allure só vivem nessa imagem).
+  # Test Runner E2E (Sprint L) — container dedicado pra rodar a bateria via
+  # UI em /relatorios/allure. Imagem da API permanece leve (Java/allure só
+  # vivem nessa imagem).
+  #
+  # Atrás de `profiles` desde 2026-07-27: nada no fluxo de mensagem depende
+  # dele (webhook, fila, worker, agente e envio funcionam sem), mas ocioso ele
+  # segurava ~123MB e DUAS conexões permanentes no Postgres (`pool_min=2`)
+  # pra uma feature usada esporadicamente.
+  #
+  # Pra usar:
+  #   docker compose --profile qa up -d tests
+  # E derrubar depois. A página /relatorios/allure fica indisponível enquanto
+  # o container não estiver de pé.
   tests:
+    profiles: ["qa"]
     image: registry.vsanexus.com/chatnexus/tests:${IMAGE_TAG:-latest}
     pull_policy: always
     env_file: .env
