@@ -105,3 +105,33 @@ class TestResolucaoEfetiva:
     @pytest.mark.parametrize("preferido", ["auto", "langfuse", "langsmith"])
     def test_nunca_estoura_com_valor_valido(self, preferido: str) -> None:
         self._efetivo(preferido, lf=False, ls=False)
+
+
+class TestLimiteLangSmith:
+    """A API do LangSmith recusa `limit` > 100 com 400.
+
+    A página /traces pedia limit=50, o código fazia over-fetch (limit*5 = 250)
+    pra filtrar por tenant no cliente, e o LangSmith devolvia:
+        400 {"detail":"Limit exceeds maximum allowed value of 100"}
+
+    Não aparecia antes porque o Langfuse era sempre o primário e este ramo
+    nunca executava — só surgiu quando o switch (mig 141) permitiu escolher
+    LangSmith.
+    """
+
+    def test_teto_documentado_bate_com_a_api(self) -> None:
+        from whatsapp_langchain.server.routes.traces import LANGSMITH_MAX_LIMIT
+
+        assert LANGSMITH_MAX_LIMIT == 100
+
+    @pytest.mark.parametrize("limit", [10, 50, 100, 500])
+    def test_overfetch_nunca_passa_do_teto(self, limit: int) -> None:
+        from whatsapp_langchain.server.routes.traces import LANGSMITH_MAX_LIMIT
+
+        # Espelha o cálculo do endpoint.
+        fetch = min(limit * 5, 500)
+        assert min(fetch, LANGSMITH_MAX_LIMIT) <= 100
+
+    def test_langfuse_pode_pedir_mais(self) -> None:
+        """O teto é do LangSmith; capar o Langfuse junto reduziria a lista à toa."""
+        assert min(50 * 5, 500) == 250

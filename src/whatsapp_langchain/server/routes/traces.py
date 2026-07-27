@@ -35,6 +35,10 @@ from whatsapp_langchain.shared.models import TraceInfo
 
 logger = structlog.get_logger()
 
+# Teto que a API do LangSmith impõe por request em POST /runs/query. Acima
+# disso ela devolve 400 "Limit exceeds maximum allowed value of 100".
+LANGSMITH_MAX_LIMIT = 100
+
 router = APIRouter(
     prefix="/api/traces",
     tags=["traces"],
@@ -312,9 +316,21 @@ async def list_traces(
         return {"traces": traces}
 
     # Fallback LangSmith — filtro client-side.
+    #
+    # O over-fetch acima (limit*5) é o que o Langfuse aceita, mas a API do
+    # LangSmith recusa `limit` > 100:
+    #   400 {"detail":"Limit exceeds maximum allowed value of 100"}
+    # Com limit=50 o cálculo pedia 250 e a página inteira quebrava. Não era
+    # visível antes porque o Langfuse era sempre o primário e este ramo nunca
+    # executava.
+    #
+    # Consequência aceita: com muitos tenants ativos, 100 runs podem render
+    # menos de `limit` traces da empresa depois do filtro. Melhor lista curta
+    # que erro 500.
     api_key = settings.langchain_api_key.get_secret_value()  # type: ignore[union-attr]
     project = settings.langchain_project
-    runs = await asyncio.to_thread(_fetch_runs, api_key, project, fetch)
+    fetch_smith = min(fetch, LANGSMITH_MAX_LIMIT)
+    runs = await asyncio.to_thread(_fetch_runs, api_key, project, fetch_smith)
     traces = [_to_trace_info(r) for r in runs]
     traces = [t for t in traces if t.thread_id in allowed][:limit]
     logger.debug(
