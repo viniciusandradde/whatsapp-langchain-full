@@ -198,6 +198,9 @@ async def load_graph(
         temperatura=temperatura,
         top_p=top_p,
         max_tokens=max_tokens,
+        # Checkboxes de ferramenta do painel. None em modo legacy (sem linha
+        # em `agente_ia`) → o registry devolve o conjunto completo.
+        tools_enabled=list(agente_runtime.tools_enabled) if agente_runtime else None,
     )
 
 

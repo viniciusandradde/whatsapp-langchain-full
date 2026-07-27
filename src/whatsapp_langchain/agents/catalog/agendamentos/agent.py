@@ -39,6 +39,9 @@ def build_graph(
     temperatura: float | None = None,
     top_p: float | None = None,
     max_tokens: int | None = None,
+    # Aceito e ignorado: o loader passa pra TODO catalogo. Este agente
+    # ainda monta as tools de forma fixa; sem o kwarg daria TypeError.
+    tools_enabled: list[str] | None = None,  # noqa: ARG001
 ):
     """Constrói o agente Agendamentos.
 

@@ -48,6 +48,9 @@ def build_graph(
     temperatura: float | None = None,  # noqa: ARG001
     top_p: float | None = None,  # noqa: ARG001
     max_tokens: int | None = None,  # noqa: ARG001
+    # Aceito e ignorado: o loader passa pra TODO catalogo. O router
+    # delega pros sub-agentes; sem o kwarg daria TypeError.
+    tools_enabled: list[str] | None = None,  # noqa: ARG001
 ):
     """Compila o StateGraph multi-agent paralelo.
 
