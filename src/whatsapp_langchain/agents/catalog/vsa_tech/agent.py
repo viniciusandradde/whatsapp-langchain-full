@@ -24,30 +24,8 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.middleware import get_context_middleware
-from whatsapp_langchain.agents.tools import (
-    add_cliente_tag,
-    calendar_cancel_event,
-    calendar_create_event,
-    calendar_find_free_slots,
-    calendar_get_current_time,
-    calendar_list_calendars,
-    calendar_list_events,
-    calendar_reschedule_event,
-    calendar_set_active_calendar,
-    classificar_atendimento,
-    close_atendimento,
-    create_cliente_anotacao,
-    get_cliente_anotacoes,
-    get_cliente_history,
-    get_cliente_profile,
-    read_cliente_memoria,
-    read_memory,
-    save_cliente_fato,
-    save_memory,
-    search_knowledge_base,
-    transfer_to_human,
-    update_cliente,
-)
+from whatsapp_langchain.agents.tools import read_memory, save_memory
+from whatsapp_langchain.agents.tools.registry import resolve_tools
 from whatsapp_langchain.shared.llm import create_chat_model
 
 from .prompts import SYSTEM_PROMPT
@@ -65,6 +43,7 @@ def build_graph(
     temperatura: float | None = None,
     top_p: float | None = None,
     max_tokens: int | None = None,
+    tools_enabled: list[str] | None = None,
 ):
     """Constrói o agente vsa_tech.
 
@@ -102,49 +81,23 @@ def build_graph(
     # Middleware de contexto baseado em CONTEXT_STRATEGY
     middleware = get_context_middleware()
 
-    # Tools de memória — só disponibiliza quando store existe.
+    # Tools de memória semântica — dependem do store, não da config do agente.
     tools: list = [save_memory, read_memory] if store else []
-    # Tools de Google Calendar — só quando a empresa tem config ativo
-    # (loader.py decide via DB e passa `calendar_enabled=True`).
-    if calendar_enabled:
-        tools.extend(
-            [
-                calendar_get_current_time,
-                calendar_list_calendars,
-                calendar_set_active_calendar,
-                calendar_list_events,
-                calendar_find_free_slots,
-                calendar_create_event,
-                calendar_reschedule_event,
-                calendar_cancel_event,
-            ]
-        )
-    # Tool de RAG — só quando a empresa tem ≥1 documento ativo
-    # (loader.py decide via DB e passa `knowledge_enabled=True`).
-    if knowledge_enabled:
-        tools.append(search_knowledge_base)
 
-    # Tools de cliente/atendimento (M5.b.1) — sempre habilitadas porque
-    # M3 já criou as tabelas pra todas as empresas. As tools validam
-    # empresa_id no runtime pra anti-tenant escape.
+    # Demais tools vêm do que o admin marcou em `agente_ia.tools_enabled`.
+    # Até 2026-07-27 essa lista era hardcoded aqui e o campo do banco era
+    # ignorado: os checkboxes do painel não faziam nada. O registry traduz
+    # slug → tool e trata alias legado, backlog e fallback.
+    #
+    # `calendar_enabled`/`knowledge_enabled` continuam mandando: marcar o
+    # slug não liga integração que a empresa não tem.
     tools.extend(
-        [
-            get_cliente_profile,
-            get_cliente_history,
-            get_cliente_anotacoes,
-            create_cliente_anotacao,
-            add_cliente_tag,
-            update_cliente,
-            close_atendimento,
-            classificar_atendimento,
-            transfer_to_human,
-        ]
+        resolve_tools(
+            tools_enabled,
+            calendar_enabled=calendar_enabled,
+            knowledge_enabled=knowledge_enabled,
+        )
     )
-
-    # Tools de memória estruturada por cliente (M5.b.2) — sempre habilitadas
-    # via tabela cliente_memoria (M5.b.2). Anti-tenant escape via empresa_id
-    # check na tool.
-    tools.extend([read_cliente_memoria, save_cliente_fato])
 
     # Override do prompt vem do `agente_ia_config` da empresa via loader.
     # Vazio/None = usa o template hardcoded (`SYSTEM_PROMPT`).

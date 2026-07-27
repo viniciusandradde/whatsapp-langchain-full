@@ -99,7 +99,9 @@ const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = 
   { slug: "transferir_agente", label: "Transferir para outro agente IA", pending: true },
   { slug: "encerrar_atendimento", label: "Encerrar atendimento" },
   { slug: "abrir_menu", label: "Abrir menu chatbot", pending: true },
-  { slug: "enviar_link", label: "Enviar link" },
+  // `pending`: nunca teve tool. O agente manda link no corpo da mensagem,
+  // não por ferramenta — aparecia como disponível e não fazia nada.
+  { slug: "enviar_link", label: "Enviar link", pending: true },
   { slug: "chamar_webhook", label: "Chamar webhook customizado", pending: true },
   { slug: "tag_cliente", label: "Adicionar tag ao cliente" },
   { slug: "tag_atendimento", label: "Adicionar tag ao atendimento" },
@@ -698,20 +700,37 @@ function TabPrompt({ a }: { a: AgenteIA }) {
 
 function TabTools({ a }: { a: AgenteIA }) {
   const enabledSet = new Set(a.tools_enabled);
+  // Conta só o que existe de verdade. O denominador antigo incluía as de
+  // backlog, e o numerador podia contar slug de backlog que ficou marcado
+  // (o agente 80 tinha `buscar_arquivos`) — dava "11/19" sem significado.
+  const toolsReais = TOOLS_DISPONIVEIS.filter((t) => !t.pending);
+  const ativasReais = toolsReais.filter((t) => enabledSet.has(t.slug)).length;
   return (
     <div className="space-y-4">
       <div>
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Ferramentas ({enabledSet.size}/{TOOLS_DISPONIVEIS.length})
+          Ferramentas ({ativasReais}/{toolsReais.length})
         </p>
         <ul className="grid grid-cols-1 gap-1 md:grid-cols-2">
           {TOOLS_DISPONIVEIS.map((t) => (
             <li key={t.slug}>
-              <label className="flex items-start gap-2 rounded-md border border-foreground/[0.04] bg-foreground/[0.02] p-2 text-xs">
+              <label
+                className={`flex items-start gap-2 rounded-md border border-foreground/[0.04] bg-foreground/[0.02] p-2 text-xs ${
+                  // Backlog: visível pra mostrar roadmap, mas não marcável —
+                  // marcar não ligava nada e o backend ignora.
+                  t.pending ? "cursor-not-allowed opacity-50" : ""
+                }`}
+                title={
+                  t.pending
+                    ? "Ainda não implementada — marcar não tem efeito."
+                    : undefined
+                }
+              >
                 <input
                   type="checkbox"
                   name={`tool_${t.slug}`}
-                  defaultChecked={enabledSet.has(t.slug)}
+                  defaultChecked={!t.pending && enabledSet.has(t.slug)}
+                  disabled={t.pending}
                   className="mt-0.5 size-3.5"
                 />
                 <div className="min-w-0 flex-1">
