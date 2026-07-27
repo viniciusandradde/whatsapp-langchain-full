@@ -2616,6 +2616,18 @@ export async function resetAtendimentoThread(
   );
 }
 
+export async function reprocessarMensagem(
+  atendimentoId: number,
+  messageId: number
+): Promise<{ ok: boolean; message_id: number }> {
+  // Sem body: o alvo vai na URL. Se um dia precisar de payload, mande OBJETO —
+  // o apiFetch serializa, e JSON.stringify aqui dá 422 (ver PR #54).
+  return apiFetch(
+    `/api/atendimentos/${atendimentoId}/mensagens/${messageId}/reprocessar`,
+    { method: "POST" }
+  );
+}
+
 export async function getAgendamentoHistorico(
   id: number
 ): Promise<{ items: AgendamentoHistorico[] }> {

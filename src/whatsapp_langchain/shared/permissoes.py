@@ -79,6 +79,11 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "atendimento",
     ),
     (
+        "atendimento.reprocessar",
+        "Reprocessar mensagem que a IA pulou ou que falhou (reenvia ao cliente)",
+        "atendimento",
+    ),
+    (
         "atendimento.scope.departamento",
         "Ver atendimentos só do próprio departamento (deprecated, use .own)",
         "atendimento",
@@ -225,6 +230,9 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "atendimento.transfer.all",
             "atendimento.close.all",
             "atendimento.reset_thread",
+            # Mesmo nível de poder do reset: mexe na conversa e dispara
+            # WhatsApp ao cliente. Quem pode um, pode o outro.
+            "atendimento.reprocessar",
             "agendamento.read",
             "agendamento.create",
             "agendamento.cancel",

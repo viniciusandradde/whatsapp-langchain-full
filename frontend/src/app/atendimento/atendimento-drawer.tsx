@@ -40,6 +40,7 @@ import {
   loadModelosAction,
   loadTemplatesAprovadosAction,
   marcarAtendimentoLidoAction,
+  reprocessarMensagemAction,
   resetThreadAction,
   responderAction,
   transferAction,
@@ -474,7 +475,12 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                   </p>
                 )}
                 {mensagens?.map((m) => (
-                  <MessageBubbles key={m.id} m={m} />
+                  <MessageBubbles
+                    key={m.id}
+                    m={m}
+                    atendimentoId={atendimento.id}
+                    onReprocessado={reload}
+                  />
                 ))}
               </>
             )}
@@ -1021,7 +1027,68 @@ function ArquivosTab({
   );
 }
 
-function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
+/**
+ * Botão de reprocesso — só aparece em mensagem que ficou SEM resposta pro
+ * cliente: `failed`, ou pulada por conexão em modo manual / número na
+ * whitelist. Handoff humano fica de fora (atendente assumiu).
+ *
+ * Confirma antes: manda WhatsApp real e gasta token. O backend revalida os
+ * gates e devolve 409 com frase acionável se a condição ainda vale.
+ */
+function BotaoReprocessar({
+  atendimentoId,
+  messageId,
+  onReprocessado,
+}: {
+  atendimentoId: number;
+  messageId: number;
+  onReprocessado: () => void;
+}) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function clicar() {
+    if (enviando) return;
+    if (
+      !window.confirm(
+        "Reprocessar esta mensagem? A IA vai responder e o cliente receberá " +
+          "a mensagem no WhatsApp."
+      )
+    ) {
+      return;
+    }
+    setEnviando(true);
+    setErro(null);
+    const r = await reprocessarMensagemAction(atendimentoId, messageId);
+    setEnviando(false);
+    if (r.ok) onReprocessado();
+    else setErro(r.error);
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button
+        type="button"
+        onClick={clicar}
+        disabled={enviando}
+        className="inline-flex items-center gap-1 rounded-md border border-foreground/15 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-50"
+      >
+        {enviando ? "Reprocessando…" : "↻ Reprocessar com IA"}
+      </button>
+      {erro ? <span className="text-[11px] text-destructive">{erro}</span> : null}
+    </div>
+  );
+}
+
+function MessageBubbles({
+  m,
+  atendimentoId,
+  onReprocessado,
+}: {
+  m: AtendimentoMensagem;
+  atendimentoId: number;
+  onReprocessado: () => void;
+}) {
   // Cada row pode gerar bolhas distintas: media (inbound), texto inbound,
   // resposta agente. Mídia é renderizada inline como <img>/<audio>/link.
   type Bubble =
@@ -1050,6 +1117,14 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
     m.response?.startsWith("[handoff humano") ||
     m.response?.startsWith("[modo manual") ||
     m.response?.startsWith("[whitelist");
+
+  // Mensagem que ficou SEM resposta pro cliente. Handoff fica de fora: lá um
+  // atendente assumiu, e a IA responder por cima seria pior que o problema.
+  // O backend revalida tudo — isto só decide se o botão aparece.
+  const podeReprocessar =
+    m.status === "failed" ||
+    m.response?.startsWith("[modo manual") === true ||
+    m.response?.startsWith("[whitelist") === true;
   if (m.response && !isHandoff) {
     bubbles.push({ side: "out", kind: "text", text: m.response });
   }
@@ -1130,8 +1205,22 @@ function MessageBubbles({ m }: { m: AtendimentoMensagem }) {
       ))}
       {isHandoff && (
         <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          ⏸ agente pausado — operador respondendo
+          {/* Antes os 3 markers mostravam "operador respondendo" — verdade só
+              no handoff. Em modo manual/whitelist NINGUÉM respondeu, e essa
+              é exatamente a situação que deixou uma cliente sem resposta. */}
+          {m.response?.startsWith("[handoff humano")
+            ? "⏸ agente pausado — operador respondendo"
+            : m.response?.startsWith("[modo manual")
+              ? "⏸ IA desligada nesta conexão — ninguém respondeu"
+              : "⏸ número na lista de bloqueio da IA — ninguém respondeu"}
         </p>
+      )}
+      {podeReprocessar && (
+        <BotaoReprocessar
+          atendimentoId={atendimentoId}
+          messageId={m.id}
+          onReprocessado={onReprocessado}
+        />
       )}
     </div>
   );

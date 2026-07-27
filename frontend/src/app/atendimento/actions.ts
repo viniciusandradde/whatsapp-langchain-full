@@ -233,6 +233,28 @@ export async function resetThreadAction(
   }
 }
 
+/**
+ * Devolve à fila uma mensagem que a IA pulou (conexão em manual, número na
+ * whitelist) ou que falhou. O servidor revalida os gates antes de reenviar —
+ * se a condição ainda vale, recusa com um motivo acionável.
+ *
+ * Envia WhatsApp real ao cliente, então a UI confirma antes de chamar.
+ */
+export async function reprocessarMensagemAction(
+  atendimentoId: number,
+  messageId: number
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const { reprocessarMensagem } = await import("@/lib/api");
+    await reprocessarMensagem(atendimentoId, messageId);
+    return { ok: true };
+  } catch (e) {
+    // O 409 do backend traz frase pronta em pt-BR ("Ligue a IA na conexão
+    // antes de reprocessar") — repassar é melhor que genérica.
+    return { ok: false, error: toError(e) };
+  }
+}
+
 // --- Sprint Atendimento UX: abas pessoais + contadores ---
 
 type AbasResult = { ok: true; abas: Aba[] } | { ok: false; error: string };
