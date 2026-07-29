@@ -165,9 +165,15 @@ class TestE2E:
         assert row is not None, "conexão sumiu"
         assert row[0] == 8, f"default da mig 144 deveria ser 8s, veio {row[0]}"
 
-    def test_2_primeira_mensagem_responde_na_hora(
+    def test_2_primeira_mensagem_tambem_espera_a_janela(
         self, pool, empresa_id: int, conexao_id: int
     ) -> None:
+        """A janela é UNIFORME — vale inclusive pra 1ª mensagem do turno.
+
+        A fase 1 dava 2s à primeira pra respondê-la na hora, e era isso que
+        deixava o fragmento passar: a row era reivindicada antes do "Boa tarde!"
+        chegar, e row reivindicada não aceita merge.
+        """
         loop, p = pool
         loop.run_until_complete(
             _enqueue(
@@ -191,8 +197,8 @@ class TestE2E:
             )
             row = cur.fetchone()
         assert row is not None, "nada foi enfileirado"
-        assert float(row[0]) <= 2.5, (
-            f"1ª mensagem do turno deveria usar a janela curta, esperou {row[0]}s"
+        assert 7.0 <= float(row[0]) <= 8.5, (
+            f"1ª mensagem deveria usar a janela uniforme de 8s, esperou {row[0]}s"
         )
 
     def test_3_mensagens_seguidas_viram_uma_row(

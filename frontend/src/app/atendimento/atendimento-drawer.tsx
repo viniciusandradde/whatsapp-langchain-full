@@ -1120,7 +1120,11 @@ function MessageBubbles({
     // Marker novo (mig 143 / gate da fila): a IA já transferiu e o
     // atendimento aguarda atendente. Sem esta linha o texto interno
     // vazaria como bolha de resposta na timeline do operador.
-    m.response?.startsWith("[fila do departamento");
+    m.response?.startsWith("[fila do departamento") ||
+    // Mig 144: o cliente escreveu de novo enquanto o modelo pensava, então
+    // esta resposta foi engolida e o turno seguinte respondeu tudo. Nada foi
+    // enviado ao cliente — não pode aparecer como bolha.
+    m.response?.startsWith("[resposta superada");
 
   // Mensagem que ficou SEM resposta pro cliente. Handoff fica de fora: lá um
   // atendente assumiu, e a IA responder por cima seria pior que o problema.

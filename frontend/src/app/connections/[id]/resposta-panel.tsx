@@ -47,7 +47,8 @@ export function RespostaPanel({ conexaoId, initialAgrupamento }: Props) {
           <p className="text-xs text-muted-foreground">
             Evita que o agente responda a cada mensagem quando o cliente escreve
             em pedaços (&quot;oi&quot; / &quot;bom dia&quot; / &quot;queria saber
-            de X&quot;).
+            de X&quot;). O agente aguarda esse tempo antes de responder e junta
+            tudo o que chegar nele.
           </p>
         </div>
       </div>
@@ -71,7 +72,7 @@ export function RespostaPanel({ conexaoId, initialAgrupamento }: Props) {
           <p className="text-xs text-muted-foreground">
             {desligado
               ? "Desligado — o agente responde cada mensagem separadamente."
-              : "A primeira mensagem continua respondida na hora. As seguintes esperam esse tempo e viram uma resposta só."}
+              : "Vale pra toda mensagem, inclusive a primeira: é o tempo que o agente espera antes de começar a responder."}
           </p>
         </div>
       </div>

@@ -6,13 +6,15 @@ Valida as regras de debounce da Fase 3:
 - Concorrência protegida por pg_advisory_xact_lock.
 - Interação correta entre debounce e retry/lease.
 
-E a janela adaptativa da mig 144 (`TestJanelaAdaptativa` em diante):
-- 1ª mensagem do turno responde na hora; follow-up agrupa.
+E o agrupamento da mig 144 (`TestJanelaAdaptativa` em diante):
+- Janela UNIFORME: toda mensagem espera, inclusive a 1ª.
 - Fluxo guiado (menu/coleta/CSAT) nunca alonga.
 - Teto limita cliente tagarela.
 - `grouping_seconds=0` reproduz o comportamento anterior (kill switch).
 - Mídia absorve o texto pendente em vez de flushar — texto+áudio viram uma
   resposta só. Com o agrupamento desligado, volta a flushar como antes.
+- `existe_mensagem_mais_nova` engole a resposta que nasceu velha, cobrindo o
+  intervalo entre reivindicar a row e o envio (~7s), fora do alcance do debounce.
 
 Múltiplas mídias (NumMedia > 1) seguem como N rows independentes com o mesmo
 message_id, processadas em ordem de created_at pelo worker.
@@ -24,7 +26,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
+from whatsapp_langchain.shared.queue import (
+    detectar_fluxo_guiado,
+    enqueue_or_buffer,
+    existe_mensagem_mais_nova,
+)
 
 
 @pytest.fixture
@@ -785,16 +791,15 @@ class TestMultiMediaIdempotency:
 # ---------------------------------------------------------------------------
 
 
-def setup_janela(conn, *, followup: bool, existing=None, new_id=42):
+def setup_janela(conn, *, existing=None, new_id=42):
     """Mock pro caminho com agrupamento LIGADO.
 
-    Ordem de executes: [set_config, lock, SELECT(follow-up), SELECT(pendente),
-    INSERT|UPDATE]. O primeiro SELECT é o `_resolver_janela`: devolver uma row
-    significa "o agente está respondendo ou acabou de responder".
-    """
-    followup_cursor = AsyncMock()
-    followup_cursor.fetchone = AsyncMock(return_value=(1,) if followup else None)
+    Ordem de executes: [set_config, lock, SELECT(pendente), INSERT|UPDATE].
 
+    A janela é UNIFORME desde a fase 2 — `_resolver_janela` virou expressão pura
+    e o SELECT que detectava follow-up deixou de existir, então o mock tem um
+    cursor a menos que na versão anterior.
+    """
     pendente_cursor = AsyncMock()
     pendente_cursor.fetchone = AsyncMock(return_value=existing)
 
@@ -805,7 +810,6 @@ def setup_janela(conn, *, followup: bool, existing=None, new_id=42):
         side_effect=[
             setconfig_cursor(),
             lock_cursor(),
-            followup_cursor,
             pendente_cursor,
             final_cursor,
         ]
@@ -820,12 +824,17 @@ def espera_do_insert(conn) -> float:
 
 
 class TestJanelaAdaptativa:
-    """A 1ª mensagem responde na hora; as seguintes agrupam."""
+    """Janela uniforme de agrupamento, por conexão."""
 
-    async def test_primeira_do_turno_usa_janela_curta(self, mock_pool):
-        """Sem atividade recente do agente, vale `buffer_seconds`."""
+    async def test_janela_e_uniforme_inclusive_na_primeira(self, mock_pool):
+        """TODA mensagem espera `grouping_seconds`, inclusive a 1ª do turno.
+
+        A versão anterior dava 2s à primeira e 8s às de follow-up. Medido em
+        produção, era isso que deixava o fragmento passar: a row era reivindicada
+        em 2s e o "Boa tarde!" que chegava em 6,4s não tinha mais onde mesclar.
+        """
         pool, conn = mock_pool
-        setup_janela(conn, followup=False)
+        setup_janela(conn)
 
         await enqueue_or_buffer(
             pool,
@@ -836,39 +845,12 @@ class TestJanelaAdaptativa:
             grouping_seconds=8.0,
         )
 
-        assert 1.0 < espera_do_insert(conn) <= 2.0
-
-    async def test_followup_usa_janela_longa(self, mock_pool):
-        """Agente respondendo (ou recém-respondido) → espera os 8s."""
-        pool, conn = mock_pool
-        setup_janela(conn, followup=True)
-
-        await enqueue_or_buffer(
-            pool,
-            phone_number="+5511999999999",
-            agent_id="assistant",
-            body="e outra coisa",
-            buffer_seconds=2.0,
-            grouping_seconds=8.0,
-        )
-
         assert 7.0 < espera_do_insert(conn) <= 8.0
 
     async def test_fluxo_guiado_nunca_alonga(self, mock_pool):
-        """Menu/coleta/CSAT respondem na hora mesmo em follow-up.
-
-        Nem consulta o banco pra decidir — daí um execute a menos.
-        """
+        """Menu/coleta/CSAT respondem na hora — decidido sem I/O."""
         pool, conn = mock_pool
-        setup_janela(conn, followup=True)
-        conn.execute = AsyncMock(
-            side_effect=[
-                setconfig_cursor(),
-                lock_cursor(),
-                AsyncMock(fetchone=AsyncMock(return_value=None)),
-                AsyncMock(fetchone=AsyncMock(return_value=(42,))),
-            ]
-        )
+        setup_janela(conn)
 
         await enqueue_or_buffer(
             pool,
@@ -881,13 +863,15 @@ class TestJanelaAdaptativa:
         )
 
         assert 1.0 < espera_do_insert(conn) <= 2.0
-        assert conn.execute.call_count == 4  # sem o SELECT de follow-up
+        # set_config, lock, SELECT(pendente), INSERT — a decisão da janela não
+        # consulta o banco.
+        assert conn.execute.call_count == 4
 
     async def test_teto_limita_cliente_tagarela(self, mock_pool):
         """Lote aberto há 43s não pode ser empurrado além do teto de 45s."""
         pool, conn = mock_pool
         aberto_ha_43s = datetime.now(UTC) - timedelta(seconds=43)
-        setup_janela(conn, followup=True, existing=(10, "Oi", aberto_ha_43s))
+        setup_janela(conn, existing=(10, "Oi", aberto_ha_43s))
 
         await enqueue_or_buffer(
             pool,
@@ -931,8 +915,6 @@ class TestMidiaAbsorveTexto:
         delete_cursor.fetchone = AsyncMock(
             return_value=("Oi, tudo bem?", datetime.now(UTC))
         )
-        followup_cursor = AsyncMock()
-        followup_cursor.fetchone = AsyncMock(return_value=None)
         insert_cursor = AsyncMock()
         insert_cursor.fetchone = AsyncMock(return_value=(50,))
 
@@ -941,7 +923,6 @@ class TestMidiaAbsorveTexto:
                 setconfig_cursor(),
                 lock_cursor(),
                 delete_cursor,
-                followup_cursor,
                 insert_cursor,
             ]
         )
@@ -968,8 +949,6 @@ class TestMidiaAbsorveTexto:
         pool, conn = mock_pool
         delete_cursor = AsyncMock()
         delete_cursor.fetchone = AsyncMock(return_value=None)
-        followup_cursor = AsyncMock()
-        followup_cursor.fetchone = AsyncMock(return_value=None)
         insert_cursor = AsyncMock()
         insert_cursor.fetchone = AsyncMock(return_value=(51,))
 
@@ -978,7 +957,6 @@ class TestMidiaAbsorveTexto:
                 setconfig_cursor(),
                 lock_cursor(),
                 delete_cursor,
-                followup_cursor,
                 insert_cursor,
             ]
         )
@@ -1064,3 +1042,60 @@ class TestDeteccaoFluxoGuiado:
         conn.execute = AsyncMock(return_value=cursor)
 
         assert not await detectar_fluxo_guiado(pool, phone_number="+55", agent_id="a")
+
+
+class TestSupersede:
+    """`existe_mensagem_mais_nova` — mata a resposta que nasceu velha.
+
+    O agrupamento no enqueue não cobre o intervalo entre a row ser reivindicada
+    e a resposta sair (~7s em produção). Mensagem que chega nesse buraco não
+    mescla mais, e virava uma resposta por fragmento.
+    """
+
+    async def test_mensagem_mais_nova_na_fila_suprime(self, mock_pool):
+        pool, conn = mock_pool
+        cursor = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=(1,))
+        conn.execute = AsyncMock(return_value=cursor)
+
+        assert await existe_mensagem_mais_nova(
+            pool, phone_number="+55", agent_id="a", message_id=10
+        )
+
+    async def test_sem_mensagem_nova_envia(self, mock_pool):
+        pool, conn = mock_pool
+        cursor = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=None)
+        conn.execute = AsyncMock(return_value=cursor)
+
+        assert not await existe_mensagem_mais_nova(
+            pool, phone_number="+55", agent_id="a", message_id=10
+        )
+
+    async def test_so_olha_rows_posteriores_e_pendentes(self, mock_pool):
+        """`id >` e status pendente — row antiga ou já concluída não suprime."""
+        pool, conn = mock_pool
+        cursor = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=None)
+        conn.execute = AsyncMock(return_value=cursor)
+
+        await existe_mensagem_mais_nova(
+            pool, phone_number="+55", agent_id="a", message_id=10
+        )
+
+        sql = conn.execute.call_args_list[-1][0][0]
+        assert "id > %s" in sql
+        assert "status IN ('queued', 'processing')" in sql
+
+    async def test_falha_no_lookup_envia(self, mock_pool):
+        """Fail-safe INVERTIDO: na dúvida envia.
+
+        Resposta duplicada é ruído; resposta engolida por engano é o cliente
+        sem atendimento.
+        """
+        pool, conn = mock_pool
+        conn.execute = AsyncMock(side_effect=RuntimeError("conexão caiu"))
+
+        assert not await existe_mensagem_mais_nova(
+            pool, phone_number="+55", agent_id="a", message_id=10
+        )

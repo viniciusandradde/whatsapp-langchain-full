@@ -90,6 +90,7 @@ from whatsapp_langchain.shared.menu_chatbot import (
 from whatsapp_langchain.shared.models import Conexao, MessageQueue
 from whatsapp_langchain.shared.outbound import OutboundError, build_outbound_client
 from whatsapp_langchain.shared.queue import (
+    existe_mensagem_mais_nova,
     mark_done,
     mark_failed,
     upsert_conversation,
@@ -381,6 +382,16 @@ WHITELIST_BYPASS_MARKER = "[whitelist — número com IA desativada]"
 # NÃO entra em `MARKERS_REPROCESSAVEIS` (shared/atendimento.py): ficar na fila
 # é intencional, não é falha. Reprocessar traria a IA de volta por cima.
 FILA_DEPARTAMENTO_MARKER = "[fila do departamento — aguardando atendente]"
+
+# Marcador quando a resposta do agente foi ENGOLIDA porque o cliente mandou
+# outra mensagem enquanto o modelo pensava (mig 144). O agrupamento no enqueue
+# não cobre o intervalo entre a row ser reivindicada e a resposta sair (~7s):
+# mensagem que chega nesse buraco não mescla mais, e virava uma resposta por
+# fragmento. O turno seguinte responde tudo, com o contexto já no checkpointer.
+#
+# NÃO entra em `MARKERS_REPROCESSAVEIS`: engolir foi a decisão certa, e
+# reprocessar mandaria pro cliente a resposta que se decidiu não mandar.
+RESPOSTA_SUPERADA_MARKER = "[resposta superada — cliente escreveu de novo]"
 
 
 async def _resolve_outbound_client(
@@ -2769,6 +2780,33 @@ async def process_message(
                         )
         except Exception as guard_err:
             logger.warning("guardrail_output_failed", error=str(guard_err))
+
+        # 4.9 Supersede (mig 144): o cliente escreveu de novo enquanto o modelo
+        # pensava? Então esta resposta já nasceu velha — engole e deixa o turno
+        # seguinte responder tudo de uma vez. Só vale pro caminho do agente:
+        # menu/workflow/coleta/CSAT precisam responder SEMPRE, senão a navegação
+        # trava esperando uma resposta que nunca vem.
+        if await existe_mensagem_mais_nova(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            message_id=message.id,
+        ):
+            await mark_done(
+                pool,
+                message.id,
+                RESPOSTA_SUPERADA_MARKER,
+                normalized_input=pre.normalized_text,
+                media_processing_status=pre.media_processing_status,
+                media_processing_error=pre.media_processing_error,
+            )
+            logger.info(
+                "resposta_superada_engolida",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+                atendimento_id=message.atendimento_id,
+            )
+            return
 
         # 5. Enviar resposta outbound antes de mark_done
         await outbound.send_message(message.phone_number, response_text)
