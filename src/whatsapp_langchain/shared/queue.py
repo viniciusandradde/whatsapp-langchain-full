@@ -8,13 +8,20 @@ O debounce agrupa mensagens rápidas do mesmo remetente: se o usuário
 envia 3 mensagens em 2 segundos, elas são concatenadas em uma única
 entrada na fila.
 
-A janela é ADAPTATIVA (mig 144): a primeira mensagem de um turno usa a janela
-curta (`buffer_seconds`) e é respondida na hora; as de FOLLOW-UP — que chegam
-enquanto o agente responde, ou logo depois — usam a janela longa
-(`grouping_seconds`, por conexão) e viram uma resposta só. Sem isso o agente
-responde a cada fragmento: a janela de 2s não cobre a latência do agente, então
-a segunda mensagem sempre encontrava a primeira já em `processing` e abria um
-turno novo.
+A janela de agrupamento (mig 144) é UNIFORME e vem da conexão
+(`grouping_seconds`): toda mensagem espera esse tempo, e o que chegar junto vira
+uma resposta só. Fluxo guiado (menu/coleta/CSAT) e agrupamento desligado usam a
+janela curta `buffer_seconds`.
+
+Houve uma tentativa de dar janela curta à PRIMEIRA mensagem, pra respondê-la na
+hora, e longa apenas às de follow-up. Medido em produção, era justamente isso que
+deixava o fragmento passar: a row da primeira era reivindicada em 2s e o
+"Boa tarde!" que chegava em 6,4s não tinha mais onde mesclar, porque row
+reivindicada não aceita merge. Três fragmentos de saudação, três respostas.
+
+O intervalo entre reivindicar a row e a resposta sair (~7s) segue fora do alcance
+do debounce — quem cobre esse buraco é `existe_mensagem_mais_nova`, chamada pelo
+worker antes de enviar.
 
 Uso:
     from whatsapp_langchain.shared.queue import enqueue_or_buffer
@@ -96,47 +103,79 @@ async def detectar_fluxo_guiado(
     return bool(row) and row[0] in ORIGENS_FLUXO_GUIADO
 
 
-async def _resolver_janela(
-    conn,
+async def existe_mensagem_mais_nova(
+    pool: AsyncConnectionPool,
+    *,
     phone_number: str,
     agent_id: str,
+    message_id: int,
+) -> bool:
+    """True se chegou mensagem mais nova deste contato enquanto o agente pensava.
+
+    Usada pelo worker imediatamente ANTES de enviar a resposta do agente. O
+    agrupamento no enqueue não cobre o intervalo entre a row ser reivindicada e
+    a resposta sair (~7s medidos em produção): mensagem que chega nesse buraco
+    não pode mais mesclar, porque row reivindicada não aceita merge. O resultado
+    era uma resposta por fragmento.
+
+    Quando devolve True, o worker engole a resposta e deixa o turno seguinte
+    responder tudo — o contexto já está no checkpointer. Medido em produção:
+    mata 8 de 55 respostas sem adicionar um segundo de espera.
+
+    Contrapartida assumida: o agente já rodou, então a resposta descartada
+    permanece no histórico do checkpointer. O turno seguinte enxerga uma fala do
+    assistente que o cliente nunca leu, e pode se referir a ela. Aceitável pro
+    caso dominante (fragmento de saudação); some se o agente for reescrito pra
+    consultar a fila antes de invocar o modelo.
+    """
+    # Fail-safe invertido em relação a `detectar_fluxo_guiado`: na dúvida,
+    # ENVIA. Resposta duplicada é ruído; resposta engolida por engano é o
+    # cliente sem atendimento.
+    try:
+        async with pool.connection() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT 1 FROM message_queue
+                 WHERE phone_number = %s
+                   AND agent_id = %s
+                   AND id > %s
+                   AND status IN ('queued', 'processing')
+                 LIMIT 1
+                """,
+                (phone_number, agent_id, message_id),
+            )
+            return await cursor.fetchone() is not None
+    except Exception as exc:  # noqa: BLE001 — na dúvida, envia
+        logger.warning("supersede_lookup_failed", message_id=message_id, error=str(exc))
+        return False
+
+
+def _resolver_janela(
     *,
     buffer_seconds: float,
     grouping_seconds: float,
     is_guided_flow: bool,
 ) -> float:
-    """Escolhe a janela de debounce desta mensagem.
+    """Escolhe a janela de debounce desta mensagem — UNIFORME.
 
-    Devolve `grouping_seconds` apenas quando a mensagem é FOLLOW-UP — o agente
-    ainda está processando a anterior deste contato (`processing`), ou acabou
-    de responder (`done` dentro da própria janela). Nos demais casos devolve
-    `buffer_seconds`, e é isso que mantém a primeira mensagem de um turno
-    respondida na hora.
+    A janela vale pra TODA mensagem, inclusive a primeira do turno. A versão
+    anterior dava janela curta à primeira e longa às de follow-up, mas era
+    justamente isso que deixava o fragmento passar: medido em produção, a row da
+    primeira mensagem era reivindicada em 2s e o "Boa tarde!" que chegava em 6,4s
+    não tinha mais onde mesclar — row reivindicada não aceita merge. Resultado:
+    três fragmentos de saudação, três respostas.
 
-    A janela longa nunca se aplica a fluxo guiado nem quando o agrupamento
-    está desligado (`grouping_seconds <= 0`), e nesses casos nem consulta o
-    banco.
+    Janela uniforme também é o que o mercado faz (n8n 10s, adapter Telegram do
+    hermes-agent 0,6/2s, openclaw); a exceção da primeira mensagem era nossa.
+
+    Só encurta em dois casos, ambos decididos sem I/O:
+    - agrupamento desligado (`grouping_seconds <= 0`) → comportamento pré-mig 144;
+    - fluxo guiado → menu/coleta/CSAT esperando resposta a um prompt, onde
+      alongar faria o bot parecer travado.
     """
     if grouping_seconds <= 0 or is_guided_flow:
         return buffer_seconds
-
-    # Janela de "acabou de responder" = a própria janela de agrupamento. Passado
-    # esse tempo em silêncio, o contato volta a ser primeira-mensagem-de-turno.
-    cutoff = datetime.now(UTC) - timedelta(seconds=grouping_seconds)
-    cursor = await conn.execute(
-        """
-        SELECT 1 FROM message_queue
-         WHERE phone_number = %s
-           AND agent_id = %s
-           AND (
-                status = 'processing'
-                OR (status = 'done' AND processed_at > %s)
-           )
-         LIMIT 1
-        """,
-        (phone_number, agent_id, cutoff),
-    )
-    return grouping_seconds if await cursor.fetchone() else buffer_seconds
+    return grouping_seconds
 
 
 def _com_teto(
@@ -178,9 +217,8 @@ async def enqueue_or_buffer(
     - Debounce somente para texto (media_url IS NULL).
     - Concorrência protegida por pg_advisory_xact_lock(hash(phone+agent)).
 
-    Janela adaptativa (mig 144), quando `grouping_seconds > 0`:
-    - Primeira mensagem de um turno usa `buffer_seconds` — resposta na hora.
-    - Follow-up (agente processando ou recém-respondido) usa `grouping_seconds`.
+    Janela de agrupamento (mig 144), quando `grouping_seconds > 0`:
+    - UNIFORME: toda mensagem espera `grouping_seconds`, inclusive a primeira.
     - Fluxo guiado (`is_guided_flow`) nunca alonga — ali cada mensagem é a
       resposta a uma pergunta do bot, não fragmento.
     - Toda espera é limitada por `grouping_max_seconds` contados da PRIMEIRA
@@ -207,8 +245,9 @@ async def enqueue_or_buffer(
         media_type: MIME type da mídia (opcional).
         to_number: Número destinatário (opcional).
         message_id: ID externo da mensagem, ex: Twilio MessageSid (opcional).
-        buffer_seconds: Janela curta, da primeira mensagem do turno. Default: 2.0.
-        grouping_seconds: Janela de follow-up (por conexão). 0 desliga.
+        buffer_seconds: Janela curta — vale só com agrupamento desligado ou em
+            fluxo guiado. Default: 2.0.
+        grouping_seconds: Janela de agrupamento (por conexão). 0 desliga.
         grouping_max_seconds: Teto da espera, contado da 1ª mensagem do lote.
         is_guided_flow: True quando o bot espera resposta a um prompt
             (menu/workflow/coleta/CSAT) — força a janela curta.
@@ -309,10 +348,7 @@ async def enqueue_or_buffer(
                         agent_id=agent_id,
                     )
 
-                janela = await _resolver_janela(
-                    conn,
-                    phone_number,
-                    agent_id,
+                janela = _resolver_janela(
                     buffer_seconds=buffer_seconds,
                     grouping_seconds=grouping_seconds,
                     is_guided_flow=is_guided_flow,
@@ -359,10 +395,7 @@ async def enqueue_or_buffer(
             return EnqueueResult(message_id=new_id, is_buffered=False)
 
         # Texto: debounce normal (agrupa com texto pendente se existir)
-        janela = await _resolver_janela(
-            conn,
-            phone_number,
-            agent_id,
+        janela = _resolver_janela(
             buffer_seconds=buffer_seconds,
             grouping_seconds=grouping_seconds,
             is_guided_flow=is_guided_flow,
