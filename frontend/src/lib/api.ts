@@ -252,6 +252,8 @@ export interface Conexao {
   // Anti-ban (mig 126): teto diário + aquecimento
   daily_send_cap?: number | null;
   warmup_started_at?: string | null;
+  // Agrupamento de resposta (mig 144): 0 desliga
+  resposta_agrupamento_segundos?: number | null;
 }
 
 export interface ConexoesResponse {
@@ -279,6 +281,8 @@ export interface ConexaoPatchInput {
   // Anti-ban (mig 126): teto diário de envios + modo aquecimento
   daily_send_cap?: number | null;
   warmup_enabled?: boolean | null;
+  // Agrupamento de resposta (mig 144): 0..60, 0 desliga
+  resposta_agrupamento_segundos?: number | null;
 }
 
 export interface ConexaoQuota {

@@ -60,6 +60,7 @@ def _row(
         None,  # webhook_verify_token
         None,  # daily_send_cap
         None,  # warmup_started_at
+        8,  # resposta_agrupamento_segundos (mig 144)
     )
 
 

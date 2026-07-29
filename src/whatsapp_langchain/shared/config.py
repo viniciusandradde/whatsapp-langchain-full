@@ -192,6 +192,11 @@ class Settings(BaseSettings):
 
     # --- Debounce ---
     message_buffer_seconds: float = 2.0
+    # Teto do agrupamento adaptativo (mig 144): quanto um lote pode adiar no
+    # máximo, contado da primeira mensagem dele. É trava de segurança contra
+    # cliente tagarela — sem isso a janela desliza e a resposta nunca sai.
+    # A janela em si é por conexão (`conexao.resposta_agrupamento_segundos`).
+    message_grouping_max_seconds: float = 45.0
 
     # --- LLM (OpenRouter) ---
     # Todas as chamadas LLM, embeddings e transcrição usam OpenRouter

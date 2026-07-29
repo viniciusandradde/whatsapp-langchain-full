@@ -32,7 +32,10 @@ logger = structlog.get_logger()
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
 # Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061
 # (triagem) + 2 mig 081/082 (coleta) + 1 mig 085 (aba_id) + 3 mig 129
-# (snapshot do canal) = 29.
+# (snapshot do canal) + 2 mig 073 (estado do CSAT) = 31.
+#
+# Colunas NOVAS entram sempre NO FIM: `_row_to_atendimento` posiciona por
+# índice, então inserir no meio reindexaria tudo silenciosamente.
 _BARE_COLS = (
     "id, empresa_id, cliente_id, conexao_id, agente_atual, "
     "status, assigned_to_user_id, last_message_at, closed_at, "
@@ -48,7 +51,9 @@ _BARE_COLS = (
     # Mig 085 aba customizável
     "aba_id, "
     # Mig 129 snapshot do canal (persiste após apagar a conexão)
-    "conexao_nome, conexao_numero, conexao_provider"
+    "conexao_nome, conexao_numero, conexao_provider, "
+    # Mig 073 estado do CSAT — lido pelo gate de agrupamento (mig 144)
+    "aguardando_avaliacao_at, aguardando_comentario_at"
 )
 # Com alias `a.` — usado em SELECTs com JOIN.
 _BASE_COLS = ", ".join(f"a.{c.strip()}" for c in _BARE_COLS.split(","))
@@ -57,8 +62,9 @@ _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
     # Índices: 0..10 base, 11..15 mig 047, 16..22 mig 061, 23..24 coleta,
-    # 25 aba_id (mig 085), 26..28 snapshot do canal (mig 129)
-    base_len = 29
+    # 25 aba_id (mig 085), 26..28 snapshot do canal (mig 129),
+    # 29..30 estado do CSAT (mig 073)
+    base_len = 31
     return Atendimento(
         id=row[0],
         empresa_id=row[1],
@@ -94,6 +100,9 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         conexao_nome=row[26],
         conexao_numero=row[27],
         conexao_provider=row[28],
+        # Mig 073 estado do CSAT (lido pelo gate de agrupamento, mig 144)
+        aguardando_avaliacao_at=row[29],
+        aguardando_comentario_at=row[30],
         # JOIN extras (apenas quando _JOIN_COLS é usado)
         cliente_nome=row[base_len] if with_cliente and len(row) > base_len else None,
         cliente_telefone=row[base_len + 1]

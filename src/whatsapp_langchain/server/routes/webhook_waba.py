@@ -27,7 +27,7 @@ from whatsapp_langchain.shared.conexao import (
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
-from whatsapp_langchain.shared.queue import enqueue_or_buffer
+from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
 
 logger = structlog.get_logger()
 
@@ -164,6 +164,16 @@ async def waba_webhook_post(
         # (visão/transcrição). Best-effort: falha vira texto/caption.
         media_url = await _resolve_waba_media_url(pool, conexao, msg)
 
+        # Agrupamento adaptativo (mig 144). Sem `atendimento` em mãos aqui, a
+        # detecção cai no sinal de `origem_resposta` — que já cobre coleta e
+        # CSAT, porque os handlers deles carimbam a row ao responder.
+        grouping_seconds = float(conexao.resposta_agrupamento_segundos)
+        is_guided_flow = grouping_seconds > 0 and await detectar_fluxo_guiado(
+            pool,
+            phone_number=msg.from_number,
+            agent_id=conexao.default_agent_id,
+        )
+
         try:
             await enqueue_or_buffer(
                 pool,
@@ -176,6 +186,9 @@ async def waba_webhook_post(
                 conexao_id=conexao.id,
                 media_url=media_url,
                 media_type=msg.media_mime_type,
+                grouping_seconds=grouping_seconds,
+                grouping_max_seconds=settings.message_grouping_max_seconds,
+                is_guided_flow=is_guided_flow,
             )
         except Exception as exc:
             # NÃO engolir: marca falha e ao final retorna 5xx pra Meta retentar

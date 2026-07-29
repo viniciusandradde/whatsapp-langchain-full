@@ -155,6 +155,7 @@ async def patch_conexao_endpoint(
         status=body.status,
         daily_send_cap=body.daily_send_cap,
         warmup_enabled=body.warmup_enabled,
+        resposta_agrupamento_segundos=body.resposta_agrupamento_segundos,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Conexão não encontrada.")

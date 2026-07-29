@@ -8,6 +8,14 @@ O debounce agrupa mensagens rápidas do mesmo remetente: se o usuário
 envia 3 mensagens em 2 segundos, elas são concatenadas em uma única
 entrada na fila.
 
+A janela é ADAPTATIVA (mig 144): a primeira mensagem de um turno usa a janela
+curta (`buffer_seconds`) e é respondida na hora; as de FOLLOW-UP — que chegam
+enquanto o agente responde, ou logo depois — usam a janela longa
+(`grouping_seconds`, por conexão) e viram uma resposta só. Sem isso o agente
+responde a cada fragmento: a janela de 2s não cobre a latência do agente, então
+a segunda mensagem sempre encontrava a primeira já em `processing` e abria um
+turno novo.
+
 Uso:
     from whatsapp_langchain.shared.queue import enqueue_or_buffer
 
@@ -21,9 +29,130 @@ from datetime import UTC, datetime, timedelta
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
-from whatsapp_langchain.shared.models import EnqueueResult, MessageQueue
+from whatsapp_langchain.shared.models import Atendimento, EnqueueResult, MessageQueue
 
 logger = structlog.get_logger()
+
+# Origens de resposta que caracterizam FLUXO GUIADO: o bot fez uma pergunta
+# específica e espera uma resposta única ("digite 1", "nota de 0 a 10", o CPF
+# do wizard). Mensagem que chega logo depois de uma dessas não é fragmento de
+# pensamento — é a resposta ao prompt, e alongar a janela ali só faria o bot
+# parecer travado. Gravadas em `message_queue.origem_resposta` pelo worker.
+ORIGENS_FLUXO_GUIADO = frozenset({"menu", "workflow", "coleta", "csat", "aprovacao"})
+
+
+async def detectar_fluxo_guiado(
+    pool: AsyncConnectionPool,
+    *,
+    phone_number: str,
+    agent_id: str,
+    atendimento: Atendimento | None = None,
+) -> bool:
+    """True quando o bot está esperando a resposta a um prompt específico.
+
+    Chamada pelos webhooks pra decidir se a mensagem entra na janela longa de
+    agrupamento. Em fluxo guiado ela NÃO entra: ali cada mensagem do cliente é
+    uma resposta única e deliberada ("digite 1", a nota do CSAT, o CPF do
+    wizard), e alongar a janela só faria o bot parecer travado — num wizard de
+    5 perguntas o atraso se multiplicaria por 5.
+
+    Três sinais, do mais barato pro mais caro:
+    1. wizard de coleta em curso (`coleta_estado`, já carregado no atendimento);
+    2. CSAT aguardando nota ou comentário (idem, mig 073);
+    3. a última resposta automática do thread veio de menu/workflow/coleta/CSAT
+       (`message_queue.origem_resposta`, mig 144) — 1 SELECT indexado.
+
+    Só o item 3 vai ao banco, e só quando os dois primeiros não decidiram.
+    """
+    if atendimento is not None:
+        if atendimento.coleta_estado:
+            return True
+        if atendimento.aguardando_avaliacao_at or atendimento.aguardando_comentario_at:
+            return True
+
+    # Fail-safe: esta função roda em TODO webhook inbound. Se a query falhar
+    # — coluna ainda inexistente porque o código subiu antes da migration,
+    # timeout, o que for — o custo de errar aqui é uma janela de 8s a mais num
+    # menu. O custo de propagar a exceção é o webhook devolver 500 e a
+    # mensagem do cliente se perder. Não é escolha difícil.
+    try:
+        async with pool.connection() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT origem_resposta FROM message_queue
+                 WHERE phone_number = %s
+                   AND agent_id = %s
+                   AND origem_resposta IS NOT NULL
+                 ORDER BY id DESC
+                 LIMIT 1
+                """,
+                (phone_number, agent_id),
+            )
+            row = await cursor.fetchone()
+    except Exception as exc:  # noqa: BLE001 — degradar é melhor que 500
+        logger.warning("fluxo_guiado_lookup_failed", phone=phone_number, error=str(exc))
+        return False
+
+    return bool(row) and row[0] in ORIGENS_FLUXO_GUIADO
+
+
+async def _resolver_janela(
+    conn,
+    phone_number: str,
+    agent_id: str,
+    *,
+    buffer_seconds: float,
+    grouping_seconds: float,
+    is_guided_flow: bool,
+) -> float:
+    """Escolhe a janela de debounce desta mensagem.
+
+    Devolve `grouping_seconds` apenas quando a mensagem é FOLLOW-UP — o agente
+    ainda está processando a anterior deste contato (`processing`), ou acabou
+    de responder (`done` dentro da própria janela). Nos demais casos devolve
+    `buffer_seconds`, e é isso que mantém a primeira mensagem de um turno
+    respondida na hora.
+
+    A janela longa nunca se aplica a fluxo guiado nem quando o agrupamento
+    está desligado (`grouping_seconds <= 0`), e nesses casos nem consulta o
+    banco.
+    """
+    if grouping_seconds <= 0 or is_guided_flow:
+        return buffer_seconds
+
+    # Janela de "acabou de responder" = a própria janela de agrupamento. Passado
+    # esse tempo em silêncio, o contato volta a ser primeira-mensagem-de-turno.
+    cutoff = datetime.now(UTC) - timedelta(seconds=grouping_seconds)
+    cursor = await conn.execute(
+        """
+        SELECT 1 FROM message_queue
+         WHERE phone_number = %s
+           AND agent_id = %s
+           AND (
+                status = 'processing'
+                OR (status = 'done' AND processed_at > %s)
+           )
+         LIMIT 1
+        """,
+        (phone_number, agent_id, cutoff),
+    )
+    return grouping_seconds if await cursor.fetchone() else buffer_seconds
+
+
+def _com_teto(
+    janela: float, inicio_do_lote: datetime, grouping_max_seconds: float
+) -> datetime:
+    """`process_after` da row, limitado pelo teto do lote.
+
+    Sem o teto a janela desliza a cada mensagem nova e um cliente tagarela
+    empurra a resposta indefinidamente. O teto conta da PRIMEIRA mensagem do
+    lote, então o atraso máximo é conhecido e não depende do quanto a pessoa
+    digita.
+    """
+    return min(
+        datetime.now(UTC) + timedelta(seconds=janela),
+        inicio_do_lote + timedelta(seconds=grouping_max_seconds),
+    )
 
 
 async def enqueue_or_buffer(
@@ -39,18 +168,35 @@ async def enqueue_or_buffer(
     empresa_id: int = 1,
     conexao_id: int | None = None,
     atendimento_id: int | None = None,
+    grouping_seconds: float = 0.0,
+    grouping_max_seconds: float = 45.0,
+    is_guided_flow: bool = False,
 ) -> EnqueueResult:
     """Insere mensagem na fila ou agrupa com mensagem pendente (debounce).
 
     Regras de debounce (Fase 3):
     - Debounce somente para texto (media_url IS NULL).
-    - Mensagem com mídia não faz debounce (entrada imediata).
-    - Antes de inserir mídia, flush de texto pendente do mesmo phone+agent
-      para que o worker processe o texto ANTES da mídia (ordenação por created_at).
     - Concorrência protegida por pg_advisory_xact_lock(hash(phone+agent)).
 
-    Múltiplas mídias (NumMedia > 1) são enfileiradas como N rows independentes
-    com o mesmo message_id, processadas em ordem de created_at pelo worker.
+    Janela adaptativa (mig 144), quando `grouping_seconds > 0`:
+    - Primeira mensagem de um turno usa `buffer_seconds` — resposta na hora.
+    - Follow-up (agente processando ou recém-respondido) usa `grouping_seconds`.
+    - Fluxo guiado (`is_guided_flow`) nunca alonga — ali cada mensagem é a
+      resposta a uma pergunta do bot, não fragmento.
+    - Toda espera é limitada por `grouping_max_seconds` contados da PRIMEIRA
+      mensagem do lote, então cliente tagarela não empurra a resposta pra
+      sempre.
+    - Mídia deixa de furar o debounce: ela ABSORVE o texto pendente do mesmo
+      phone+agent (o texto vira o `body` da row de mídia e a row de texto some),
+      pra que texto+áudio produzam uma resposta só em vez de duas.
+
+    Com `grouping_seconds <= 0` o comportamento é exatamente o anterior à mig
+    144 — inclusive o flush de texto na chegada de mídia. É o desligamento de
+    emergência, e por isso precisa continuar sendo um no-op fiel.
+
+    Múltiplas mídias (NumMedia > 1) seguem como N rows independentes com o
+    mesmo message_id, processadas em ordem de created_at pelo worker — a
+    absorção resolve texto→mídia, não mídia→mídia.
 
     Args:
         pool: Pool de conexões do psycopg.
@@ -61,7 +207,11 @@ async def enqueue_or_buffer(
         media_type: MIME type da mídia (opcional).
         to_number: Número destinatário (opcional).
         message_id: ID externo da mensagem, ex: Twilio MessageSid (opcional).
-        buffer_seconds: Segundos de debounce. Default: 2.0.
+        buffer_seconds: Janela curta, da primeira mensagem do turno. Default: 2.0.
+        grouping_seconds: Janela de follow-up (por conexão). 0 desliga.
+        grouping_max_seconds: Teto da espera, contado da 1ª mensagem do lote.
+        is_guided_flow: True quando o bot espera resposta a um prompt
+            (menu/workflow/coleta/CSAT) — força a janela curta.
 
     Returns:
         EnqueueResult com message_id e se foi buffered.
@@ -93,38 +243,91 @@ async def enqueue_or_buffer(
         await conn.execute("SELECT pg_advisory_xact_lock(%s)", (lock_key,))
 
         if has_media:
-            # Mídia: flush texto pendente e inserir imediatamente.
-            # O flush antecipa o process_after de textos aguardando debounce,
-            # garantindo que o worker os processe antes da mídia (via created_at).
-            flushed = await conn.execute(
-                """
-                UPDATE message_queue
-                SET process_after = NOW(),
-                    updated_at = NOW()
-                WHERE phone_number = %s
-                  AND agent_id = %s
-                  AND status = 'queued'
-                  AND process_after > NOW()
-                  AND media_url IS NULL
-                """,
-                (phone_number, agent_id),
-            )
-            if flushed.rowcount and flushed.rowcount > 0:
-                logger.info(
-                    "text_flushed_for_media",
-                    phone=phone_number,
-                    agent_id=agent_id,
-                    flushed_count=flushed.rowcount,
+            inicio_do_lote = datetime.now(UTC)
+
+            if grouping_seconds <= 0:
+                # Agrupamento desligado: comportamento pré-mig 144. Flush do
+                # texto pendente (antecipa o process_after) pra que o worker o
+                # processe ANTES da mídia, via ordenação por created_at.
+                flushed = await conn.execute(
+                    """
+                    UPDATE message_queue
+                    SET process_after = NOW(),
+                        updated_at = NOW()
+                    WHERE phone_number = %s
+                      AND agent_id = %s
+                      AND status = 'queued'
+                      AND process_after > NOW()
+                      AND media_url IS NULL
+                    """,
+                    (phone_number, agent_id),
+                )
+                if flushed.rowcount and flushed.rowcount > 0:
+                    logger.info(
+                        "text_flushed_for_media",
+                        phone=phone_number,
+                        agent_id=agent_id,
+                        flushed_count=flushed.rowcount,
+                    )
+                process_after_midia = inicio_do_lote
+            else:
+                # Absorção: o texto pendente vira o `body` desta row de mídia e
+                # a row de texto é removida. DELETE ... RETURNING num statement
+                # só porque `claim_next` não pega o advisory lock — entre um
+                # SELECT e um DELETE separados o worker poderia reivindicar a
+                # row. Se o worker chegou primeiro, o DELETE não acha nada e a
+                # mídia segue como row independente (degrada, não quebra).
+                cursor = await conn.execute(
+                    """
+                    DELETE FROM message_queue
+                     WHERE id = (
+                         SELECT id FROM message_queue
+                          WHERE phone_number = %s
+                            AND agent_id = %s
+                            AND status = 'queued'
+                            AND process_after > NOW()
+                            AND media_url IS NULL
+                          ORDER BY created_at DESC
+                          LIMIT 1
+                          FOR UPDATE SKIP LOCKED
+                     )
+                    RETURNING incoming_message, created_at
+                    """,
+                    (phone_number, agent_id),
+                )
+                absorvido = await cursor.fetchone()
+                if absorvido:
+                    texto_pendente, criado_em = absorvido
+                    # `preprocess_incoming_message` monta
+                    # `body + "\n[Transcrição de áudio]: ..."`, então o texto
+                    # absorvido entra naturalmente no mesmo turno do agente.
+                    body = "\n".join(p for p in [texto_pendente, body] if p)
+                    inicio_do_lote = criado_em
+                    logger.info(
+                        "text_absorbed_by_media",
+                        phone=phone_number,
+                        agent_id=agent_id,
+                    )
+
+                janela = await _resolver_janela(
+                    conn,
+                    phone_number,
+                    agent_id,
+                    buffer_seconds=buffer_seconds,
+                    grouping_seconds=grouping_seconds,
+                    is_guided_flow=is_guided_flow,
+                )
+                process_after_midia = _com_teto(
+                    janela, inicio_do_lote, grouping_max_seconds
                 )
 
-            # Inserir mídia com process_after=NOW() (sem buffer)
             cursor = await conn.execute(
                 """
                 INSERT INTO message_queue
                     (empresa_id, conexao_id, atendimento_id, message_id,
                      phone_number, to_number, agent_id, thread_id,
                      incoming_message, media_url, media_type, process_after)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -139,6 +342,7 @@ async def enqueue_or_buffer(
                     body,
                     media_url,
                     media_type,
+                    process_after_midia,
                 ),
             )
             row = await cursor.fetchone()
@@ -155,13 +359,20 @@ async def enqueue_or_buffer(
             return EnqueueResult(message_id=new_id, is_buffered=False)
 
         # Texto: debounce normal (agrupa com texto pendente se existir)
-        process_after = datetime.now(UTC) + timedelta(seconds=buffer_seconds)
+        janela = await _resolver_janela(
+            conn,
+            phone_number,
+            agent_id,
+            buffer_seconds=buffer_seconds,
+            grouping_seconds=grouping_seconds,
+            is_guided_flow=is_guided_flow,
+        )
 
         # Busca texto pendente para debounce (media_url IS NULL garante
         # que não debounce texto dentro de uma mensagem de mídia)
         cursor = await conn.execute(
             """
-            SELECT id, incoming_message
+            SELECT id, incoming_message, created_at
             FROM message_queue
             WHERE phone_number = %s
               AND agent_id = %s
@@ -176,9 +387,11 @@ async def enqueue_or_buffer(
         existing = await cursor.fetchone()
 
         if existing:
-            # Debounce: concatena texto e reseta timer
-            existing_id, existing_body = existing
+            # Debounce: concatena texto e estende o timer — mas o teto conta da
+            # criação DESTA row, que é a primeira mensagem do lote.
+            existing_id, existing_body, existing_created_at = existing
             new_body = f"{existing_body}\n{body}"
+            process_after = _com_teto(janela, existing_created_at, grouping_max_seconds)
 
             await conn.execute(
                 """
@@ -200,7 +413,9 @@ async def enqueue_or_buffer(
             )
             return EnqueueResult(message_id=existing_id, is_buffered=True)
 
-        # Nova mensagem de texto na fila
+        # Nova mensagem de texto na fila. Esta row ABRE o lote, então o teto
+        # coincide com a janela e só passa a morder nos merges seguintes.
+        process_after = _com_teto(janela, datetime.now(UTC), grouping_max_seconds)
         cursor = await conn.execute(
             """
             INSERT INTO message_queue
@@ -411,6 +626,7 @@ async def mark_done(
     normalized_input: str | None = None,
     media_processing_status: str | None = None,
     media_processing_error: str | None = None,
+    origem_resposta: str | None = None,
 ) -> None:
     """Marca mensagem como processada com sucesso.
 
@@ -421,6 +637,10 @@ async def mark_done(
         normalized_input: Texto normalizado enviado ao agente.
         media_processing_status: Resultado do pré-processamento de mídia.
         media_processing_error: Erro do pré-processamento de mídia, se houver.
+        origem_resposta: Quem produziu a resposta — `agente`, `menu`,
+            `workflow`, `coleta`, `csat` ou `opt_out` (mig 144). É o que permite
+            ao enqueue reconhecer fluxo guiado e não alongar a janela ali.
+            None quando não houve resposta automática (whitelist, modo manual).
     """
     async with pool.connection() as conn:
         await conn.execute(
@@ -431,6 +651,7 @@ async def mark_done(
                 normalized_input = COALESCE(%s, normalized_input),
                 media_processing_status = COALESCE(%s, media_processing_status),
                 media_processing_error = COALESCE(%s, media_processing_error),
+                origem_resposta = %s,
                 processed_at = NOW(),
                 updated_at = NOW()
             WHERE id = %s
@@ -440,6 +661,7 @@ async def mark_done(
                 normalized_input,
                 media_processing_status,
                 media_processing_error,
+                origem_resposta,
                 message_id,
             ),
         )

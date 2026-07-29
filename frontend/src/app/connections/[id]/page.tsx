@@ -7,6 +7,7 @@ import { getConexao } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { AntiBanPanel } from "./anti-ban-panel";
+import { RespostaPanel } from "./resposta-panel";
 import { DefaultAgentSelect } from "./default-agent-select";
 import { TipoAtendimentoSelect } from "./tipo-atendimento-select";
 
@@ -136,6 +137,11 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
+
+      <RespostaPanel
+        conexaoId={conexao.id}
+        initialAgrupamento={conexao.resposta_agrupamento_segundos ?? 8}
+      />
 
       <AntiBanPanel
         conexaoId={conexao.id}

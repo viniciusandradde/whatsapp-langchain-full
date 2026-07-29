@@ -70,6 +70,9 @@ def _row(
         conexao_nome,
         conexao_numero,
         conexao_provider,
+        # Mig 073 estado do CSAT (29..30) — lido pelo gate de agrupamento
+        None,  # aguardando_avaliacao_at
+        None,  # aguardando_comentario_at
     )
 
 
