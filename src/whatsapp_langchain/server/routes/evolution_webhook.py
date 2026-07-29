@@ -33,7 +33,7 @@ from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.midia_processing import download_evolution_media_b64
-from whatsapp_langchain.shared.queue import enqueue_or_buffer
+from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
 
 logger = structlog.get_logger()
 
@@ -361,6 +361,17 @@ async def webhook_evolution(
         conexao=conexao,  # snapshot do canal (mig 129)
     )
 
+    # Agrupamento adaptativo (mig 144): mensagens seguidas do mesmo contato
+    # viram uma resposta só. A detecção de fluxo guiado custa 1 SELECT, então
+    # só roda quando o agrupamento está ligado nesta conexão.
+    grouping_seconds = float(conexao.resposta_agrupamento_segundos)
+    is_guided_flow = grouping_seconds > 0 and await detectar_fluxo_guiado(
+        pool,
+        phone_number=phone_number,
+        agent_id=resolved_agent,
+        atendimento=atendimento,
+    )
+
     msg_id = str(key.get("id") or "").strip() or None
     await enqueue_or_buffer(
         pool=pool,
@@ -375,6 +386,9 @@ async def webhook_evolution(
         empresa_id=empresa_id,
         conexao_id=conexao_id,
         atendimento_id=atendimento.id,
+        grouping_seconds=grouping_seconds,
+        grouping_max_seconds=settings.message_grouping_max_seconds,
+        is_guided_flow=is_guided_flow,
     )
 
     logger.info(

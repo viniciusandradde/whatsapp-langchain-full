@@ -34,7 +34,7 @@ _SELECT_COLS = (
     "waba_account_id, waba_phone_id, waba_app_id, waba_account_description, "
     "connection_state, state_message, qr_code, qr_expires_at, "
     "ultimo_health_check_at, ultimo_health_check_ok, webhook_verify_token, "
-    "daily_send_cap, warmup_started_at"
+    "daily_send_cap, warmup_started_at, resposta_agrupamento_segundos"
 )
 
 
@@ -67,6 +67,7 @@ def _row_to_conexao(row) -> Conexao:
         webhook_verify_token=row[24],
         daily_send_cap=row[25],
         warmup_started_at=row[26],
+        resposta_agrupamento_segundos=row[27] if row[27] is not None else 8,
     )
 
 
@@ -200,7 +201,7 @@ async def get_conexao_by_evolution_instance(
         async with pool.connection() as conn:
             cur = await conn.execute(
                 f"""
-                SELECT {_SELECT_COLS} FROM conexao
+                SELECT {_SELECT_COLS}, credentials_encrypted FROM conexao
                  WHERE provider = 'evolution' AND credentials_encrypted IS NOT NULL
                  ORDER BY (status = 'active') DESC, id DESC
                 """,
@@ -209,7 +210,12 @@ async def get_conexao_by_evolution_instance(
             rows = await cur.fetchall()
         for r in rows:
             try:
-                cred = decrypt_dict(r[len(_SELECT_COLS.split(", ")) - 1 - 24 + 0])  # type: ignore
+                # `credentials_encrypted` NÃO está em _SELECT_COLS — é anexada
+                # nesta query e lida pela ponta. O índice era derivado do
+                # tamanho de _SELECT_COLS e caía numa coluna qualquer, então
+                # decrypt_dict sempre estourava e o `continue` engolia: este
+                # fallback nunca resolveu conexão nenhuma.
+                cred = decrypt_dict(r[-1])  # type: ignore[arg-type]
             except Exception:
                 continue
             if cred.get("instance_name") == instance_name:
@@ -331,12 +337,17 @@ async def patch_conexao(
     status: str | None = None,
     daily_send_cap: int | None = None,
     warmup_enabled: bool | None = None,
+    resposta_agrupamento_segundos: int | None = None,
 ) -> Conexao | None:
     """UPDATE parcial — só seta colunas não-None.
 
     Anti-ban: `daily_send_cap` <= 0 limpa o teto (NULL); `warmup_enabled` True
     inicia o aquecimento (preserva a curva se já estava ligado via COALESCE),
     False desliga (warmup_started_at = NULL).
+
+    Agrupamento (mig 144): `resposta_agrupamento_segundos` = 0 é valor VÁLIDO
+    (desliga o agrupamento), não "não informado" — por isso o teste é
+    `is not None` e não truthiness.
     """
     sets: list[str] = []
     args: list[Any] = []
@@ -366,6 +377,11 @@ async def patch_conexao(
             sets.append("warmup_started_at = COALESCE(warmup_started_at, NOW())")
         else:
             sets.append("warmup_started_at = NULL")
+    if resposta_agrupamento_segundos is not None:
+        # Clamp na faixa do CHECK do banco — a UI já valida, mas o endpoint
+        # aceita chamada direta e um 500 de constraint não ajuda ninguém.
+        sets.append("resposta_agrupamento_segundos = %s")
+        args.append(max(0, min(60, resposta_agrupamento_segundos)))
 
     if not sets:
         return await get_conexao_by_id(pool, conexao_id)

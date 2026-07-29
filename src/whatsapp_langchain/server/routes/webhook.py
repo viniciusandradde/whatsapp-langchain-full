@@ -25,7 +25,7 @@ from whatsapp_langchain.shared.conexao import get_conexao_by_from_number
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
-from whatsapp_langchain.shared.queue import enqueue_or_buffer
+from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
 
 logger = structlog.get_logger()
 
@@ -196,10 +196,21 @@ async def webhook_twilio(
         conexao=conexao,  # snapshot do canal (mig 129)
     )
 
+    # Agrupamento adaptativo (mig 144): mensagens seguidas do mesmo contato
+    # viram uma resposta só. A detecção de fluxo guiado custa 1 SELECT, então
+    # só roda quando o agrupamento está ligado nesta conexão.
+    grouping_seconds = float(conexao.resposta_agrupamento_segundos if conexao else 0)
+    is_guided_flow = grouping_seconds > 0 and await detectar_fluxo_guiado(
+        pool,
+        phone_number=phone_number,
+        agent_id=resolved_agent,
+        atendimento=atendimento,
+    )
+
     # Enfileiramento:
     # - se há texto OU não há mídia: enfileira o texto como 1 row
     # - cada mídia (MediaUrl0..MediaUrl{NumMedia-1}) vira 1 row adicional
-    #   com o mesmo message_sid (sem debounce, processada imediatamente)
+    #   com o mesmo message_sid
 
     if body_raw or num_media == 0:
         await enqueue_or_buffer(
@@ -215,6 +226,9 @@ async def webhook_twilio(
             empresa_id=empresa_id,
             conexao_id=conexao_id,
             atendimento_id=atendimento.id,
+            grouping_seconds=grouping_seconds,
+            grouping_max_seconds=settings.message_grouping_max_seconds,
+            is_guided_flow=is_guided_flow,
         )
 
     for i in range(num_media):
@@ -235,6 +249,9 @@ async def webhook_twilio(
             empresa_id=empresa_id,
             conexao_id=conexao_id,
             atendimento_id=atendimento.id,
+            grouping_seconds=grouping_seconds,
+            grouping_max_seconds=settings.message_grouping_max_seconds,
+            is_guided_flow=is_guided_flow,
         )
 
     logger.info(

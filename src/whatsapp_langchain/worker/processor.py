@@ -234,6 +234,7 @@ async def _try_handle_approval(
                 normalized_input=text,
                 media_processing_status=None,
                 media_processing_error=None,
+                origem_resposta="aprovacao",
             )
             logger.info(
                 "approval_ambiguous",
@@ -342,6 +343,7 @@ async def _try_handle_approval(
         normalized_input=text,
         media_processing_status=None,
         media_processing_error=None,
+        origem_resposta="aprovacao",
     )
 
     logger.info(
@@ -470,7 +472,11 @@ async def _try_handle_opt_out(
         logger.warning("opt_out_outbound_falhou", error=str(exc))
 
     await mark_done(
-        pool, message.id, msg, normalized_input=(message.incoming_message or "").strip()
+        pool,
+        message.id,
+        msg,
+        normalized_input=(message.incoming_message or "").strip(),
+        origem_resposta="opt_out",
     )
     logger.info("opt_out_via_keyword", empresa_id=message.empresa_id)
     return True
@@ -517,7 +523,9 @@ async def _try_handle_encerrar_keyword(
     # Sprint F.3 — Pesquisa CSAT pós-fechamento (best-effort, não bloqueia)
     await _send_csat_se_configurado(message.empresa_id, message.phone_number, pool)
 
-    await mark_done(pool, message.id, msg, normalized_input=text)
+    await mark_done(
+        pool, message.id, msg, normalized_input=text, origem_resposta="encerrar"
+    )
     await upsert_conversation(
         pool,
         phone_number=message.phone_number,
@@ -599,6 +607,7 @@ async def _try_capture_avaliacao(
                 message.id,
                 msg_agradecimento,
                 normalized_input=text,
+                origem_resposta="csat",
             )
             logger.info(
                 "nps_comentario_capturado",
@@ -646,7 +655,13 @@ async def _try_capture_avaliacao(
                 await clear_flags(pool, atendimento_id)
                 resposta = msg_agradecimento
             await outbound.send_message(message.phone_number, resposta)
-            await mark_done(pool, message.id, resposta, normalized_input=text)
+            await mark_done(
+                pool,
+                message.id,
+                resposta,
+                normalized_input=text,
+                origem_resposta="csat",
+            )
             logger.info(
                 "nps_nota_capturada",
                 atendimento_id=atendimento_id,
@@ -737,7 +752,9 @@ async def _iniciar_coleta_wizard(
         posicao_atual_item_id=None,
         resposta=text,
     )
-    await mark_done(pool, message.id, label, normalized_input=text)
+    await mark_done(
+        pool, message.id, label, normalized_input=text, origem_resposta="coleta"
+    )
     await upsert_conversation(
         pool,
         phone_number=message.phone_number,
@@ -786,7 +803,9 @@ async def _try_handle_coleta_em_curso(
         # Inválido — manda retry, mantém estado, consome turno
         retry = erro or "Resposta inválida, tente novamente."
         await outbound.send_message(message.phone_number, retry)
-        await mark_done(pool, message.id, retry, normalized_input=text)
+        await mark_done(
+            pool, message.id, retry, normalized_input=text, origem_resposta="coleta"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -818,7 +837,13 @@ async def _try_handle_coleta_em_curso(
         label_render = render_pergunta_label(prox.get("label", ""), ctx)
         await set_coleta_estado(pool, atend_id, novo_estado)
         await outbound.send_message(message.phone_number, label_render)
-        await mark_done(pool, message.id, label_render, normalized_input=text)
+        await mark_done(
+            pool,
+            message.id,
+            label_render,
+            normalized_input=text,
+            origem_resposta="coleta",
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -954,7 +979,9 @@ async def _try_handle_workflow(
                 sent_text_parts.append(text_out)
 
     summary = "\n".join(sent_text_parts) if sent_text_parts else "[workflow]"
-    await mark_done(pool, message.id, summary, normalized_input=text)
+    await mark_done(
+        pool, message.id, summary, normalized_input=text, origem_resposta="workflow"
+    )
     logger.info(
         "workflow_handled",
         atendimento_id=message.atendimento_id,
@@ -1059,7 +1086,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,
             resposta=text,
         )
-        await mark_done(pool, message.id, msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1162,7 +1191,13 @@ async def _try_handle_menu(
                         posicao_atual_item_id=None,
                         resposta=text,
                     )
-                    await mark_done(pool, message.id, pergunta, normalized_input=text)
+                    await mark_done(
+                        pool,
+                        message.id,
+                        pergunta,
+                        normalized_input=text,
+                        origem_resposta="menu",
+                    )
                     await upsert_conversation(
                         pool,
                         phone_number=message.phone_number,
@@ -1189,7 +1224,9 @@ async def _try_handle_menu(
                 posicao_atual_item_id=None,
                 resposta=text,
             )
-            await mark_done(pool, message.id, msg, normalized_input=text)
+            await mark_done(
+                pool, message.id, msg, normalized_input=text, origem_resposta="menu"
+            )
             await upsert_conversation(
                 pool,
                 phone_number=message.phone_number,
@@ -1268,7 +1305,13 @@ async def _try_handle_menu(
                     posicao_atual_item_id=None,
                     resposta=text,
                 )
-                await mark_done(pool, message.id, full_msg, normalized_input=text)
+                await mark_done(
+                    pool,
+                    message.id,
+                    full_msg,
+                    normalized_input=text,
+                    origem_resposta="menu",
+                )
                 await upsert_conversation(
                     pool,
                     phone_number=message.phone_number,
@@ -1286,7 +1329,9 @@ async def _try_handle_menu(
             # Resposta inválida — pede nome de novo
             erro = "Hmm, não consegui entender seu nome. Pode digitar novamente?"
             await outbound.send_message(message.phone_number, erro)
-            await mark_done(pool, message.id, erro, normalized_input=text)
+            await mark_done(
+                pool, message.id, erro, normalized_input=text, origem_resposta="menu"
+            )
             await upsert_conversation(
                 pool,
                 phone_number=message.phone_number,
@@ -1341,7 +1386,9 @@ async def _try_handle_menu(
         menu_msg = format_menu_message(None, children)
         full_msg = f"{invalida_msg}\n\n{menu_msg}"
         await outbound.send_message(message.phone_number, full_msg)
-        await mark_done(pool, message.id, full_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, full_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1405,7 +1452,13 @@ async def _try_handle_menu(
             menu_msg = format_menu_message(None, children)
             full_msg = f"{invalida_msg}\n\n{menu_msg}"
             await outbound.send_message(message.phone_number, full_msg)
-            await mark_done(pool, message.id, full_msg, normalized_input=text)
+            await mark_done(
+                pool,
+                message.id,
+                full_msg,
+                normalized_input=text,
+                origem_resposta="menu",
+            )
             return True
         msg = format_menu_message(None, sub_children)
         await outbound.send_message(message.phone_number, msg)
@@ -1417,7 +1470,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=item.id,
             resposta=text,
         )
-        await mark_done(pool, message.id, msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1462,7 +1517,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,  # saiu do menu
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1513,7 +1570,13 @@ async def _try_handle_menu(
                 else menu.mensagem_opcao_invalida
             )
             await outbound.send_message(message.phone_number, erro_msg)
-            await mark_done(pool, message.id, erro_msg, normalized_input=text)
+            await mark_done(
+                pool,
+                message.id,
+                erro_msg,
+                normalized_input=text,
+                origem_resposta="menu",
+            )
             await upsert_conversation(
                 pool,
                 phone_number=message.phone_number,
@@ -1596,7 +1659,9 @@ async def _try_handle_menu(
         for parte in partes[:-1]:
             await outbound.send_message(message.phone_number, parte)
         await outbound.send_message(message.phone_number, partes[-1])
-        await mark_done(pool, message.id, partes[-1], normalized_input=text)
+        await mark_done(
+            pool, message.id, partes[-1], normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1702,7 +1767,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None if voltar_menu else item.parent_id,
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1748,7 +1815,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1800,7 +1869,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None if voltar else item.parent_id,
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1865,7 +1936,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None if voltar else item.parent_id,
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1901,7 +1974,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None if voltar else item.parent_id,
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1942,7 +2017,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,
             resposta=text,
         )
-        await mark_done(pool, message.id, out_msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, out_msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -1980,7 +2057,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,
             resposta=text,
         )
-        await mark_done(pool, message.id, msg, normalized_input=text)
+        await mark_done(
+            pool, message.id, msg, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -2009,7 +2088,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,
             resposta=text,
         )
-        await mark_done(pool, message.id, pergunta, normalized_input=text)
+        await mark_done(
+            pool, message.id, pergunta, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -2037,7 +2118,9 @@ async def _try_handle_menu(
             posicao_atual_item_id=None,
             resposta=text,
         )
-        await mark_done(pool, message.id, msg_final, normalized_input=text)
+        await mark_done(
+            pool, message.id, msg_final, normalized_input=text, origem_resposta="menu"
+        )
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,
@@ -2236,6 +2319,7 @@ async def process_message(
                 normalized_input=None,
                 media_processing_status=pre.media_processing_status,
                 media_processing_error=pre.media_processing_error,
+                origem_resposta="sistema",
             )
             await upsert_conversation(
                 pool,
@@ -2390,6 +2474,7 @@ async def process_message(
                         message.id,
                         response_text,
                         normalized_input=pre.normalized_text,
+                        origem_resposta="sistema",
                     )
                     return
                 # shadow=true: só registrou, deixa fluir normal
@@ -2462,6 +2547,7 @@ async def process_message(
                 message.id,
                 msg_block,
                 normalized_input=pre.normalized_text,
+                origem_resposta="sistema",
             )
             logger.warning(
                 "ia_budget_block",
@@ -2695,6 +2781,7 @@ async def process_message(
             normalized_input=pre.normalized_text,
             media_processing_status=pre.media_processing_status,
             media_processing_error=pre.media_processing_error,
+            origem_resposta="agente",
         )
         await upsert_conversation(
             pool,

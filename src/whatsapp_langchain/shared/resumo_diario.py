@@ -70,7 +70,11 @@ async def montar_resumo(pool: AsyncConnectionPool, empresa_id: int, tz: str) -> 
                 """,
                 {"dia": dia, "eid": empresa_id},
             )
-            novos, resolvidos, em_andamento, aguardando = await cur.fetchone()
+            # Agregado sem GROUP BY sempre devolve exatamente 1 row, mas o
+            # tipo é `tuple | None` — desempacotar direto não passa no pyright.
+            contagens = await cur.fetchone()
+            assert contagens is not None  # COUNT(*) sem GROUP BY
+            novos, resolvidos, em_andamento, aguardando = contagens
 
             cur = await conn.execute(
                 """

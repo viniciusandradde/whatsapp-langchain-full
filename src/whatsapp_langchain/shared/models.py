@@ -285,6 +285,9 @@ class Conexao(BaseModel):
     # Anti-ban disparador (mig 126): teto diário + aquecimento
     daily_send_cap: int | None = None  # NULL = sem teto manual
     warmup_started_at: datetime | None = None  # NULL = sem aquecimento
+    # Agrupamento de resposta (mig 144): segundos que o agente espera antes de
+    # responder mensagens seguidas do mesmo contato. 0 desliga.
+    resposta_agrupamento_segundos: int = 8
 
 
 class ConexaoInput(BaseModel):
@@ -312,6 +315,8 @@ class ConexaoPatchInput(BaseModel):
     # Anti-ban (mig 126): teto diário de envios + modo aquecimento
     daily_send_cap: int | None = None
     warmup_enabled: bool | None = None  # True liga aquecimento (seta warmup_started_at)
+    # Agrupamento de resposta (mig 144). 0 desliga; faixa 0..60 (CHECK no banco)
+    resposta_agrupamento_segundos: int | None = Field(default=None, ge=0, le=60)
 
 
 # --- M3 CRM Light: Cliente + Atendimento ---
@@ -649,6 +654,11 @@ class Atendimento(BaseModel):
     # Tags aplicadas no atendimento (mig 086). Preenchido pelo loader quando
     # solicitado via `with_tags=True` — evita N+1 no list.
     tags: list[dict] | None = None
+    # Estado da pesquisa de satisfação (mig 073). Não é usado pelo drawer — o
+    # gate de agrupamento (mig 144) lê estes campos pra saber que o bot está
+    # esperando uma nota/comentário e não deve alongar a janela de resposta.
+    aguardando_avaliacao_at: datetime | None = None
+    aguardando_comentario_at: datetime | None = None
 
 
 class DocumentoConhecimento(BaseModel):
