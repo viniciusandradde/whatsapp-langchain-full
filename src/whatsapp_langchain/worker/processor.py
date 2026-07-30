@@ -2888,6 +2888,20 @@ async def process_message(
         )
         # Código curto + tipo da exception ajuda a correlacionar com
         # log via `error_type`, sem expor detalhe interno.
+        #
+        # O STATUS HTTP entra junto quando a exception carrega um. Só o nome da
+        # classe não basta pra diagnosticar depois: `EvolutionSendError` sozinho
+        # não distingue servidor fora do ar (502) de número inválido (400) ou
+        # instância desconectada (404), e o detalhe só existia no log — que
+        # rotaciona. Num erro intermitente (13 em 5 dias na empresa 1018),
+        # quando alguém percebe, o log já foi.
+        #
+        # É seguro exibir: nenhuma das duas UIs renderiza este campo como texto
+        # da mensagem — o drawer mostra frase fixa com uma linha de correlação,
+        # e o app só a frase. Número de status não vaza SQL nem stack.
+        status = getattr(e, "status_code", None)
         safe_db_error = f"processing_failed:{type(e).__name__}"
+        if isinstance(status, int):
+            safe_db_error += f":{status}"
         await mark_failed(pool, message.id, safe_db_error)
         WORKER_HEALTH.record_failure()

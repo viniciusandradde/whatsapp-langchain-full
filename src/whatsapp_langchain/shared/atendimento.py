@@ -125,6 +125,7 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
 #: uma coluna nova: persistir traria desatualização a cada mudança de whitelist ou
 #: de modo da conexão, que acontecem fora do atendimento.
 SITUACOES = (
+    "resposta_perdida",
     "com_ia",
     "aguardando_humano",
     "em_atendimento",
@@ -141,6 +142,7 @@ def derivar_situacao(
     departamento_id: int | None,
     conexao_tipo_atendimento: str | None,
     telefone_na_whitelist: bool,
+    resposta_perdida: bool = False,
 ) -> str:
     """Traduz o estado real da conversa no rótulo que o operador lê.
 
@@ -169,6 +171,15 @@ def derivar_situacao(
         return "abandonada"
     if status == "em_andamento" and assigned_to_user_id:
         return "em_atendimento"
+    # Resposta que esgotou as tentativas de envio. Vem ANTES dos demais porque é
+    # o único estado em que o cliente ficou sem retorno por FALHA nossa, e não
+    # por desenho — e até aqui morria em silêncio: ninguém era avisado, e só
+    # aparecia se alguém abrisse aquela conversa. Foram 7 casos em 10 dias.
+    #
+    # Fica depois de `em_atendimento` de propósito: com um operador na conversa,
+    # ele já está vendo e o alarme viraria ruído.
+    if resposta_perdida:
+        return "resposta_perdida"
     if conexao_tipo_atendimento == "manual" or telefone_na_whitelist:
         return "sem_automacao"
     if departamento_id is not None and not assigned_to_user_id:
@@ -490,6 +501,32 @@ async def _preencher_derivados(
         )
         whitelistados = set()
 
+    # Conversas cuja ÚLTIMA mensagem esgotou as tentativas de envio.
+    #
+    # "Última", e não "qualquer uma": um `EXISTS (status='failed')` acenderia o
+    # alarme para sempre. Conferido em produção — a conversa 497 tem uma falha
+    # antiga e as SEIS mensagens seguintes entregues; o cliente já foi
+    # respondido, e o alarme nunca se apagaria. Olhando só a última, uma resposta
+    # posterior bem-sucedida limpa o estado sozinha.
+    perdidas: set[int] = set()
+    try:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT atendimento_id FROM (
+                    SELECT DISTINCT ON (atendimento_id) atendimento_id, status
+                      FROM message_queue
+                     WHERE atendimento_id = ANY(%s)
+                     ORDER BY atendimento_id, id DESC
+                ) ultima
+                 WHERE status = 'failed'
+                """,
+                ([a.id for a in itens],),
+            )
+            perdidas = {r[0] for r in await cur.fetchall()}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("situacao_resposta_perdida_falhou", erro=str(exc))
+
     nao_lidas: dict[int, int] = {}
     if current_user_id:
         try:
@@ -511,6 +548,7 @@ async def _preencher_derivados(
             departamento_id=atd.departamento_id,
             conexao_tipo_atendimento=modo,
             telefone_na_whitelist=na_whitelist,
+            resposta_perdida=atd.id in perdidas,
         )
         # Só `com_ia` responde a próxima mensagem. `aguardando_humano` é
         # justamente o gate que CALA o agente (`processor.py:2369`) — marcá-lo

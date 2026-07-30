@@ -151,6 +151,34 @@ class TestDerivarSituacao:
             self._sit(departamento_id=7, telefone_na_whitelist=True) == "sem_automacao"
         )
 
+    def test_resposta_perdida_aparece_e_vence_a_situacao_normal(self):
+        """7 casos em 10 dias morriam em silêncio.
+
+        A resposta esgotava as tentativas de envio, o cliente ficava sem retorno
+        e ninguém era avisado — só aparecia se alguém abrisse aquela conversa. É
+        o único estado em que a falha é NOSSA, não desenho.
+        """
+        assert self._sit(resposta_perdida=True) == "resposta_perdida"
+        # Vence até "sem automação": o envio manual do operador também falha.
+        assert (
+            self._sit(resposta_perdida=True, telefone_na_whitelist=True)
+            == "resposta_perdida"
+        )
+
+    def test_operador_na_conversa_silencia_o_alarme(self):
+        """Com dono, ele já está vendo — o alarme viraria ruído."""
+        assert (
+            self._sit(
+                status="em_andamento",
+                assigned_to_user_id="u1",
+                resposta_perdida=True,
+            )
+            == "em_atendimento"
+        )
+
+    def test_conversa_fechada_nao_alarma(self):
+        assert self._sit(status="resolvido", resposta_perdida=True) == "resolvida"
+
     def test_fechada_vence_tudo(self):
         assert self._sit(status="resolvido", telefone_na_whitelist=True) == "resolvida"
         assert self._sit(status="abandonado", departamento_id=7) == "abandonada"

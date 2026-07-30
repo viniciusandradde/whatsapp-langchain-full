@@ -302,6 +302,7 @@ private fun MarcaNaoLida(quantidade: Int) {
  */
 private fun rotuloSituacao(situacao: String) =
     when (situacao) {
+        "resposta_perdida" -> "Não enviada"
         "com_ia" -> "Com a IA"
         "aguardando_humano" -> "Aguardando humano"
         "em_atendimento" -> "Em atendimento"
@@ -322,6 +323,10 @@ private fun rotuloSituacao(situacao: String) =
 @Composable
 private fun corDeSituacao(situacao: String): Color =
     when (situacao) {
+        // Único vermelho entre as situações: cliente sem retorno por falha
+        // nossa. Divide o tom com a marca de não lida de propósito — as duas
+        // pedem ação, e nenhuma outra situação usa vermelho.
+        "resposta_perdida" -> MaterialTheme.colorScheme.errorContainer
         "com_ia" -> MaterialTheme.colorScheme.secondaryContainer
         "aguardando_humano" -> MaterialTheme.colorScheme.tertiaryContainer
         "em_atendimento" -> MaterialTheme.colorScheme.primaryContainer

@@ -12,6 +12,7 @@ import type { SituacaoAtendimento } from "@/lib/api";
  * gente, verde = resolvida/saudável, vermelho reservado ao que exige ação.
  */
 export const SITUACAO_LABEL: Record<SituacaoAtendimento, string> = {
+  resposta_perdida: "Resposta não enviada",
   com_ia: "Com a IA",
   aguardando_humano: "Aguardando humano",
   em_atendimento: "Em atendimento",
@@ -29,6 +30,10 @@ export const SITUACAO_LABEL: Record<SituacaoAtendimento, string> = {
  * saber é apenas que ninguém automático vai responder ali.
  */
 export const SITUACAO_CLASSE: Record<SituacaoAtendimento, string> = {
+  // O ÚNICO vermelho entre as situações: é o estado em que o cliente ficou sem
+  // retorno por falha nossa, e não por desenho.
+  resposta_perdida:
+    "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-300",
   com_ia: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   aguardando_humano: "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-300",
   em_atendimento: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
@@ -45,6 +50,8 @@ export const SITUACAO_CLASSE: Record<SituacaoAtendimento, string> = {
  * intencional.
  */
 export const SITUACAO_AJUDA: Record<SituacaoAtendimento, string> = {
+  resposta_perdida:
+    "A resposta esgotou as tentativas de envio e o cliente não recebeu nada. Reenvie pelo drawer.",
   com_ia: "A IA responde a próxima mensagem deste cliente.",
   aguardando_humano:
     "A IA transferiu para um setor e ninguém assumiu. Precisa de atendente.",

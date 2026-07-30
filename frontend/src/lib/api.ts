@@ -585,6 +585,7 @@ export type TipoVisualizacao =
  * já havia divergido: o web dizia "Em andamento" e o app "Em atendimento".
  */
 export type SituacaoAtendimento =
+  | "resposta_perdida"
   | "com_ia"
   | "aguardando_humano"
   | "em_atendimento"

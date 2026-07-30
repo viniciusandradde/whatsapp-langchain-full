@@ -77,15 +77,23 @@ class TestCamposDerivados:
         assert campos["nao_lidas"].default == 0
 
     def test_enriquecimento_nao_derruba_a_listagem(self) -> None:
-        """As duas consultas extras são best-effort, com try/except cada uma.
+        """TODA consulta extra é best-effort, cada uma com seu try/except.
 
-        Whitelist e contador de não lidas são acessórios: falhar num deles não
-        pode transformar a tela de atendimento numa tela de erro.
+        Whitelist, contador de não lidas e resposta perdida são acessórios:
+        falhar num deles não pode transformar a tela de atendimento numa tela de
+        erro. O operador prefere um selo impreciso a uma lista que não abre.
+
+        Compara try com except em vez de fixar um número: o teste continua
+        valendo quando entrar o quarto enriquecimento, mas quebra se alguém
+        acrescentar um sem proteção.
         """
         from whatsapp_langchain.shared import atendimento as mod
 
         fonte = inspect.getsource(mod._preencher_derivados)
-        assert fonte.count("except Exception") == 2
+        tries = fonte.count("    try:")
+        excepts = fonte.count("except Exception")
+        assert tries >= 3, f"esperava ao menos 3 consultas guardadas, achei {tries}"
+        assert tries == excepts, f"{tries} try para {excepts} except — falta guarda"
 
     def test_ia_ativa_so_para_com_ia(self) -> None:
         """`aguardando_humano` é o gate que CALA o agente — marcar como IA ativa
