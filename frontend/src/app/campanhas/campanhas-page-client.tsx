@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Megaphone, Plus, Send, X } from "lucide-react";
 
+import { toast } from "sonner";
+
+import { PageHeader } from "@/components/page-header";
+import { dataHora, plural } from "@/lib/formato";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,13 +52,16 @@ const STATUS_LABELS: Record<Campanha["status"], string> = {
   aborted: "abortada",
 };
 
-const STATUS_VARIANTS: Record<Campanha["status"], "default" | "outline" | "secondary" | "destructive"> = {
-  draft: "outline",
-  scheduled: "default",
-  running: "default",
-  done: "secondary",
-  partial: "outline",
-  aborted: "destructive",
+const STATUS_VARIANTS: Record<
+  Campanha["status"],
+  "default" | "outline" | "secondary" | "destructive" | "success" | "warning"
+> = {
+  draft: "outline", // ainda não saiu
+  scheduled: "secondary", // marcada, aguardando a hora
+  running: "default", // saindo agora
+  done: "success", // terminou inteira
+  partial: "warning", // terminou com parte não entregue
+  aborted: "destructive", // interrompida
 };
 
 /** Só WABA (Meta) e Twilio têm template HSM; Evolution não. Espelha o
@@ -70,8 +77,6 @@ export function CampanhasPageClient({
 }: Props) {
   const [campanhas, setCampanhas] = useState(initialCampanhas);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Modo de conteúdo: texto livre (janela 24h) OU template HSM aprovado.
@@ -122,7 +127,6 @@ export function CampanhasPageClient({
 
   async function adicionarDoCrm() {
     setCrmLoading(true);
-    setError(null);
     const r = await previewCrmAction({
       tags: crmTags.size ? [...crmTags] : undefined,
       segmento: crmSegmento.trim() || null,
@@ -131,7 +135,7 @@ export function CampanhasPageClient({
     });
     setCrmLoading(false);
     if (!r.ok) {
-      setError(r.error);
+      toast.error(r.error);
       return;
     }
     // mescla com o textarea, dedupe.
@@ -143,20 +147,19 @@ export function CampanhasPageClient({
     );
     for (const t of r.data.telefones) atuais.add(t);
     setTelefonesText([...atuais].join("\n"));
-    setSuccess(`${r.data.total} contato(s) do CRM adicionado(s) à lista.`);
+    toast.success(`${plural(r.data.total, "contato")} do CRM na lista.`);
   }
 
   async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
     setMediaUploading(true);
-    setError(null);
     const fd = new FormData();
     fd.set("file", f);
     const r = await uploadCampanhaMediaAction(fd);
     setMediaUploading(false);
     if (!r.ok) {
-      setError(r.error);
+      toast.error(r.error);
       return;
     }
     setMediaUrl(r.data.media_url);
@@ -221,8 +224,7 @@ export function CampanhasPageClient({
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
+    toast.success(null);
     const fd = new FormData(e.currentTarget);
     const telefonesRaw = String(fd.get("telefones") || "").trim();
     const telefones = telefonesRaw
@@ -231,7 +233,7 @@ export function CampanhasPageClient({
       .filter(Boolean);
 
     if (telefones.length === 0) {
-      setError("Adicione ao menos 1 telefone.");
+      toast.error("Adicione ao menos 1 telefone.");
       return;
     }
     if (
@@ -239,15 +241,15 @@ export function CampanhasPageClient({
       !String(fd.get("mensagem") || "").trim() &&
       !mediaUrl
     ) {
-      setError("Escreva uma mensagem ou anexe uma foto.");
+      toast.error("Escreva uma mensagem ou anexe uma foto.");
       return;
     }
     if (modo === "template" && !templateId) {
-      setError("Escolha um template aprovado (ou use Texto livre).");
+      toast.error("Escolha um template aprovado (ou use Texto livre).");
       return;
     }
     if (modo === "template" && templateKeys.some((k) => !(templateVars[k] ?? "").trim())) {
-      setError("Preencha todas as variáveis do template ({{nome}} usa o nome do cliente).");
+      toast.error("Preencha todas as variáveis do template ({{nome}} usa o nome do cliente).");
       return;
     }
 
@@ -292,45 +294,37 @@ export function CampanhasPageClient({
     startTransition(async () => {
       const r = await createCampanhaAction(body);
       if (!r.ok) {
-        setError(r.error);
+        toast.error(r.error);
         return;
       }
       setCampanhas([r.data, ...campanhas]);
       setCreating(false);
-      setSuccess(`Campanha criada com ${r.data.total_destinatarios} destinatário(s).`);
+      toast.success(`Campanha criada com ${plural(r.data.total_destinatarios, "destinatário")}.`);
     });
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Megaphone className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Campanhas</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Broadcast de mensagem pra lista de telefones via WhatsApp.
-            </p>
-          </div>
-        </div>
-        <Button
-          onClick={() => setCreating(true)}
-          disabled={creating || isPending}
-        >
-          <Plus className="size-4" />
-          Nova campanha
-        </Button>
-      </div>
+      <PageHeader
+        titulo="Campanhas"
+        descricao="Envio de mensagem em massa para uma lista de telefones no WhatsApp."
+        icon={Megaphone}
+        acoes={
+          <Button
+            onClick={() => setCreating(true)}
+            disabled={creating || isPending}
+          >
+            <Plus className="size-4" />
+            Nova campanha
+          </Button>
+        }
+      />
 
       {loadError && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {loadError}
         </p>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {success && <p className="text-sm text-emerald-300">{success}</p>}
 
       {creating && (
         <Card>
@@ -740,7 +734,7 @@ export function CampanhasPageClient({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-                      Duração da pausa (s)
+                      Duração da pausa (segundos)
                     </label>
                     <input
                       type="number"
@@ -779,7 +773,7 @@ export function CampanhasPageClient({
                       defaultValue="broadcast"
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
-                      <option value="broadcast">Broadcast (livre)</option>
+                      <option value="broadcast">Mensagem livre</option>
                       <option value="transactional">Transacional</option>
                       <option value="reativacao">Reativação</option>
                     </select>
@@ -864,7 +858,7 @@ export function CampanhasPageClient({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {campanhas.length} campanha(s)
+            {plural(campanhas.length, "campanha")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -888,9 +882,19 @@ export function CampanhasPageClient({
                         </Badge>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {c.enviados}/{c.total_destinatarios} enviados ·
-                        {" "}{c.falhas} falhas ·{" "}
-                        {new Date(c.created_at).toLocaleString("pt-BR")}
+                        {c.enviados}/{c.total_destinatarios} enviados
+                        {c.falhas > 0 && (
+                          <>
+                            {" · "}
+                            {/* Falha é o que decide se o operador abre a
+                                campanha; em cinza junto do resto, some. */}
+                            <span className="font-medium text-destructive">
+                              {plural(c.falhas, "falha")}
+                            </span>
+                          </>
+                        )}
+                        {" · "}
+                        {dataHora(c.created_at)}
                       </p>
                     </div>
                   </Link>
