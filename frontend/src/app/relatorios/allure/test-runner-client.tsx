@@ -293,7 +293,7 @@ export function TestRunnerClient({ initialRuns }: Props) {
         <CardContent>
           {runs.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Nenhum run ainda. Clique em "Iniciar" pra disparar a primeira bateria.
+              Nenhum run ainda. Clique em &quot;Iniciar&quot; pra disparar a primeira bateria.
             </p>
           ) : (
             <table className="w-full text-sm">

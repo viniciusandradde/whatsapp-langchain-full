@@ -190,7 +190,7 @@ export function PastasList({
       // Atualiza docs_count da pasta destino
       setPastas((prev) =>
         prev.map((p) => {
-          let count = next.filter((d) => d.pasta_id === p.id).length;
+          const count = next.filter((d) => d.pasta_id === p.id).length;
           return { ...p, docs_count: count };
         })
       );

@@ -101,7 +101,7 @@ export default async function RunDetailPage({ params }: Props) {
               Allure CLI falhou ao gerar HTML (verificar logs do container
               tests)
             </li>
-            <li>Run cancelado via "Parar"</li>
+            <li>Run cancelado via &quot;Parar&quot;</li>
           </ul>
           <p className="mt-3 text-sm text-amber-900 dark:text-amber-200">
             Veja os logs do run na tela anterior pra entender o erro.
