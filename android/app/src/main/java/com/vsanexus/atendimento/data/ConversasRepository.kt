@@ -10,12 +10,22 @@ import kotlinx.coroutines.flow.flowOf
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** As quatro abas que a API expõe em `tipo`. */
+/**
+ * As abas da lista — as mesmas cinco do painel web, espelhando o Chatvolt.
+ *
+ * "Grupos" saiu: o servidor sempre devolveu lista vazia pra ela
+ * (`shared/atendimento.py` faz short-circuit), então era uma aba que só
+ * mostrava "nenhuma conversa" e ocupava um quinto da barra no celular.
+ *
+ * Títulos curtos de propósito: na largura de um telefone, cinco abas só cabem
+ * com rótulo enxuto — "Humano Solicitado" viraria duas linhas.
+ */
 enum class Aba(val valor: String, val titulo: String) {
-    MEUS("meus", "Meus"),
-    AGUARDANDO("aguardando", "Aguardando"),
-    GRUPOS("grupos", "Grupos"),
-    OUTROS("outros", "Outros"),
+    NAO_RESOLVIDAS("nao_resolvidas", "Abertas"),
+    NAO_LIDAS("nao_lidas", "Não lidas"),
+    HUMANO_SOLICITADO("humano_solicitado", "Humano"),
+    RESOLVIDAS("resolvidas", "Resolvidas"),
+    TODAS("todas", "Todas"),
 }
 
 sealed interface Sincronizacao {
@@ -90,4 +100,6 @@ private fun AtendimentoDto.toEntity(empresaId: Long, aba: String) =
         departamentoId = departamentoId,
         conexaoNome = conexaoNome,
         ultimaMensagemEm = lastMessageAt,
+        situacao = situacao,
+        naoLidas = naoLidas,
     )

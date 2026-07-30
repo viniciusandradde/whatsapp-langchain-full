@@ -34,7 +34,8 @@ data class ConversaEntity(
     @PrimaryKey val id: Long,
     val empresaId: Long,
     /**
-     * Qual aba trouxe esta conversa (`meus`, `aguardando`, `grupos`, `outros`).
+     * Qual aba trouxe esta conversa (`nao_resolvidas`, `nao_lidas`,
+     * `humano_solicitado`, `resolvidas`, `todas`).
      *
      * Guardado porque o servidor decide o pertencimento aplicando RBAC
      * record-level — o app não tem como recalcular. Uma conversa pode aparecer
@@ -62,6 +63,15 @@ data class ConversaEntity(
     val ultimaMensagemEm: String?,
     /** Prévia da última mensagem, quando conhecida. Preenchida ao abrir. */
     val previa: String? = null,
+    /**
+     * Situação derivada no servidor — o que o selo do cartão mostra.
+     *
+     * Default otimista: se vier vazio (payload de servidor antigo), a conversa
+     * aparece como "Com a IA" em vez de sumir da lista.
+     */
+    val situacao: String = "com_ia",
+    /** Mensagens do cliente desde a última vez que este usuário abriu. */
+    val naoLidas: Int = 0,
     /** Momento da sincronização — usado pra decidir se vale refazer. */
     val sincronizadoEm: Long = System.currentTimeMillis(),
 )
@@ -111,7 +121,7 @@ interface ConversaDao {
     entities = [ConversaEntity::class],
     // v2: campos de triagem (classificação, sentimento, resumo da IA). Cache
     // descartável, então a migração é destrutiva e recria a tabela.
-    version = 2,
+    version = 3,
     // Cache descartável: não exporto schema porque não haverá migração escrita
     // à mão — ver o comentário de ConversaEntity.
     exportSchema = false,

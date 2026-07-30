@@ -63,6 +63,14 @@ data class AtendimentoDto(
     val sentimento: String? = null,
     @SerialName("resumo_ia") val resumoIa: String? = null,
     @SerialName("triagem_completa") val triagemCompleta: Boolean? = null,
+    /**
+     * Situação derivada no servidor (`derivar_situacao`).
+     *
+     * Default otimista: servidor antigo não manda o campo, e a conversa deve
+     * aparecer mesmo assim — lista vazia é pior que selo impreciso.
+     */
+    val situacao: String = "com_ia",
+    @SerialName("nao_lidas") val naoLidas: Int = 0,
     @SerialName("last_message_at") val lastMessageAt: String? = null,
     @SerialName("conexao_nome") val conexaoNome: String? = null,
 )

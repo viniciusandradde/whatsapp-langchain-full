@@ -55,7 +55,7 @@ class ConversasRepositoryTest {
                     },
                 )
 
-            val r = repo(api, dao).sincronizar(Aba.AGUARDANDO)
+            val r = repo(api, dao).sincronizar(Aba.NAO_RESOLVIDAS)
 
             assertTrue(r is Sincronizacao.Ok)
             assertEquals(listOf("Ana", "Bruno"), dao.salvos.map { it.clienteNome })
@@ -70,12 +70,12 @@ class ConversasRepositoryTest {
             val dao = FakeDao(existentes = listOf(entidade(9, "Já estava aqui")))
             val api = FakeApi(aoListar = { throw java.io.IOException("sem rede") })
 
-            val r = repo(api, dao).sincronizar(Aba.AGUARDANDO)
+            val r = repo(api, dao).sincronizar(Aba.NAO_RESOLVIDAS)
 
             assertTrue(r is Sincronizacao.Falha)
             // O ponto do teste: NADA foi apagado.
             assertEquals(0, dao.vezesQueLimpou)
-            assertEquals(1, dao.observar(1L, "aguardando").first().size)
+            assertEquals(1, dao.observar(1L, "nao_resolvidas").first().size)
         }
 
     @Test
@@ -85,13 +85,59 @@ class ConversasRepositoryTest {
             var chamou = false
             val api = FakeApi(aoListar = { chamou = true; AtendimentosResponse() })
 
-            val r = repo(api, dao, empresaId = null).sincronizar(Aba.AGUARDANDO)
+            val r = repo(api, dao, empresaId = null).sincronizar(Aba.NAO_RESOLVIDAS)
 
             assertTrue(r is Sincronizacao.Falha)
             // Sem empresa a API responderia 403 (get_empresa_context exige
             // membership); chamar seria só gastar rede pra tomar erro.
             assertEquals(false, chamou)
-            assertEquals(emptyList<ConversaEntity>(), repo(api, dao, null).observar(Aba.MEUS).first())
+            assertEquals(emptyList<ConversaEntity>(), repo(api, dao, null).observar(Aba.TODAS).first())
+        }
+
+    @Test
+    fun `situacao e nao lidas do servidor chegam na entidade`() =
+        runTest {
+            // O app NÃO recalcula a situação: ela vem derivada do servidor, pra
+            // web e app dizerem a mesma coisa. Se o mapeamento perder o campo, o
+            // cartão mostra "Com a IA" (o default) numa conversa em whitelist —
+            // exatamente a confusão que a mudança veio desfazer.
+            val dao = FakeDao()
+            val api =
+                FakeApi(
+                    aoListar = {
+                        AtendimentosResponse(
+                            listOf(
+                                AtendimentoDto(
+                                    id = 1,
+                                    empresaId = 1,
+                                    clienteNome = "Ana",
+                                    status = "aguardando",
+                                    situacao = "sem_automacao",
+                                    naoLidas = 3,
+                                ),
+                            ),
+                        )
+                    },
+                )
+
+            repo(api, dao).sincronizar(Aba.NAO_RESOLVIDAS)
+
+            assertEquals("sem_automacao", dao.salvos.single().situacao)
+            assertEquals(3, dao.salvos.single().naoLidas)
+        }
+
+    @Test
+    fun `payload sem os campos novos nao esconde a conversa`() =
+        runTest {
+            // Servidor antigo (ou rollback) não manda `situacao`. A conversa tem
+            // que aparecer mesmo assim — lista vazia é pior que selo impreciso.
+            val dao = FakeDao()
+            val api = FakeApi(aoListar = { AtendimentosResponse(listOf(dto(9, "Bruno"))) })
+
+            repo(api, dao).sincronizar(Aba.NAO_RESOLVIDAS)
+
+            assertEquals("com_ia", dao.salvos.single().situacao)
+            assertEquals(0, dao.salvos.single().naoLidas)
         }
 
     @Test
@@ -105,7 +151,7 @@ class ConversasRepositoryTest {
                     registraBusca = { buscaRecebida = it },
                 )
 
-            repo(api, dao).sincronizar(Aba.MEUS, busca = "   ")
+            repo(api, dao).sincronizar(Aba.TODAS, busca = "   ")
 
             // `q` vazio no endpoint viraria filtro por string vazia; melhor
             // omitir.
@@ -120,7 +166,7 @@ private fun entidade(id: Long, nome: String) =
     ConversaEntity(
         id = id,
         empresaId = 1,
-        aba = "aguardando",
+        aba = "nao_resolvidas",
         clienteNome = nome,
         clienteTelefone = null,
         status = "aguardando",

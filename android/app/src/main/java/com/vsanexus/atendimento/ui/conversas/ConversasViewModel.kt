@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class ConversasUiState(
-    val aba: Aba = Aba.AGUARDANDO,
+    val aba: Aba = Aba.NAO_RESOLVIDAS,
     val busca: String = "",
     val sincronizando: Boolean = false,
     val avisoSincronizacao: String? = null,
@@ -40,7 +40,7 @@ constructor(
     private val _ui = MutableStateFlow(ConversasUiState())
     val ui: StateFlow<ConversasUiState> = _ui.asStateFlow()
 
-    private val abaSelecionada = MutableStateFlow(Aba.AGUARDANDO)
+    private val abaSelecionada = MutableStateFlow(Aba.NAO_RESOLVIDAS)
     private val textoBusca = MutableStateFlow("")
 
     /**

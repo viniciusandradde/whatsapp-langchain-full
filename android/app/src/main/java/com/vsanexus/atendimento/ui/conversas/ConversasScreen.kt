@@ -194,7 +194,15 @@ private fun CartaoConversa(c: ConversaEntity, onClick: () -> Unit) {
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Etiqueta(rotuloStatus(c.status), corDeStatus(c.status))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Contador ANTES do selo: é ele que decide se o operador
+                        // abre a conversa agora.
+                        if (c.naoLidas > 0) {
+                            MarcaNaoLida(c.naoLidas)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Etiqueta(rotuloSituacao(c.situacao), corDeSituacao(c.situacao))
+                    }
                     if (c.prioridade != null) {
                         Spacer(Modifier.height(4.dp))
                         Etiqueta(c.prioridade, corDePrioridade(c.prioridade))
@@ -263,20 +271,60 @@ private fun Etiqueta(texto: String, cor: Color, monoespaçada: Boolean = false) 
     }
 }
 
-private fun rotuloStatus(status: String) =
-    when (status) {
-        "aguardando" -> "Aguardando"
-        "em_andamento" -> "Em atendimento"
-        "resolvido" -> "Resolvido"
-        "abandonado" -> "Abandonado"
-        else -> status
+/**
+ * Bolinha com o número de mensagens novas do cliente.
+ *
+ * Vermelho é o único uso dessa cor na lista, de propósito: é o sinal que compete
+ * pela atenção. O selo de situação usa tons suaves justamente pra não disputar.
+ */
+@Composable
+private fun MarcaNaoLida(quantidade: Int) {
+    Surface(
+        color = MaterialTheme.colorScheme.error,
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            if (quantidade > 99) "99+" else "$quantidade",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onError,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+/**
+ * Rótulo da situação — o MESMO texto do painel web.
+ *
+ * Antes vinha de `status` cru, e as telas divergiam: o app dizia "Em
+ * atendimento" onde o web dizia "Em andamento" para o mesmo estado. Agora o
+ * servidor manda `situacao` pronta (`shared/atendimento.py::derivar_situacao`).
+ */
+private fun rotuloSituacao(situacao: String) =
+    when (situacao) {
+        "com_ia" -> "Com a IA"
+        "aguardando_humano" -> "Aguardando humano"
+        "em_atendimento" -> "Em atendimento"
+        "sem_automacao" -> "Sem automação"
+        "resolvida" -> "Resolvida"
+        "abandonada" -> "Abandonada"
+        else -> situacao
     }
 
+/**
+ * Cor do selo.
+ *
+ * `sem_automacao` fica NEUTRO e não em vermelho: não é erro, é configuração
+ * (whitelist ou conexão em modo manual). Vermelho faria o operador tentar
+ * consertar o que está como foi pedido — e competiria com a marca de não lida,
+ * que é o sinal que de fato pede ação.
+ */
 @Composable
-private fun corDeStatus(status: String): Color =
-    when (status) {
-        "aguardando" -> MaterialTheme.colorScheme.secondaryContainer
-        "em_andamento" -> MaterialTheme.colorScheme.primaryContainer
+private fun corDeSituacao(situacao: String): Color =
+    when (situacao) {
+        "com_ia" -> MaterialTheme.colorScheme.secondaryContainer
+        "aguardando_humano" -> MaterialTheme.colorScheme.tertiaryContainer
+        "em_atendimento" -> MaterialTheme.colorScheme.primaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
 
