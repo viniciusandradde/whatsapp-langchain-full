@@ -102,3 +102,41 @@ class TestCamposDerivados:
 
         fonte = inspect.getsource(mod._preencher_derivados)
         assert 'atd.situacao == "com_ia"' in fonte
+
+
+class TestTagDeClienteTemUmaTabelaSo:
+    """Guarda contra a volta da `cliente_tag_v2`.
+
+    Havia duas tabelas de tag de cliente, e o filtro das abas foi escrito sobre a
+    órfã — teria dado pasta permanentemente vazia, sem erro na tela. Removida na
+    mig 149. Este teste existe para o próximo autocomplete não ressuscitá-la.
+    """
+
+    def test_nenhum_sql_consulta_a_v2(self) -> None:
+        import pathlib
+
+        raiz = pathlib.Path(__file__).resolve().parents[2] / "src"
+        ofensores = []
+        for arq in raiz.rglob("*.py"):
+            for n, linha in enumerate(arq.read_text(encoding="utf-8").splitlines(), 1):
+                if "cliente_tag_v2" not in linha:
+                    continue
+                # Menção histórica em comentário/docstring é intencional: explica
+                # por que a tabela não existe. SQL, não.
+                nu = linha.strip()
+                if nu.startswith("#") or nu.startswith("*") or '"""' in nu:
+                    continue
+                if any(
+                    k in linha.upper()
+                    for k in ("SELECT", "INSERT", "DELETE", "FROM", "JOIN")
+                ):
+                    ofensores.append(f"{arq.name}:{n}")
+        assert not ofensores, f"SQL tocando a tabela removida: {ofensores}"
+
+    def test_aba_filtra_pela_tabela_viva(self) -> None:
+        import inspect
+
+        from whatsapp_langchain.shared.aba import cliente_ids_da_aba
+
+        fonte = inspect.getsource(cliente_ids_da_aba)
+        assert "FROM cliente_tag ct" in fonte

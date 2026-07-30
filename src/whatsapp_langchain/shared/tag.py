@@ -1,6 +1,7 @@
 """CRUD de tags da empresa (Sprint Atendimento UX 1.2).
 
-Tabela `tag` é da mig 052 — multi-tag por cliente (`cliente_tag_v2`).
+Tabela `tag` é da mig 052. Vocabulário compartilhado: as mesmas tags são
+aplicadas em atendimento (`atendimento_tag`) e em cliente (`cliente_tag`).
 Esta sprint amplia o uso pra atendimento via `atendimento_tag` (mig 086).
 
 Permissões:
@@ -168,7 +169,11 @@ async def update_tag(
 async def delete_tag(
     pool: AsyncConnectionPool, *, tag_id: int, empresa_id: int
 ) -> bool:
-    """Hard delete da tag (CASCADE: remove de atendimento_tag e cliente_tag_v2).
+    """Hard delete da tag (CASCADE: remove de `atendimento_tag`).
+
+    Tag de CLIENTE é texto livre em `cliente_tag`, sem FK — apagar a tag aqui
+    não a remove dos clientes. É assimetria do schema, não esquecimento: a
+    tabela com FK (`cliente_tag_v2`) foi removida na mig 149 por estar órfã.
 
     Retorna False se tag não é da empresa.
     """

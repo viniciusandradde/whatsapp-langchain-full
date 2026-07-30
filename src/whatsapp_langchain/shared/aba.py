@@ -240,12 +240,11 @@ async def cliente_ids_da_aba(
     O critério vive em `aba.filtro` (JSONB), coluna criada na mig 050 justamente
     pra isso e até agora sem uso.
 
-    **Usa `cliente_tag` (nome), não `cliente_tag_v2` (FK).** Há duas tabelas de
-    tag de cliente no banco e só a primeira está viva: `cliente_tag` tem 36
-    linhas e é onde `POST /api/clientes/{id}/tags` grava e de onde
-    `Cliente.tags` lê; `cliente_tag_v2` tem 5 linhas órfãs e **nenhum código
-    escreve nela**. Filtrar pela v2 daria pasta sempre vazia, com o operador
-    marcando o cliente e nada acontecendo.
+    Usa `cliente_tag`, onde `POST /api/clientes/{id}/tags` grava e de onde
+    `Cliente.tags` lê. Havia uma segunda tabela (`cliente_tag_v2`, com FK) que
+    este filtro chegou a usar por engano — órfã, sem nenhuma escrita, teria dado
+    pasta sempre vazia com o operador marcando o cliente e nada acontecendo.
+    Removida na mig 149.
 
     Returns:
         Lista de `cliente_id`, possivelmente vazia (aba sem nenhum cliente).
