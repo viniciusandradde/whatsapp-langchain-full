@@ -228,6 +228,19 @@ private fun CartaoConversa(c: ConversaEntity, onClick: () -> Unit) {
                 )
             }
 
+            // Tags do CLIENTE — identificam a pessoa (instituição, turma) e são
+            // o que alimenta as abas. Vêm antes das da triagem porque não mudam
+            // a cada conversa.
+            if (c.clienteTags.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    c.clienteTags.split("|").filter { it.isNotBlank() }.forEach {
+                        Etiqueta(it, MaterialTheme.colorScheme.primaryContainer)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+            }
+
             val marcadores = listOfNotNull(c.classificacao, c.sentimento)
             if (marcadores.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))

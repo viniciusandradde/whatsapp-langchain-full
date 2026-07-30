@@ -72,6 +72,14 @@ data class ConversaEntity(
     val situacao: String = "com_ia",
     /** Mensagens do cliente desde a última vez que este usuário abriu. */
     val naoLidas: Int = 0,
+    /**
+     * Tags do cliente, separadas por `|`.
+     *
+     * Texto e não tabela relacionada: o Room precisaria de conversor e de uma
+     * segunda entidade para guardar 2-3 rótulos curtos que só são LIDOS, nunca
+     * consultados. `|` porque tag não aceita esse caractere.
+     */
+    val clienteTags: String = "",
     /** Momento da sincronização — usado pra decidir se vale refazer. */
     val sincronizadoEm: Long = System.currentTimeMillis(),
 )
@@ -121,7 +129,7 @@ interface ConversaDao {
     entities = [ConversaEntity::class],
     // v2: campos de triagem (classificação, sentimento, resumo da IA). Cache
     // descartável, então a migração é destrutiva e recria a tabela.
-    version = 3,
+    version = 4,
     // Cache descartável: não exporto schema porque não haverá migração escrita
     // à mão — ver o comentário de ConversaEntity.
     exportSchema = false,

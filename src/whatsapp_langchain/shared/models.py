@@ -672,6 +672,10 @@ class Atendimento(BaseModel):
     # aqui `STATUS_LABEL` estava triplicado e já havia divergido — o web dizia
     # "Em andamento" e o app "Em atendimento" para o mesmo estado.
     situacao: str = "com_ia"
+    # Tags do CLIENTE (não do atendimento). Identificam a PESSOA — instituição,
+    # turma, vínculo — e são o que alimenta as abas. Tag do atendimento vale só
+    # para aquela conversa; esta segue o cliente.
+    cliente_tags: list[str] = Field(default_factory=list)
     # A IA vai responder a próxima mensagem deste cliente? Eixo separado de
     # propósito, como o `isAiEnabled` do Chatvolt: combinações novas de estado
     # não exigem rótulo novo.

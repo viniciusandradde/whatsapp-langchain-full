@@ -102,4 +102,5 @@ private fun AtendimentoDto.toEntity(empresaId: Long, aba: String) =
         ultimaMensagemEm = lastMessageAt,
         situacao = situacao,
         naoLidas = naoLidas,
+        clienteTags = clienteTags.joinToString("|"),
     )

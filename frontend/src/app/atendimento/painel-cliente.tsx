@@ -13,15 +13,21 @@ import {
   Loader2,
   PauseCircle,
   Phone,
+  Tag as TagIcon,
   User as UserIcon,
   XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Atendimento } from "@/lib/api";
+import type { Atendimento, Tag } from "@/lib/api";
 
-import { loadClienteHistoricoAction } from "./actions";
+import {
+  aplicarTagsClienteAction,
+  loadClienteHistoricoAction,
+  loadTagsAction,
+  loadTagsClienteAction,
+} from "./actions";
 
 type StatusKey = "aguardando" | "em_andamento" | "resolvido" | "abandonado";
 
@@ -139,6 +145,11 @@ export function PainelCliente({
             </Link>
           </div>
 
+          {/* Tags do CLIENTE — alimentam as abas, que agrupam por pessoa.
+              Marcar aqui vale pra TODA conversa dele, inclusive as próximas;
+              tag no atendimento valeria só pra esta. */}
+          <TagsDoCliente clienteId={clienteId} />
+
           {/* Último atendimento anterior — histórico completo via ficha */}
           <div>
             <div className="mb-1.5 flex items-center justify-between">
@@ -228,5 +239,88 @@ export function PainelCliente({
         </div>
       )}
     </section>
+  );
+}
+
+
+/**
+ * Tags da PESSOA, não da conversa.
+ *
+ * É o que alimenta as abas: uma aba "Mackenzie" mostra as conversas de quem tem
+ * essa tag, e a próxima conversa do mesmo cliente entra sozinha. Até aqui os
+ * endpoints (`POST /api/clientes/{id}/tags`) existiam e **nenhuma tela os
+ * chamava** — as abas ficavam permanentemente vazias.
+ */
+function TagsDoCliente({ clienteId }: { clienteId: number }) {
+  const [disponiveis, setDisponiveis] = useState<Tag[]>([]);
+  const [aplicadas, setAplicadas] = useState<string[] | null>(null);
+  const [salvando, setSalvando] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadTagsAction().then((r) => {
+      if (r.ok) setDisponiveis(r.tags);
+    });
+    void loadTagsClienteAction(clienteId).then((r) => {
+      if (r.ok) setAplicadas(r.tags);
+      else setErro(r.error);
+    });
+  }, [clienteId]);
+
+  async function alternar(nome: string) {
+    if (aplicadas === null || salvando) return;
+    const tinha = aplicadas.includes(nome);
+    // Otimista: a lista responde no toque. Se falhar, volta ao que era — o
+    // servidor é a verdade, e mostrar a tag aplicada sem estar seria pior.
+    const antes = aplicadas;
+    setAplicadas(tinha ? aplicadas.filter((n) => n !== nome) : [...aplicadas, nome]);
+    setSalvando(nome);
+    setErro(null);
+    const r = await aplicarTagsClienteAction(
+      clienteId,
+      tinha ? [] : [nome],
+      tinha ? [nome] : []
+    );
+    setSalvando(null);
+    if (!r.ok) {
+      setAplicadas(antes);
+      setErro(r.error);
+    }
+  }
+
+  if (disponiveis.length === 0) return null;
+
+  return (
+    <div>
+      <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <TagIcon className="h-3 w-3" />
+        Tags do cliente
+      </h3>
+      <div className="flex flex-wrap gap-1.5">
+        {disponiveis.map((t) => {
+          const on = aplicadas?.includes(t.nome) ?? false;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              disabled={aplicadas === null || salvando !== null}
+              onClick={() => void alternar(t.nome)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors disabled:opacity-50 ${
+                on
+                  ? "border-brand-primary bg-brand-primary/15 text-foreground"
+                  : "border-foreground/15 text-muted-foreground hover:bg-muted/50"
+              }`}
+              style={on && t.cor ? { borderColor: t.cor } : undefined}
+            >
+              {salvando === t.nome ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : null}
+              {t.nome}
+            </button>
+          );
+        })}
+      </div>
+      {erro && <p className="mt-1 text-xs text-destructive">{erro}</p>}
+    </div>
   );
 }

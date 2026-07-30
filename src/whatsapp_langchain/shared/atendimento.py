@@ -527,6 +527,24 @@ async def _preencher_derivados(
     except Exception as exc:  # noqa: BLE001
         logger.warning("situacao_resposta_perdida_falhou", erro=str(exc))
 
+    # Tags do cliente, em lote. `cliente_tag` (texto livre) é a tabela VIVA —
+    # ver `shared/aba.py::cliente_ids_da_aba` para o porquê da v2 não servir.
+    tags_por_cliente: dict[int, list[str]] = {}
+    try:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT cliente_id, tag FROM cliente_tag
+                 WHERE cliente_id = ANY(%s)
+                 ORDER BY cliente_id, tag
+                """,
+                ([a.cliente_id for a in itens],),
+            )
+            for cid, tag in await cur.fetchall():
+                tags_por_cliente.setdefault(cid, []).append(tag)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("situacao_tags_cliente_falhou", erro=str(exc))
+
     nao_lidas: dict[int, int] = {}
     if current_user_id:
         try:
@@ -555,6 +573,7 @@ async def _preencher_derivados(
         # como IA ativa faria a UI prometer uma resposta que não vem.
         atd.ia_ativa = atd.situacao == "com_ia"
         atd.nao_lidas = nao_lidas.get(atd.id, 0)
+        atd.cliente_tags = tags_por_cliente.get(atd.cliente_id, [])
 
 
 async def get_atendimento_by_id(

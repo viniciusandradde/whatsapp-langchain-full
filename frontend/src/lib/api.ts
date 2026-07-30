@@ -614,6 +614,8 @@ export interface Atendimento {
   ia_ativa: boolean;
   /** Mensagens do cliente após a última vez que ESTE usuário abriu. */
   nao_lidas: number;
+  /** Tags do CLIENTE (identificam a pessoa; alimentam as abas). */
+  cliente_tags: string[];
   // Sprint 3 padrão profissional (mig 047)
   protocolo: string | null;
   qtde_resposta_invalida: number;
@@ -2029,6 +2031,13 @@ export interface Aba {
   ativo: boolean;
   created_at: string | null;
   updated_at: string | null;
+  /**
+   * Critério da aba: as conversas dos CLIENTES marcados com estas tags.
+   *
+   * A aba deixou de ser pasta manual — pinar conversa a conversa não se
+   * sustenta, porque cada nova conversa do mesmo cliente nasceria fora.
+   */
+  filtro?: { cliente_tags?: string[] } | null;
 }
 
 export interface ContadoresAtendimento {
@@ -2051,6 +2060,7 @@ export async function createAba(payload: {
   descricao: string;
   cor?: string | null;
   icone?: string | null;
+  cliente_tags?: string[];
 }): Promise<Aba> {
   return apiFetch<Aba>("/api/abas", {
     method: "POST",
@@ -2060,7 +2070,13 @@ export async function createAba(payload: {
 
 export async function updateAba(
   abaId: number,
-  payload: { descricao?: string; cor?: string | null; icone?: string | null }
+  payload: {
+    descricao?: string;
+    cor?: string | null;
+    icone?: string | null;
+    /** `undefined` preserva o critério; `[]` limpa (aba fica vazia). */
+    cliente_tags?: string[];
+  }
 ): Promise<Aba> {
   return apiFetch<Aba>(`/api/abas/${abaId}`, {
     method: "PATCH",

@@ -15,7 +15,10 @@ import {
   deleteTag,
   getAtendimentoMensagens,
   getAtendimentoTraceLink,
+  addClienteTag,
+  getCliente,
   getClienteAtendimentosAnteriores,
+  removeClienteTag,
   listTemplates,
   sendAtendimentoTemplate,
   type WabaTemplate,
@@ -298,6 +301,7 @@ export async function createAbaAction(payload: {
   descricao: string;
   cor?: string | null;
   icone?: string | null;
+  cliente_tags?: string[];
 }): Promise<AbaResult> {
   try {
     const aba = await createAba(payload);
@@ -310,7 +314,12 @@ export async function createAbaAction(payload: {
 
 export async function updateAbaAction(
   abaId: number,
-  payload: { descricao?: string; cor?: string | null; icone?: string | null }
+  payload: {
+    descricao?: string;
+    cor?: string | null;
+    icone?: string | null;
+    cliente_tags?: string[];
+  }
 ): Promise<AbaResult> {
   try {
     const aba = await updateAba(abaId, payload);
@@ -507,6 +516,46 @@ export async function loadClienteHistoricoAction(
   try {
     const r = await getClienteAtendimentosAnteriores(clienteId, options);
     return { ok: true, atendimentos: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Tags do CLIENTE (alimentam as abas, que agrupam por cliente) ---
+
+export type ClienteTagsResult =
+  | { ok: true; tags: string[] }
+  | { ok: false; error: string };
+
+export async function loadTagsClienteAction(
+  clienteId: number
+): Promise<ClienteTagsResult> {
+  try {
+    const r = await getCliente(clienteId);
+    return { ok: true, tags: r.cliente.tags ?? [] };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/**
+ * Aplica o delta de tags no cliente.
+ *
+ * Delta e não substituição: a API do cliente é `POST /tags` e
+ * `DELETE /tags/{tag}` — não existe endpoint que troque o conjunto inteiro, e
+ * emular isso apagando tudo antes deixaria o cliente sem tag nenhuma se a
+ * segunda chamada falhasse.
+ */
+export async function aplicarTagsClienteAction(
+  clienteId: number,
+  add: string[],
+  remove: string[]
+): Promise<Result> {
+  try {
+    for (const t of add) await addClienteTag(clienteId, t);
+    for (const t of remove) await removeClienteTag(clienteId, t);
+    revalidatePath("/atendimento");
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

@@ -71,6 +71,8 @@ data class AtendimentoDto(
      */
     val situacao: String = "com_ia",
     @SerialName("nao_lidas") val naoLidas: Int = 0,
+    /** Tags do CLIENTE — identificam a pessoa e alimentam as abas. */
+    @SerialName("cliente_tags") val clienteTags: List<String> = emptyList(),
     @SerialName("last_message_at") val lastMessageAt: String? = null,
     @SerialName("conexao_nome") val conexaoNome: String? = null,
 )

@@ -127,6 +127,19 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     mono
                   />
                 )}
+                {a.cliente_tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {a.cliente_tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center rounded-full border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-[10px] font-medium"
+                        title="Tag do cliente"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {(a.classificacao || a.sentimento) && (
                   <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
                     {a.classificacao && (

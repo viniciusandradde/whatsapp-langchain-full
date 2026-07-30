@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Loader2, X } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { Check, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Aba } from "@/lib/api";
+import type { Aba, Tag } from "@/lib/api";
 
-import { createAbaAction, updateAbaAction } from "./actions";
+import { createAbaAction, loadTagsAction, updateAbaAction } from "./actions";
 
 const CORES = [
   "#64748b", // slate
@@ -33,6 +33,26 @@ export function AbaModal({ aba, onClose }: Props) {
   const [, startTransition] = useTransition();
   const [submitting, setSubmitting] = useState(false);
 
+  // Critério da aba: tags de CLIENTE. A conversa entra sozinha quando o cliente
+  // tem a tag — e a próxima conversa dele também, que é o ponto.
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [escolhidas, setEscolhidas] = useState<string[]>(
+    aba?.filtro?.cliente_tags ?? []
+  );
+
+  useEffect(() => {
+    loadTagsAction().then((r) => {
+      if (r.ok) setTags(r.tags);
+    });
+  }, []);
+
+  const alternar = (nome: string) =>
+    setEscolhidas((atual) =>
+      atual.includes(nome)
+        ? atual.filter((n) => n !== nome)
+        : [...atual, nome]
+    );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const desc = descricao.trim();
@@ -44,8 +64,16 @@ export function AbaModal({ aba, onClose }: Props) {
     setSubmitting(true);
     startTransition(async () => {
       const result = isEdit
-        ? await updateAbaAction(aba!.id, { descricao: desc, cor })
-        : await createAbaAction({ descricao: desc, cor });
+        ? await updateAbaAction(aba!.id, {
+            descricao: desc,
+            cor,
+            cliente_tags: escolhidas,
+          })
+        : await createAbaAction({
+            descricao: desc,
+            cor,
+            cliente_tags: escolhidas,
+          });
       setSubmitting(false);
       if (result.ok) {
         onClose(true);
@@ -112,6 +140,48 @@ export function AbaModal({ aba, onClose }: Props) {
                 />
               ))}
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Clientes com estas tags
+            </label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              A aba se preenche sozinha: toda conversa desses clientes aparece
+              aqui, inclusive as próximas. Marque a tag no cliente pelo painel
+              lateral da conversa.
+            </p>
+            {tags.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Nenhuma tag cadastrada ainda.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((t) => {
+                  const on = escolhidas.includes(t.nome);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => alternar(t.nome)}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                        on
+                          ? "border-brand-primary bg-brand-primary/15 font-medium text-foreground"
+                          : "border-foreground/15 text-muted-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      {on && <Check className="size-3" />}
+                      {t.nome}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {escolhidas.length === 0 && (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                Sem tag marcada, a aba fica vazia.
+              </p>
+            )}
           </div>
 
           {error && (
