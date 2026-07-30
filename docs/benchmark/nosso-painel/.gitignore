@@ -1,0 +1,15 @@
+# Captura do NOSSO painel em produção — imagem nenhuma entra no repositório.
+#
+# As telas são de conta real: aparecem telefone e nome de cliente, conteúdo de
+# conversa, e-mail de usuário da empresa e ID de empresa no cabeçalho. É o mesmo
+# motivo do .gitignore da captura do Chatvolt, agravado por serem dados dos
+# nossos clientes, não de uma conta de teste.
+#
+# Regra prática: só o .md de análise entra em repositório. Se precisar publicar
+# uma imagem, escolha arquivo por arquivo, borre o que for dado pessoal, e
+# force com -f.
+
+img/
+dom/
+*.json
+__pycache__/
