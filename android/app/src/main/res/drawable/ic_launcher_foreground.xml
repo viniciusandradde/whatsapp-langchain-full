@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Balão de conversa simples, em vetor. Ícone adaptativo dispensa PNG por
+     densidade (minSdk 26), então o app não carrega bitmaps de launcher. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30c-13.3,0 -24,8.5 -24,19c0,5.9 3.4,11.2 8.8,14.7l-2.3,8.6c-0.3,1.1 0.9,2 1.9,1.4l9.4,-5.4c1.9,0.4 3.9,0.7 6.2,0.7c13.3,0 24,-8.5 24,-19S67.3,30 54,30z" />
+</vector>

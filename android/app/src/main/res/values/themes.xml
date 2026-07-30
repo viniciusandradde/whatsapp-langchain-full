@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema base do sistema. A aparência real é definida em Compose
+         (ui/theme/Theme.kt); aqui só o suficiente pra Activity e splash não
+         piscarem em branco antes do primeiro frame do Compose. -->
+    <style name="Theme.NexusAtendimento" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/verde_teal</item>
+        <item name="android:navigationBarColor">@color/verde_teal</item>
+        <item name="android:windowBackground">@color/fundo_app</item>
+    </style>
+</resources>

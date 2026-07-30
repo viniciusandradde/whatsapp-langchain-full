@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Espelham a paleta de ui/theme/Theme.kt. Duplicação inevitável: XML e
+         Compose não compartilham fonte de cor, e o tema XML é o que pinta a
+         janela antes do Compose montar. -->
+    <color name="verde_teal">#FF075E54</color>
+    <color name="fundo_app">#FFF7F8FA</color>
+    <color name="ic_launcher_background">#FF075E54</color>
+</resources>
