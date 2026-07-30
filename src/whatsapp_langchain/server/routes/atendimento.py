@@ -12,6 +12,7 @@ from typing import Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from whatsapp_langchain.server.dependencies import (
@@ -303,47 +304,41 @@ async def _load_atendimento_in_empresa(
     return atd
 
 
-@router.get("/{atendimento_id}")
-async def read_atendimento(
-    atendimento_id: int,
-    empresa_id: int = Depends(get_empresa_context),
-) -> Atendimento:
-    """Detalhe — inclui cliente_nome/cliente_telefone via JOIN."""
-    return await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+# ---- SSE ----
+#
+# ATENÇÃO: `/events` tem que vir ANTES de `/{atendimento_id}` — o FastAPI casa
+# rotas na ordem de registro, e `/{atendimento_id}` engoliria `/events` (daria
+# 422 tentando converter "events" em int). Mesmo motivo de `/contadores` acima.
 
 
-# ---- E2.E SSE ----
+def _sse_stream(
+    *, empresa_id: int, atendimento_id: int | None = None
+) -> StreamingResponse:
+    """Stream SSE do canal Postgres `atendimento_event` (triggers da mig 035).
 
+    Um filtro obrigatório e um opcional:
+    - `empresa_id` SEMPRE filtra. O canal LISTEN é global no Postgres, então
+      sem isso um cliente receberia evento de todos os tenants. O payload passou
+      a carregar `empresa_id` na mig 145 exatamente pra permitir esse filtro.
+    - `atendimento_id`, quando dado, restringe a uma conversa (uso do drawer
+      web). Sem ele, é o stream da empresa inteira (uso da lista no app).
 
-@router.get("/{atendimento_id}/events")
-async def sse_events(
-    atendimento_id: int,
-    empresa_id: int = Depends(get_empresa_context),
-):
-    """Stream de eventos do atendimento via SSE.
+    Conexão dedicada (psycopg async standalone), fora do pool — LISTEN bloqueia
+    a conexão pra outros usos. Isso significa **uma conexão de banco por stream
+    aberto**: o app deve manter UM stream de empresa, não um por conversa.
 
-    Substitui o polling 3s do AtendimentoDrawer. Backend ouve canal
-    Postgres `atendimento_event` (alimentado por triggers da mig 035) e
-    relay eventos cujo `atendimento_id` bate com o requested.
-
-    Conexão dedicada (psycopg async standalone), fora do pool — LISTEN
-    bloqueia a conexão pra outros usos. Heartbeat a cada 25s pra
-    sobreviver ao Traefik (idle timeout default 60s).
-
-    Frontend acessa via Next.js API route proxy (/api/sse/...) que
-    adiciona Authorization + X-User-Id headers — EventSource nativo
-    não suporta headers custom.
+    Heartbeat a cada 25s pra sobreviver ao Traefik (idle timeout default 60s).
     """
     import asyncio
     import json
 
     import psycopg
-    from fastapi.responses import StreamingResponse
 
     from whatsapp_langchain.shared.config import settings
 
-    # Valida ANTES de abrir o stream (retorna 4xx imediato se acesso negado)
-    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    escopo = {"empresa_id": empresa_id}
+    if atendimento_id is not None:
+        escopo["atendimento_id"] = atendimento_id
 
     async def event_generator():
         try:
@@ -351,10 +346,7 @@ async def sse_events(
                 settings.database_url, autocommit=True
             ) as conn:
                 await conn.execute("LISTEN atendimento_event")
-                yield (
-                    f"event: connected\n"
-                    f"data: {json.dumps({'atendimento_id': atendimento_id})}\n\n"
-                )
+                yield f"event: connected\ndata: {json.dumps(escopo)}\n\n"
 
                 # psycopg.notifies(timeout=N) retorna AsyncGenerator que
                 # *termina* quando o timeout expira. Loop externo re-abre
@@ -365,7 +357,15 @@ async def sse_events(
                             payload = json.loads(notify.payload)
                         except (ValueError, TypeError):
                             continue
-                        if payload.get("atendimento_id") != atendimento_id:
+                        # Isolamento de tenant. Payload sem empresa_id vem de
+                        # trigger anterior à mig 145 — descarta em vez de
+                        # entregar sem saber de quem é.
+                        if payload.get("empresa_id") != empresa_id:
+                            continue
+                        if (
+                            atendimento_id is not None
+                            and payload.get("atendimento_id") != atendimento_id
+                        ):
                             continue
                         evt_name = payload.get("event", "update")
                         yield f"event: {evt_name}\ndata: {notify.payload}\n\n"
@@ -375,10 +375,11 @@ async def sse_events(
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "sse_atendimento_failed",
+                empresa_id=empresa_id,
                 atendimento_id=atendimento_id,
                 error=str(exc),
             )
-            yield (f"event: error\ndata: {json.dumps({'error': str(exc)[:200]})}\n\n")
+            yield f"event: error\ndata: {json.dumps({'error': str(exc)[:200]})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -391,13 +392,63 @@ async def sse_events(
     )
 
 
+@router.get("/events")
+async def sse_events_empresa(
+    empresa_id: int = Depends(get_empresa_context),
+) -> StreamingResponse:
+    """Stream de eventos de TODOS os atendimentos da empresa ativa.
+
+    Existe pro app móvel manter a lista de conversas viva com UMA conexão. O
+    stream por atendimento (`/{id}/events`) continua servindo o drawer web.
+    """
+    return _sse_stream(empresa_id=empresa_id)
+
+
+@router.get("/{atendimento_id}")
+async def read_atendimento(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+) -> Atendimento:
+    """Detalhe — inclui cliente_nome/cliente_telefone via JOIN."""
+    return await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+
+
+@router.get("/{atendimento_id}/events")
+async def sse_events(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+) -> StreamingResponse:
+    """Stream de eventos de UM atendimento via SSE.
+
+    Substitui o polling 3s do AtendimentoDrawer. Valida o acesso ANTES de abrir
+    o stream (4xx imediato se negado) e delega pro `_sse_stream`, que é o mesmo
+    gerador usado pelo stream de empresa.
+
+    Frontend acessa via Next.js API route proxy (/api/sse/...) que adiciona
+    Authorization + X-User-Id headers — EventSource nativo não suporta headers
+    custom. O app móvel usa OkHttp, que suporta, e fala direto com esta rota.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    return _sse_stream(empresa_id=empresa_id, atendimento_id=atendimento_id)
+
+
 @router.get("/{atendimento_id}/mensagens")
 async def read_atendimento_mensagens(
     atendimento_id: int,
     limit: int = Query(default=200, ge=1, le=500),
+    before_id: int | None = Query(
+        default=None,
+        ge=1,
+        description="Cursor: devolve mensagens anteriores a este id (histórico).",
+    ),
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
-    """Mensagens cronológicas do atendimento (ASC).
+    """Mensagens do atendimento em ordem cronológica (ASC), da mais recente.
+
+    Devolve as ÚLTIMAS `limit` mensagens. Pra carregar histórico, repita a
+    chamada passando `before_id=next_cursor` — é o que o Paging 3 do app usa
+    pra rolar pra cima sem fim. `next_cursor` vem null quando não há mais nada
+    antes.
 
     Cobre só mensagens com `atendimento_id` preenchido — inbound antigas
     (anteriores ao M3) ficam fora; o histórico legado segue acessível
@@ -406,9 +457,16 @@ async def read_atendimento_mensagens(
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
     pool = await get_pool()
     mensagens = await list_atendimento_mensagens(
-        pool, atendimento_id, empresa_id, limit=limit
+        pool, atendimento_id, empresa_id, limit=limit, before_id=before_id
     )
-    return {"atendimento_id": atendimento_id, "mensagens": mensagens}
+    # Página cheia sugere que há mais atrás; o cursor é o menor id devolvido
+    # (as mensagens vêm ASC, então é o primeiro). Página incompleta = fim.
+    next_cursor = mensagens[0]["id"] if len(mensagens) == limit else None
+    return {
+        "atendimento_id": atendimento_id,
+        "mensagens": mensagens,
+        "next_cursor": next_cursor,
+    }
 
 
 @router.post("/{atendimento_id}/claim")

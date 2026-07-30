@@ -16,7 +16,7 @@ runtime — "meus" (atribuídos ao operador), "aguardando" (sem dono),
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -414,30 +414,48 @@ async def list_atendimento_mensagens(
     empresa_id: int,
     *,
     limit: int = 200,
+    before_id: int | None = None,
 ) -> list[dict]:
-    """Lista mensagens do atendimento em ordem cronológica.
+    """Lista mensagens do atendimento em ordem cronológica (ASC).
 
     Filtra por (empresa_id, atendimento_id) na message_queue. Retorna
     dicts simples (sem Pydantic) com os campos relevantes ao painel —
     o tipo `Message` já é um shape público da API admin/chats.
+
+    Devolve as mensagens MAIS RECENTES dentro do `limit`. Antes ordenava
+    `created_at ASC LIMIT n`, o que entregava as n mais ANTIGAS: numa conversa
+    de 301 mensagens (existem duas assim em produção) o operador abria o drawer
+    e não via as 101 últimas — inclusive a mensagem que o cliente acabou de
+    mandar. Passa a paginar do fim pro começo, como qualquer timeline de chat.
+
+    `before_id` busca a página anterior (histórico), devolvendo mensagens com
+    `id` menor. O cursor é o `id` porque BIGSERIAL é monotônico e `created_at`
+    tem default NOW() — as duas ordens coincidem, então não há risco de
+    página pular ou repetir item.
     """
+    where = ["empresa_id = %s", "atendimento_id = %s"]
+    args: list[Any] = [empresa_id, atendimento_id]
+    if before_id is not None:
+        where.append("id < %s")
+        args.append(before_id)
+    args.append(limit)
+
     async with pool.connection() as conn:
         cur = await conn.execute(
-            """
+            f"""
             SELECT id, agent_id, incoming_message, media_url, media_type,
                    normalized_input, media_processing_status,
                    response, status, created_at, processed_at,
                    media_processing_error, error,
                    interna, criado_por_user_id
               FROM message_queue
-             WHERE empresa_id = %s
-               AND atendimento_id = %s
-             ORDER BY created_at ASC, id ASC
+             WHERE {" AND ".join(where)}
+             ORDER BY id DESC
              LIMIT %s
             """,
-            (empresa_id, atendimento_id, limit),
+            tuple(args),
         )
-        rows = await cur.fetchall()
+        rows = list(reversed(await cur.fetchall()))
     return [
         {
             "id": r[0],
