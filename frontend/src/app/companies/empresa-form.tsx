@@ -424,6 +424,30 @@ export function EmpresaForm({ initial, onDone }: Props) {
                   </div>
                 </div>
               </div>
+
+              {/* ----- Política de atendimento (mig 147) ----- */}
+              <div className="mt-6 border-t pt-4">
+                <p className="text-sm font-medium">Atendimento</p>
+                <label className="mt-3 flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="anuncia_atendente_assumiu"
+                    defaultChecked={initial?.anuncia_atendente_assumiu ?? false}
+                    disabled={isPending}
+                    className="mt-1"
+                  />
+                  <span>
+                    Avisar o cliente quando um atendente assumir
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Envia &ldquo;Você foi transferido para o atendente X&rdquo;
+                      ao clicar em Atender. Desligado, o operador entra na
+                      conversa em silêncio — o que faz sentido quando a IA
+                      responde e ele só intervém. Não afeta a transferência de
+                      setor, que avisa por conta própria.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
           )}
 

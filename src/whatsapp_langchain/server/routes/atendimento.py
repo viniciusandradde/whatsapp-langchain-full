@@ -61,7 +61,7 @@ from whatsapp_langchain.shared.atendimento_visualizacao import marcar_lido
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.db import get_pool
-from whatsapp_langchain.shared.empresa import is_admin_of
+from whatsapp_langchain.shared.empresa import get_empresa_by_id, is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.nota_interna import create_nota_interna
@@ -581,32 +581,42 @@ async def claim(
         atendimento_id=atendimento_id,
         user_id=user_id,
     )
-    # Sprint E.3 — Mensagem auto ao cliente avisando que atendente assumiu
-    # ("Você foi transferido para o atendente *X*"). Best-effort: erro
-    # não bloqueia claim. Resolve nome via auth.user; fallback "atendente".
-    try:
-        async with pool.connection() as conn:
-            cur = await conn.execute(
-                'SELECT name FROM auth."user" WHERE id = %s',
-                (user_id,),
-            )
-            row = await cur.fetchone()
-        nome_atendente = (row[0] if row else None) or "atendente"
-        from whatsapp_langchain.shared.outbound import send_system_outbound
+    # Aviso ao cliente ("Você foi transferido para o atendente *X*", Sprint E.3)
+    # passou a ser OPCIONAL por empresa na mig 147, com default FALSE.
+    #
+    # Antes era sempre enviado. Não serve pro modelo co-piloto — a IA responde e
+    # o operador entra e sai da conversa quando quer, então anunciar cada entrada
+    # expõe mecânica interna que não muda nada pro cliente, e com o botão no
+    # celular um toque errado virava mensagem. Continua disponível pra operação
+    # de fila clássica, onde o cliente esperava e passa a falar com uma pessoa.
+    empresa = await get_empresa_by_id(pool, empresa_id)
+    if empresa is not None and empresa.anuncia_atendente_assumiu:
+        # Best-effort: falha no envio não desfaz o claim.
+        try:
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    'SELECT name FROM auth."user" WHERE id = %s',
+                    (user_id,),
+                )
+                row = await cur.fetchone()
+            nome_atendente = (row[0] if row else None) or "atendente"
+            from whatsapp_langchain.shared.outbound import send_system_outbound
 
-        await send_system_outbound(
-            pool,
-            atendimento_id=atendimento_id,
-            empresa_id=empresa_id,
-            conteudo=(f"Você foi transferido para o atendente *{nome_atendente}*."),
-            tag_user_id=f"system:claim:{user_id}",
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "claim_outbound_failed",
-            atendimento_id=atendimento_id,
-            error=str(exc),
-        )
+            await send_system_outbound(
+                pool,
+                atendimento_id=atendimento_id,
+                empresa_id=empresa_id,
+                conteudo=f"Você foi transferido para o atendente *{nome_atendente}*.",
+                tag_user_id=f"system:claim:{user_id}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "claim_outbound_failed",
+                atendimento_id=atendimento_id,
+                error=str(exc),
+            )
+
+    # Evento interno sai sempre: quem precisa saber é a equipe, não o cliente.
     await dispatch_event(
         pool,
         empresa_id,

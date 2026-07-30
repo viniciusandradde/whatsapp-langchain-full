@@ -64,18 +64,39 @@ class TestDevolverParaIa:
         rotas = {getattr(r, "path", "") for r in app.routes}
         assert "/api/atendimentos/{atendimento_id}/devolver-ia" in rotas
 
-    def test_nao_envia_nada_ao_cliente(self) -> None:
-        """A diferença essencial em relação a `claim` e `transfer`.
+    def test_devolver_nunca_fala_com_o_cliente(self) -> None:
+        """Devolver pra IA é silencioso, sem opção.
 
-        `claim` manda "Você foi transferido para o atendente X" e `transfer`
-        anuncia o setor. Aqui o cliente não pode receber nada: do lado dele a IA
-        apenas volta a responder.
+        É a diferença essencial em relação a `transfer`, que anuncia o setor: aqui
+        do lado do cliente a IA apenas volta a responder. Se um dia isso virar
+        configurável, a ação deixa de servir pra corrigir um toque errado.
         """
         from whatsapp_langchain.server.routes import atendimento as rotas
 
         fonte = inspect.getsource(rotas.devolver_ia)
         assert "send_system_outbound" not in fonte
         assert "send_outbound" not in fonte
+
+    def test_claim_so_avisa_o_cliente_se_a_empresa_pedir(self) -> None:
+        """O aviso do `claim` é OPCIONAL por empresa (mig 147), default FALSE.
+
+        Antes era sempre enviado. O envio precisa estar atrás da flag: sem o
+        gate, toda empresa volta a anunciar cada entrada de operador — e no
+        celular um toque errado vira mensagem pro cliente.
+        """
+        from whatsapp_langchain.server.routes import atendimento as rotas
+
+        fonte = inspect.getsource(rotas.claim)
+        assert "anuncia_atendente_assumiu" in fonte
+        # O envio tem que estar DEPOIS do teste da flag, não antes.
+        assert fonte.index("anuncia_atendente_assumiu") < fonte.index(
+            "send_system_outbound"
+        )
+
+    def test_default_da_flag_e_silencioso(self) -> None:
+        from whatsapp_langchain.shared.models import Empresa
+
+        assert Empresa.model_fields["anuncia_atendente_assumiu"].default is False
 
 
 class TestMidiaSobDemanda:

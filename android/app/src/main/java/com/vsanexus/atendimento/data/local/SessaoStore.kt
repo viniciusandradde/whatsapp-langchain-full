@@ -13,12 +13,17 @@ data class Sessao(
     val nomeUsuario: String? = null,
     val empresaId: Long? = null,
     val empresaNome: String? = null,
+    /** Último e-mail usado — pré-preenche o campo pra não digitar de novo. */
+    val email: String? = null,
 ) {
     val logado: Boolean get() = token != null
 
     /** Logado mas sem empresa escolhida — precisa passar pelo seletor. */
     val precisaEscolherEmpresa: Boolean get() = logado && empresaId == null
 }
+
+/** Credenciais guardadas pro relogin automático. */
+data class Credenciais(val email: String, val senha: String)
 
 /**
  * Onde a sessão vive.
@@ -36,11 +41,32 @@ interface SessaoStore {
 
     val empresaId: Long?
 
+    /**
+     * Credenciais salvas, se o operador escolheu ficar conectado.
+     *
+     * Fora do [estado] de propósito: `StateFlow` é observado pela UI e aparece
+     * em dump de estado; senha não deve transitar por lá. Quem precisa, lê aqui
+     * no momento do uso.
+     */
+    val credenciais: Credenciais?
+
     fun salvarToken(token: String, nomeUsuario: String?)
 
     fun salvarEmpresa(empresaId: Long, nome: String?)
 
+    fun salvarCredenciais(email: String, senha: String)
+
+    /**
+     * Limpa a SESSÃO, preservando as credenciais salvas.
+     *
+     * Chamado quando a API devolve 401 — o token morreu, mas quem pediu pra
+     * ficar conectado espera que o app entre de novo sozinho, não que volte pro
+     * teclado. Para apagar de fato, [sair].
+     */
     fun limpar()
+
+    /** Logout explícito: apaga sessão E credenciais. */
+    fun sair()
 }
 
 /**
@@ -66,9 +92,21 @@ class SessaoStoreCriptografado(context: Context) : SessaoStore {
     override val token: String? get() = _estado.value.token
     override val empresaId: Long? get() = _estado.value.empresaId
 
+    override val credenciais: Credenciais?
+        get() {
+            val email = prefs.getString(K_EMAIL, null) ?: return null
+            val senha = prefs.getString(K_SENHA, null) ?: return null
+            return Credenciais(email, senha)
+        }
+
     override fun salvarToken(token: String, nomeUsuario: String?) {
         prefs.edit().putString(K_TOKEN, token).putString(K_NOME, nomeUsuario).apply()
         _estado.value = _estado.value.copy(token = token, nomeUsuario = nomeUsuario)
+    }
+
+    override fun salvarCredenciais(email: String, senha: String) {
+        prefs.edit().putString(K_EMAIL, email).putString(K_SENHA, senha).apply()
+        _estado.value = _estado.value.copy(email = email)
     }
 
     override fun salvarEmpresa(empresaId: Long, nome: String?) {
@@ -77,13 +115,20 @@ class SessaoStoreCriptografado(context: Context) : SessaoStore {
     }
 
     /**
-     * Apaga tudo.
+     * Sessão caiu (401): apaga token e empresa, PRESERVA as credenciais.
      *
-     * Chamado no logout explícito E quando a API devolve 401 — sessão revogada
-     * no servidor (`set_user_status` apaga `auth.session`) tem que derrubar o
-     * app, não deixá-lo tentando com token morto pra sempre.
+     * Sessão revogada no servidor (`set_user_status` apaga `auth.session`) tem
+     * que derrubar o app, não deixá-lo tentando com token morto pra sempre. Mas
+     * apagar as credenciais aqui jogaria o operador de volta pro teclado a cada
+     * expiração — exatamente o que ele pediu pra não acontecer. Quem entra de
+     * novo é o relogin automático.
      */
     override fun limpar() {
+        prefs.edit().remove(K_TOKEN).remove(K_NOME).remove(K_EMPRESA).remove(K_EMPRESA_NOME).apply()
+        _estado.value = Sessao(email = prefs.getString(K_EMAIL, null))
+    }
+
+    override fun sair() {
         prefs.edit().clear().apply()
         _estado.value = Sessao()
     }
@@ -94,6 +139,7 @@ class SessaoStoreCriptografado(context: Context) : SessaoStore {
             nomeUsuario = prefs.getString(K_NOME, null),
             empresaId = prefs.getLong(K_EMPRESA, 0L).takeIf { it > 0L },
             empresaNome = prefs.getString(K_EMPRESA_NOME, null),
+            email = prefs.getString(K_EMAIL, null),
         )
 
     private companion object {
@@ -101,5 +147,7 @@ class SessaoStoreCriptografado(context: Context) : SessaoStore {
         const val K_NOME = "nome_usuario"
         const val K_EMPRESA = "empresa_id"
         const val K_EMPRESA_NOME = "empresa_nome"
+        const val K_EMAIL = "email"
+        const val K_SENHA = "senha"
     }
 }

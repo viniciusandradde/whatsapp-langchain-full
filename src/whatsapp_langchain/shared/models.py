@@ -202,6 +202,11 @@ class Empresa(BaseModel):
     created_at: datetime
     updated_at: datetime
     my_role: str | None = None
+    # Mig 147: avisar o cliente quando um atendente assume (claim). Default
+    # False = assume em silêncio, que é o modelo co-piloto (a IA responde e o
+    # operador entra e sai). True faz sentido em fila clássica, onde o cliente
+    # esperava e passa a falar com uma pessoa.
+    anuncia_atendente_assumiu: bool = False
     # Sprint 8 padrão profissional (mig 060)
     menu_coleta_id: int | None = None
     hook_id: int | None = None

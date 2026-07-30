@@ -124,6 +124,17 @@ _service_bearer = HTTPBearer(
 )
 
 
+#: Validade concedida a cada renovação. Igual ao default do Better Auth (7
+#: dias), então o app não fica com sessão mais longa que o navegador — a
+#: diferença é que aqui ela é RENOVADA no uso, e antes não era.
+DURACAO_SESSAO = "7 days"
+
+#: Só renova quando falta menos que isto, pra não escrever a cada request.
+#: Com 7 dias de validade e renovação a 6, dá no máximo uma escrita por dia de
+#: uso — e quem usa o app diariamente nunca mais vê a tela de login.
+RENOVAR_SESSAO_QUANDO_FALTAR = "6 days"
+
+
 async def _resolve_session_user(token: str) -> str | None:
     """Resolve o user_id de um token de sessão do Better Auth, ou None.
 
@@ -164,16 +175,40 @@ async def _resolve_session_user(token: str) -> str | None:
         pool = await get_pool()
         with empresa_scope(None, bypass=True):
             async with pool.connection() as conn:
+                # Sessão DESLIZANTE: renova `expiresAt` no uso.
+                #
+                # O Better Auth renova quando o navegador chama `getSession`. O
+                # app nunca chama — ele fala com esta API, que só LIA a sessão.
+                # Resultado: o token expirava em 7 dias corridos por mais que o
+                # operador usasse o app todo dia, e ele voltava pra tela de
+                # login sem motivo aparente. Renovar no uso é o comportamento
+                # que qualquer app nativo tem.
+                #
+                # O `WHERE` do UPDATE só toca a linha quando falta menos de
+                # `RENOVAR_SESSAO_QUANDO_FALTAR`, senão seria uma escrita por
+                # request. Como é o mesmo statement do SELECT, não há segunda
+                # ida ao banco no caminho comum.
                 cur = await conn.execute(
                     """
-                    SELECT s."userId" FROM auth.session s
-                     JOIN auth."user" u ON u.id = s."userId"
-                     WHERE s.token = ANY(%s)
-                       AND s."expiresAt" > NOW()
-                       AND u.status = 'active'
-                     LIMIT 1
+                    WITH valida AS (
+                        SELECT s.token, s."userId"
+                          FROM auth.session s
+                          JOIN auth."user" u ON u.id = s."userId"
+                         WHERE s.token = ANY(%s)
+                           AND s."expiresAt" > NOW()
+                           AND u.status = 'active'
+                         LIMIT 1
+                    ), renovada AS (
+                        UPDATE auth.session s
+                           SET "expiresAt" = NOW() + %s::interval,
+                               "updatedAt" = NOW()
+                          FROM valida v
+                         WHERE s.token = v.token
+                           AND s."expiresAt" < NOW() + %s::interval
+                    )
+                    SELECT "userId" FROM valida
                     """,
-                    (candidatos,),
+                    (candidatos, DURACAO_SESSAO, RENOVAR_SESSAO_QUANDO_FALTAR),
                 )
                 row = await cur.fetchone()
     except Exception as exc:  # noqa: BLE001 — falha de lookup não autentica

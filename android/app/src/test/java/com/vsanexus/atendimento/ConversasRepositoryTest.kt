@@ -5,6 +5,7 @@ import com.vsanexus.atendimento.data.ConversasRepository
 import com.vsanexus.atendimento.data.Sincronizacao
 import com.vsanexus.atendimento.data.local.ConversaDao
 import com.vsanexus.atendimento.data.local.ConversaEntity
+import com.vsanexus.atendimento.data.local.Credenciais
 import com.vsanexus.atendimento.data.local.Sessao
 import com.vsanexus.atendimento.data.local.SessaoStore
 import com.vsanexus.atendimento.data.remote.AtendimentoApi
@@ -140,7 +141,13 @@ private class FakeSessao(private val empresa: Long?) : SessaoStore {
 
     override fun salvarEmpresa(empresaId: Long, nome: String?) = Unit
 
+    override val credenciais: Credenciais? = null
+
+    override fun salvarCredenciais(email: String, senha: String) = Unit
+
     override fun limpar() = Unit
+
+    override fun sair() = Unit
 }
 
 private class FakeDao(existentes: List<ConversaEntity> = emptyList()) : ConversaDao {

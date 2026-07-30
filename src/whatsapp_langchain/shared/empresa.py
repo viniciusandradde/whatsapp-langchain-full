@@ -157,7 +157,8 @@ async def is_superadmin(pool: AsyncConnectionPool, user_id: str) -> bool:
 
 _EMPRESA_COLS = (
     "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
-    "logo_path, nome_exibicao, cor_primaria, cor_secundaria"
+    "logo_path, nome_exibicao, cor_primaria, cor_secundaria, "
+    "anuncia_atendente_assumiu"
 )
 
 
@@ -176,6 +177,7 @@ def _row_to_empresa(row) -> Empresa:
         nome_exibicao=row[10],
         cor_primaria=row[11],
         cor_secundaria=row[12],
+        anuncia_atendente_assumiu=bool(row[13]),
     )
 
 
@@ -357,6 +359,7 @@ async def update_empresa(
     nome_exibicao: str | None = None,
     cor_primaria: str | None = None,
     cor_secundaria: str | None = None,
+    anuncia_atendente_assumiu: bool | None = None,
 ) -> Empresa | None:
     """Atualiza campos não-None. Retorna None se a empresa não existe."""
     fields: list[str] = []
@@ -380,6 +383,7 @@ async def update_empresa(
         ("nome_exibicao", nome_exibicao),
         ("cor_primaria", cor_primaria),
         ("cor_secundaria", cor_secundaria),
+        ("anuncia_atendente_assumiu", anuncia_atendente_assumiu),
     ):
         if value is not None:
             fields.append(f"{name} = %s")

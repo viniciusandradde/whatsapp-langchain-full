@@ -2,6 +2,7 @@ package com.vsanexus.atendimento
 
 import com.vsanexus.atendimento.data.ResultadoLogin
 import com.vsanexus.atendimento.data.SessaoRepository
+import com.vsanexus.atendimento.data.local.Credenciais
 import com.vsanexus.atendimento.data.local.Sessao
 import com.vsanexus.atendimento.data.local.SessaoStore
 import com.vsanexus.atendimento.data.remote.AtendimentoApi
@@ -61,6 +62,7 @@ class SessaoRepositoryTest {
 
     private fun repo() = SessaoRepository(authApi, api, store)
 
+
     @Test
     fun `login com header set-auth-token salva a sessao`() =
         runTest {
@@ -78,6 +80,7 @@ class SessaoRepositoryTest {
             assertEquals("token-de-sessao-abc123", store.token)
             assertEquals("Luis Fernando", store.nome)
         }
+
 
     @Test
     fun `login 200 SEM o header e tratado como falha`() =
@@ -98,6 +101,7 @@ class SessaoRepositoryTest {
             assertNull(store.token)
         }
 
+
     @Test
     fun `credencial errada devolve mensagem propria`() =
         runTest {
@@ -108,6 +112,7 @@ class SessaoRepositoryTest {
             assertTrue(r is ResultadoLogin.Falha)
             assertEquals("E-mail ou senha incorretos.", (r as ResultadoLogin.Falha).mensagem)
         }
+
 
     @Test
     fun `rate limit do Better Auth tem mensagem que orienta esperar`() =
@@ -120,6 +125,7 @@ class SessaoRepositoryTest {
 
             assertTrue((r as ResultadoLogin.Falha).mensagem.contains("Aguarde"))
         }
+
 
     @Test
     fun `empresa usa nome de exibicao do white-label quando existe`() =
@@ -143,6 +149,7 @@ class SessaoRepositoryTest {
             assertEquals("Sem Marca", lista[1].nome)
         }
 
+
     @Test
     fun `campo desconhecido na resposta nao derruba a desserializacao`() =
         runTest {
@@ -160,8 +167,74 @@ class SessaoRepositoryTest {
 
             assertEquals(1, repo().empresas().size)
         }
-}
 
+
+    @Test
+    fun `sessao caida PRESERVA credenciais e o relogin entra sozinho`() =
+        runTest {
+            // 1. login guardando credenciais
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("set-auth-token", "tok-1")
+                    .setBody("""{"user":{"name":"Luis"}}"""),
+            )
+            assertTrue(repo().login("a@b.com", "segredo") is ResultadoLogin.Ok)
+            assertEquals("a@b.com", store.credenciaisSalvas?.email)
+            // 2. 401 na API derruba a SESSÃO (o interceptor chama limpar)
+            store.limpar()
+            assertEquals(null, store.token)
+            // O ponto: as credenciais sobreviveram. Apagá-las aqui jogaria o
+            // operador de volta pro teclado a cada expiração de sessão.
+            assertEquals("a@b.com", store.credenciaisSalvas?.email)
+            // 3. relogin automático entra sem ninguém digitar
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("set-auth-token", "tok-2")
+                    .setBody("""{"user":{"name":"Luis"}}"""),
+            )
+            assertTrue(repo().tentarReloginAutomatico())
+            assertEquals("tok-2", store.token)
+        }
+
+    @Test
+    fun `logout apaga as credenciais`() =
+        runTest {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("set-auth-token", "tok-1")
+                    .setBody("""{"user":{"name":"Luis"}}"""),
+            )
+            repo().login("a@b.com", "segredo")
+            server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            repo().logout()
+            // Sem isto o relogin automático entraria de novo na abertura
+            // seguinte, e o botão "Sair" não sairia de nada.
+            assertEquals(null, store.credenciaisSalvas)
+            assertEquals(false, repo().temCredenciaisSalvas)
+        }
+
+    @Test
+    fun `sem credenciais salvas o relogin nao tenta nada`() =
+        runTest {
+            assertEquals(false, repo().tentarReloginAutomatico())
+            // Nenhum request: tentar sem credencial só gastaria rede e contaria
+            // pro rate limit de 5 tentativas do Better Auth.
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
+    fun `login recusado NAO guarda credencial`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(401))
+            assertTrue(repo().login("a@b.com", "errada") is ResultadoLogin.Falha)
+            // Guardar senha errada faria o relogin repetir até travar no rate
+            // limit, e aí nem a senha certa entraria.
+            assertEquals(null, store.credenciaisSalvas)
+        }
+}
 /** Dublê em memória — o real depende do Keystore do Android. */
 private class FakeSessaoStore : SessaoStore {
     private val _estado = MutableStateFlow(Sessao())
@@ -181,7 +254,24 @@ private class FakeSessaoStore : SessaoStore {
         _estado.value = _estado.value.copy(empresaId = empresaId, empresaNome = nome)
     }
 
+    /** Guardadas em memória pros testes de relogin automático. */
+    var credenciaisSalvas: Credenciais? = null
+        private set
+
+    override val credenciais: Credenciais? get() = credenciaisSalvas
+
+    override fun salvarCredenciais(email: String, senha: String) {
+        credenciaisSalvas = Credenciais(email, senha)
+        _estado.value = _estado.value.copy(email = email)
+    }
+
+    /** Sessão caiu: PRESERVA credenciais, como a implementação real. */
     override fun limpar() {
+        _estado.value = Sessao(email = _estado.value.email)
+    }
+
+    override fun sair() {
+        credenciaisSalvas = null
         _estado.value = Sessao()
     }
 }

@@ -1,5 +1,6 @@
 package com.vsanexus.atendimento.ui.login
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,7 +62,13 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
             onSair = vm::sair,
         )
     } else {
-        FormularioLogin(ui = ui, onEmail = vm::onEmail, onSenha = vm::onSenha, onEntrar = vm::entrar)
+        FormularioLogin(
+            ui = ui,
+            onEmail = vm::onEmail,
+            onSenha = vm::onSenha,
+            onManterConectado = vm::onManterConectado,
+            onEntrar = vm::entrar,
+        )
     }
 }
 
@@ -69,6 +77,7 @@ private fun FormularioLogin(
     ui: LoginUiState,
     onEmail: (String) -> Unit,
     onSenha: (String) -> Unit,
+    onManterConectado: (Boolean) -> Unit,
     onEntrar: () -> Unit,
 ) {
     var senhaVisivel by remember { mutableStateOf(false) }
@@ -137,6 +146,24 @@ private fun FormularioLogin(
             },
             modifier = Modifier.fillMaxWidth(),
         )
+
+        Spacer(Modifier.height(4.dp))
+        // Ligado por default: o pedido é não digitar de novo. Desmarcar mantém o
+        // comportamento antigo (nada salvo além do token da sessão).
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Checkbox(
+                checked = ui.manterConectado,
+                onCheckedChange = onManterConectado,
+                enabled = !ui.carregando,
+            )
+            Text(
+                "Manter conectado neste aparelho",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         if (ui.erro != null) {
             Spacer(Modifier.height(12.dp))

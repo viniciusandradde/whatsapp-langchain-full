@@ -80,6 +80,33 @@ class TestResolveSessionUser:
         ):
             assert await _resolve_session_user(SESSION_TOKEN) == USER_DA_SESSAO
 
+    async def test_sessao_e_renovada_no_uso(self):
+        """Sessão DESLIZANTE: usar o app estende a validade.
+
+        O Better Auth renova quando o navegador chama `getSession`. O app nunca
+        chama — ele fala com esta API, que só LIA a sessão. Resultado: o token
+        expirava em 7 dias corridos por mais que o operador usasse o app todo
+        dia, e ele voltava pra tela de login sem motivo aparente (foi o que
+        aconteceu em uso real).
+
+        O UPDATE precisa estar no MESMO statement do SELECT: uma segunda ida ao
+        banco em toda request autenticada dobraria o custo do caminho comum.
+        """
+        pool = _pool_com((USER_DA_SESSAO,))
+        with patch(
+            "whatsapp_langchain.server.dependencies.get_pool",
+            AsyncMock(return_value=pool),
+        ):
+            assert await _resolve_session_user(SESSION_TOKEN) == USER_DA_SESSAO
+
+        # Um único execute, com SELECT e UPDATE juntos.
+        async with pool.connection() as conn:
+            sql = conn.execute.await_args.args[0]
+        assert "UPDATE auth.session" in sql
+        assert 'SET "expiresAt" = NOW()' in sql
+        # E o UPDATE é condicional, senão seria uma escrita por request.
+        assert '"expiresAt" < NOW()' in sql
+
     async def test_sessao_inexistente_ou_expirada_devolve_none(self):
         """A query já filtra `expiresAt > NOW()` e `status='active'`, então
         sessão expirada, revogada ou de usuário desativado cai aqui."""

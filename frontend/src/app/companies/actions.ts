@@ -118,6 +118,12 @@ export async function saveEmpresa(
       cor_secundaria: _str(formData, "cor_secundaria"),
     };
 
+    // Mig 147: política de atendimento. Checkbox ausente = false, que é o
+    // default (assumir em silêncio).
+    const atendimento = {
+      anuncia_atendente_assumiu: formData.get("anuncia_atendente_assumiu") === "on",
+    };
+
     let savedId: number;
     if (empresaId) {
       const update: EmpresaUpdateInput = {
@@ -127,6 +133,7 @@ export async function saveEmpresa(
         doc,
         ...fiscal,
         ...branding,
+        ...atendimento,
       };
       const status = (formData.get("status") as string) || null;
       if (status) update.status = status;

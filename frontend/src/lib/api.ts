@@ -116,6 +116,10 @@ export interface Empresa {
   nome_exibicao?: string | null;
   cor_primaria?: string | null;
   cor_secundaria?: string | null;
+  // Mig 147: avisar o cliente quando um atendente assume (claim). Default
+  // false = assume em silêncio, que é o modelo co-piloto (a IA responde e o
+  // operador entra e sai). True faz sentido em fila clássica.
+  anuncia_atendente_assumiu?: boolean;
 }
 
 export interface EmpresaInput {
@@ -153,6 +157,10 @@ export interface EmpresaUpdateInput {
   nome_exibicao?: string | null;
   cor_primaria?: string | null;
   cor_secundaria?: string | null;
+  // Mig 147: avisar o cliente quando um atendente assume (claim). Default
+  // false = assume em silêncio, que é o modelo co-piloto (a IA responde e o
+  // operador entra e sai). True faz sentido em fila clássica.
+  anuncia_atendente_assumiu?: boolean;
 }
 
 export type UserStatus = "active" | "disabled";

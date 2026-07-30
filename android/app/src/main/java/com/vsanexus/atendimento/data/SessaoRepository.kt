@@ -36,7 +36,11 @@ constructor(
      * caso de o plugin ter saído do servidor, e continuar como se estivesse
      * logado deixaria o app dando 401 em toda tela sem explicar por quê.
      */
-    suspend fun login(email: String, senha: String): ResultadoLogin =
+    suspend fun login(
+        email: String,
+        senha: String,
+        manterConectado: Boolean = true,
+    ): ResultadoLogin =
         try {
             val resp = authApi.login(LoginRequest(email.trim(), senha))
             when {
@@ -59,6 +63,10 @@ constructor(
                         )
                     } else {
                         store.salvarToken(token, resp.body()?.user?.name)
+                        // Guardadas só depois do servidor aceitar: senha errada
+                        // não deve virar credencial salva que o relogin fica
+                        // repetindo até o rate limit de 5 tentativas travar.
+                        if (manterConectado) store.salvarCredenciais(email.trim(), senha)
                         ResultadoLogin.Ok
                     }
                 }
@@ -85,12 +93,35 @@ constructor(
 
     fun escolherEmpresa(empresa: EmpresaResumo) = store.salvarEmpresa(empresa.id, empresa.nome)
 
+    /**
+     * Entra de novo com as credenciais salvas, se houver.
+     *
+     * Chamado na abertura do app quando não há token: a sessão do Better Auth
+     * expira, e sem isto o operador voltava pro teclado. Falha em silêncio — a
+     * tela de login já é o destino, e um erro na abertura sem ninguém ter pedido
+     * nada seria ruído.
+     *
+     * @return true se entrou.
+     */
+    /** Há credenciais salvas pra tentar relogin? (não expõe a senha) */
+    val temCredenciaisSalvas: Boolean
+        get() = store.credenciais != null
+
+    suspend fun tentarReloginAutomatico(): Boolean {
+        if (store.token != null) return true
+        val c = store.credenciais ?: return false
+        return login(c.email, c.senha, manterConectado = false) is ResultadoLogin.Ok
+    }
+
     suspend fun logout() {
         // Invalida no servidor primeiro, best-effort: se falhar (offline), o
         // token local sai de qualquer forma — deixar credencial no aparelho
         // por causa de rede ruim é pior que uma sessão órfã que expira sozinha.
         runCatching { authApi.logout() }
-        store.limpar()
+        // `sair`, não `limpar`: logout explícito apaga as credenciais salvas,
+        // senão o relogin automático entraria de novo na próxima abertura e o
+        // botão "Sair" não sairia de nada.
+        store.sair()
     }
 }
 
