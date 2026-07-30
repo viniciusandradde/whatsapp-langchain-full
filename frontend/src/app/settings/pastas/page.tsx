@@ -1,5 +1,6 @@
 import { FolderTree } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import {
   getDocumentosConhecimento,
   getPastas,
@@ -12,12 +13,11 @@ import { PastasList } from "./pastas-list";
 export const dynamic = "force-dynamic";
 
 /**
- * Página /settings/pastas — organização hierárquica da base de
- * conhecimento (E2.C M7) + gestão de documentos por pasta (Sprint M.6).
+ * Base de conhecimento — pastas e documentos.
  *
- * Sprint M: pastas afetam ranking RAG quando o agente_ia tem
- * `base_conhecimento_ids` configurado — vira filtro WHERE pasta_id IN (...)
- * no cosine search.
+ * Pasta vinculada a um agente vira filtro do RAG: a busca por similaridade
+ * passa a considerar só os documentos daquelas pastas. Sem vínculo, o agente
+ * busca em tudo que a empresa tem.
  */
 export default async function PastasPage() {
   await requireSession();
@@ -37,23 +37,12 @@ export default async function PastasPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <FolderTree className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">
-            Pastas da base de conhecimento
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Cada pasta vira filtro RAG quando vinculada a um agente_ia.
-            Adicione documentos diretamente nas pastas pra restringir o
-            que cada setor enxerga.
-          </p>
-        </div>
-      </div>
-
+    <div>
+      <PageHeader
+        titulo="Base de conhecimento"
+        descricao="Organize os documentos em pastas para controlar o que cada agente consulta."
+        icon={FolderTree}
+      />
       <PastasList
         initialPastas={pastas}
         initialDocumentos={documentos}

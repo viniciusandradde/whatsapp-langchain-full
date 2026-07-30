@@ -39,7 +39,12 @@ todo_src() {
 FORM_CRU=$(fora_de_ui '<(input|select|textarea)\b')
 
 # Caixas do navegador no lugar de Dialog/Toast (RF3).
-CONFIRM_ALERT=$(todo_src '\b(confirm|alert)\(')
+#
+# Linha de comentário não conta: o componente que SUBSTITUI o `confirm()` cita
+# o `confirm()` na própria documentação, e sem esse filtro a substituição fazia
+# a métrica subir.
+CONFIRM_ALERT=$(grep -rEn '\b(confirm|alert)\(' "$SRC" --include='*.tsx' --include='*.ts' 2>/dev/null |
+  grep -vE '^[^:]+:[0-9]+: *(\*|//|/\*)' | wc -l | tr -d ' ')
 
 # Overlay à mão em vez de Dialog/Sheet — sem foco preso, sem Escape (RF2).
 OVERLAY=$(fora_de_ui 'fixed inset-0')
