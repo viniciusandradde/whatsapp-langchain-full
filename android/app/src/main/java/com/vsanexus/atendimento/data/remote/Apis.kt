@@ -2,6 +2,7 @@ package com.vsanexus.atendimento.data.remote
 
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -81,7 +82,30 @@ interface AtendimentoApi {
         @Path("id") id: Long,
         @Query("limit") limit: Int = 50,
         @Query("before_id") beforeId: Long? = null,
+        /**
+         * O app pede SEM mídia: a coluna guarda data-URL base64, e uma página de
+         * 50 mensagens com anexos passava de dezenas de MB (medido em produção:
+         * PDF de 5 MB numa linha). Com `false` vem só `media_disponivel`, e cada
+         * mídia é buscada em [midia] quando aparece na tela.
+         */
+        @Query("incluir_midia") incluirMidia: Boolean = false,
     ): MensagensResponse
+
+    /**
+     * Bytes de UMA mídia da conversa.
+     *
+     * Devolve [ResponseBody] cru, não um DTO: é binário, e o corpo é lido em
+     * streaming pro arquivo de cache sem materializar duas vezes na memória.
+     *
+     * `lado`: `in` é o que o cliente mandou, `out` o que o operador mandou —
+     * colunas diferentes no banco (mig 146).
+     */
+    @GET("api/atendimentos/{id}/mensagens/{mensagemId}/midia")
+    suspend fun midia(
+        @Path("id") id: Long,
+        @Path("mensagemId") mensagemId: Long,
+        @Query("lado") lado: String = "in",
+    ): Response<ResponseBody>
 
     @POST("api/atendimentos/{id}/responder")
     suspend fun responder(

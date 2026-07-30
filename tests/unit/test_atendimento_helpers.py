@@ -1,5 +1,6 @@
 """Testes dos helpers de Atendimento (M3 CRM Light)."""
 
+import base64
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,6 +10,7 @@ from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
     close_atendimento,
     get_atendimento_by_id,
+    get_mensagem_midia,
     list_atendimento_mensagens,
     list_atendimentos,
     list_atendimentos_by_cliente,
@@ -294,6 +296,111 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
     args = conn.execute.await_args.args[1]
     assert args[0] == 7
     assert args[1] == 42
+
+
+@pytest.mark.asyncio
+async def test_incluir_midia_false_nao_seleciona_o_blob():
+    """`incluir_midia=False` troca a coluna por `IS NOT NULL`.
+
+    O ponto não é o formato da resposta: é o blob **não sair do Postgres**.
+    Mídia é guardada como data-URL base64 na linha (medido em produção: um PDF
+    de 5 MB), e `limit=50` numa conversa com anexos devolvia dezenas de MB —
+    conversa que não abria no 4G. Selecionar a coluna e descartar depois no
+    Python resolveria a resposta HTTP e manteria o custo no banco e na memória
+    da API.
+    """
+    now = datetime.now(UTC)
+    rows = [
+        (
+            1,
+            "vsa_tech",
+            "olha o comprovante",
+            True,  # media_url IS NOT NULL
+            "image/jpeg",
+            None,
+            None,
+            "recebido!",
+            "done",
+            now,
+            now,
+            None,
+            None,
+            False,
+            None,
+            False,  # response_media_url IS NOT NULL
+            None,
+        )
+    ]
+    pool, conn = _mock_pool(rows)
+    out = await list_atendimento_mensagens(pool, 42, 7, incluir_midia=False)
+
+    sql = conn.execute.await_args.args[0]
+    assert "media_url IS NOT NULL" in sql
+    # A coluna crua não pode aparecer como item selecionado.
+    assert "incoming_message, media_url," not in sql
+
+    assert out[0]["media_disponivel"] is True
+    assert out[0]["media_url"] is None
+    assert out[0]["media_type"] == "image/jpeg"
+    assert out[0]["response_media_disponivel"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_mensagem_midia_decodifica_data_url():
+    dados = b"\x89PNG\r\n\x1a\n conteudo binario"
+    data_url = "data:image/png;base64," + base64.b64encode(dados).decode()
+    pool, conn = _mock_pool((data_url, "image/png"))
+
+    out = await get_mensagem_midia(
+        pool, mensagem_id=9, atendimento_id=42, empresa_id=7, lado="in"
+    )
+
+    assert out == (dados, "image/png")
+    # Escopo: id da mensagem sozinho deixaria adivinhar mídia de outro tenant, e
+    # o RLS não protegeria — a conexão do pool é a da aplicação.
+    args = conn.execute.await_args.args[1]
+    assert args == (9, 42, 7)
+
+
+@pytest.mark.asyncio
+async def test_get_mensagem_midia_lado_out_le_a_coluna_do_operador():
+    dados = b"ogg-fake"
+    data_url = "data:audio/ogg;base64," + base64.b64encode(dados).decode()
+    pool, conn = _mock_pool((data_url, "audio/ogg"))
+
+    out = await get_mensagem_midia(
+        pool, mensagem_id=9, atendimento_id=42, empresa_id=7, lado="out"
+    )
+
+    assert out == (dados, "audio/ogg")
+    sql = conn.execute.await_args.args[0]
+    # `out` é o que o OPERADOR mandou (mig 146). Ler `media_url` aqui devolveria
+    # a mídia do cliente no lugar da dele.
+    assert "response_media_url" in sql
+    assert "SELECT media_url" not in sql
+
+
+@pytest.mark.asyncio
+async def test_get_mensagem_midia_devolve_none_fora_do_formato_data_url():
+    """Conteúdo que não é data-URL não é decodificável — melhor None que lixo.
+
+    Devolver bytes de uma string que não é base64 faria o cliente renderizar
+    imagem corrompida; com None ele mostra o rótulo de anexo.
+    """
+    pool, _ = _mock_pool(("https://exemplo.com/arquivo.jpg", "image/jpeg"))
+    assert (
+        await get_mensagem_midia(pool, mensagem_id=9, atendimento_id=42, empresa_id=7)
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_mensagem_midia_devolve_none_quando_nao_ha_linha():
+    pool, _ = _mock_pool(None)
+    assert (
+        await get_mensagem_midia(pool, mensagem_id=999, atendimento_id=42, empresa_id=7)
+        is None
+    )
 
 
 # --- list_atendimentos_by_cliente (M5.b.1) ---

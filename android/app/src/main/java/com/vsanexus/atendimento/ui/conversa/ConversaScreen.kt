@@ -166,7 +166,9 @@ fun ConversaScreen(
                         reverseLayout = true,
                         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                     ) {
-                        items(invertidas, key = { it.id }) { b -> BolhaItem(b, cores) }
+                        items(invertidas, key = { it.id }) { b ->
+                            BolhaItem(b, cores, vm::arquivoDeMidia)
+                        }
                         if (estado.carregandoHistorico) {
                             item {
                                 Box(
@@ -197,7 +199,12 @@ fun ConversaScreen(
 }
 
 @Composable
-private fun BolhaItem(b: Bolha, cores: CoresChat) {
+private fun BolhaItem(
+    b: Bolha,
+    cores: CoresChat,
+    /** `(mensagemId, éSaída) -> arquivo local`, baixando na primeira vez. */
+    carregarMidia: suspend (Long, Boolean) -> File?,
+) {
     when (b) {
         is Bolha.Texto -> {
             val entrada = b.lado == Lado.ENTRADA
@@ -250,16 +257,19 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
                     modifier = Modifier.widthIn(max = 300.dp),
                 ) {
                     Column(Modifier.padding(10.dp)) {
-                        // Áudio e imagem tocam/aparecem aqui mesmo. O conteúdo
-                        // vem como data-URL base64 no `media_url` — decodificar
-                        // e reduzir acontece fora da thread principal, em
-                        // `Midia.kt`. Documento continua como rótulo: abrir
-                        // arquivo pede FileProvider e visualizador externo.
+                        // Áudio e imagem tocam/aparecem aqui mesmo, mas o
+                        // conteúdo NÃO vem na lista: é buscado por mensagem em
+                        // `/mensagens/{id}/midia` quando a bolha aparece na tela.
+                        // Decodificar e reduzir acontece fora da thread
+                        // principal, em `Midia.kt`. Documento continua como
+                        // rótulo: abrir arquivo pede FileProvider e visualizador
+                        // externo.
+                        val buscar: suspend () -> File? = { carregarMidia(b.mensagemId, !entrada) }
                         when {
                             b.tipo?.startsWith("audio") == true ->
-                                AudioDaConversa(b.url, Modifier.width(240.dp))
+                                AudioDaConversa(b.id, buscar, Modifier.width(240.dp))
                             b.tipo?.startsWith("image") == true ->
-                                ImagemDaConversa(b.url, Modifier.fillMaxWidth())
+                                ImagemDaConversa(b.id, buscar, Modifier.fillMaxWidth())
                             else ->
                                 Text(
                                     rotuloMidia(b.tipo, entrada),

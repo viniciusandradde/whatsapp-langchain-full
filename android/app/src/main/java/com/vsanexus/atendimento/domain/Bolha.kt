@@ -55,7 +55,15 @@ sealed interface Bolha {
     data class Midia(
         override val id: String,
         override val quandoIso: String?,
-        val url: String,
+        /**
+         * Id da MENSAGEM no servidor — o conteúdo não vem no payload.
+         *
+         * A lista é pedida com `incluir_midia=false` porque o banco guarda a
+         * mídia como data-URL base64 na própria linha (um PDF de 5 MB, medido em
+         * produção); os bytes são buscados em `/mensagens/{id}/midia` quando a
+         * bolha aparece na tela.
+         */
+        val mensagemId: Long,
         val tipo: String?,
         val legenda: String?,
         /**
@@ -105,12 +113,15 @@ fun MensagemDto.paraBolhas(): List<Bolha> {
 
     // 1. O que o cliente mandou. Mídia absorve o texto como legenda porque o
     //    worker junta os dois numa row só (mig 144).
-    if (!mediaUrl.isNullOrBlank()) {
+    // `mediaDisponivel` é o sinal quando a lista vem sem o conteúdo (o caso do
+    // app); `mediaUrl` cobre quem pedir com `incluir_midia=true`. Qualquer um dos
+    // dois significa "esta mensagem tem anexo".
+    if (mediaDisponivel || !mediaUrl.isNullOrBlank()) {
         bolhas +=
             Bolha.Midia(
                 id = "$id-in",
                 quandoIso = createdAt,
-                url = mediaUrl,
+                mensagemId = id,
                 tipo = mediaType,
                 legenda = incomingMessage?.takeIf { it.isNotBlank() },
                 lado = Lado.ENTRADA,
@@ -131,12 +142,12 @@ fun MensagemDto.paraBolhas(): List<Bolha> {
     //    Quando o operador mandou anexo ou nota de voz, `response` guarda a
     //    LEGENDA daquela mídia (mig 146) — então ela entra como legenda da
     //    bolha, não como uma segunda bolha de texto solta.
-    if (!responseMediaUrl.isNullOrBlank()) {
+    if (responseMediaDisponivel || !responseMediaUrl.isNullOrBlank()) {
         bolhas +=
             Bolha.Midia(
                 id = "$id-out",
                 quandoIso = processedAt ?: createdAt,
-                url = responseMediaUrl,
+                mensagemId = id,
                 tipo = responseMediaType,
                 legenda = response?.takeIf { it.isNotBlank() && !ehMarcadorInterno(it) },
                 lado = Lado.SAIDA,

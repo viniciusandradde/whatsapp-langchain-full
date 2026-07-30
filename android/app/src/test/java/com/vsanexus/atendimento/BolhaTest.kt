@@ -94,6 +94,43 @@ class BolhaTest {
     }
 
     @Test
+    fun `media_disponivel sozinho já vira bolha de anexo`() {
+        // O app pede `incluir_midia=false`: o conteúdo NÃO vem no payload, e o
+        // único sinal é o booleano. Se o mapeamento dependesse de `mediaUrl`,
+        // toda mídia desapareceria da timeline do app — sem erro nenhum, só
+        // bolhas faltando.
+        val b =
+            MensagemDto(
+                id = 77,
+                mediaType = "audio/ogg",
+                mediaDisponivel = true,
+            ).paraBolhas()
+
+        assertEquals(1, b.size)
+        val m = b.first() as Bolha.Midia
+        assertEquals(Lado.ENTRADA, m.lado)
+        // A bolha carrega o id da MENSAGEM, que é por onde os bytes são pedidos.
+        assertEquals(77L, m.mensagemId)
+    }
+
+    @Test
+    fun `response_media_disponivel vira bolha de anexo do operador`() {
+        val b =
+            MensagemDto(
+                id = 78,
+                response = "segue o arquivo",
+                responseMediaType = "application/pdf",
+                responseMediaDisponivel = true,
+            ).paraBolhas()
+
+        assertEquals(1, b.size)
+        val m = b.first() as Bolha.Midia
+        assertEquals(Lado.SAIDA, m.lado)
+        assertEquals(78L, m.mensagemId)
+        assertEquals("segue o arquivo", m.legenda)
+    }
+
+    @Test
     fun `midia do operador fica do lado da SAIDA`() {
         // Mig 146: o app manda foto e nota de voz. Se isso caísse em `media_url`
         // (inbound), a timeline mostraria a foto do operador como se o cliente

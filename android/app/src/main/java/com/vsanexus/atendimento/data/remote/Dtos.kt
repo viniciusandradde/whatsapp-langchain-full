@@ -96,6 +96,15 @@ data class MensagemDto(
      */
     @SerialName("response_media_url") val responseMediaUrl: String? = null,
     @SerialName("response_media_type") val responseMediaType: String? = null,
+    /**
+     * Há mídia, mas o conteúdo NÃO veio no payload.
+     *
+     * O app pede `incluir_midia=false`, então estes booleanos são o que diz se a
+     * bolha é de anexo — [mediaUrl] e [responseMediaUrl] vêm nulos, e os bytes
+     * são buscados em `/mensagens/{id}/midia`.
+     */
+    @SerialName("media_disponivel") val mediaDisponivel: Boolean = false,
+    @SerialName("response_media_disponivel") val responseMediaDisponivel: Boolean = false,
 )
 
 @Serializable

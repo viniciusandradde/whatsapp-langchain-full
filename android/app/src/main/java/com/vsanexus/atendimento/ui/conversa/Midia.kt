@@ -2,7 +2,6 @@ package com.vsanexus.atendimento.ui.conversa
 
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
-import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,30 +34,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Mídia inbound vem como DATA-URL base64, não como link.
+ * Mídia da conversa, buscada sob demanda.
  *
- * O worker baixa do WhatsApp e embute no `media_url` como
- * `data:audio/ogg;base64,...` — o app não tem credencial pra buscar no Graph da
- * Meta nem na Evolution, então o conteúdo já vem no payload. Consequência: pode
- * ter megabytes, e nada disso pode acontecer na thread principal.
+ * O conteúdo NÃO vem com a lista de mensagens: o banco guarda data-URL base64 na
+ * própria linha (um PDF de 5 MB, medido em produção), e uma página de 50
+ * mensagens com anexos passava de dezenas de MB — no 4G a conversa não abria. A
+ * lista vem com `media_disponivel`, e estes composables pedem o arquivo quando
+ * de fato aparecem na tela.
+ *
+ * `carregar` devolve o arquivo já em cache (ver `MidiaRepository`) ou null se não
+ * deu — e null vira aviso, não tela em branco.
  */
-private const val PREFIXO_BASE64 = ";base64,"
-
-/** Extrai os bytes de um data-URL. Null se não for esse formato. */
-private fun bytesDoDataUrl(url: String): ByteArray? {
-    val i = url.indexOf(PREFIXO_BASE64)
-    if (!url.startsWith("data:") || i < 0) return null
-    return runCatching {
-        Base64.decode(url.substring(i + PREFIXO_BASE64.length), Base64.DEFAULT)
-    }.getOrNull()
-}
+private typealias CarregarMidia = suspend () -> File?
 
 /**
  * Imagem da conversa.
@@ -69,24 +62,25 @@ private fun bytesDoDataUrl(url: String): ByteArray? {
  * não com `Modifier.size` depois (que só encolhe na tela, não na RAM).
  */
 @Composable
-fun ImagemDaConversa(dataUrl: String, modifier: Modifier = Modifier) {
+fun ImagemDaConversa(chave: String, carregar: CarregarMidia, modifier: Modifier = Modifier) {
     val bitmap by
-        produceState<ImageBitmap?>(initialValue = null, dataUrl) {
+        produceState<ImageBitmap?>(initialValue = null, chave) {
             value =
                 withContext(Dispatchers.IO) {
-                    val bytes = bytesDoDataUrl(dataUrl) ?: return@withContext null
+                    val arquivo = carregar() ?: return@withContext null
                     runCatching {
+                        val caminho = arquivo.absolutePath
+
                         // 1ª passada: só as dimensões, sem alocar pixels.
                         val medida =
                             BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, medida)
+                        BitmapFactory.decodeFile(caminho, medida)
 
                         var escala = 1
                         while (medida.outWidth / escala > 1080) escala *= 2
 
                         val opcoes = BitmapFactory.Options().apply { inSampleSize = escala }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opcoes)
-                            ?.asImageBitmap()
+                        BitmapFactory.decodeFile(caminho, opcoes)?.asImageBitmap()
                     }.getOrNull()
                 }
         }
@@ -99,7 +93,7 @@ fun ImagemDaConversa(dataUrl: String, modifier: Modifier = Modifier) {
     } else {
         Image(
             bitmap = bmp,
-            contentDescription = "Imagem recebida",
+            contentDescription = "Imagem da conversa",
             contentScale = ContentScale.Crop,
             modifier = modifier.clip(RoundedCornerShape(8.dp)).heightIn(max = 260.dp),
         )
@@ -109,14 +103,11 @@ fun ImagemDaConversa(dataUrl: String, modifier: Modifier = Modifier) {
 /**
  * Player de áudio.
  *
- * O `MediaPlayer` não toca data-URL, então os bytes vão pra um arquivo no cache
- * e ele toca o arquivo. Arquivo por hash do conteúdo pra não reescrever a cada
- * recomposição, e no `cacheDir` porque é descartável — o sistema limpa quando
- * precisar de espaço, e o áudio pode ser rebaixado do servidor.
+ * O `MediaPlayer` toca de CAMINHO, não de bytes — por isso a mídia é servida como
+ * arquivo em cache em vez de `ByteArray`.
  */
 @Composable
-fun AudioDaConversa(dataUrl: String, modifier: Modifier = Modifier) {
-    val ctx = LocalContext.current
+fun AudioDaConversa(chave: String, carregar: CarregarMidia, modifier: Modifier = Modifier) {
     var tocando by remember { mutableStateOf(false) }
     var duracaoMs by remember { mutableStateOf(0) }
     var posicaoMs by remember { mutableStateOf(0) }
@@ -124,17 +115,13 @@ fun AudioDaConversa(dataUrl: String, modifier: Modifier = Modifier) {
 
     val player = remember { MediaPlayer() }
 
-    // Prepara uma vez por áudio. `dataUrl` como chave: bolha diferente, arquivo
-    // diferente.
-    LaunchedEffect(dataUrl) {
+    // Prepara uma vez por áudio. `chave` identifica a bolha: bolha diferente,
+    // arquivo diferente.
+    LaunchedEffect(chave) {
         val ok =
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val bytes = bytesDoDataUrl(dataUrl) ?: return@runCatching false
-                    val arquivo = File(ctx.cacheDir, "audio_${dataUrl.hashCode()}.ogg")
-                    if (!arquivo.exists() || arquivo.length() != bytes.size.toLong()) {
-                        arquivo.writeBytes(bytes)
-                    }
+                    val arquivo = carregar() ?: return@runCatching false
                     player.reset()
                     player.setDataSource(arquivo.absolutePath)
                     player.prepare()

@@ -3,6 +3,7 @@ package com.vsanexus.atendimento.ui.conversa
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vsanexus.atendimento.data.MensagensRepository
+import com.vsanexus.atendimento.data.MidiaRepository
 import com.vsanexus.atendimento.data.remote.EventosAtendimento
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,7 @@ class ConversaViewModel
 @Inject
 constructor(
     private val repo: MensagensRepository,
+    private val midias: MidiaRepository,
     private val eventos: EventosAtendimento,
 ) : ViewModel() {
     val estado = repo.estado
@@ -77,6 +79,21 @@ constructor(
         // pra cobrir isso deixaria o app lento no caso comum.
         _rascunho.value = ""
         viewModelScope.launch { repo.enviar(texto) }
+    }
+
+    /**
+     * Arquivo local de uma mídia da conversa, baixando na primeira vez.
+     *
+     * A lista de mensagens vem SEM o conteúdo das mídias (o banco guarda
+     * data-URL base64 na linha, e isso inflava a resposta a dezenas de MB), então
+     * cada bolha de anexo pede o arquivo por aqui quando aparece na tela.
+     *
+     * @param saida true quando a mídia é a que o OPERADOR mandou — coluna
+     *   diferente no banco (mig 146).
+     */
+    suspend fun arquivoDeMidia(mensagemId: Long, saida: Boolean): File? {
+        val id = abertoId ?: return null
+        return midias.arquivo(id, mensagemId, saida)
     }
 
     /**

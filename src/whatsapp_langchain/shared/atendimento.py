@@ -16,6 +16,8 @@ runtime — "meus" (atribuídos ao operador), "aguardando" (sem dono),
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
@@ -415,6 +417,7 @@ async def list_atendimento_mensagens(
     *,
     limit: int = 200,
     before_id: int | None = None,
+    incluir_midia: bool = True,
 ) -> list[dict]:
     """Lista mensagens do atendimento em ordem cronológica (ASC).
 
@@ -432,6 +435,17 @@ async def list_atendimento_mensagens(
     `id` menor. O cursor é o `id` porque BIGSERIAL é monotônico e `created_at`
     tem default NOW() — as duas ordens coincidem, então não há risco de
     página pular ou repetir item.
+
+    `incluir_midia=False` troca o conteúdo da mídia por um booleano
+    (`media_disponivel` / `response_media_disponivel`), e o cliente busca os
+    bytes depois em `/mensagens/{id}/midia`.
+
+    **Por que isso existe:** mídia é guardada como data-URL base64 na própria
+    linha (o worker embute o que baixa do WhatsApp). Medido em produção: um PDF
+    ocupa 5 MB numa linha só, e áudios passam de 100 kB. Com `limit=50`, uma
+    conversa com anexos devolve dezenas de MB numa resposta — no 4G do celular
+    isso é a diferença entre abrir a conversa e não abrir. O `False` nem SELECTa
+    a coluna, então o blob não sai do Postgres nem passa pela memória da API.
     """
     where = ["empresa_id = %s", "atendimento_id = %s"]
     args: list[Any] = [empresa_id, atendimento_id]
@@ -440,15 +454,23 @@ async def list_atendimento_mensagens(
         args.append(before_id)
     args.append(limit)
 
+    # Mesmas POSIÇÕES nas duas variantes: o mapeamento abaixo é por índice, e
+    # trocar a ordem aqui silenciosamente embaralharia os campos.
+    if incluir_midia:
+        col_midia_in, col_midia_out = "media_url", "response_media_url"
+    else:
+        col_midia_in = "(media_url IS NOT NULL)"
+        col_midia_out = "(response_media_url IS NOT NULL)"
+
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT id, agent_id, incoming_message, media_url, media_type,
+            SELECT id, agent_id, incoming_message, {col_midia_in}, media_type,
                    normalized_input, media_processing_status,
                    response, status, created_at, processed_at,
                    media_processing_error, error,
                    interna, criado_por_user_id,
-                   response_media_url, response_media_type
+                   {col_midia_out}, response_media_type
               FROM message_queue
              WHERE {" AND ".join(where)}
              ORDER BY id DESC
@@ -462,7 +484,11 @@ async def list_atendimento_mensagens(
             "id": r[0],
             "agent_id": r[1],
             "incoming_message": r[2],
-            "media_url": r[3],
+            # Com `incluir_midia=False` estas posições vêm como booleano do
+            # `IS NOT NULL`, e o conteúdo não é devolvido — o cliente busca em
+            # `/mensagens/{id}/midia`.
+            "media_url": r[3] if incluir_midia else None,
+            "media_disponivel": bool(r[3]),
             "media_type": r[4],
             "normalized_input": r[5],
             "media_processing_status": r[6],
@@ -479,11 +505,83 @@ async def list_atendimento_mensagens(
             # é inbound: quem renderiza decide o lado da bolha pela origem do
             # campo, e misturar as duas põe a foto do operador do lado do
             # cliente.
-            "response_media_url": r[15],
+            "response_media_url": r[15] if incluir_midia else None,
+            "response_media_disponivel": bool(r[15]),
             "response_media_type": r[16],
         }
         for r in rows
     ]
+
+
+#: Prefixo que separa metadados dos bytes num data-URL.
+_MARCA_BASE64 = ";base64,"
+
+
+async def get_mensagem_midia(
+    pool: AsyncConnectionPool,
+    *,
+    mensagem_id: int,
+    atendimento_id: int,
+    empresa_id: int,
+    lado: str = "in",
+) -> tuple[bytes, str] | None:
+    """Bytes de UMA mídia, pra servir sob demanda.
+
+    Contrapartida do `incluir_midia=False`: a lista devolve só o booleano e o
+    cliente vem buscar o conteúdo aqui, uma mídia por request. É o que evita
+    mandar dezenas de MB numa resposta de 50 mensagens.
+
+    `lado` escolhe a coluna: `in` é o que o cliente mandou (`media_url`), `out` é
+    o que o operador mandou (`response_media_url`, mig 146). São colunas
+    diferentes de propósito — ver `list_atendimento_mensagens`.
+
+    O filtro carrega `empresa_id` E `atendimento_id` além do id da mensagem: sem
+    os dois, um id adivinhado devolveria mídia de outro tenant, e o RLS não
+    salvaria porque a conexão do pool é da aplicação.
+
+    Returns:
+        `(bytes, mime)`, ou None se a mensagem não existe no escopo, não tem
+        mídia naquele lado, ou o conteúdo não está no formato data-URL.
+    """
+    coluna = "response_media_url" if lado == "out" else "media_url"
+    tipo_coluna = "response_media_type" if lado == "out" else "media_type"
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {coluna}, {tipo_coluna}
+              FROM message_queue
+             WHERE id = %s AND atendimento_id = %s AND empresa_id = %s
+            """,
+            (mensagem_id, atendimento_id, empresa_id),
+        )
+        row = await cur.fetchone()
+
+    if row is None or not row[0]:
+        return None
+
+    conteudo: str = row[0]
+    mime: str = row[1] or "application/octet-stream"
+
+    # O worker embute o que baixa do WhatsApp como `data:<mime>;base64,...`.
+    # Conteúdo em outro formato (URL externa de mídia antiga, por exemplo) não é
+    # decodificável aqui — devolver None faz o cliente mostrar o rótulo de anexo
+    # em vez de bytes corrompidos.
+    corte = conteudo.find(_MARCA_BASE64)
+    if not conteudo.startswith("data:") or corte < 0:
+        return None
+
+    try:
+        dados = base64.b64decode(conteudo[corte + len(_MARCA_BASE64) :], validate=True)
+    except (ValueError, binascii.Error):
+        logger.warning(
+            "midia_base64_invalida",
+            mensagem_id=mensagem_id,
+            atendimento_id=atendimento_id,
+            lado=lado,
+        )
+        return None
+    return dados, mime
 
 
 async def transfer_atendimento(

@@ -19,6 +19,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
@@ -39,6 +40,7 @@ from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
     close_atendimento,
     get_atendimento_by_id,
+    get_mensagem_midia,
     list_atendimento_mensagens,
     list_atendimentos,
     reenfileirar_mensagem,
@@ -451,6 +453,14 @@ async def read_atendimento_mensagens(
         ge=1,
         description="Cursor: devolve mensagens anteriores a este id (histórico).",
     ),
+    incluir_midia: bool = Query(
+        default=True,
+        description=(
+            "False devolve só `media_disponivel` em vez do conteúdo base64; "
+            "busque os bytes em /mensagens/{id}/midia. Reduz a resposta de "
+            "dezenas de MB pra alguns KB em conversas com anexo."
+        ),
+    ),
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
     """Mensagens do atendimento em ordem cronológica (ASC), da mais recente.
@@ -467,7 +477,12 @@ async def read_atendimento_mensagens(
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
     pool = await get_pool()
     mensagens = await list_atendimento_mensagens(
-        pool, atendimento_id, empresa_id, limit=limit, before_id=before_id
+        pool,
+        atendimento_id,
+        empresa_id,
+        limit=limit,
+        before_id=before_id,
+        incluir_midia=incluir_midia,
     )
     # Página cheia sugere que há mais atrás; o cursor é o menor id devolvido
     # (as mensagens vêm ASC, então é o primeiro). Página incompleta = fim.
@@ -477,6 +492,50 @@ async def read_atendimento_mensagens(
         "mensagens": mensagens,
         "next_cursor": next_cursor,
     }
+
+
+@router.get("/{atendimento_id}/mensagens/{mensagem_id}/midia")
+async def read_mensagem_midia(
+    atendimento_id: int,
+    mensagem_id: int,
+    lado: Literal["in", "out"] = Query(
+        default="in",
+        description="`in` = mídia que o cliente mandou; `out` = a que o operador mandou.",
+    ),
+    empresa_id: int = Depends(get_empresa_context),
+) -> Response:
+    """Serve UMA mídia da conversa, decodificada.
+
+    Existe pro cliente não precisar baixar a conversa inteira com os anexos
+    embutidos: com `/mensagens?incluir_midia=false` a lista fica pequena e cada
+    mídia vem por aqui, quando (e se) for renderizada.
+
+    Medido em produção antes disto: um PDF ocupa 5 MB numa linha de
+    `message_queue`, e `/mensagens?limit=50` devolvia tudo inline — no 4G do
+    celular, a conversa simplesmente não abria.
+
+    `Cache-Control: private` porque a resposta é conteúdo de um cliente
+    específico: pode ficar no cache do aparelho, nunca num cache compartilhado.
+    `immutable` é honesto aqui — mídia de mensagem não muda depois de recebida.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    midia = await get_mensagem_midia(
+        pool,
+        mensagem_id=mensagem_id,
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        lado=lado,
+    )
+    if midia is None:
+        raise HTTPException(status_code=404, detail="Mídia não encontrada.")
+
+    dados, mime = midia
+    return Response(
+        content=dados,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=86400, immutable"},
+    )
 
 
 @router.post("/{atendimento_id}/claim")

@@ -45,6 +45,51 @@ class TestSmoke:
         assert "/api/atendimentos/{atendimento_id}/responder-midia" in rotas
 
 
+class TestMidiaSobDemanda:
+    """Mídia servida por endpoint, não embutida na lista.
+
+    Antes disto `/mensagens` devolvia o data-URL base64 inline. Medido em
+    produção: PDF de 5 MB numa linha, áudios acima de 100 kB — com `limit=50`,
+    dezenas de MB numa resposta, e no 4G a conversa não abria.
+    """
+
+    def test_endpoint_de_midia_sem_auth_401(self) -> None:
+        resp = _client().get("/api/atendimentos/1/mensagens/2/midia")
+        assert resp.status_code == 401, resp.text
+
+    def test_rota_de_midia_registrada(self) -> None:
+        from whatsapp_langchain.server.main import app
+
+        rotas = {getattr(r, "path", "") for r in app.routes}
+        assert (
+            "/api/atendimentos/{atendimento_id}/mensagens/{mensagem_id}/midia" in rotas
+        )
+
+    def test_rota_de_midia_nao_e_engolida_pelo_cursor_de_mensagens(self) -> None:
+        """`/mensagens/{id}/midia` não pode colidir com `/mensagens`.
+
+        São paths de profundidade diferente, então o FastAPI distingue — mas um
+        422 aqui indicaria que o dispatch tentou casar com outra rota e falhou no
+        parser de path antes de chegar na auth.
+        """
+        assert _client().get("/api/atendimentos/1/mensagens/2/midia").status_code != 422
+
+    def test_lista_aceita_incluir_midia(self) -> None:
+        """O parâmetro precisa existir com DEFAULT True.
+
+        Default False quebraria o painel web e o APK já instalado, que leem o
+        data-URL direto de `media_url`.
+        """
+        from whatsapp_langchain.server.routes.atendimento import (
+            read_atendimento_mensagens,
+        )
+
+        param = inspect.signature(read_atendimento_mensagens).parameters[
+            "incluir_midia"
+        ]
+        assert param.default.default is True
+
+
 class TestAllowlistMime:
     """A allowlist é dado, não código — vale testar o conteúdo dela."""
 
