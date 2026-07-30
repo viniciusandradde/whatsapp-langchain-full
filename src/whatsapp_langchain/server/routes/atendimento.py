@@ -37,6 +37,7 @@ from whatsapp_langchain.shared.aba import (
 )
 from whatsapp_langchain.shared.atendimento import (
     MARKERS_REPROCESSAVEIS,
+    TipoVisualizacao,
     claim_atendimento,
     close_atendimento,
     devolver_atendimento_para_ia,
@@ -104,7 +105,9 @@ router = APIRouter(
 )
 
 
-TipoVisualizacao = Literal["meus", "aguardando", "grupos", "outros"]
+# Importado de `shared`, não redeclarado: a lista estava duplicada aqui e lá, e
+# duas cópias de um Literal divergem sem ninguém notar — o FastAPI valida contra
+# esta, o SQL filtra pela outra.
 
 
 class CloseInput(BaseModel):
@@ -150,7 +153,7 @@ class NotaInternaInput(BaseModel):
 @router.get("")
 async def list_my_atendimentos(
     request: Request,
-    tipo: TipoVisualizacao = Query(default="aguardando"),
+    tipo: TipoVisualizacao = Query(default="nao_resolvidas"),
     dep_id: int | None = Query(default=None, ge=1),
     prioridade: str | None = Query(default=None),
     q: str | None = Query(default=None, max_length=120),
@@ -240,6 +243,8 @@ async def list_contadores(
                 "aguardando": 0,
                 "meus": 0,
                 "outros": 0,
+                "humano_solicitado": 0,
+                "nao_lidas": 0,
             },
             "abas": {},
             "sem_aba": 0,
@@ -250,7 +255,13 @@ async def list_contadores(
         dept_ids = await get_user_departamento_ids(pool, user_id, empresa_id)
         if not dept_ids:
             return {
-                "sistema": {"aguardando": 0, "meus": 0, "outros": 0},
+                "sistema": {
+                    "aguardando": 0,
+                    "meus": 0,
+                    "outros": 0,
+                    "humano_solicitado": 0,
+                    "nao_lidas": 0,
+                },
                 "abas": {},
                 "sem_aba": 0,
             }
@@ -258,7 +269,10 @@ async def list_contadores(
         dept_filter_args = [list(dept_ids)]
 
     async with pool.connection() as conn:
-        # Sistema (aguardando / meus / outros)
+        # Sistema. As 3 primeiras são as abas antigas (o APK instalado ainda as
+        # usa); `humano_solicitado` é a única aba nova com badge além de
+        # "Não Lidas" — no Chatvolt só essas duas têm contador, e badge em toda
+        # aba vira ruído em vez de sinal.
         cur = await conn.execute(
             f"""
             SELECT
@@ -267,13 +281,42 @@ async def list_contadores(
                                   AND assigned_to_user_id = %s),
                 COUNT(*) FILTER (WHERE status IN ('aguardando', 'em_andamento')
                                   AND (assigned_to_user_id IS NULL
-                                       OR assigned_to_user_id <> %s))
+                                       OR assigned_to_user_id <> %s)),
+                COUNT(*) FILTER (WHERE status = 'aguardando'
+                                  AND departamento_id IS NOT NULL
+                                  AND assigned_to_user_id IS NULL)
               FROM atendimento
              WHERE empresa_id = %s{dept_filter_sql}
             """,
             (user_id, user_id, empresa_id, *dept_filter_args),
         )
-        sys_row = await cur.fetchone() or (0, 0, 0)
+        sys_row = await cur.fetchone() or (0, 0, 0, 0)
+
+        # Não lidas: conversas com ALGUMA mensagem do cliente após a última vez
+        # que este usuário abriu. EXISTS em vez de contar mensagens — a aba
+        # mostra quantas CONVERSAS esperam leitura, não quantas mensagens.
+        cur = await conn.execute(
+            f"""
+            SELECT COUNT(*)
+              FROM atendimento a
+             WHERE a.empresa_id = %s
+               AND a.status IN ('aguardando', 'em_andamento'){dept_filter_sql}
+               AND EXISTS (
+                   SELECT 1 FROM message_queue m
+                     LEFT JOIN atendimento_visualizacao v
+                            ON v.atendimento_id = m.atendimento_id
+                           AND v.user_id = %s
+                    WHERE m.atendimento_id = a.id
+                      AND m.status = 'done'
+                      AND m.incoming_message IS NOT NULL
+                      AND m.incoming_message <> ''
+                      AND COALESCE(m.interna, FALSE) = FALSE
+                      AND (v.ultima_visualizacao_at IS NULL
+                           OR m.created_at > v.ultima_visualizacao_at))
+            """,
+            (empresa_id, *dept_filter_args, user_id),
+        )
+        nao_lidas = (await cur.fetchone() or (0,))[0]
 
         # Sem aba (pra "Não classificados" na sidebar)
         cur = await conn.execute(
@@ -294,9 +337,13 @@ async def list_contadores(
     )
     return {
         "sistema": {
+            # Antigas (o APK instalado ainda lê estas):
             "aguardando": sys_row[0],
             "meus": sys_row[1],
             "outros": sys_row[2],
+            # Novas — as duas únicas abas com badge, como no Chatvolt:
+            "humano_solicitado": sys_row[3],
+            "nao_lidas": nao_lidas,
         },
         "abas": {str(k): v for k, v in por_aba.items()},
         "sem_aba": sem_aba,

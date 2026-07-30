@@ -62,6 +62,15 @@ async def count_unread_para_user(
 
     Conta apenas msgs com status='done' (chegou de fato). Quando user
     nunca abriu, conta todas as mensagens do atendimento.
+
+    Conta só o que o CLIENTE mandou:
+
+    - `incoming_message` não vazio — resposta do agente ou do próprio operador
+      não é "mensagem nova pra ler"; contá-las faria o contador subir logo
+      depois de o operador responder, na conversa que ele acabou de ler.
+    - `interna = FALSE` (mig 087) — nota interna é da equipe pro time, e sem esta
+      cláusula a anotação que o operador escreve marca a própria conversa como
+      não lida.
     """
     if not atendimento_ids:
         return {}
@@ -75,6 +84,9 @@ async def count_unread_para_user(
                AND v.user_id = %s
              WHERE m.atendimento_id = ANY(%s)
                AND m.status = 'done'
+               AND m.incoming_message IS NOT NULL
+               AND m.incoming_message <> ''
+               AND COALESCE(m.interna, FALSE) = FALSE
                AND (v.ultima_visualizacao_at IS NULL
                     OR m.created_at > v.ultima_visualizacao_at)
              GROUP BY m.atendimento_id

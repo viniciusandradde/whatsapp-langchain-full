@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.shared.atendimento_visualizacao import count_unread_para_user
 from whatsapp_langchain.shared.models import Atendimento
 
 if TYPE_CHECKING:
@@ -111,6 +112,68 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         if with_cliente and len(row) > base_len + 1
         else None,
     )
+
+
+#: Situação exibida ao operador — o que ele precisa saber para decidir se age.
+#:
+#: `atendimento.status` sozinho não responde a pergunta que importa: em produção,
+#: 77 conversas abertas mostravam "Aguardando" e eram três realidades — a IA
+#: conduzindo (~53), a IA muda por whitelist (15) e a IA transferiu sem ninguém
+#: pegar (9). Quem via a lista não tinha como distinguir.
+#:
+#: Deriva de DOIS eixos que já existem no banco (estágio e quem conduz) em vez de
+#: uma coluna nova: persistir traria desatualização a cada mudança de whitelist ou
+#: de modo da conexão, que acontecem fora do atendimento.
+SITUACOES = (
+    "com_ia",
+    "aguardando_humano",
+    "em_atendimento",
+    "sem_automacao",
+    "resolvida",
+    "abandonada",
+)
+
+
+def derivar_situacao(
+    *,
+    status: str,
+    assigned_to_user_id: str | None,
+    departamento_id: int | None,
+    conexao_tipo_atendimento: str | None,
+    telefone_na_whitelist: bool,
+) -> str:
+    """Traduz o estado real da conversa no rótulo que o operador lê.
+
+    A ordem das cláusulas é o próprio contrato, e espelha a ordem dos gates em
+    `worker/processor.py::process_message`:
+
+    1. **Fechado vence tudo.** Conversa resolvida não tem "quem conduz".
+    2. **Dono humano vence automação.** Com `em_andamento` + dono, o worker cala
+       o agente (gate em `processor.py:2395`) — a IA não responde mesmo que a
+       conexão esteja em modo `ia`.
+    3. **Silenciada vence "aguardando".** Conexão em modo manual (mig 132) ou
+       número na whitelist (mig 133 — apesar do nome, é lista de BLOQUEIO) não
+       recebem NADA automático. Mostrar "Aguardando" aqui faz o operador supor
+       que o bot está cuidando de uma conversa onde o bot nunca vai falar.
+    4. **Fila de departamento.** A IA transferiu e ninguém puxou: é o estado que
+       precisa de gente, e o que o Chatvolt chama de "Humano Solicitado".
+    5. Sobrou a IA conduzindo.
+
+    `hibrido` é valor válido em `conexao.tipo_atendimento` (mig 048) mas o gate
+    do worker testa só `== "manual"` — então aqui ele conta como automação ativa,
+    para o rótulo não contradizer o que a conversa faz.
+    """
+    if status == "resolvido":
+        return "resolvida"
+    if status == "abandonado":
+        return "abandonada"
+    if status == "em_andamento" and assigned_to_user_id:
+        return "em_atendimento"
+    if conexao_tipo_atendimento == "manual" or telefone_na_whitelist:
+        return "sem_automacao"
+    if departamento_id is not None and not assigned_to_user_id:
+        return "aguardando_humano"
+    return "com_ia"
 
 
 async def open_or_attach_atendimento(
@@ -218,7 +281,21 @@ async def open_or_attach_atendimento(
     return _row_to_atendimento(new), True
 
 
-TipoVisualizacao = Literal["meus", "aguardando", "grupos", "outros"]
+#: Abas da lista. As cinco primeiras espelham o Chatvolt; as quatro últimas são
+#: as antigas, mantidas por COMPATIBILIDADE — o APK já instalado pede
+#: `tipo=aguardando`, e remover o valor devolveria 422 até o usuário atualizar.
+TipoVisualizacao = Literal[
+    "nao_resolvidas",
+    "nao_lidas",
+    "humano_solicitado",
+    "resolvidas",
+    "todas",
+    # Deprecados (clientes antigos):
+    "meus",
+    "aguardando",
+    "grupos",
+    "outros",
+]
 
 
 async def list_atendimentos(
@@ -269,6 +346,38 @@ async def list_atendimentos(
         params.append(current_user_id)
     elif tipo == "aguardando":
         where += " AND a.status = 'aguardando'"
+    elif tipo == "nao_resolvidas":
+        where += " AND a.status IN ('aguardando', 'em_andamento')"
+    elif tipo == "resolvidas":
+        where += " AND a.status = 'resolvido'"
+    elif tipo == "humano_solicitado":
+        # A IA transferiu pra um setor e ninguém puxou. É o estado que precisa de
+        # gente — o "Humano Solicitado" do Chatvolt. Mesmas três condições do
+        # gate `na_fila_do_departamento` em `worker/processor.py:2369`, senão a
+        # aba mostraria conversa que o worker não considera na fila.
+        where += (
+            " AND a.status = 'aguardando'"
+            " AND a.departamento_id IS NOT NULL"
+            " AND a.assigned_to_user_id IS NULL"
+        )
+    elif tipo == "nao_lidas":
+        if not current_user_id:
+            return []
+        # EXISTS em vez de JOIN + GROUP BY: só interessa se há ALGUMA mensagem
+        # nova, e o EXISTS para no primeiro acerto.
+        where += """ AND EXISTS (
+            SELECT 1 FROM message_queue m
+              LEFT JOIN atendimento_visualizacao v
+                     ON v.atendimento_id = m.atendimento_id AND v.user_id = %s
+             WHERE m.atendimento_id = a.id
+               AND m.status = 'done'
+               AND m.incoming_message IS NOT NULL AND m.incoming_message <> ''
+               AND COALESCE(m.interna, FALSE) = FALSE
+               AND (v.ultima_visualizacao_at IS NULL
+                    OR m.created_at > v.ultima_visualizacao_at))"""
+        params.append(current_user_id)
+    elif tipo == "todas":
+        pass  # sem filtro de status — é a aba "Todas conversas"
     else:  # outros
         where += " AND a.status IN ('aguardando', 'em_andamento')"
         if current_user_id:
@@ -306,9 +415,10 @@ async def list_atendimentos(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT {_JOIN_COLS}
+            SELECT {_JOIN_COLS}, cx.tipo_atendimento
               FROM atendimento a
               LEFT JOIN cliente c ON c.id = a.cliente_id
+              LEFT JOIN conexao cx ON cx.id = a.conexao_id
             {where}
             ORDER BY a.last_message_at DESC, a.id DESC
             LIMIT %s OFFSET %s
@@ -316,7 +426,78 @@ async def list_atendimentos(
             tuple(params),
         )
         rows = await cur.fetchall()
-    return [_row_to_atendimento(r, with_cliente=True) for r in rows]
+
+    itens = [_row_to_atendimento(r, with_cliente=True) for r in rows]
+    # `tipo_atendimento` vem depois das colunas de cliente; `_row_to_atendimento`
+    # não o conhece (não é campo de `atendimento`), então é lido aqui pelo índice.
+    modos = [r[-1] for r in rows]
+    await _preencher_derivados(
+        pool, empresa_id, itens, modos, current_user_id=current_user_id
+    )
+    return itens
+
+
+async def _preencher_derivados(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    itens: list[Atendimento],
+    modos_conexao: list[str | None],
+    *,
+    current_user_id: str | None,
+) -> None:
+    """Preenche `situacao`, `ia_ativa` e `nao_lidas` da página.
+
+    Duas queries para a página INTEIRA, não por linha: a whitelist e o contador
+    de não lidas são lookups em lote. Fazer por item transformaria uma listagem
+    de 50 em 100 idas ao banco.
+
+    Falha aqui **não derruba a listagem** — a conversa aparece com o rótulo
+    otimista (`com_ia`) e sem contador. Uma lista que não carrega é pior que uma
+    lista com um selo impreciso, e o operador ainda enxerga a conversa.
+    """
+    if not itens:
+        return
+
+    # Import tardio: `whitelist` puxa `campanha` → `outbound` → de volta este
+    # módulo. No topo isso é ImportError de módulo parcialmente inicializado.
+    from whatsapp_langchain.shared.whitelist import filtrar_whitelistados
+
+    telefones = [a.cliente_telefone for a in itens if a.cliente_telefone]
+    try:
+        whitelistados = await filtrar_whitelistados(pool, empresa_id, telefones)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "situacao_whitelist_falhou", empresa_id=empresa_id, erro=str(exc)
+        )
+        whitelistados = set()
+
+    nao_lidas: dict[int, int] = {}
+    if current_user_id:
+        try:
+            nao_lidas = await count_unread_para_user(
+                pool,
+                atendimento_ids=[a.id for a in itens],
+                user_id=current_user_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("situacao_nao_lidas_falhou", erro=str(exc))
+
+    for atd, modo in zip(itens, modos_conexao, strict=False):
+        na_whitelist = (
+            bool(atd.cliente_telefone) and atd.cliente_telefone in whitelistados
+        )
+        atd.situacao = derivar_situacao(
+            status=atd.status,
+            assigned_to_user_id=atd.assigned_to_user_id,
+            departamento_id=atd.departamento_id,
+            conexao_tipo_atendimento=modo,
+            telefone_na_whitelist=na_whitelist,
+        )
+        # Só `com_ia` responde a próxima mensagem. `aguardando_humano` é
+        # justamente o gate que CALA o agente (`processor.py:2369`) — marcá-lo
+        # como IA ativa faria a UI prometer uma resposta que não vem.
+        atd.ia_ativa = atd.situacao == "com_ia"
+        atd.nao_lidas = nao_lidas.get(atd.id, 0)
 
 
 async def get_atendimento_by_id(

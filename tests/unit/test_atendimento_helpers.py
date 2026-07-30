@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from whatsapp_langchain.shared.atendimento import (
+    SITUACOES,
     claim_atendimento,
     close_atendimento,
+    derivar_situacao,
     devolver_atendimento_para_ia,
     get_atendimento_by_id,
     get_mensagem_midia,
@@ -97,6 +99,93 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
     return pool, conn
 
 
+class TestDerivarSituacao:
+    """A regra que traduz o estado real no rótulo que o operador lê.
+
+    Existe porque em produção 77 conversas abertas mostravam "Aguardando" e eram
+    três realidades diferentes. Cada teste aqui é uma dessas realidades.
+    """
+
+    def _sit(self, **kw):
+        base = dict(
+            status="aguardando",
+            assigned_to_user_id=None,
+            departamento_id=None,
+            conexao_tipo_atendimento="ia",
+            telefone_na_whitelist=False,
+        )
+        return derivar_situacao(**{**base, **kw})
+
+    def test_conversa_normal_fica_com_a_ia(self):
+        assert self._sit() == "com_ia"
+
+    def test_whitelist_nao_pode_parecer_aguardando(self):
+        """15 conversas em produção. A IA NUNCA vai responder aquele contato.
+
+        Mostrar "Aguardando" aqui faz o operador supor que o bot está cuidando
+        de uma conversa onde o bot está permanentemente mudo.
+        """
+        assert self._sit(telefone_na_whitelist=True) == "sem_automacao"
+
+    def test_conexao_manual_tambem_e_sem_automacao(self):
+        assert self._sit(conexao_tipo_atendimento="manual") == "sem_automacao"
+
+    def test_fila_de_departamento_e_aguardando_humano(self):
+        """14 em produção: a IA transferiu e ninguém puxou."""
+        assert self._sit(departamento_id=7) == "aguardando_humano"
+
+    def test_dono_humano_vence_a_automacao(self):
+        assert (
+            self._sit(status="em_andamento", assigned_to_user_id="u1")
+            == "em_atendimento"
+        )
+
+    def test_silenciada_vence_fila_de_departamento(self):
+        """Ordem importa: whitelist + departamento = sem automação.
+
+        Quem está na whitelist não recebe NADA — nem o aviso de fila. Rotular
+        como "aguardando humano" prometeria um atendimento que a conversa não
+        vai gerar, porque nem o cliente foi avisado.
+        """
+        assert (
+            self._sit(departamento_id=7, telefone_na_whitelist=True) == "sem_automacao"
+        )
+
+    def test_fechada_vence_tudo(self):
+        assert self._sit(status="resolvido", telefone_na_whitelist=True) == "resolvida"
+        assert self._sit(status="abandonado", departamento_id=7) == "abandonada"
+
+    def test_hibrido_conta_como_automacao_ativa(self):
+        """`hibrido` é valor válido (mig 048) mas o gate do worker testa só
+        `== "manual"` — o rótulo tem que concordar com o que a conversa faz."""
+        assert self._sit(conexao_tipo_atendimento="hibrido") == "com_ia"
+
+    def test_todo_retorno_esta_no_conjunto_declarado(self):
+        for combo in [
+            {},
+            {"telefone_na_whitelist": True},
+            {"departamento_id": 7},
+            {"status": "em_andamento", "assigned_to_user_id": "u1"},
+            {"status": "resolvido"},
+            {"status": "abandonado"},
+        ]:
+            assert self._sit(**combo) in SITUACOES
+
+
+def _chamada_da_listagem(conn):
+    """A chamada que monta a LISTA, não as de enriquecimento.
+
+    `list_atendimentos` faz consultas adicionais depois da principal (whitelist
+    em lote e contador de não lidas), então `await_args` — que é a ÚLTIMA
+    chamada — passou a apontar pra outra query. Procurar pelo FROM torna a
+    asserção independente de quantas vierem depois.
+    """
+    for chamada in conn.execute.await_args_list:
+        if "FROM atendimento a" in chamada.args[0]:
+            return chamada
+    raise AssertionError("nenhuma chamada de listagem encontrada")
+
+
 @pytest.mark.asyncio
 async def test_open_or_attach_inserts_when_no_open_row():
     # SELECT FOR UPDATE → None, CSAT pendente SELECT → None, INSERT → row
@@ -178,8 +267,7 @@ async def test_list_atendimentos_aguardando_filters_status():
     out = await list_atendimentos(pool, 1, tipo="aguardando")
     assert len(out) == 1
     assert out[0].cliente_nome == "Fulano"
-    sql = conn.execute.await_args.args[0]
-    assert "a.status = 'aguardando'" in sql
+    assert "a.status = 'aguardando'" in _chamada_da_listagem(conn).args[0]
 
 
 @pytest.mark.asyncio
@@ -197,10 +285,9 @@ async def test_list_atendimentos_outros_excludes_current_user():
     pool, conn = _mock_pool(rows)
     out = await list_atendimentos(pool, 1, tipo="outros", current_user_id="me")
     assert len(out) == 1
-    sql = conn.execute.await_args.args[0]
-    assert "IS NULL OR a.assigned_to_user_id <> %s" in sql
-    args = conn.execute.await_args.args[1]
-    assert "me" in args
+    chamada = _chamada_da_listagem(conn)
+    assert "IS NULL OR a.assigned_to_user_id <> %s" in chamada.args[0]
+    assert "me" in chamada.args[1]
 
 
 @pytest.mark.asyncio

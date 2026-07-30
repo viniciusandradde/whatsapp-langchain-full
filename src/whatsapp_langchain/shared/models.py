@@ -664,6 +664,21 @@ class Atendimento(BaseModel):
     # esperando uma nota/comentário e não deve alongar a janela de resposta.
     aguardando_avaliacao_at: datetime | None = None
     aguardando_comentario_at: datetime | None = None
+    # --- Campos DERIVADOS (não existem no banco) ---
+    # Preenchidos por `list_atendimentos`; ver `derivar_situacao`.
+    #
+    # `situacao` é o que a UI mostra. Existe para as três interfaces (web, app e
+    # o que vier) lerem UM campo em vez de cada uma reimplementar a regra: até
+    # aqui `STATUS_LABEL` estava triplicado e já havia divergido — o web dizia
+    # "Em andamento" e o app "Em atendimento" para o mesmo estado.
+    situacao: str = "com_ia"
+    # A IA vai responder a próxima mensagem deste cliente? Eixo separado de
+    # propósito, como o `isAiEnabled` do Chatvolt: combinações novas de estado
+    # não exigem rótulo novo.
+    ia_ativa: bool = True
+    # Mensagens do cliente após a última vez que ESTE usuário abriu a conversa.
+    # 0 quando não há usuário no contexto (ex.: chamada por service token).
+    nao_lidas: int = 0
 
 
 class DocumentoConhecimento(BaseModel):

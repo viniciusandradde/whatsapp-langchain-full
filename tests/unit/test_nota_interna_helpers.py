@@ -108,6 +108,27 @@ async def test_count_unread_para_user():
     pool, conn = _mock_pool([(10, 3), (20, 1)])
     out = await count_unread_para_user(pool, atendimento_ids=[10, 20, 30], user_id="u")
     assert out == {10: 3, 20: 1}  # 30 sem msg → não aparece
+
+
+@pytest.mark.asyncio
+async def test_nao_lidas_conta_so_o_que_o_cliente_mandou():
+    """Nota interna e resposta do operador NÃO são "mensagem nova pra ler".
+
+    Sem estas cláusulas o contador subia sozinho: a própria resposta do operador
+    marcava como não lida a conversa que ele acabou de ler, e a nota que ele
+    escreveu pro time contava como mensagem do cliente. É o badge mentindo
+    exatamente pra quem acabou de agir.
+    """
+    pool, conn = _mock_pool([(10, 1)])
+    await count_unread_para_user(pool, atendimento_ids=[10], user_id="u")
+
+    sql = conn.execute.await_args.args[0]
+    assert "m.incoming_message IS NOT NULL" in sql
+    assert "m.incoming_message <> ''" in sql
+    assert "COALESCE(m.interna, FALSE) = FALSE" in sql
+    # E segue respeitando o "desde a última vez que EU abri".
+    assert "v.ultima_visualizacao_at IS NULL" in sql
+    assert "m.created_at > v.ultima_visualizacao_at" in sql
     sql = conn.execute.await_args.args[0]
     assert "LEFT JOIN atendimento_visualizacao" in sql
     assert "v.ultima_visualizacao_at IS NULL" in sql

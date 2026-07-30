@@ -69,6 +69,44 @@ async def is_whitelisted(
     return row is not None
 
 
+async def filtrar_whitelistados(
+    pool: AsyncConnectionPool, empresa_id: int, telefones: list[str]
+) -> set[str]:
+    """Quais destes telefones estão na whitelist — UMA query para a lista toda.
+
+    Versão em lote de [is_whitelisted], para a listagem de atendimentos: chamar a
+    versão unitária por linha faria 50 SELECTs para desenhar uma página.
+
+    Devolve os telefones **como vieram** (não normalizados), para o chamador
+    conseguir casar com a linha de origem. O casamento interno usa as variantes
+    com/sem o nono dígito BR de `candidatos_lookup` — sem isso o mesmo número
+    escrito das duas formas não bate.
+    """
+    if not telefones:
+        return set()
+
+    # candidato normalizado -> telefones originais que o geraram
+    por_candidato: dict[str, list[str]] = {}
+    for tel in telefones:
+        for cand in candidatos_lookup(tel):
+            por_candidato.setdefault(cand, []).append(tel)
+    if not por_candidato:
+        return set()
+
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT telefone FROM whitelist_numero
+                 WHERE empresa_id = %s AND telefone = ANY(%s)
+                """,
+                (empresa_id, list(por_candidato)),
+            )
+            achados = await cur.fetchall()
+
+    return {tel for (cand,) in achados for tel in por_candidato.get(cand, [])}
+
+
 async def registrar_whitelist(
     pool: AsyncConnectionPool,
     empresa_id: int,
