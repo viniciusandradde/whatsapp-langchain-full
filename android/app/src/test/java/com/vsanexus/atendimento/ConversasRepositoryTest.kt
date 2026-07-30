@@ -21,6 +21,8 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 
 /**
@@ -180,6 +182,15 @@ private class FakeApi(
     override suspend fun mensagens(id: Long, limit: Int, beforeId: Long?) = MensagensResponse()
 
     override suspend fun responder(id: Long, body: ResponderRequest) = vazio()
+
+    // Este fake é da LISTA de conversas, que não envia mídia. Existe só porque
+    // implementar a interface obriga — o envio de anexo é exercitado onde ele
+    // importa, no mapeamento de bolhas (BolhaTest).
+    override suspend fun responderMidia(
+        id: Long,
+        arquivo: MultipartBody.Part,
+        legenda: RequestBody,
+    ) = vazio()
 
     override suspend fun assumir(id: Long) = vazio()
 

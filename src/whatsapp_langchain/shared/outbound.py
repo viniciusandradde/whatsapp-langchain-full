@@ -18,6 +18,8 @@ Roteamento por provider:
 
 from __future__ import annotations
 
+import base64
+
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
@@ -30,7 +32,7 @@ from whatsapp_langchain.shared.conexao import (
     get_credentials_decrypted,
 )
 from whatsapp_langchain.shared.config import settings
-from whatsapp_langchain.shared.models import Conexao
+from whatsapp_langchain.shared.models import Atendimento, Cliente, Conexao
 from whatsapp_langchain.worker.evolution_client import EvolutionClient
 from whatsapp_langchain.worker.outbound_client import OutboundClient
 from whatsapp_langchain.worker.twilio_client import TwilioClient
@@ -136,8 +138,16 @@ async def _persist_outbound_row(
     response: str,
     user_id: str,
     provider_message_id: str,
+    media_url: str | None = None,
+    media_type: str | None = None,
 ) -> dict:
-    """Insere row outbound-only em message_queue + bump last_message_at."""
+    """Insere row outbound-only em message_queue + bump last_message_at.
+
+    `media_url`/`media_type` vão pras colunas `response_media_*` (mig 146), e
+    NÃO pras `media_*`, que são do lado inbound — a timeline decide o lado da
+    bolha pela origem do campo, então mídia do operador gravada em `media_url`
+    apareceria como se o cliente tivesse mandado.
+    """
     thread_id = f"{phone_number}:{agent_id}"
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -146,13 +156,16 @@ async def _persist_outbound_row(
                 (empresa_id, conexao_id, atendimento_id, message_id,
                  phone_number, agent_id, thread_id,
                  incoming_message, response, normalized_input,
+                 response_media_url, response_media_type,
                  status, process_after, processed_at)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
+                    %s, %s,
                     'done', NOW(), NOW())
             RETURNING id, agent_id, incoming_message, response, status,
-                      created_at, processed_at
+                      created_at, processed_at,
+                      response_media_url, response_media_type
             """,
             (
                 empresa_id,
@@ -165,6 +178,8 @@ async def _persist_outbound_row(
                 "",
                 response,
                 f"manual:{user_id}",
+                media_url,
+                media_type,
             ),
         )
         row = await cur.fetchone()
@@ -186,7 +201,44 @@ async def _persist_outbound_row(
         "status": row[4],
         "created_at": row[5].isoformat() if row[5] else None,
         "processed_at": row[6].isoformat() if row[6] else None,
+        "response_media_url": row[7],
+        "response_media_type": row[8],
     }
+
+
+async def _resolver_destino(
+    pool: AsyncConnectionPool,
+    atendimento_id: int,
+    empresa_id: int,
+) -> tuple[Atendimento, Cliente, Conexao]:
+    """Valida o atendimento e devolve para onde e por onde enviar.
+
+    Compartilhado por texto e mídia: são as mesmas quatro pré-condições (existe
+    na empresa, está aberto, tem cliente, tem conexão viva), e mantê-las em dois
+    lugares garantiria que um dia divergissem.
+    """
+    atendimento = await get_atendimento_by_id(pool, atendimento_id)
+    if atendimento is None or atendimento.empresa_id != empresa_id:
+        raise OutboundError("Atendimento não encontrado.")
+    if atendimento.status not in ("aguardando", "em_andamento"):
+        raise OutboundError("Atendimento já fechado — reabra um novo para responder.")
+
+    cliente = await get_cliente_by_id(pool, atendimento.cliente_id)
+    if cliente is None or cliente.empresa_id != empresa_id:
+        raise OutboundError("Cliente do atendimento não encontrado.")
+
+    if atendimento.conexao_id is None:
+        raise OutboundError(
+            "A conexão deste atendimento foi removida — reatribua a uma conexão "
+            "ativa para responder."
+        )
+    conexao = await get_conexao_by_id(pool, atendimento.conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise OutboundError(
+            "A conexão deste atendimento foi removida — reatribua a uma conexão "
+            "ativa para responder."
+        )
+    return atendimento, cliente, conexao
 
 
 async def send_outbound_manual(
@@ -212,28 +264,9 @@ async def send_outbound_manual(
     if not text:
         raise OutboundError("Mensagem vazia.")
 
-    atendimento = await get_atendimento_by_id(pool, atendimento_id)
-    if atendimento is None or atendimento.empresa_id != empresa_id:
-        raise OutboundError("Atendimento não encontrado.")
-    if atendimento.status not in ("aguardando", "em_andamento"):
-        raise OutboundError("Atendimento já fechado — reabra um novo para responder.")
-
-    cliente = await get_cliente_by_id(pool, atendimento.cliente_id)
-    if cliente is None or cliente.empresa_id != empresa_id:
-        raise OutboundError("Cliente do atendimento não encontrado.")
-
-    if atendimento.conexao_id is None:
-        raise OutboundError(
-            "A conexão deste atendimento foi removida — reatribua a uma conexão "
-            "ativa para responder."
-        )
-    conexao = await get_conexao_by_id(pool, atendimento.conexao_id)
-    if conexao is None or conexao.empresa_id != empresa_id:
-        raise OutboundError(
-            "A conexão deste atendimento foi removida — reatribua a uma conexão "
-            "ativa para responder."
-        )
-
+    atendimento, cliente, conexao = await _resolver_destino(
+        pool, atendimento_id, empresa_id
+    )
     client, outbound_mode = await _build_client(pool, conexao)
 
     try:
@@ -247,6 +280,10 @@ async def send_outbound_manual(
             error=str(e),
         )
         raise OutboundError(f"Falha ao enviar via {conexao.provider}: {e}") from e
+
+    # `_resolver_destino` já levantou se a conexão fosse ausente; o assert é só
+    # pro type checker, que perde o narrowing ao atravessar a função.
+    assert atendimento.conexao_id is not None
 
     row = await _persist_outbound_row(
         pool,
@@ -268,6 +305,132 @@ async def send_outbound_manual(
         provider=conexao.provider,
         provider_message_id=provider_message_id,
         outbound_mode=outbound_mode,
+    )
+    return row
+
+
+#: Teto prático do WhatsApp para documento. Acima disso o provider recusa, e
+#: recusar aqui dá erro legível em vez de 4xx cru do Evolution.
+MIDIA_MAX_BYTES = 16 * 1024 * 1024
+
+
+def _mediatype_de(mime: str) -> str:
+    """MIME → `mediatype` do Evolution, que só conhece três valores."""
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    return "document"
+
+
+async def send_outbound_manual_midia(
+    pool: AsyncConnectionPool,
+    *,
+    atendimento_id: int,
+    empresa_id: int,
+    user_id: str,
+    arquivo: bytes,
+    mime: str,
+    filename: str | None = None,
+    legenda: str = "",
+) -> dict:
+    """Envia mídia do operador (áudio gravado, foto, documento) ao cliente.
+
+    Áudio vai por `send_audio` e o resto por `send_media`: o WhatsApp trata
+    "nota de voz" e "arquivo de áudio anexado" como coisas diferentes, e só a
+    primeira chega com player e forma de onda.
+
+    Dois formatos do mesmo conteúdo, de propósito:
+    - **no fio**, base64 puro — é o que o Evolution espera nos campos `media` e
+      `audio`;
+    - **no banco**, data-URL (`data:<mime>;base64,...`) — é o formato que o
+      renderizador do painel e do app já leem para a mídia inbound, então a
+      bolha de saída não precisa de um caminho novo.
+
+    Raises:
+        OutboundError: arquivo vazio/grande demais, atendimento fechado, ou
+        provider sem suporte a mídia.
+    """
+    if not arquivo:
+        raise OutboundError("Arquivo vazio.")
+    if len(arquivo) > MIDIA_MAX_BYTES:
+        limite = MIDIA_MAX_BYTES // (1024 * 1024)
+        raise OutboundError(f"Arquivo acima do limite de {limite} MB.")
+
+    atendimento, cliente, conexao = await _resolver_destino(
+        pool, atendimento_id, empresa_id
+    )
+    client, outbound_mode = await _build_client(pool, conexao)
+
+    # Envio de mídia por operador só existe no Evolution hoje. O WABA exigiria
+    # subir o arquivo pro /media do Graph e mandar pelo id devolvido, e o Twilio
+    # exigiria hospedar o arquivo numa URL pública — nenhum dos dois está
+    # implementado. Falhar explícito aqui é melhor que aceitar o upload e não
+    # entregar nada ao cliente.
+    enviar_audio = getattr(client, "send_audio", None)
+    enviar_media = getattr(client, "send_media", None)
+    if enviar_audio is None or enviar_media is None:
+        raise OutboundError(
+            f"Enviar arquivo ainda não é suportado em conexões {conexao.provider}. "
+            "Use uma conexão Evolution para anexos e áudio."
+        )
+
+    base64_puro = base64.b64encode(arquivo).decode("ascii")
+    e_audio = mime.startswith("audio/")
+    texto = legenda.strip()
+
+    try:
+        if e_audio:
+            provider_message_id = await enviar_audio(cliente.telefone, base64_puro)
+        else:
+            provider_message_id = await enviar_media(
+                cliente.telefone,
+                base64_puro,
+                mediatype=_mediatype_de(mime),
+                caption=texto or None,
+                filename=filename,
+            )
+    except Exception as e:  # noqa: BLE001 — embrulha qualquer falha do client
+        logger.error(
+            "outbound_manual_midia_failed",
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            provider=conexao.provider,
+            mime=mime,
+            bytes=len(arquivo),
+            error=str(e),
+        )
+        raise OutboundError(f"Falha ao enviar via {conexao.provider}: {e}") from e
+
+    # `_resolver_destino` já levantou se a conexão fosse ausente; o assert é só
+    # pro type checker, que perde o narrowing ao atravessar a função.
+    assert atendimento.conexao_id is not None
+
+    row = await _persist_outbound_row(
+        pool,
+        empresa_id=empresa_id,
+        conexao_id=atendimento.conexao_id,
+        atendimento_id=atendimento_id,
+        phone_number=cliente.telefone,
+        agent_id=atendimento.agente_atual,
+        response=texto,
+        user_id=user_id,
+        provider_message_id=provider_message_id,
+        media_url=f"data:{mime};base64,{base64_puro}",
+        media_type=mime,
+    )
+
+    logger.info(
+        "outbound_manual_midia_sent",
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        provider=conexao.provider,
+        provider_message_id=provider_message_id,
+        outbound_mode=outbound_mode,
+        mime=mime,
+        bytes=len(arquivo),
+        nota_de_voz=e_audio,
     )
     return row
 

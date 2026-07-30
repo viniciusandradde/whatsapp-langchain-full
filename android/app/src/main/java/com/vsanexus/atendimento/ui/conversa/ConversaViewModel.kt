@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -76,6 +77,21 @@ constructor(
         // pra cobrir isso deixaria o app lento no caso comum.
         _rascunho.value = ""
         viewModelScope.launch { repo.enviar(texto) }
+    }
+
+    /**
+     * Envia anexo ou nota de voz.
+     *
+     * O rascunho vira LEGENDA do anexo e é limpo — como no WhatsApp, onde a foto
+     * sai com o texto que estava escrito. Mas não para áudio: nota de voz não
+     * tem legenda, e apagar o texto do operador que ele ainda vai mandar seria
+     * perder o que ele escreveu.
+     */
+    fun enviarMidia(arquivo: File, mime: String) {
+        val audio = mime.startsWith("audio/")
+        val legenda = if (audio) "" else _rascunho.value.trim()
+        if (!audio) _rascunho.value = ""
+        viewModelScope.launch { repo.enviarMidia(arquivo, mime, legenda) }
     }
 
     override fun onCleared() {

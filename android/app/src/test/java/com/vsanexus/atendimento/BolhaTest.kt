@@ -94,6 +94,48 @@ class BolhaTest {
     }
 
     @Test
+    fun `midia do operador fica do lado da SAIDA`() {
+        // Mig 146: o app manda foto e nota de voz. Se isso caísse em `media_url`
+        // (inbound), a timeline mostraria a foto do operador como se o cliente
+        // tivesse enviado — daí o campo separado e o lado explícito.
+        val b =
+            MensagemDto(
+                id = 1,
+                incomingMessage = "manda a foto do orçamento",
+                response = "segue em anexo",
+                responseMediaUrl = "data:image/jpeg;base64,AAAA",
+                responseMediaType = "image/jpeg",
+            ).paraBolhas()
+
+        assertEquals(2, b.size)
+        val entrada = b.first() as Bolha.Texto
+        assertEquals(Lado.ENTRADA, entrada.lado)
+
+        val saida = b[1] as Bolha.Midia
+        assertEquals(Lado.SAIDA, saida.lado)
+        assertEquals("image/jpeg", saida.tipo)
+        // `response` é a legenda da mídia, não uma bolha de texto separada:
+        // duas bolhas seriam o mesmo conteúdo contado duas vezes.
+        assertEquals("segue em anexo", saida.legenda)
+    }
+
+    @Test
+    fun `nota de voz sem legenda vira uma bolha so`() {
+        val b =
+            MensagemDto(
+                id = 1,
+                response = "",
+                responseMediaUrl = "data:audio/ogg;base64,AAAA",
+                responseMediaType = "audio/ogg",
+            ).paraBolhas()
+
+        assertEquals(1, b.size)
+        val saida = b.first() as Bolha.Midia
+        assertEquals(Lado.SAIDA, saida.lado)
+        assertEquals(null, saida.legenda)
+    }
+
+    @Test
     fun `nota interna nao vira bolha de saida`() {
         val b =
             MensagemDto(

@@ -4,6 +4,9 @@
     <!-- Permissões da fatia atual. POST_NOTIFICATIONS e o serviço de FCM
          entram junto com o push, na fatia dele. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Gravar nota de voz. Pedida em runtime na hora do primeiro toque no
+         microfone, não na instalação. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application

@@ -447,7 +447,8 @@ async def list_atendimento_mensagens(
                    normalized_input, media_processing_status,
                    response, status, created_at, processed_at,
                    media_processing_error, error,
-                   interna, criado_por_user_id
+                   interna, criado_por_user_id,
+                   response_media_url, response_media_type
               FROM message_queue
              WHERE {" AND ".join(where)}
              ORDER BY id DESC
@@ -474,6 +475,12 @@ async def list_atendimento_mensagens(
             # Sprint 1.3 — notas internas (msg só pra equipe, não enviada)
             "interna": r[13] or False,
             "criado_por_user_id": r[14],
+            # Mig 146 — mídia enviada PELO OPERADOR. Separada de media_url, que
+            # é inbound: quem renderiza decide o lado da bolha pela origem do
+            # campo, e misturar as duas põe a foto do operador do lado do
+            # cliente.
+            "response_media_url": r[15],
+            "response_media_type": r[16],
         }
         for r in rows
     ]

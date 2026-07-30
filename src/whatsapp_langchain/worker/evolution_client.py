@@ -31,6 +31,10 @@ logger = structlog.get_logger()
 
 EVOLUTION_SEND_TEXT_PATH = "/message/sendText/{instance}"
 EVOLUTION_SEND_MEDIA_PATH = "/message/sendMedia/{instance}"
+# Nota de voz tem endpoint PRÓPRIO. Mandar áudio por `sendMedia` chega como
+# arquivo anexado, com ícone de documento e sem player — não como a bolha de
+# áudio do WhatsApp.
+EVOLUTION_SEND_AUDIO_PATH = "/message/sendWhatsAppAudio/{instance}"
 EVOLUTION_SEND_PRESENCE_PATH = "/chat/sendPresence/{instance}"
 # Captura (Task 4) — endpoints REST da Evolution usados server-side.
 EVOLUTION_CHECK_NUMBERS_PATH = "/chat/whatsappNumbers/{instance}"
@@ -365,6 +369,59 @@ class EvolutionClient:
             instance=self.instance_name,
             message_id=mid,
             mediatype=mediatype,
+        )
+        return mid
+
+    async def send_audio(self, to: str, audio: str) -> str:
+        """Envia nota de voz via Evolution `/message/sendWhatsAppAudio`.
+
+        Endpoint separado de `send_media` de propósito: o WhatsApp distingue
+        "áudio anexado" de "nota de voz" (PTT), e só o segundo chega com a
+        bolha de player e a forma de onda. Áudio mandado por `sendMedia`
+        aparece como documento.
+
+        `audio` aceita URL pública ou base64 — o app manda base64, porque o
+        arquivo nasce no celular do operador e não tem URL.
+
+        O formato precisa ser OGG/Opus: é o que o WhatsApp aceita como nota de
+        voz. Quem grava é o app, e ele grava nesse formato.
+        """
+        normalized_to = normalize_to_number(to)
+        if self.delivery_mode == "mock":
+            mid = f"mock-evo-audio-{uuid.uuid4().hex}"
+            logger.info(
+                "evolution_audio_mocked",
+                to=normalized_to,
+                instance=self.instance_name,
+            )
+            return mid
+
+        url = f"{self.api_url}{EVOLUTION_SEND_AUDIO_PATH.format(instance=self.instance_name)}"
+        async with httpx.AsyncClient() as http:
+            response = await http.post(
+                url,
+                headers={"apikey": self.api_key},
+                json={"number": normalized_to, "audio": audio},
+                timeout=60.0,
+            )
+        if not response.is_success:
+            detail = response.text[:500]
+            logger.error(
+                "evolution_audio_failed",
+                to=normalized_to,
+                instance=self.instance_name,
+                status_code=response.status_code,
+                detail=detail,
+            )
+            raise EvolutionSendError(response.status_code, detail)
+        data = response.json()
+        key = data.get("key") or data.get("data", {}).get("key", {})
+        mid = key.get("id", "") if isinstance(key, dict) else ""
+        logger.info(
+            "evolution_audio_sent",
+            to=normalized_to,
+            instance=self.instance_name,
+            message_id=mid,
         )
         return mid
 

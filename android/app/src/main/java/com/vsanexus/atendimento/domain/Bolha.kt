@@ -58,6 +58,13 @@ sealed interface Bolha {
         val url: String,
         val tipo: String?,
         val legenda: String?,
+        /**
+         * Sem default de propósito: a mídia do operador vem de
+         * `response_media_url` e a do cliente de `media_url` (mig 146), e um
+         * default silencioso poria a foto que o operador mandou do lado do
+         * cliente na timeline.
+         */
+        val lado: Lado,
     ) : Bolha
 
     /** Nota interna do operador — não foi enviada ao cliente. */
@@ -106,6 +113,7 @@ fun MensagemDto.paraBolhas(): List<Bolha> {
                 url = mediaUrl,
                 tipo = mediaType,
                 legenda = incomingMessage?.takeIf { it.isNotBlank() },
+                lado = Lado.ENTRADA,
             )
     } else if (!incomingMessage.isNullOrBlank()) {
         bolhas += Bolha.Texto("$id-in", createdAt, Lado.ENTRADA, incomingMessage)
@@ -119,7 +127,21 @@ fun MensagemDto.paraBolhas(): List<Bolha> {
     }
 
     // 3. A resposta, se de fato saiu.
-    if (!response.isNullOrBlank() && !ehMarcadorInterno(response)) {
+    //
+    //    Quando o operador mandou anexo ou nota de voz, `response` guarda a
+    //    LEGENDA daquela mídia (mig 146) — então ela entra como legenda da
+    //    bolha, não como uma segunda bolha de texto solta.
+    if (!responseMediaUrl.isNullOrBlank()) {
+        bolhas +=
+            Bolha.Midia(
+                id = "$id-out",
+                quandoIso = processedAt ?: createdAt,
+                url = responseMediaUrl,
+                tipo = responseMediaType,
+                legenda = response?.takeIf { it.isNotBlank() && !ehMarcadorInterno(it) },
+                lado = Lado.SAIDA,
+            )
+    } else if (!response.isNullOrBlank() && !ehMarcadorInterno(response)) {
         bolhas += Bolha.Texto("$id-out", processedAt ?: createdAt, Lado.SAIDA, response)
     }
 

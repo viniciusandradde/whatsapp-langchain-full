@@ -274,6 +274,9 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
             # Sprint 1.3: interna + criado_por_user_id
             False,
             None,
+            # Mig 146: mídia enviada pelo OPERADOR (anexo/nota de voz do app).
+            None,
+            None,
         )
     ]
     pool, conn = _mock_pool(rows)
@@ -281,6 +284,10 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
     assert len(out) == 1
     assert out[0]["incoming_message"] == "oi"
     assert out[0]["response"] == "olá! como posso ajudar?"
+    # Mensagem só de texto não tem mídia de saída — o campo existe e vem nulo,
+    # o que é o que faz a timeline renderizar bolha de texto e não de anexo.
+    assert out[0]["response_media_url"] is None
+    assert out[0]["response_media_type"] is None
     sql = conn.execute.await_args.args[0]
     assert "WHERE empresa_id = %s" in sql
     assert "AND atendimento_id = %s" in sql

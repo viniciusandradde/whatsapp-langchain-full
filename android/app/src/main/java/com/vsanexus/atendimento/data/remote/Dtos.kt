@@ -90,6 +90,12 @@ data class MensagemDto(
     /** True quando é nota interna do operador, não mensagem enviada. */
     val interna: Boolean? = null,
     @SerialName("criado_por_user_id") val criadoPorUserId: String? = null,
+    /**
+     * Mídia enviada PELO OPERADOR (mig 146) — contraparte outbound de
+     * [mediaUrl]. Separada porque o lado da bolha vem da origem do campo.
+     */
+    @SerialName("response_media_url") val responseMediaUrl: String? = null,
+    @SerialName("response_media_type") val responseMediaType: String? = null,
 )
 
 @Serializable

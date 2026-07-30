@@ -11,7 +11,16 @@ from __future__ import annotations
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
@@ -56,6 +65,7 @@ from whatsapp_langchain.shared.nota_interna import create_nota_interna
 from whatsapp_langchain.shared.outbound import (
     OutboundError,
     send_outbound_manual,
+    send_outbound_manual_midia,
     send_template_by_id,
 )
 from whatsapp_langchain.shared.perfil import get_user_permissions
@@ -620,6 +630,76 @@ async def responder(
         )
     except OutboundError as e:
         # Mapeia para 4xx — erros lógicos (atendimento fechado, etc).
+        msg = str(e)
+        status_code = 409 if "fechado" in msg else 404 if "encontrad" in msg else 400
+        raise HTTPException(status_code=status_code, detail=msg) from e
+    return {"mensagem": row}
+
+
+#: MIMEs aceitos no anexo do operador.
+#:
+#: Allowlist e não denylist: o arquivo vai pro WhatsApp de um cliente real, e o
+#: conjunto do que faz sentido mandar num atendimento é pequeno e conhecido.
+#: `audio/*` cobre o que o app grava (OGG/Opus) e o que outros aparelhos gravam.
+MIDIA_MIMES_ACEITOS = (
+    "audio/",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "video/mp4",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument",
+    "application/vnd.ms-excel",
+    "text/plain",
+)
+
+
+@router.post("/{atendimento_id}/responder-midia")
+async def responder_midia(
+    atendimento_id: int,
+    arquivo: UploadFile = File(...),
+    legenda: str = Form(""),
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.write")),
+) -> dict:
+    """Envia anexo ou nota de voz do operador ao cliente.
+
+    Contraparte de `responder` para o que não é texto: o app Android grava áudio
+    e anexa foto/documento por aqui. Áudio chega como nota de voz (bolha com
+    player), o resto como anexo.
+
+    A legenda passa pelo mesmo render de `{{cliente.*}}` do texto — o operador
+    pode legendar uma foto com `Olá {{cliente.nome}}` e o cliente recebe o nome.
+
+    Só conexões Evolution suportam mídia hoje; WABA e Twilio devolvem 400 com a
+    razão, em vez de aceitar o upload e não entregar nada.
+    """
+    mime = (arquivo.content_type or "").lower()
+    if not mime.startswith(MIDIA_MIMES_ACEITOS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de arquivo não suportado: {mime or 'desconhecido'}.",
+        )
+
+    conteudo = await arquivo.read()
+
+    pool = await get_pool()
+    ctx = await build_render_context(pool, empresa_id, atendimento_id=atendimento_id)
+    try:
+        row = await send_outbound_manual_midia(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            user_id=user_id,
+            arquivo=conteudo,
+            mime=mime,
+            filename=arquivo.filename,
+            legenda=render_template(legenda, ctx),
+        )
+    except OutboundError as e:
         msg = str(e)
         status_code = 409 if "fechado" in msg else 404 if "encontrad" in msg else 400
         raise HTTPException(status_code=status_code, detail=msg) from e

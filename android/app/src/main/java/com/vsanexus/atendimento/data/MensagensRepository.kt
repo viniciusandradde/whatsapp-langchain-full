@@ -9,8 +9,20 @@ import com.vsanexus.atendimento.domain.paraBolhas
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Content-type da parte de texto do multipart (a legenda). */
+private val TEXTO_SIMPLES = "text/plain; charset=utf-8".toMediaType()
+
+/** Usado quando o seletor do sistema declara um MIME que não parseia. */
+private val OCTET_STREAM = "application/octet-stream".toMediaType()
 
 data class EstadoConversa(
     val bolhas: List<Bolha> = emptyList(),
@@ -139,6 +151,77 @@ constructor(private val api: AtendimentoApi) {
             false
         }
     }
+
+    /**
+     * Envia anexo ou nota de voz.
+     *
+     * Recebe [arquivo] em vez de bytes para o OkHttp fazer streaming do disco:
+     * uma foto de celular passa de 8 MB, e carregar isso em `ByteArray` só pra
+     * repassar ao corpo do request dobraria o pico de memória sem ganho.
+     *
+     * A bolha otimista é de TEXTO ("enviando…"), não uma prévia da mídia:
+     * decodificar o arquivo aqui só pra mostrar por dois segundos custaria uma
+     * segunda decodificação: `atualizar()` já troca pela bolha real, que vem do
+     * servidor com a mídia.
+     *
+     * O arquivo é apagado no fim, em qualquer desfecho — é uma cópia em cache
+     * (gravação ou anexo escolhido) e nada mais lê depois disto.
+     */
+    suspend fun enviarMidia(arquivo: File, mime: String, legenda: String = ""): Boolean {
+        val id = atendimentoId ?: return false
+        if (!arquivo.exists() || arquivo.length() == 0L) {
+            _estado.value = _estado.value.copy(aviso = "O arquivo está vazio.")
+            return false
+        }
+
+        val rotulo = if (mime.startsWith("audio/")) "Enviando áudio…" else "Enviando anexo…"
+        val pendente =
+            Bolha.Texto(
+                id = "pendente-${System.nanoTime()}",
+                quandoIso = null,
+                lado = Lado.SAIDA,
+                texto = rotulo,
+                pendente = true,
+            )
+        _estado.value = _estado.value.copy(bolhas = _estado.value.bolhas + pendente)
+
+        return try {
+            // `toMediaType()` LANÇA em MIME malformado, e o seletor do sistema
+            // devolve o que o app de origem declarou — não necessariamente algo
+            // válido. A exceção cairia no catch de rede e o operador leria "sem
+            // conexão" para um problema que não é de conexão.
+            val tipo = mime.toMediaTypeOrNull() ?: OCTET_STREAM
+            val corpo = arquivo.asRequestBody(tipo)
+            val parte = MultipartBody.Part.createFormData("arquivo", arquivo.name, corpo)
+            val r = api.responderMidia(id, parte, legenda.toRequestBody(TEXTO_SIMPLES))
+            if (r.isSuccessful) {
+                atualizar()
+                true
+            } else {
+                removerPendente(pendente.id, avisoMidiaDe(r.code()))
+                false
+            }
+        } catch (e: Exception) {
+            removerPendente(pendente.id, "Sem conexão. O arquivo não foi enviado.")
+            false
+        } finally {
+            arquivo.delete()
+        }
+    }
+
+    /**
+     * 400 aqui quase sempre é provider sem suporte a mídia (WABA/Twilio) ou tipo
+     * recusado — casos em que o operador precisa saber que NÃO adianta repetir.
+     */
+    private fun avisoMidiaDe(codigo: Int) =
+        when (codigo) {
+            400 -> "Esta conexão não aceita envio de arquivo."
+            409 -> "Este atendimento já foi fechado."
+            404 -> "Atendimento não encontrado."
+            403 -> "Você não tem permissão para responder aqui."
+            413 -> "O arquivo é grande demais."
+            else -> "Não foi possível enviar o arquivo."
+        }
 
     private fun removerPendente(id: String, aviso: String) {
         _estado.value =

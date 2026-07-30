@@ -1093,7 +1093,13 @@ function MessageBubbles({
   // resposta agente. Mídia é renderizada inline como <img>/<audio>/link.
   type Bubble =
     | { side: "in" | "out"; kind: "text"; text: string; meta?: string }
-    | { side: "in"; kind: "media"; mediaUrl: string; mediaType: string | null; caption?: string };
+    | {
+        side: "in" | "out";
+        kind: "media";
+        mediaUrl: string;
+        mediaType: string | null;
+        caption?: string;
+      };
 
   const bubbles: Bubble[] = [];
 
@@ -1133,7 +1139,20 @@ function MessageBubbles({
     m.status === "failed" ||
     m.response?.startsWith("[modo manual") === true ||
     m.response?.startsWith("[whitelist") === true;
-  if (m.response && !isHandoff) {
+  // Mídia enviada PELO OPERADOR (mig 146) — o app Android manda foto, documento
+  // e nota de voz. Fica em `response_media_url`, separada da inbound: o lado da
+  // bolha vem da origem do campo, e reusar `media_url` poria o que o operador
+  // mandou do lado do cliente. Quando há mídia, `response` é a LEGENDA dela, e
+  // não uma segunda bolha de texto.
+  if (m.response_media_url) {
+    bubbles.push({
+      side: "out",
+      kind: "media",
+      mediaUrl: m.response_media_url,
+      mediaType: m.response_media_type ?? null,
+      caption: !isHandoff && m.response ? m.response : undefined,
+    });
+  } else if (m.response && !isHandoff) {
     bubbles.push({ side: "out", kind: "text", text: m.response });
   }
   if (m.error) {

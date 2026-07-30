@@ -1,9 +1,13 @@
 package com.vsanexus.atendimento.data.remote
 
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -83,6 +87,25 @@ interface AtendimentoApi {
     suspend fun responder(
         @Path("id") id: Long,
         @Body body: ResponderRequest,
+    ): Response<Unit>
+
+    /**
+     * Envia anexo ou nota de voz do operador.
+     *
+     * Multipart e não JSON com base64: o corpo carrega o arquivo bruto, sem o
+     * inchaço de 33% da codificação, e o OkHttp faz streaming a partir do
+     * arquivo em vez de montar a coisa toda na memória — o que importa quando é
+     * uma foto de 8 MB num aparelho apertado.
+     *
+     * Só conexões Evolution suportam mídia hoje; nas outras a API devolve 400
+     * com o motivo, em vez de aceitar e não entregar.
+     */
+    @Multipart
+    @POST("api/atendimentos/{id}/responder-midia")
+    suspend fun responderMidia(
+        @Path("id") id: Long,
+        @Part arquivo: MultipartBody.Part,
+        @Part("legenda") legenda: RequestBody,
     ): Response<Unit>
 
     @POST("api/atendimentos/{id}/claim")

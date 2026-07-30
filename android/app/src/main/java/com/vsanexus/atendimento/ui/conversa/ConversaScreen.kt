@@ -1,5 +1,9 @@
 package com.vsanexus.atendimento.ui.conversa
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -33,13 +40,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -48,8 +61,13 @@ import com.vsanexus.atendimento.domain.Bolha
 import com.vsanexus.atendimento.domain.Lado
 import com.vsanexus.atendimento.ui.theme.CoresChat
 import com.vsanexus.atendimento.ui.theme.coresChat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Tela de conversa.
@@ -122,6 +140,7 @@ fun ConversaScreen(
                 texto = rascunho,
                 onTexto = vm::onRascunho,
                 onEnviar = vm::enviar,
+                onEnviarMidia = vm::enviarMidia,
             )
         },
     ) { inner ->
@@ -216,10 +235,17 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
                 }
             }
         }
-        is Bolha.Midia ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        is Bolha.Midia -> {
+            // Mídia também tem lado: o operador manda foto e nota de voz pelo
+            // app (mig 146), e alinhar tudo à esquerda faria o que ELE enviou
+            // parecer que veio do cliente.
+            val entrada = b.lado == Lado.ENTRADA
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                horizontalArrangement = if (entrada) Arrangement.Start else Arrangement.End,
+            ) {
                 Surface(
-                    color = cores.bolhaEntrada,
+                    color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.widthIn(max = 300.dp),
                 ) {
@@ -236,7 +262,7 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
                                 ImagemDaConversa(b.url, Modifier.fillMaxWidth())
                             else ->
                                 Text(
-                                    rotuloMidia(b.tipo),
+                                    rotuloMidia(b.tipo, entrada),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium,
                                 )
@@ -253,6 +279,7 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
                     }
                 }
             }
+        }
         is Bolha.NotaInterna ->
             Surface(
                 color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -281,7 +308,66 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
 }
 
 @Composable
-private fun Composer(texto: String, onTexto: (String) -> Unit, onEnviar: () -> Unit) {
+private fun Composer(
+    texto: String,
+    onTexto: (String) -> Unit,
+    onEnviar: () -> Unit,
+    onEnviarMidia: (File, String) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val escopo = rememberCoroutineScope()
+    val gravador = remember { Gravador(ctx) }
+    var gravando by remember { mutableStateOf(false) }
+    var segundos by remember { mutableIntStateOf(0) }
+    var avisoLocal by remember { mutableStateOf<String?>(null) }
+
+    // Sair da tela gravando tem que DEVOLVER o microfone. Sem isto o
+    // MediaRecorder segue segurando o mic depois da conversa fechar, e nenhum
+    // outro app (nem esta tela de novo) consegue gravar até o processo morrer.
+    DisposableEffect(Unit) { onDispose { gravador.cancelar() } }
+
+    LaunchedEffect(gravando) {
+        segundos = 0
+        while (gravando) {
+            delay(1_000)
+            segundos++
+        }
+    }
+
+    fun comecarGravacao() {
+        if (Build.VERSION.SDK_INT < API_MINIMA_GRAVACAO) {
+            avisoLocal = "Gravar áudio exige Android 10 ou superior."
+            return
+        }
+        avisoLocal = null
+        gravando = gravador.iniciar()
+        if (!gravando) avisoLocal = "Não foi possível acessar o microfone."
+    }
+
+    val pedirMicrofone =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+            if (ok) {
+                comecarGravacao()
+            } else {
+                avisoLocal = "Sem permissão de microfone."
+            }
+        }
+
+    val escolherAnexo =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            escopo.launch {
+                // Copiar fora da thread principal: pode ser um PDF de dezenas
+                // de MB, e travar a UI por isso seria visível.
+                val anexo = withContext(Dispatchers.IO) { copiarParaCache(ctx, uri) }
+                if (anexo == null) {
+                    avisoLocal = "Não foi possível ler o arquivo."
+                } else {
+                    onEnviarMidia(anexo.arquivo, anexo.mime)
+                }
+            }
+        }
+
     // `imePadding` sobe o composer com o teclado; `navigationBarsPadding` o
     // mantém ACIMA dos botões do Android. Com `enableEdgeToEdge()` o app desenha
     // sob as barras do sistema, e sem o segundo padding o campo de texto fica
@@ -291,45 +377,127 @@ private fun Composer(texto: String, onTexto: (String) -> Unit, onEnviar: () -> U
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier.imePadding().navigationBarsPadding(),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            OutlinedTextField(
-                value = texto,
-                onValueChange = onTexto,
-                placeholder = { Text("Mensagem") },
-                maxLines = 5,
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(6.dp))
-            IconButton(
-                onClick = onEnviar,
-                enabled = texto.isNotBlank(),
-                modifier =
-                    Modifier.clip(RoundedCornerShape(24.dp))
-                        // Laranja da marca: enviar é a ação primária da tela.
-                        .background(MaterialTheme.colorScheme.primary),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Enviar",
-                    tint = MaterialTheme.colorScheme.onPrimary,
+        Column {
+            if (avisoLocal != null) {
+                Text(
+                    avisoLocal!!,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
+            }
+
+            if (gravando) {
+                LinhaGravando(
+                    segundos = segundos,
+                    onCancelar = {
+                        gravador.cancelar()
+                        gravando = false
+                    },
+                    onEnviar = {
+                        val arquivo = gravador.parar()
+                        gravando = false
+                        if (arquivo == null) {
+                            avisoLocal = "Áudio curto demais."
+                        } else {
+                            onEnviarMidia(arquivo, MIME_NOTA_DE_VOZ)
+                        }
+                    },
+                )
+                return@Column
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                IconButton(onClick = { escolherAnexo.launch("*/*") }) {
+                    Icon(
+                        Icons.Filled.AttachFile,
+                        contentDescription = "Anexar arquivo",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedTextField(
+                    value = texto,
+                    onValueChange = onTexto,
+                    placeholder = { Text("Mensagem") },
+                    maxLines = 5,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(6.dp))
+                // Um botão só, que troca de função com o campo — como no
+                // WhatsApp. Campo vazio grava; com texto, envia.
+                val vaiEnviarTexto = texto.isNotBlank()
+                IconButton(
+                    onClick = {
+                        if (vaiEnviarTexto) {
+                            onEnviar()
+                        } else {
+                            pedirMicrofone.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    modifier =
+                        Modifier.clip(RoundedCornerShape(24.dp))
+                            // Laranja da marca: é a ação primária da tela.
+                            .background(MaterialTheme.colorScheme.primary),
+                ) {
+                    Icon(
+                        if (vaiEnviarTexto) Icons.AutoMirrored.Filled.Send else Icons.Filled.Mic,
+                        contentDescription = if (vaiEnviarTexto) "Enviar" else "Gravar áudio",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
             }
         }
     }
 }
 
-private fun rotuloMidia(tipo: String?): String =
-    when {
-        tipo == null -> "Anexo"
-        tipo.startsWith("audio") -> "Áudio recebido"
-        tipo.startsWith("image") -> "Imagem recebida"
-        tipo.startsWith("video") -> "Vídeo recebido"
-        else -> "Documento recebido"
+/** Barra que substitui o campo de texto enquanto grava. */
+@Composable
+private fun LinhaGravando(segundos: Int, onCancelar: () -> Unit, onEnviar: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onCancelar) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Descartar áudio",
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
+        Text(
+            "Gravando  %d:%02d".format(segundos / 60, segundos % 60),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(
+            onClick = onEnviar,
+            modifier =
+                Modifier.clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.primary),
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = "Enviar áudio",
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
     }
+}
+
+private fun rotuloMidia(tipo: String?, entrada: Boolean): String {
+    val verbo = if (entrada) "recebid" else "enviad"
+    return when {
+        tipo == null -> "Anexo"
+        tipo.startsWith("audio") -> "Áudio ${verbo}o"
+        tipo.startsWith("image") -> "Imagem ${verbo}a"
+        tipo.startsWith("video") -> "Vídeo ${verbo}o"
+        else -> "Documento ${verbo}o"
+    }
+}
 
 /** Só a hora, como nas bolhas do WhatsApp. Formato inesperado devolve vazio. */
 private fun horaCurta(iso: String?): String =

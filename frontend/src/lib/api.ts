@@ -620,6 +620,11 @@ export interface AtendimentoMensagem {
   // Sprint 1.3 — nota interna (msg só pra equipe, não enviada pro cliente)
   interna?: boolean;
   criado_por_user_id?: string | null;
+  // Mig 146 — mídia enviada PELO OPERADOR (anexo/nota de voz do app Android).
+  // Separada de media_url, que é inbound: o lado da bolha vem da origem do
+  // campo, e misturar as duas põe o que o operador mandou do lado do cliente.
+  response_media_url?: string | null;
+  response_media_type?: string | null;
 }
 
 export interface AtendimentoMensagensResponse {
