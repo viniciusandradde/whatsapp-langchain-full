@@ -7,6 +7,7 @@ import {
   ChevronRight,
   DownloadCloud,
   Megaphone,
+  Search,
   UserMinus,
   UserPlus,
   Users,
@@ -16,6 +17,7 @@ import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
 import { plural } from "@/lib/formato";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -62,6 +64,8 @@ export function ContatosClient({
     initial
   );
   const [pagina, setPagina] = useState(0);
+  const [busca, setBusca] = useState("");
+  const [buscaAplicada, setBuscaAplicada] = useState("");
   const [confirmandoPromoverTodos, setConfirmandoPromoverTodos] =
     useState(false);
   const [total, setTotal] = useState(totalInicial);
@@ -92,10 +96,11 @@ export function ContatosClient({
     router.push("/campanhas");
   }
 
-  async function carregar(p = pagina) {
+  async function carregar(p = pagina, termo = busca) {
     const r = await listContatosAction({
       limit: PAGINA,
       offset: p * PAGINA,
+      q: termo,
     });
     if (r.ok) {
       setContatos(r.data.items);
@@ -158,11 +163,25 @@ export function ContatosClient({
     });
   }
 
+  // Busca é server-side: filtrar só a página carregada acharia 1 em cada 99
+  // numa base de 20 mil.
+  function buscar(termo = busca) {
+    setPagina(0);
+    setBuscaAplicada(termo.trim());
+    start(async () => {
+      await carregar(0, termo);
+    });
+  }
+
   async function irParaPagina(p: number) {
     setErro(null);
     setSel(new Set());
     setPagina(p);
-    const r = await listContatosAction({ limit: PAGINA, offset: p * PAGINA });
+    const r = await listContatosAction({
+      limit: PAGINA,
+      offset: p * PAGINA,
+      q: buscaAplicada,
+    });
     if (r.ok) {
       setContatos(r.data.items);
       setTotal(r.data.total);
@@ -359,7 +378,46 @@ export function ContatosClient({
             )}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-3">
+            <form
+              className="flex w-full max-w-md items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                buscar();
+              }}
+            >
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar por nome ou telefone"
+                  className="pl-8"
+                  aria-label="Buscar contato por nome ou telefone"
+                />
+              </div>
+              {/* Botão explícito: Enter sozinho é atalho invisível — quem não
+                  souber que existe fica achando que a busca não funciona. */}
+              <Button type="submit" variant="outline" size="sm" disabled={pending}>
+                Buscar
+              </Button>
+              {buscaAplicada && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => {
+                    setBusca("");
+                    buscar("");
+                  }}
+                >
+                  Limpar
+                </Button>
+              )}
+            </form>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>

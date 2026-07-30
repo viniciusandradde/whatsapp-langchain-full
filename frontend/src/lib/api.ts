@@ -3058,6 +3058,8 @@ export async function revokeApiKey(id: number): Promise<{ ok: boolean }> {
 export async function getContatosCapturados(opts?: {
   limit?: number;
   offset?: number;
+  /** Filtra por nome ou telefone. O total devolvido acompanha o filtro. */
+  q?: string;
 }): Promise<{
   items: ContatoCapturado[];
   total: number;
@@ -3066,6 +3068,7 @@ export async function getContatosCapturados(opts?: {
   const p = new URLSearchParams();
   if (opts?.limit != null) p.set("limit", String(opts.limit));
   if (opts?.offset != null) p.set("offset", String(opts.offset));
+  if (opts?.q?.trim()) p.set("q", opts.q.trim());
   const qs = p.toString();
   return apiFetch<{ items: ContatoCapturado[]; total: number; promoviveis: number }>(
     `/api/captura/contatos${qs ? "?" + qs : ""}`

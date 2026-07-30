@@ -113,18 +113,27 @@ async def status_lote(
 async def listar_contatos(
     limit: int = 1000,
     offset: int = 0,
+    q: str | None = None,
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
     """Lista contatos capturados (browser do painel) + totais.
 
     `total` permite a UI mostrar 'X de N' — antes a lista capava em 200 e dava a
     impressão de que só 200 foram capturados. Teto por página subiu pra 5000.
+
+    `q` (opcional) filtra por nome ou telefone. Parâmetro ADITIVO: quem chama
+    sem ele continua recebendo a lista inteira, como antes. Existe porque numa
+    base de ~20 mil contatos a única forma de achar alguém era paginar até
+    topar com ele — e busca client-side sobre a página carregada acharia 1 em
+    cada 99.
     """
     pool = await get_pool()
     items = await cap.listar_contatos(
-        pool, empresa_id, limit=min(limit, 5000), offset=offset
+        pool, empresa_id, limit=min(limit, 5000), offset=offset, q=q
     )
-    totais = await cap.contar_contatos(pool, empresa_id)
+    # O total acompanha o filtro: com busca ativa, "X de N" tem que falar do
+    # resultado, senão a paginação oferece páginas vazias.
+    totais = await cap.contar_contatos(pool, empresa_id, q=q)
     return {
         "items": items,
         "total": totais["total"],
