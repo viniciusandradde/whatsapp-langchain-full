@@ -28,6 +28,7 @@ import {
   getMyAbas,
   getTags,
   getTagsAtendimento,
+  getTagsOpcoesAba,
   marcarAtendimentoLido,
   reorderAbas,
   resetAtendimentoThread,
@@ -46,6 +47,7 @@ import {
   type Departamento,
   type ModeloMensagem,
   type Tag,
+  type TagOpcaoAba,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -355,6 +357,9 @@ export async function reorderAbasAction(
 
 type TagsResult = { ok: true; tags: Tag[] } | { ok: false; error: string };
 type TagResult = { ok: true; tag: Tag } | { ok: false; error: string };
+type OpcoesDeAbaResult =
+  | { ok: true; opcoes: TagOpcaoAba[] }
+  | { ok: false; error: string };
 type AtendimentoTagsResult =
   | { ok: true; tags: AtendimentoTag[] }
   | { ok: false; error: string };
@@ -365,6 +370,20 @@ export async function loadTagsAction(
   try {
     const r = await getTags(onlyAtivos);
     return { ok: true, tags: r.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/**
+ * Critérios oferecidos no modal da aba. Não usa `loadTagsAction`: o catálogo
+ * sozinho deixaria de fora as tags que a triagem do agente aplica direto no
+ * cliente — que em produção são justamente as que agrupam mais gente.
+ */
+export async function loadOpcoesDeAbaAction(): Promise<OpcoesDeAbaResult> {
+  try {
+    const r = await getTagsOpcoesAba();
+    return { ok: true, opcoes: r.items };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

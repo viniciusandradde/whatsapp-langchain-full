@@ -2137,6 +2137,22 @@ export async function getTags(
   return apiFetch<{ items: Tag[] }>(`/api/tags${qs}`);
 }
 
+/**
+ * Opção de critério pra aba. Não é `Tag`: aqui entram também os nomes que a
+ * triagem do agente gravou direto em `cliente_tag` sem passar pelo catálogo —
+ * por isso não há `id`, e `cor` pode faltar.
+ */
+export interface TagOpcaoAba {
+  nome: string;
+  cor: string | null;
+  clientes: number;
+  no_catalogo: boolean;
+}
+
+export async function getTagsOpcoesAba(): Promise<{ items: TagOpcaoAba[] }> {
+  return apiFetch<{ items: TagOpcaoAba[] }>("/api/tags/opcoes-aba");
+}
+
 export async function createTag(payload: {
   nome: string;
   cor?: string | null;

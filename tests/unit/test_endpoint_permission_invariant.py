@@ -119,7 +119,6 @@ TECH_DEBT_KNOWN_OFFENDERS: set[str] = {
     "POST /api/admin/workflows/{workflow_id}/toggle-active",
     "POST /api/atendentes/me/heartbeat",
     "POST /api/atendentes/me/status",
-    "POST /api/atendimentos/{atendimento_id}/aba",
     "POST /api/atendimentos/{atendimento_id}/claim",
     "POST /api/atendimentos/{atendimento_id}/close",
     "POST /api/atendimentos/{atendimento_id}/marcar-lido",

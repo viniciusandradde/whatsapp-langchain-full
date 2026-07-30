@@ -40,6 +40,23 @@ class TestSmoke:
     def test_get_tags_sem_auth_401(self) -> None:
         assert _client().get("/api/tags").status_code == 401
 
+    def test_get_opcoes_de_aba_sem_auth_401(self) -> None:
+        assert _client().get("/api/tags/opcoes-aba").status_code == 401
+
+    def test_opcoes_de_aba_nao_e_capturada_por_tags_id(self) -> None:
+        """Rota literal tem que ganhar de `/tags/{id}`.
+
+        Se alguém declarar um `GET /tags/{tag_id}` acima dela, "opcoes-aba" vira
+        id e o FastAPI devolve 422 de validação em vez de chamar o endpoint. O
+        401 aqui prova que a rota casou (o service token é checado antes).
+        """
+        from whatsapp_langchain.server.main import app
+
+        rotas = [getattr(r, "path", "") for r in app.routes]
+        i_literal = rotas.index("/api/tags/opcoes-aba")
+        params = [n for n, p in enumerate(rotas) if p.startswith("/api/tags/{")]
+        assert all(i_literal < n for n in params)
+
     def test_post_tag_sem_auth_401(self) -> None:
         assert _client().post("/api/tags", json={"nome": "X"}).status_code == 401
 

@@ -5,6 +5,7 @@ fica em `/api/atendimentos/{id}/tags` (perm separada `atendimento.tag.aplicar`).
 
 Endpoints:
 - GET    /api/tags                 — lista tags ativas da empresa
+- GET    /api/tags/opcoes-aba      — critérios pra aba (catálogo + tags em uso)
 - POST   /api/tags                 — cria tag
 - PATCH  /api/tags/{id}            — atualiza
 - DELETE /api/tags/{id}            — hard delete (cascateia em atendimento_tag)
@@ -26,6 +27,7 @@ from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.tag import (
     create_tag,
     delete_tag,
+    list_opcoes_de_aba,
     list_tags,
     update_tag,
 )
@@ -61,6 +63,22 @@ async def list_tags_endpoint(
 ) -> dict:
     pool = await get_pool()
     items = await list_tags(pool, empresa_id=empresa_id, only_ativos=only_ativos)
+    return {"items": items}
+
+
+@router.get("/tags/opcoes-aba")
+async def list_opcoes_de_aba_endpoint(
+    empresa_id: int = Depends(get_empresa_context),
+    # Mesma regra do GET /tags: leitura liberada, é só o menu de opções da UI.
+) -> dict:
+    """Critérios possíveis pra aba: catálogo + tags que a triagem já aplicou.
+
+    Rota literal declarada antes de qualquer `/tags/{id}` — o FastAPI casa na
+    ordem de registro, e uma rota parametrizada acima capturaria "opcoes-aba"
+    como id.
+    """
+    pool = await get_pool()
+    items = await list_opcoes_de_aba(pool, empresa_id=empresa_id)
     return {"items": items}
 
 

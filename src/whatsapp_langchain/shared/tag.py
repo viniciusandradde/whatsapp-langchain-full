@@ -50,6 +50,58 @@ async def list_tags(
     ]
 
 
+async def list_opcoes_de_aba(
+    pool: AsyncConnectionPool, *, empresa_id: int
+) -> list[dict]:
+    """Tags que a aba pode usar como critério: catálogo ∪ tags já nos clientes.
+
+    Só o catálogo (`tag`) não serve. Quem marca cliente não é só o operador: a
+    triagem do agente grava direto em `cliente_tag`, que guarda o NOME em texto
+    livre e não exige cadastro. Em produção isso deixou as maiores agregações
+    fora do alcance da aba — 21 clientes com `handoff` numa empresa onde
+    `handoff` não está no catálogo, contra 2 na maior tag cadastrada.
+
+    Oferecer só o catálogo repetiria o defeito que a mig 149 removeu: pasta que
+    o operador configura e que nunca se enche, sem erro na tela.
+
+    Ordenado por nº de clientes: a opção que agrupa mais gente vem primeiro.
+
+    Returns:
+        `[{"nome", "cor", "clientes", "no_catalogo"}]`. `cor` é None nas tags
+        que só existem em `cliente_tag` (não têm cadastro de onde tirar cor).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            WITH cat AS (
+                SELECT id, nome, cor FROM tag
+                 WHERE empresa_id = %s AND ativo = TRUE
+            ), uso AS (
+                SELECT ct.tag AS nome, COUNT(DISTINCT ct.cliente_id) AS clientes
+                  FROM cliente_tag ct
+                  JOIN cliente c ON c.id = ct.cliente_id
+                 WHERE c.empresa_id = %s
+                 GROUP BY ct.tag
+            )
+            SELECT COALESCE(cat.nome, uso.nome) AS nome,
+                   cat.cor,
+                   COALESCE(uso.clientes, 0) AS clientes,
+                   (cat.id IS NOT NULL) AS no_catalogo
+              FROM cat
+              FULL OUTER JOIN uso ON uso.nome = cat.nome
+             ORDER BY clientes DESC, nome ASC
+            """,
+            # Os dois lados são filtrados por empresa ANTES do FULL OUTER JOIN.
+            # Filtrar depois, no WHERE, descartaria a linha de uso que casasse
+            # com uma tag homônima de outra empresa — o nome não é único global.
+            (empresa_id, empresa_id),
+        )
+        rows = await cur.fetchall()
+    return [
+        {"nome": r[0], "cor": r[1], "clientes": r[2], "no_catalogo": r[3]} for r in rows
+    ]
+
+
 async def get_tag(
     pool: AsyncConnectionPool, *, tag_id: int, empresa_id: int
 ) -> dict | None:

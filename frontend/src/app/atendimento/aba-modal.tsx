@@ -4,9 +4,13 @@ import { useEffect, useState, useTransition } from "react";
 import { Check, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Aba, Tag } from "@/lib/api";
+import type { Aba, TagOpcaoAba } from "@/lib/api";
 
-import { createAbaAction, loadTagsAction, updateAbaAction } from "./actions";
+import {
+  createAbaAction,
+  loadOpcoesDeAbaAction,
+  updateAbaAction,
+} from "./actions";
 
 const CORES = [
   "#64748b", // slate
@@ -35,14 +39,14 @@ export function AbaModal({ aba, onClose }: Props) {
 
   // Critério da aba: tags de CLIENTE. A conversa entra sozinha quando o cliente
   // tem a tag — e a próxima conversa dele também, que é o ponto.
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [tags, setTags] = useState<TagOpcaoAba[]>([]);
   const [escolhidas, setEscolhidas] = useState<string[]>(
     aba?.filtro?.cliente_tags ?? []
   );
 
   useEffect(() => {
-    loadTagsAction().then((r) => {
-      if (r.ok) setTags(r.tags);
+    loadOpcoesDeAbaAction().then((r) => {
+      if (r.ok) setTags(r.opcoes);
     });
   }, []);
 
@@ -148,12 +152,13 @@ export function AbaModal({ aba, onClose }: Props) {
             </label>
             <p className="mb-2 text-xs text-muted-foreground">
               A aba se preenche sozinha: toda conversa desses clientes aparece
-              aqui, inclusive as próximas. Marque a tag no cliente pelo painel
-              lateral da conversa.
+              aqui, inclusive as próximas. O número é quantos clientes têm a
+              tag hoje — inclui as que o agente aplica sozinho na triagem.
             </p>
             {tags.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Nenhuma tag cadastrada ainda.
+                Nenhuma tag ainda. Marque uma no cliente pelo painel lateral
+                da conversa e ela aparece aqui.
               </p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
@@ -161,7 +166,7 @@ export function AbaModal({ aba, onClose }: Props) {
                   const on = escolhidas.includes(t.nome);
                   return (
                     <button
-                      key={t.id}
+                      key={t.nome}
                       type="button"
                       onClick={() => alternar(t.nome)}
                       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
@@ -171,7 +176,14 @@ export function AbaModal({ aba, onClose }: Props) {
                       }`}
                     >
                       {on && <Check className="size-3" />}
+                      {t.cor && (
+                        <span
+                          className="size-2 rounded-full"
+                          style={{ backgroundColor: t.cor }}
+                        />
+                      )}
                       {t.nome}
+                      <span className="opacity-60">{t.clientes}</span>
                     </button>
                   );
                 })}

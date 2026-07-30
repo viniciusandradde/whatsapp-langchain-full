@@ -14,6 +14,7 @@ from whatsapp_langchain.shared.tag import (
     create_tag,
     delete_tag,
     get_tag,
+    list_opcoes_de_aba,
     list_tags,
     update_tag,
 )
@@ -104,6 +105,57 @@ async def test_update_tag_returns_none_se_outra_empresa():
     pool, _ = _mock_pool(None)
     out = await update_tag(pool, tag_id=999, empresa_id=1, cor="#000")
     assert out is None
+
+
+# --- list_opcoes_de_aba (critérios oferecidos no modal da aba) ---
+
+
+@pytest.mark.asyncio
+async def test_opcoes_de_aba_inclui_tag_fora_do_catalogo():
+    """A tag que só existe em `cliente_tag` também é oferecida.
+
+    Quem marca cliente não é só o operador: a triagem do agente grava direto,
+    em texto livre, sem cadastrar. Em produção a maior agregação (`handoff`,
+    21 clientes) estava justamente fora do catálogo — oferecer só o catálogo
+    daria pasta que o operador configura e que nunca enche.
+    """
+    pool, _ = _mock_pool(
+        [
+            ("handoff", None, 21, False),
+            ("Mackenzie", "#dc2626", 2, True),
+            ("Medicos", "#ea580c", 0, True),
+        ]
+    )
+    out = await list_opcoes_de_aba(pool, empresa_id=1)
+
+    assert [o["nome"] for o in out] == ["handoff", "Mackenzie", "Medicos"]
+    fora = next(o for o in out if o["nome"] == "handoff")
+    assert fora["no_catalogo"] is False
+    assert fora["cor"] is None  # sem cadastro, não há de onde tirar cor
+    # Tag cadastrada e ainda sem ninguém continua na lista — é o caso de uso de
+    # criar a tag e a aba antes de sair marcando cliente.
+    assert out[-1]["clientes"] == 0
+
+
+@pytest.mark.asyncio
+async def test_opcoes_de_aba_filtra_empresa_dos_dois_lados_antes_do_join():
+    """Escopo nas CTEs, não num WHERE depois do FULL OUTER JOIN.
+
+    Nome de tag não é único global. Filtrar depois do join descartaria a linha
+    de uso que casasse com uma tag homônima de outra empresa — a tag sumiria da
+    lista justamente na empresa que mais a usa.
+    """
+    pool, conn = _mock_pool([])
+    await list_opcoes_de_aba(pool, empresa_id=7)
+
+    sql = conn.execute.await_args.args[0]
+    cte_catalogo, resto = sql.split("), uso AS (", 1)
+    cte_uso, depois_do_join = resto.split("FULL OUTER JOIN", 1)
+
+    assert "empresa_id = %s" in cte_catalogo  # lado do catálogo
+    assert "c.empresa_id = %s" in cte_uso  # lado do uso em cliente
+    assert "empresa_id" not in depois_do_join  # nada de filtrar tarde demais
+    assert conn.execute.await_args.args[1] == (7, 7)
 
 
 @pytest.mark.asyncio
