@@ -1,17 +1,26 @@
-"""CRUD de abas pessoais no painel de atendimento (Sprint 1.1).
+"""Abas pessoais do painel de atendimento — FILTRO SALVO POR CLIENTE.
 
-A tabela `aba` foi criada na mig 050 com esquema de "filtro salvo".
-Esta sprint reusa a tabela com semântica de "pasta pessoal" (estilo
-ZigChat) — `aba.user_id NOT NULL` indica abas pessoais, atendimentos
-são atribuídos via `atendimento.aba_id` (pinning manual, mig 085).
+A aba agrupa **clientes**, não conversas: "Mackenzie" é o conjunto de pessoas
+daquela instituição, e toda conversa delas aparece na pasta automaticamente. O
+critério vive em `aba.filtro` (JSONB da mig 050), no formato
+`{"cliente_tags": ["Mackenzie", "Unigran"]}`.
 
-Abas são SEMPRE do próprio user — RBAC enforce na query
-(WHERE user_id = %s). Permissão `atendimento.aba.manage` libera o CRUD.
-O `filtro JSONB` da mig 050 fica disponível pra evolução futura mas o
-MVP não usa.
+**Por que deixou de ser pinagem manual.** A mig 085 acrescentou
+`atendimento.aba_id` para pinar conversa a conversa, e nenhuma tela chegou a
+oferecer isso — em produção havia 6 abas criadas e ZERO conversas dentro. Mesmo
+com o botão, o modelo não se sustentaria: cada nova conversa do mesmo cliente
+nasceria fora da pasta, e o operador teria que re-pinar para sempre. A coluna
+`aba_id` fica no schema (nada a migrar) mas não é mais lida pela listagem.
+
+Abas são SEMPRE do próprio user — RBAC na query (`WHERE user_id = %s`), e é isso
+que também fecha o furo antigo: a listagem filtrava `AND a.aba_id = %s` sem
+checar posse, então bastava chutar o número para ler a pasta de outro operador.
+Permissão `atendimento.aba.manage` libera o CRUD.
 """
 
 from __future__ import annotations
+
+import json
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -30,7 +39,7 @@ async def list_abas(
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT id, nome, cor, ordem, ativo, created_at, updated_at
+            SELECT id, nome, cor, ordem, ativo, created_at, updated_at, filtro
               FROM aba
              WHERE user_id = %s AND empresa_id = %s AND ativo = TRUE
              ORDER BY ordem ASC NULLS LAST, id ASC
@@ -48,6 +57,7 @@ async def list_abas(
             "ativo": r[4],
             "created_at": r[5].isoformat() if r[5] else None,
             "updated_at": r[6].isoformat() if r[6] else None,
+            "filtro": r[7] or {},
         }
         for r in rows
     ]
@@ -61,24 +71,39 @@ async def create_aba(
     descricao: str,
     cor: str | None = None,
     icone: str | None = None,  # noqa: ARG001 — sem coluna no banco MVP
+    cliente_tags: list[str] | None = None,
 ) -> dict:
-    """Cria aba pessoal pro user. `descricao` vai pra coluna `nome`."""
+    """Cria aba pessoal pro user. `descricao` vai pra coluna `nome`.
+
+    `cliente_tags` é o CRITÉRIO: a aba mostra as conversas dos clientes
+    marcados com essas tags. Sem critério a aba nasce vazia — e é isso que se
+    quer, porque mostrar tudo faria a pasta recém-criada parecer cheia de
+    trabalho que não é dela.
+    """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
             INSERT INTO aba (
                 empresa_id, user_id, nome, cor, ordem,
-                created_by_user_id
+                created_by_user_id, filtro
             )
             VALUES (%s, %s, %s, %s,
                     COALESCE(
                         (SELECT MAX(ordem) + 1 FROM aba WHERE user_id = %s),
                         0
                     ),
-                    %s)
-            RETURNING id, nome, cor, ordem, ativo, created_at, updated_at
+                    %s, %s::jsonb)
+            RETURNING id, nome, cor, ordem, ativo, created_at, updated_at, filtro
             """,
-            (empresa_id, user_id, descricao, cor, user_id, user_id),
+            (
+                empresa_id,
+                user_id,
+                descricao,
+                cor,
+                user_id,
+                user_id,
+                json.dumps({"cliente_tags": list(cliente_tags or [])}),
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -93,6 +118,7 @@ async def create_aba(
         "ativo": row[4],
         "created_at": row[5].isoformat() if row[5] else None,
         "updated_at": row[6].isoformat() if row[6] else None,
+        "filtro": (row[7] if len(row) > 7 else None) or {},
     }
 
 
@@ -104,6 +130,7 @@ async def update_aba(
     descricao: str | None = None,
     cor: str | None = None,
     icone: str | None = None,  # noqa: ARG001 — sem coluna no banco MVP
+    cliente_tags: list[str] | None = None,
 ) -> dict | None:
     """Atualiza aba pessoal do user. None se aba não é do user ou inativa."""
     sets: list[str] = []
@@ -114,6 +141,9 @@ async def update_aba(
     if cor is not None:
         sets.append("cor = %s")
         args.append(cor)
+    if cliente_tags is not None:
+        sets.append("filtro = %s::jsonb")
+        args.append(json.dumps({"cliente_tags": list(cliente_tags)}))
     if not sets:
         return await get_aba(pool, aba_id=aba_id, user_id=user_id)
     sets.append("updated_at = NOW()")
@@ -123,7 +153,7 @@ async def update_aba(
             f"""
             UPDATE aba SET {", ".join(sets)}
              WHERE id = %s AND user_id = %s AND ativo = TRUE
-             RETURNING id, nome, cor, ordem, ativo, created_at, updated_at
+             RETURNING id, nome, cor, ordem, ativo, created_at, updated_at, filtro
             """,  # type: ignore[arg-type]
             tuple(args),
         )
@@ -140,6 +170,7 @@ async def update_aba(
         "ativo": row[4],
         "created_at": row[5].isoformat() if row[5] else None,
         "updated_at": row[6].isoformat() if row[6] else None,
+        "filtro": (row[7] if len(row) > 7 else None) or {},
     }
 
 
@@ -173,7 +204,7 @@ async def get_aba(
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT id, nome, cor, ordem, ativo, created_at, updated_at
+            SELECT id, nome, cor, ordem, ativo, created_at, updated_at, filtro
               FROM aba
              WHERE id = %s AND user_id = %s AND ativo = TRUE
             """,
@@ -191,7 +222,52 @@ async def get_aba(
         "ativo": row[4],
         "created_at": row[5].isoformat() if row[5] else None,
         "updated_at": row[6].isoformat() if row[6] else None,
+        "filtro": row[7] or {},
     }
+
+
+async def cliente_ids_da_aba(
+    pool: AsyncConnectionPool, *, filtro: dict, empresa_id: int
+) -> list[int] | None:
+    """Clientes que casam com o filtro da aba.
+
+    A aba agrupa **clientes**, não conversas: "Mackenzie" é o conjunto de
+    pessoas daquela instituição, e toda conversa delas entra sozinha. Pinar
+    conversa a conversa nunca funcionaria — em produção havia 6 abas criadas e
+    ZERO conversas dentro, porque cada nova conversa do mesmo cliente começaria
+    fora da pasta.
+
+    O critério vive em `aba.filtro` (JSONB), coluna criada na mig 050 justamente
+    pra isso e até agora sem uso.
+
+    **Usa `cliente_tag` (nome), não `cliente_tag_v2` (FK).** Há duas tabelas de
+    tag de cliente no banco e só a primeira está viva: `cliente_tag` tem 36
+    linhas e é onde `POST /api/clientes/{id}/tags` grava e de onde
+    `Cliente.tags` lê; `cliente_tag_v2` tem 5 linhas órfãs e **nenhum código
+    escreve nela**. Filtrar pela v2 daria pasta sempre vazia, com o operador
+    marcando o cliente e nada acontecendo.
+
+    Returns:
+        Lista de `cliente_id`, possivelmente vazia (aba sem nenhum cliente).
+        `None` quando a aba não tem critério — o chamador não deve filtrar,
+        senão uma aba recém-criada esconderia tudo em vez de mostrar tudo.
+    """
+    tags = filtro.get("cliente_tags") or []
+    if not tags:
+        return None
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT DISTINCT ct.cliente_id
+              FROM cliente_tag ct
+              JOIN cliente c ON c.id = ct.cliente_id
+             WHERE ct.tag = ANY(%s) AND c.empresa_id = %s
+            """,
+            (list(tags), empresa_id),
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows]
 
 
 async def reorder_abas(
@@ -259,21 +335,38 @@ async def count_atendimentos_por_aba(
     """Retorna {aba_id: count} pras abas pessoais ativas do user.
 
     Atendimentos `resolvido` / `abandonado` não contam (foco em workload ativo).
+
+    Conta pelo CRITÉRIO da aba (clientes marcados com as tags dela), não por
+    `atendimento.aba_id`. Aba sem critério conta zero: mostrar o total da empresa
+    numa pasta recém-criada faria o número dizer "há trabalho aqui" quando não
+    há nada configurado.
+
+    Uma query só, com LATERAL: uma por aba faria N idas ao banco a cada 30s do
+    polling da sidebar.
     """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT a.aba_id, COUNT(*)
-              FROM atendimento a
-             WHERE a.empresa_id = %s
-               AND a.aba_id IN (
-                   SELECT id FROM aba
-                    WHERE user_id = %s AND ativo = TRUE
-               )
-               AND a.status IN ('aguardando', 'em_andamento')
-             GROUP BY a.aba_id
+            SELECT ab.id, COUNT(a.id)
+              FROM aba ab
+              LEFT JOIN LATERAL (
+                  SELECT at.id
+                    FROM atendimento at
+                   WHERE at.empresa_id = %s
+                     AND at.status IN ('aguardando', 'em_andamento')
+                     AND at.cliente_id IN (
+                         SELECT ct.cliente_id FROM cliente_tag ct
+                          WHERE ct.tag = ANY(
+                              SELECT jsonb_array_elements_text(
+                                  COALESCE(ab.filtro->'cliente_tags', '[]'::jsonb)
+                              )
+                          )
+                     )
+              ) a ON TRUE
+             WHERE ab.user_id = %s AND ab.empresa_id = %s AND ab.ativo = TRUE
+             GROUP BY ab.id
             """,
-            (empresa_id, user_id),
+            (empresa_id, user_id, empresa_id),
         )
         rows = await cur.fetchall()
     return {r[0]: r[1] for r in rows}

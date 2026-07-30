@@ -402,8 +402,27 @@ async def list_atendimentos(
         like = f"%{q.strip()}%"
         params.extend([like, like])
     if aba_id is not None:
-        where += " AND a.aba_id = %s"
-        params.append(aba_id)
+        # Aba é FILTRO SALVO POR CLIENTE, não pasta de conversas pinadas.
+        #
+        # Resolver aqui valida a POSSE de quebra: `get_aba` filtra por
+        # `user_id`, então um id de aba alheia devolve None e a listagem sai
+        # vazia. Antes o filtro era `AND a.aba_id = %s` cru, e bastava chutar o
+        # número pra ler a pasta de outro operador.
+        if not current_user_id:
+            return []
+        from whatsapp_langchain.shared.aba import cliente_ids_da_aba, get_aba
+
+        aba = await get_aba(pool, aba_id=aba_id, user_id=current_user_id)
+        if aba is None:
+            return []
+        clientes = await cliente_ids_da_aba(
+            pool, filtro=aba.get("filtro") or {}, empresa_id=empresa_id
+        )
+        if clientes is not None:
+            if not clientes:
+                return []
+            where += " AND a.cliente_id = ANY(%s)"
+            params.append(clientes)
     if only_ids is not None:
         if not only_ids:
             # Filtro por tag não bateu nenhum atendimento

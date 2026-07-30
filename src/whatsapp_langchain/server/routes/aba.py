@@ -45,12 +45,16 @@ class CreateAbaInput(BaseModel):
     descricao: str = Field(min_length=1, max_length=80)
     cor: str | None = Field(default=None, max_length=32)
     icone: str | None = Field(default=None, max_length=32)
+    #: Critério da aba: clientes marcados com estas tags. Vazio = aba vazia.
+    cliente_tags: list[str] = Field(default_factory=list)
 
 
 class UpdateAbaInput(BaseModel):
     descricao: str | None = Field(default=None, min_length=1, max_length=80)
     cor: str | None = Field(default=None, max_length=32)
     icone: str | None = Field(default=None, max_length=32)
+    #: `None` preserva o critério atual; lista vazia LIMPA (aba fica vazia).
+    cliente_tags: list[str] | None = None
 
 
 class ReorderAbasInput(BaseModel):
@@ -84,6 +88,7 @@ async def create_my_aba(
             descricao=payload.descricao.strip(),
             cor=payload.cor,
             icone=payload.icone,
+            cliente_tags=payload.cliente_tags,
         )
     except Exception as exc:
         # UNIQUE (usuario_id, descricao) viola → 409
@@ -110,6 +115,7 @@ async def update_my_aba(
         descricao=payload.descricao.strip() if payload.descricao else None,
         cor=payload.cor,
         icone=payload.icone,
+        cliente_tags=payload.cliente_tags,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Aba não encontrada.")
