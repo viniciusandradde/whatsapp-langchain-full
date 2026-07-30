@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -206,15 +207,23 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
                     modifier = Modifier.widthIn(max = 300.dp),
                 ) {
                     Column(Modifier.padding(10.dp)) {
-                        // Sem preview de imagem por ora: a mídia inbound vem
-                        // como data-URL base64 no `media_url`, que pode ter
-                        // megabytes — carregar isso numa lista sem cache
-                        // travaria a rolagem. Entra com Coil na fatia de mídia.
-                        Text(
-                            rotuloMidia(b.tipo),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                        )
+                        // Áudio e imagem tocam/aparecem aqui mesmo. O conteúdo
+                        // vem como data-URL base64 no `media_url` — decodificar
+                        // e reduzir acontece fora da thread principal, em
+                        // `Midia.kt`. Documento continua como rótulo: abrir
+                        // arquivo pede FileProvider e visualizador externo.
+                        when {
+                            b.tipo?.startsWith("audio") == true ->
+                                AudioDaConversa(b.url, Modifier.width(240.dp))
+                            b.tipo?.startsWith("image") == true ->
+                                ImagemDaConversa(b.url, Modifier.fillMaxWidth())
+                            else ->
+                                Text(
+                                    rotuloMidia(b.tipo),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                        }
                         if (b.legenda != null) {
                             Spacer(Modifier.height(4.dp))
                             Text(b.legenda, style = MaterialTheme.typography.bodyMedium)
@@ -256,7 +265,15 @@ private fun BolhaItem(b: Bolha, cores: CoresChat) {
 
 @Composable
 private fun Composer(texto: String, onTexto: (String) -> Unit, onEnviar: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.imePadding()) {
+    // `imePadding` sobe o composer com o teclado; `navigationBarsPadding` o
+    // mantém ACIMA dos botões do Android. Com `enableEdgeToEdge()` o app desenha
+    // sob as barras do sistema, e sem o segundo padding o campo de texto fica
+    // atrás dos botões de navegação — foi o que aconteceu no primeiro teste em
+    // aparelho real: dava pra ver a caixa, não pra usar.
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.imePadding().navigationBarsPadding(),
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.Bottom,

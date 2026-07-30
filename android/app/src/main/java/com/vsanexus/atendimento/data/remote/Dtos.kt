@@ -56,6 +56,13 @@ data class AtendimentoDto(
     @SerialName("departamento_id") val departamentoId: Long? = null,
     val prioridade: String? = null,
     val protocolo: String? = null,
+    // Triagem que a IA preenche via tools (mig 061). É o que permite decidir o
+    // que atender SEM abrir a conversa — o operador lê prioridade, sentimento e
+    // categoria direto na lista.
+    val classificacao: String? = null,
+    val sentimento: String? = null,
+    @SerialName("resumo_ia") val resumoIa: String? = null,
+    @SerialName("triagem_completa") val triagemCompleta: Boolean? = null,
     @SerialName("last_message_at") val lastMessageAt: String? = null,
     @SerialName("conexao_nome") val conexaoNome: String? = null,
 )

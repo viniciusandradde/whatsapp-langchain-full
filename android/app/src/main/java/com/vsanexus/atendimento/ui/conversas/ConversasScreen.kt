@@ -1,7 +1,5 @@
 package com.vsanexus.atendimento.ui.conversas
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,23 +8,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,9 +32,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -90,14 +89,24 @@ fun ConversasScreen(
                         Tab(
                             selected = aba == ui.aba,
                             onClick = { vm.trocarAba(aba) },
-                            text = { Text(aba.titulo, fontSize = 13.sp) },
+                            text = {
+                                // maxLines=1 + softWrap=false: "Aguardando" não
+                                // cabia em 13sp na largura de 1/4 de tela e
+                                // quebrava como "Aguardand / o".
+                                Text(
+                                    aba.titulo,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                )
+                            },
                         )
                     }
                 }
             }
         },
     ) { inner ->
-        Column(modifier = Modifier.fillMaxSize().padding(inner)) {
+        Column(modifier = Modifier.fillMaxSize().padding(inner).navigationBarsPadding()) {
             OutlinedTextField(
                 value = ui.busca,
                 onValueChange = vm::onBusca,
@@ -138,11 +147,7 @@ fun ConversasScreen(
                 else ->
                     LazyColumn(Modifier.fillMaxSize()) {
                         items(conversas, key = { it.id }) { c ->
-                            LinhaConversa(c, onClick = { onAbrirConversa(c.id, tituloDe(c)) })
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 76.dp),
-                                thickness = 0.5.dp,
-                            )
+                            CartaoConversa(c, onClick = { onAbrirConversa(c.id, tituloDe(c)) })
                         }
                     }
             }
@@ -150,108 +155,157 @@ fun ConversasScreen(
     }
 }
 
+/**
+ * Cartão da conversa, com o RESUMO DA TRIAGEM visível antes de abrir.
+ *
+ * Espelha o cartão do painel web de propósito. O operador precisa decidir o que
+ * atender sem entrar em cada conversa: prioridade, sentimento e categoria na
+ * lista transformam a fila numa fila triada em vez de uma pilha de nomes. Numa
+ * fila de 76 aguardando — o número real medido em produção — abrir uma por uma
+ * pra descobrir o que é urgente é inviável.
+ */
 @Composable
-private fun LinhaConversa(c: ConversaEntity, onClick: () -> Unit) {
-    Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun CartaoConversa(c: ConversaEntity, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp),
     ) {
-        Avatar(c.clienteNome ?: c.clienteTelefone ?: "?")
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    c.clienteNome ?: c.clienteTelefone ?: "Sem nome",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (c.prioridade == "urgente") {
-                    Spacer(Modifier.width(6.dp))
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "URGENTE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
+                        c.clienteNome ?: c.clienteTelefone ?: "Sem nome",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    if (c.clienteTelefone != null) {
+                        Text(
+                            c.clienteTelefone,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Etiqueta(rotuloStatus(c.status), corDeStatus(c.status))
+                    if (c.prioridade != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Etiqueta(c.prioridade, corDePrioridade(c.prioridade))
+                    }
                 }
             }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                c.previa ?: descricaoStatus(c),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+
+            Spacer(Modifier.height(10.dp))
+            if (c.protocolo != null) LinhaInfo("Atendimento", c.protocolo)
+            if (c.agenteAtual != null) LinhaInfo("Agente", c.agenteAtual)
+            LinhaInfo("Última mensagem", tempoRelativo(c.ultimaMensagemEm))
+
+            // Resumo que a IA escreveu na triagem. É a informação mais densa do
+            // cartão: em duas linhas o operador sabe do que se trata.
+            if (!c.resumoIa.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    c.resumoIa.trim(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            val marcadores = listOfNotNull(c.classificacao, c.sentimento)
+            if (marcadores.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    marcadores.forEach {
+                        Etiqueta(it, MaterialTheme.colorScheme.surfaceVariant, monoespaçada = true)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                }
+            }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            horaCurta(c.ultimaMensagemEm),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
-/**
- * Iniciais em círculo.
- *
- * Sem foto porque a API não expõe avatar de cliente — inventar um placeholder
- * genérico deixaria a lista toda igual, e inicial ao menos diferencia.
- */
 @Composable
-private fun Avatar(nome: String) {
-    val iniciais =
-        nome.trim().split(" ").filter { it.isNotBlank() }.take(2)
-            .joinToString("") { it.first().uppercase() }
-            .ifBlank { "?" }
-    Box(
-        modifier =
-            Modifier.size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
+private fun LinhaInfo(rotulo: String, valor: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
         Text(
-            iniciais,
-            color = MaterialTheme.colorScheme.onPrimary,
-            style = MaterialTheme.typography.titleMedium,
+            rotulo,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(valor, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+    }
+}
+
+@Composable
+private fun Etiqueta(texto: String, cor: Color, monoespaçada: Boolean = false) {
+    Surface(color = cor, shape = RoundedCornerShape(6.dp)) {
+        Text(
+            texto,
+            style =
+                if (monoespaçada) {
+                    MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace)
+                } else {
+                    MaterialTheme.typography.labelSmall
+                },
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
         )
     }
 }
 
-private fun descricaoStatus(c: ConversaEntity): String =
-    when {
-        c.status == "aguardando" && c.departamentoId != null -> "Na fila do departamento"
-        c.status == "aguardando" -> "Aguardando atendimento"
-        c.status == "em_andamento" && c.atribuidoA != null -> "Em atendimento"
-        c.status == "em_andamento" -> "Em andamento"
-        c.status == "resolvido" -> "Resolvido"
-        else -> c.status
+private fun rotuloStatus(status: String) =
+    when (status) {
+        "aguardando" -> "Aguardando"
+        "em_andamento" -> "Em atendimento"
+        "resolvido" -> "Resolvido"
+        "abandonado" -> "Abandonado"
+        else -> status
+    }
+
+@Composable
+private fun corDeStatus(status: String): Color =
+    when (status) {
+        "aguardando" -> MaterialTheme.colorScheme.secondaryContainer
+        "em_andamento" -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+@Composable
+private fun corDePrioridade(p: String): Color =
+    when (p) {
+        // Urgente tem cor de erro porque é o único que exige ação agora; dar
+        // destaque a todos seria o mesmo que não destacar nenhum.
+        "urgente" -> MaterialTheme.colorScheme.errorContainer
+        "alta" -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
     }
 
 /**
- * Hora no estilo WhatsApp: `14:32` hoje, `dd/MM` antes.
+ * "2h atrás", como no painel web.
  *
- * O timestamp vem como ISO-8601 do servidor. Corto a string em vez de usar
- * parser de data: o formato é conhecido e estável, e trazer `java.time` com
- * desugaring pra formatar uma hora seria peso desproporcional. Se o formato
- * mudar, a função devolve string vazia em vez de estourar.
+ * Mais útil que hora absoluta numa fila: o que importa é há quanto tempo a
+ * pessoa espera, não em que minuto escreveu.
  */
-private fun horaCurta(iso: String?): String {
-    if (iso == null || iso.length < 16) return ""
+private fun tempoRelativo(iso: String?): String {
+    if (iso == null || iso.length < 19) return "—"
     return try {
-        val data = iso.substring(0, 10)
-        val hora = iso.substring(11, 16)
-        val hojeIso = java.time.LocalDate.now().toString()
-        if (data == hojeIso) hora else "${data.substring(8, 10)}/${data.substring(5, 7)}"
+        val quando = java.time.Instant.parse(if (iso.endsWith("Z")) iso else iso + "Z")
+        val minutos = java.time.Duration.between(quando, java.time.Instant.now()).toMinutes()
+        when {
+            minutos < 1 -> "agora"
+            minutos < 60 -> "${minutos}min atrás"
+            minutos < 1440 -> "${minutos / 60}h atrás"
+            else -> "${minutos / 1440}d atrás"
+        }
     } catch (e: Exception) {
-        ""
+        "—"
     }
 }
 

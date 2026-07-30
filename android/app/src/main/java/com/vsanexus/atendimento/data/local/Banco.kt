@@ -46,6 +46,12 @@ data class ConversaEntity(
     val status: String,
     val prioridade: String?,
     val protocolo: String?,
+    val agenteAtual: String?,
+    /** Triagem da IA (mig 061) — mostrada na lista pra decidir o que abrir. */
+    val classificacao: String?,
+    val sentimento: String?,
+    val resumoIa: String?,
+    val triagemCompleta: Boolean,
     val atribuidoA: String?,
     val departamentoId: Long?,
     val conexaoNome: String?,
@@ -100,7 +106,9 @@ interface ConversaDao {
 
 @Database(
     entities = [ConversaEntity::class],
-    version = 1,
+    // v2: campos de triagem (classificação, sentimento, resumo da IA). Cache
+    // descartável, então a migração é destrutiva e recria a tabela.
+    version = 2,
     // Cache descartável: não exporto schema porque não haverá migração escrita
     // à mão — ver o comentário de ConversaEntity.
     exportSchema = false,
