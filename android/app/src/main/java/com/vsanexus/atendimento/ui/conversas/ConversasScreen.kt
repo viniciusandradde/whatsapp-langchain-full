@@ -56,7 +56,8 @@ import com.vsanexus.atendimento.data.local.ConversaEntity
 @Composable
 fun ConversasScreen(
     empresaNome: String?,
-    onAbrirConversa: (Long) -> Unit,
+    /** id + título: o título vem da lista pra a conversa não precisar de um GET. */
+    onAbrirConversa: (Long, String) -> Unit,
     onSair: () -> Unit,
     vm: ConversasViewModel = hiltViewModel(),
 ) {
@@ -137,7 +138,7 @@ fun ConversasScreen(
                 else ->
                     LazyColumn(Modifier.fillMaxSize()) {
                         items(conversas, key = { it.id }) { c ->
-                            LinhaConversa(c, onClick = { onAbrirConversa(c.id) })
+                            LinhaConversa(c, onClick = { onAbrirConversa(c.id, tituloDe(c)) })
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 76.dp),
                                 thickness = 0.5.dp,
@@ -253,3 +254,7 @@ private fun horaCurta(iso: String?): String {
         ""
     }
 }
+
+/** Título da conversa: nome do cliente, telefone como reserva. */
+private fun tituloDe(c: ConversaEntity): String =
+    c.clienteNome ?: c.clienteTelefone ?: "Conversa ${c.id}"
