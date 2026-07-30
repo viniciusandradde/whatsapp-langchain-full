@@ -36,7 +36,7 @@ from whatsapp_langchain.shared.empresa import (
     is_superadmin,
 )
 from whatsapp_langchain.shared.rate_limit import enforce_bucket_limit
-from whatsapp_langchain.shared.rls_context import set_request_context
+from whatsapp_langchain.shared.rls_context import empresa_scope, set_request_context
 
 logger = structlog.get_logger()
 
@@ -124,23 +124,72 @@ _service_bearer = HTTPBearer(
 )
 
 
+async def _resolve_session_user(token: str) -> str | None:
+    """Resolve o user_id de um token de sessão do Better Auth, ou None.
+
+    Cliente móvel não pode usar o caminho do service token: embarcar o
+    `INTERNAL_SERVICE_TOKEN` num APK deixaria qualquer um extrair o segredo e
+    mandar `X-User-Id`/`X-Empresa-Id` arbitrários, lendo e escrevendo em TODOS
+    os tenants (o header é confiado justamente por causa do service token).
+
+    Em vez de introduzir infra de JWT, valida direto em `auth.session`, que já
+    é o registro canônico de sessão e vive no mesmo Postgres. Efeito colateral
+    desejável: a revogação existente passa a valer no app de graça —
+    `shared/usuarios.py::set_user_status` apaga as sessões pra matar login em
+    <30s, e aqui o token simplesmente deixa de resolver.
+
+    Devolve None (em vez de levantar) pra que o caller decida o 401 — assim a
+    mensagem de erro continua a mesma pro Next.js.
+    """
+    if len(token) < 16:  # nada em auth.session é tão curto; evita query inútil
+        return None
+    try:
+        pool = await get_pool()
+        with empresa_scope(None, bypass=True):
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    """
+                    SELECT s."userId" FROM auth.session s
+                     JOIN auth."user" u ON u.id = s."userId"
+                     WHERE s.token = %s
+                       AND s."expiresAt" > NOW()
+                       AND u.status = 'active'
+                     LIMIT 1
+                    """,
+                    (token,),
+                )
+                row = await cur.fetchone()
+    except Exception as exc:  # noqa: BLE001 — falha de lookup não autentica
+        logger.warning("session_lookup_failed", error=str(exc))
+        return None
+    return str(row[0]) if row else None
+
+
 async def verify_service_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_service_bearer),
 ) -> None:
-    """Verifica o token de serviço interno no header Authorization.
+    """Autentica a request administrativa pelo header Authorization.
 
-    Rotas administrativas (/api/*) são protegidas por um token compartilhado
-    entre o frontend (Next.js) e a API. Não é autenticação de usuário —
-    apenas garante que só serviços autorizados acessem endpoints admin.
+    Aceita DOIS tipos de Bearer, nesta ordem:
 
-    O header deve ser: Authorization: Bearer <token>
+    1. **Service token** (`INTERNAL_SERVICE_TOKEN`) — o frontend Next.js.
+       Não é autenticação de usuário: prova apenas que a chamada vem de um
+       serviço autorizado, e a identidade vem do header `X-User-Id`.
+    2. **Token de sessão do Better Auth** — cliente móvel. Aqui a identidade
+       vem do BANCO (`auth.session`), nunca de header, e é gravada em
+       `request.state.session_user_id` pra `get_user_id_from_request` usar.
+
+    O caminho 2 existe porque app nativo não pode carregar o service token
+    (ver `_resolve_session_user`). Empresa continua validada por
+    `get_empresa_context`, que exige membership — o app não escolhe tenant.
 
     Usa `HTTPBearer` apenas pra que o FastAPI documente o esquema no OpenAPI;
-    a validação (token correto) continua sendo nossa, timing-safe.
+    a validação continua sendo nossa, timing-safe no caso 1.
 
     Raises:
-        HTTPException 401: Se o token está ausente ou inválido.
+        HTTPException 401: header ausente, ou token que não é nem service
+            token nem sessão válida.
     """
     if credentials is None or credentials.scheme.lower() != "bearer":
         logger.warning("service_token_missing", path=str(request.url.path))
@@ -152,14 +201,22 @@ async def verify_service_token(
     token = credentials.credentials.strip()
 
     # Comparacao timing-safe para evitar timing attacks na verificacao do token
-    if not hmac.compare_digest(token, settings.internal_service_token):
-        logger.warning("service_token_invalid", path=str(request.url.path))
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid service token",
-        )
+    if hmac.compare_digest(token, settings.internal_service_token):
+        logger.debug("service_token_valid", path=str(request.url.path))
+        return
 
-    logger.debug("service_token_valid", path=str(request.url.path))
+    # Não é o service token — tenta sessão de usuário (app móvel).
+    user_id = await _resolve_session_user(token)
+    if user_id is not None:
+        request.state.session_user_id = user_id
+        logger.debug("session_token_valid", path=str(request.url.path), user_id=user_id)
+        return
+
+    logger.warning("service_token_invalid", path=str(request.url.path))
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid service token",
+    )
 
 
 _RATE_LIMIT_CLEANUP_PROBABILITY = 0.01  # 1% das requisições limpam buckets antigos
@@ -263,15 +320,26 @@ def _check_rate_limit_inmemory(phone_number: str) -> None:
 
 
 def get_user_id_from_request(request: Request) -> str:
-    """Extrai o user_id da chamada do frontend via header X-User-Id.
+    """Resolve o user_id da request.
 
-    O frontend (Next.js) deriva o id da session Better Auth e envia em todas
-    as chamadas pra /api/*. A API confia no header porque a request já passou
-    pelo `verify_service_token` (token compartilhado em rede interna).
+    Duas origens, e a ordem importa:
+
+    1. `request.state.session_user_id` — gravado por `verify_service_token`
+       quando a request veio com token de sessão (cliente móvel). Vem do
+       BANCO, então tem precedência absoluta: se a sessão identifica o
+       usuário, um header `X-User-Id` divergente é ignorado, não obedecido.
+    2. Header `X-User-Id` — o frontend Next.js deriva o id da session Better
+       Auth e envia em todas as chamadas pra /api/*. A API confia no header
+       porque a request já passou pelo `verify_service_token` com o token
+       compartilhado de rede interna.
 
     Raises:
-        HTTPException 401: header ausente.
+        HTTPException 401: sem sessão e sem header.
     """
+    from_session = getattr(request.state, "session_user_id", None)
+    if from_session:
+        return str(from_session)
+
     user_id = request.headers.get("X-User-Id", "").strip()
     if not user_id:
         raise HTTPException(

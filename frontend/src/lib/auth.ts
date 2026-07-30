@@ -7,6 +7,7 @@
  * Este arquivo só roda no servidor — nunca no browser.
  */
 import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import { Pool } from "pg";
 
@@ -174,6 +175,14 @@ export const auth = betterAuth({
   },
 
   // nextCookies permite que Server Actions e Route Handlers
-  // gerenciem cookies de sessão automaticamente
-  plugins: [nextCookies()],
+  // gerenciem cookies de sessão automaticamente.
+  //
+  // bearer() habilita login por token pro app Android: o cliente nativo não
+  // tem cookie jar, e MUITO menos pode carregar o INTERNAL_SERVICE_TOKEN (com
+  // ele no APK qualquer um leria/escreveria em todos os tenants). Com o plugin,
+  // `POST /api/auth/sign-in/email` devolve o token da sessão no header
+  // `set-auth-token`, e a API valida esse token direto em `auth.session`
+  // (server/dependencies.py::_resolve_session_user). Não muda nada pro
+  // frontend web, que continua no cookie.
+  plugins: [bearer(), nextCookies()],
 });
