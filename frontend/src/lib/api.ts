@@ -564,7 +564,33 @@ export type AtendimentoStatus =
   | "resolvido"
   | "abandonado";
 
-export type TipoVisualizacao = "meus" | "aguardando" | "grupos" | "outros";
+/** Abas da lista. As 5 primeiras espelham o Chatvolt. */
+export type TipoVisualizacao =
+  | "nao_resolvidas"
+  | "nao_lidas"
+  | "humano_solicitado"
+  | "resolvidas"
+  | "todas"
+  // Deprecadas — o backend ainda aceita porque o APK instalado as usa.
+  | "meus"
+  | "aguardando"
+  | "grupos"
+  | "outros";
+
+/**
+ * O que a UI mostra no lugar do `status` cru.
+ *
+ * Derivada no servidor (`shared/atendimento.py::derivar_situacao`) para as três
+ * interfaces lerem UM campo. Antes cada uma reimplementava a regra, e o rótulo
+ * já havia divergido: o web dizia "Em andamento" e o app "Em atendimento".
+ */
+export type SituacaoAtendimento =
+  | "com_ia"
+  | "aguardando_humano"
+  | "em_atendimento"
+  | "sem_automacao"
+  | "resolvida"
+  | "abandonada";
 
 export interface Atendimento {
   id: number;
@@ -581,6 +607,12 @@ export interface Atendimento {
   updated_at: string;
   cliente_nome: string | null;
   cliente_telefone: string | null;
+  // Derivados no servidor (não existem no banco)
+  situacao: SituacaoAtendimento;
+  /** A IA responde a próxima mensagem deste cliente? */
+  ia_ativa: boolean;
+  /** Mensagens do cliente após a última vez que ESTE usuário abriu. */
+  nao_lidas: number;
   // Sprint 3 padrão profissional (mig 047)
   protocolo: string | null;
   qtde_resposta_invalida: number;
@@ -1999,7 +2031,13 @@ export interface Aba {
 }
 
 export interface ContadoresAtendimento {
-  sistema: { aguardando: number; meus: number; outros: number };
+  sistema: {
+    aguardando: number;
+    meus: number;
+    outros: number;
+    humano_solicitado: number;
+    nao_lidas: number;
+  };
   abas: Record<string, number>;
   sem_aba: number;
 }

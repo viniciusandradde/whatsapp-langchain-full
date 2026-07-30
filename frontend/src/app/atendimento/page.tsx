@@ -33,13 +33,22 @@ interface PageProps {
   }>;
 }
 
+/** Abas atuais + as antigas, que ainda podem estar num link salvo ou no
+ *  histórico do navegador. */
+const TIPOS_VALIDOS = new Set<string>([
+  "nao_resolvidas",
+  "nao_lidas",
+  "humano_solicitado",
+  "resolvidas",
+  "todas",
+  "meus",
+  "aguardando",
+  "grupos",
+  "outros",
+]);
+
 function isValidTipo(value: string | undefined): value is TipoVisualizacao {
-  return (
-    value === "meus" ||
-    value === "aguardando" ||
-    value === "grupos" ||
-    value === "outros"
-  );
+  return value !== undefined && TIPOS_VALIDOS.has(value);
 }
 
 function isValidPrioridade(v: string | undefined): v is Prioridade {
@@ -61,9 +70,12 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const abaId = sp.aba_id ? Number(sp.aba_id) : undefined;
   // Quando aba está selecionada, mostramos todos os status abertos
-  // ("aguardando" + "em_andamento") via tipo="outros" no backend.
-  const tipoBase: TipoVisualizacao = isValidTipo(sp.tipo) ? sp.tipo : "aguardando";
-  const tipo: TipoVisualizacao = abaId ? "outros" : tipoBase;
+  // ("aguardando" + "em_andamento") — agora via `nao_resolvidas`, que é
+  // exatamente esse conjunto e não depende do usuário como o antigo "outros".
+  const tipoBase: TipoVisualizacao = isValidTipo(sp.tipo)
+    ? sp.tipo
+    : "nao_resolvidas";
+  const tipo: TipoVisualizacao = abaId ? "nao_resolvidas" : tipoBase;
   const depId = sp.dep_id ? Number(sp.dep_id) : undefined;
   const prioridade = isValidPrioridade(sp.prioridade) ? sp.prioridade : undefined;
   const q = sp.q?.trim() || undefined;
@@ -104,12 +116,19 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
   if (abaId) {
     const aba = abas.find((a) => a.id === abaId);
     if (aba) contextoLabel = `Aba: ${aba.descricao}`;
-  } else if (tipoBase === "meus") {
-    contextoLabel = "Meus atendimentos";
-  } else if (tipoBase === "aguardando") {
-    contextoLabel = "Aguardando atendimento";
-  } else if (tipoBase === "outros") {
-    contextoLabel = "Outros atendimentos";
+  } else {
+    const titulos: Record<string, string> = {
+      nao_resolvidas: "Não resolvidas",
+      nao_lidas: "Não lidas",
+      humano_solicitado: "Humano solicitado",
+      resolvidas: "Resolvidas",
+      todas: "Todas as conversas",
+      // Antigas — link salvo ou histórico do navegador ainda chega aqui.
+      meus: "Meus atendimentos",
+      aguardando: "Aguardando atendimento",
+      outros: "Outros atendimentos",
+    };
+    contextoLabel = titulos[tipoBase] ?? contextoLabel;
   }
 
   return (

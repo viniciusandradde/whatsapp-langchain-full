@@ -4,16 +4,18 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
 import {
+  CheckCircle2,
   Folder,
   FolderOpen,
   Inbox,
+  Layers,
   Loader2,
+  MailOpen,
   MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
-  User,
-  Users,
+  UserRoundSearch,
   X,
 } from "lucide-react";
 
@@ -32,15 +34,30 @@ import {
 import { useAtendimentoShell } from "./atendimento-shell";
 
 type SystemTab = {
-  tipo: "aguardando" | "meus" | "outros";
+  tipo: "nao_resolvidas" | "nao_lidas" | "humano_solicitado" | "resolvidas" | "todas";
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /**
+   * Chave em `contadores.sistema`. Só duas abas têm badge, como no Chatvolt:
+   * "Não Lidas" e "Humano Solicitado". Contador em toda aba vira ruído — o
+   * número deixa de significar "olhe aqui".
+   */
+  contador?: "nao_lidas" | "humano_solicitado";
+  /** Vermelho para o que exige leitura, âmbar para o que exige gente. */
+  urgente?: boolean;
 };
 
 const SYSTEM_TABS: SystemTab[] = [
-  { tipo: "aguardando", label: "Aguardando", icon: Inbox },
-  { tipo: "meus", label: "Meus", icon: User },
-  { tipo: "outros", label: "Outros", icon: Users },
+  { tipo: "nao_resolvidas", label: "Não Resolvidas", icon: Inbox },
+  { tipo: "nao_lidas", label: "Não Lidas", icon: MailOpen, contador: "nao_lidas", urgente: true },
+  {
+    tipo: "humano_solicitado",
+    label: "Humano Solicitado",
+    icon: UserRoundSearch,
+    contador: "humano_solicitado",
+  },
+  { tipo: "resolvidas", label: "Resolvidas", icon: CheckCircle2 },
+  { tipo: "todas", label: "Todas conversas", icon: Layers },
 ];
 
 interface Props {
@@ -63,7 +80,7 @@ export function AtendimentoSidebar({
 }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
-  const tipoAtual = sp.get("tipo") ?? "aguardando";
+  const tipoAtual = sp.get("tipo") ?? "nao_resolvidas";
   const abaAtual = sp.get("aba_id");
   const canManageAbas = usePermission("atendimento.aba.manage");
 
@@ -113,8 +130,9 @@ export function AtendimentoSidebar({
     });
   };
 
-  const sysCount = (t: SystemTab["tipo"]): number =>
-    contadores?.sistema[t] ?? 0;
+  // Só as abas com `contador` mostram badge; as demais devolvem 0 e o JSX omite.
+  const sysCount = (tab: SystemTab): number =>
+    tab.contador ? (contadores?.sistema[tab.contador] ?? 0) : 0;
   const abaCount = (id: number): number =>
     contadores?.abas[String(id)] ?? 0;
 
@@ -141,7 +159,7 @@ export function AtendimentoSidebar({
           {SYSTEM_TABS.map((tab) => {
             const Icon = tab.icon;
             const active = !abaAtual && tipoAtual === tab.tipo;
-            const count = sysCount(tab.tipo);
+            const count = sysCount(tab);
             return (
               <li key={tab.tipo}>
                 <Link
@@ -166,8 +184,16 @@ export function AtendimentoSidebar({
                     )}
                   </span>
                   {!collapsed && count > 0 && (
-                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">
-                      {count}
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        "h-5 px-1.5 text-xs",
+                        tab.urgente
+                          ? "bg-red-600 text-white"
+                          : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                      )}
+                    >
+                      {count > 99 ? "99+" : count}
                     </Badge>
                   )}
                 </Link>

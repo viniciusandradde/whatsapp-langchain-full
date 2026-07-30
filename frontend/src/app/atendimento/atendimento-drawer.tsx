@@ -49,27 +49,12 @@ import {
   transferDepartamentoAction,
 } from "./actions";
 import { PainelCliente } from "./painel-cliente";
+import { SITUACAO_AJUDA, SITUACAO_CLASSE, SITUACAO_LABEL } from "./situacao";
 import { TagPopover } from "./tag-popover";
 
 interface Props {
   atendimento: Atendimento;
   onClose: () => void;
-}
-
-const STATUS_LABEL: Record<Atendimento["status"], string> = {
-  aguardando: "Aguardando",
-  em_andamento: "Em andamento",
-  resolvido: "Resolvido",
-  abandonado: "Abandonado",
-};
-
-function statusVariant(
-  status: Atendimento["status"]
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "em_andamento") return "default";
-  if (status === "aguardando") return "secondary";
-  if (status === "abandonado") return "destructive";
-  return "outline";
 }
 
 function formatTime(iso: string | null): string {
@@ -346,8 +331,12 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
               <h2 className="truncate text-lg font-semibold">
                 {atendimento.cliente_nome ?? atendimento.cliente_telefone ?? "Cliente"}
               </h2>
-              <Badge variant={statusVariant(atendimento.status)}>
-                {STATUS_LABEL[atendimento.status]}
+              <Badge
+                variant="outline"
+                className={SITUACAO_CLASSE[atendimento.situacao]}
+                title={SITUACAO_AJUDA[atendimento.situacao]}
+              >
+                {SITUACAO_LABEL[atendimento.situacao]}
               </Badge>
               {atendimento.protocolo && (
                 <Badge variant="outline" className="font-mono text-[10px]">

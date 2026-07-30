@@ -10,28 +10,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { Atendimento, TipoVisualizacao } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 import { AtendimentoDrawer } from "./atendimento-drawer";
+import {
+  SITUACAO_AJUDA,
+  SITUACAO_CLASSE,
+  SITUACAO_LABEL,
+  formatarNaoLidas,
+} from "./situacao";
 
 interface Props {
   atendimentos: Atendimento[];
   tipo: TipoVisualizacao;
-}
-
-const STATUS_LABEL: Record<Atendimento["status"], string> = {
-  aguardando: "Aguardando",
-  em_andamento: "Em andamento",
-  resolvido: "Resolvido",
-  abandonado: "Abandonado",
-};
-
-function statusVariant(
-  status: Atendimento["status"]
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "em_andamento") return "default";
-  if (status === "aguardando") return "secondary";
-  if (status === "abandonado") return "destructive";
-  return "outline";
 }
 
 const PRIORIDADE_COLOR: Record<string, string> = {
@@ -91,9 +82,27 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <Badge variant={statusVariant(a.status)}>
-                      {STATUS_LABEL[a.status]}
-                    </Badge>
+                    <div className="flex items-center gap-1.5">
+                      {/* Contador de não lidas ANTES do selo: é o que decide se
+                          o operador abre a conversa agora. */}
+                      {a.nao_lidas > 0 && (
+                        <span
+                          className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                          title={`${a.nao_lidas} mensagem(ns) nova(s) do cliente`}
+                        >
+                          {formatarNaoLidas(a.nao_lidas)}
+                        </span>
+                      )}
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium",
+                          SITUACAO_CLASSE[a.situacao]
+                        )}
+                        title={SITUACAO_AJUDA[a.situacao]}
+                      >
+                        {SITUACAO_LABEL[a.situacao]}
+                      </span>
+                    </div>
                     {a.prioridade && (
                       <span
                         className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${PRIORIDADE_COLOR[a.prioridade] || ""}`}
