@@ -1,12 +1,13 @@
 package com.vsanexus.atendimento
 
 import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
 
 /**
  * Application do app.
  *
- * Existe desde a primeira fatia mesmo sem fazer nada: declarar `android:name`
- * no manifest depois obrigaria mexer no manifest de novo, e é aqui que Hilt
- * (`@HiltAndroidApp`) e a inicialização do Firebase vão entrar.
+ * `@HiltAndroidApp` gera o container de injeção — sem ele, todo
+ * `@AndroidEntryPoint` e `@HiltViewModel` falha em RUNTIME, não em build.
  */
+@HiltAndroidApp
 class NexusApp : Application()

@@ -12,31 +12,48 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vsanexus.atendimento.ui.login.LoginScreen
+import com.vsanexus.atendimento.ui.login.LoginViewModel
 import com.vsanexus.atendimento.ui.theme.NexusAtendimentoTheme
+import dagger.hilt.android.AndroidEntryPoint
 
 /**
- * Activity única do app (single-activity + Navigation Compose).
+ * Activity única do app.
  *
- * Nesta fatia só existe pra provar que o pipeline compila e gera APK instalável
- * no CI — a máquina de desenvolvimento é aarch64 e não tem `aapt2`, então
- * "compila" só se prova lá. As telas de conversa entram nas fatias seguintes.
+ * A raiz decide entre login e app pelo ESTADO DA SESSÃO, não por navegação:
+ * quando a API devolve 401 o interceptor limpa a sessão, e a UI cai no login
+ * sozinha. Com rotas, seria preciso interceptar navegação de qualquer tela.
  */
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             NexusAtendimentoTheme {
-                PlaceholderScreen()
+                Raiz()
             }
         }
+    }
+}
+
+@Composable
+private fun Raiz(vm: LoginViewModel = hiltViewModel()) {
+    val sessao by vm.sessao.collectAsStateWithLifecycle()
+    if (sessao.logado && !sessao.precisaEscolherEmpresa) {
+        PlaceholderConversas(empresa = sessao.empresaNome, onSair = vm::sair)
+    } else {
+        LoginScreen(vm)
     }
 }
 
@@ -46,11 +63,11 @@ class MainActivity : ComponentActivity() {
 // frente.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlaceholderScreen() {
+private fun PlaceholderConversas(empresa: String?, onSair: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Nexus Atendimento") },
+                title = { Text(empresa ?: "Nexus Atendimento") },
                 colors =
                     TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -64,18 +81,13 @@ private fun PlaceholderScreen() {
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Build OK", style = MaterialTheme.typography.headlineSmall)
+            Text("Sessão ativa", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Estrutura do projeto validada no CI. " +
-                    "Login e lista de conversas chegam na próxima fatia.",
+                "Login e empresa funcionando. A lista de conversas entra na " +
+                    "próxima fatia.",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            TextButton(onClick = onSair) { Text("Sair") }
         }
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun PlaceholderPreview() {
-    NexusAtendimentoTheme { PlaceholderScreen() }
 }

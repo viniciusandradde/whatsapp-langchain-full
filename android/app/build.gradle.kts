@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -20,6 +23,14 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Dois hosts porque os serviços estão em lugares diferentes: o Better
+        // Auth é um handler do Next.js e não existe no FastAPI. Verificado em
+        // produção — api.vsanexus.com/health devolve 200 e
+        // chat.vsanexus.com/api/auth/sign-in/email devolve 400 (existe, faltou
+        // corpo), não 404.
+        buildConfigField("String", "API_BASE_URL", "\"https://api.vsanexus.com/\"")
+        buildConfigField("String", "AUTH_BASE_URL", "\"https://chat.vsanexus.com/\"")
     }
 
     signingConfigs {
@@ -79,6 +90,8 @@ android {
 
     buildFeatures {
         compose = true
+        // buildConfigField exige isto ligado desde o AGP 8.
+        buildConfig = true
     }
 }
 
@@ -97,9 +110,30 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
+    // Hilt. `ksp` em vez de `kapt`: kapt está em modo de manutenção e é
+    // sensivelmente mais lento — e cada minuto pesa quando o CI é o único
+    // lugar onde este projeto compila.
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    // Rede
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.serialization)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.kotlinx.serialization.json)
+
+    // Persistência de sessão
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.security.crypto)
+
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
