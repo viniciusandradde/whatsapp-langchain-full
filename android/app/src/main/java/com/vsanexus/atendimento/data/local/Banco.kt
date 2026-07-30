@@ -46,12 +46,15 @@ data class ConversaEntity(
     val status: String,
     val prioridade: String?,
     val protocolo: String?,
-    val agenteAtual: String?,
+    // Default em tudo o que é opcional: campo novo na entity não deveria
+    // quebrar todo ponto de construção (foi o que aconteceu ao adicionar
+    // triagem — o build parou num helper de teste).
+    val agenteAtual: String? = null,
     /** Triagem da IA (mig 061) — mostrada na lista pra decidir o que abrir. */
-    val classificacao: String?,
-    val sentimento: String?,
-    val resumoIa: String?,
-    val triagemCompleta: Boolean,
+    val classificacao: String? = null,
+    val sentimento: String? = null,
+    val resumoIa: String? = null,
+    val triagemCompleta: Boolean = false,
     val atribuidoA: String?,
     val departamentoId: Long?,
     val conexaoNome: String?,
