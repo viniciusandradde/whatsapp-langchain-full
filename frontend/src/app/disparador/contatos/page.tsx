@@ -19,7 +19,9 @@ export default async function ContatosPage() {
   let promoviveis = 0;
   try {
     const [contatos, conexoes] = await Promise.all([
-      getContatosCapturados({ limit: 1000 }),
+      // Mesma página que o cliente exibe. Buscar 1.000 pra mostrar 200 era
+      // transferir 5x o necessário em toda visita.
+      getContatosCapturados({ limit: 200 }),
       getConexoes(),
     ]);
     initial = contatos.items;

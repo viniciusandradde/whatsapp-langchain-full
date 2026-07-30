@@ -2,8 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { DownloadCloud, Megaphone, UserMinus, UserPlus, Users } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  DownloadCloud,
+  Megaphone,
+  UserMinus,
+  UserPlus,
+  Users,
+} from "lucide-react";
 
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
+import { plural } from "@/lib/formato";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,7 +37,15 @@ import {
 } from "../actions";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const PAGINA = 1000;
+
+/**
+ * 200 por página, não 1.000.
+ *
+ * O botão "Carregar mais" refazia a busca com `limit` crescente e mantinha
+ * tudo no DOM: pra chegar no contato 19.000 eram 19 cliques e 19 mil linhas
+ * renderizadas. Paginar por `offset` mantém o DOM constante.
+ */
+const PAGINA = 200;
 
 export function ContatosClient({
   initial,
@@ -40,7 +58,12 @@ export function ContatosClient({
   promoviveis: number;
   evolution: Conexao[];
 }) {
-  const [contatos, setContatos] = useState<ContatoCapturado[]>(initial);
+  const [contatos, setContatos] = useState<ContatoCapturado[]>(
+    initial
+  );
+  const [pagina, setPagina] = useState(0);
+  const [confirmandoPromoverTodos, setConfirmandoPromoverTodos] =
+    useState(false);
   const [total, setTotal] = useState(totalInicial);
   const [promoviveis, setPromoviveis] = useState(promoviveisInicial);
   const [sel, setSel] = useState<Set<number>>(new Set());
@@ -69,9 +92,11 @@ export function ContatosClient({
     router.push("/campanhas");
   }
 
-  async function carregar() {
-    // recarrega o que já está visível (mantém a página atual)
-    const r = await listContatosAction({ limit: Math.max(PAGINA, contatos.length) });
+  async function carregar(p = pagina) {
+    const r = await listContatosAction({
+      limit: PAGINA,
+      offset: p * PAGINA,
+    });
     if (r.ok) {
       setContatos(r.data.items);
       setTotal(r.data.total);
@@ -112,7 +137,7 @@ export function ContatosClient({
     start(async () => {
       const r = await promoverContatosAction([...sel]);
       if (!r.ok) return setErro(r.error);
-      setMsg(`${r.data} contato(s) promovido(s) para o CRM.`);
+      setMsg(`${plural(r.data, "contato")} promovido${r.data === 1 ? "" : "s"} para o CRM.`);
       setSel(new Set());
       await carregar();
     });
@@ -120,21 +145,24 @@ export function ContatosClient({
 
   // Promove TODOS os capturados com telefone (server-side) — não depende da
   // lista visível, que antes capava em 200.
+  // Sem confirmação nenhuma, isto promovia 8.596 registros num clique.
   function promoverTodos() {
     setErro(null);
     setMsg(null);
     start(async () => {
       const r = await promoverTodosContatosAction();
       if (!r.ok) return setErro(r.error);
-      setMsg(`${r.data} contato(s) promovido(s) para o CRM (todos os elegíveis).`);
+      setMsg(`${plural(r.data, "contato")} no CRM.`);
       setSel(new Set());
       await carregar();
     });
   }
 
-  async function carregarMais() {
+  async function irParaPagina(p: number) {
     setErro(null);
-    const r = await listContatosAction({ limit: contatos.length + PAGINA });
+    setSel(new Set());
+    setPagina(p);
+    const r = await listContatosAction({ limit: PAGINA, offset: p * PAGINA });
     if (r.ok) {
       setContatos(r.data.items);
       setTotal(r.data.total);
@@ -149,9 +177,9 @@ export function ContatosClient({
       const r = await despromoverContatosAction([...sel]);
       if (!r.ok) return setErro(r.error);
       const { removidos, mantidos_com_atendimento } = r.data;
-      let m = `${removidos} contato(s) removido(s) do CRM.`;
+      let m = `${plural(removidos, "contato")} removido${removidos === 1 ? "" : "s"} do CRM.`;
       if (mantidos_com_atendimento > 0) {
-        m += ` ${mantidos_com_atendimento} mantido(s) por já terem atendimento (histórico preservado).`;
+        m += ` ${plural(mantidos_com_atendimento, "contato")} mantido${mantidos_com_atendimento === 1 ? "" : "s"} por já ter atendimento — o histórico é preservado.`;
       }
       setMsg(m);
       setSel(new Set());
@@ -264,20 +292,37 @@ export function ContatosClient({
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">
-            {contatos.length} de {total} contato(s) · {sel.size} selecionado(s)
-            {promoviveis > 0 && ` · ${promoviveis} sem CRM`}
+          <CardTitle className="text-base font-normal">
+            <span className="font-medium">{plural(total, "contato")}</span>
+            {sel.size > 0 && ` · ${sel.size} selecionado${sel.size === 1 ? "" : "s"}`}
+            {promoviveis > 0 &&
+              ` · ${promoviveis.toLocaleString("pt-BR")} fora do CRM`}
           </CardTitle>
-          <div className="flex flex-wrap gap-2">
-            {contatos.length < total && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={pending}
-                onClick={carregarMais}
-              >
-                Carregar mais ({total - contatos.length})
-              </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {total > PAGINA && (
+              <div className="flex items-center gap-1 text-sm">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pending || pagina === 0}
+                  onClick={() => irParaPagina(pagina - 1)}
+                  aria-label="Página anterior"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <span className="min-w-24 text-center text-muted-foreground">
+                  {pagina + 1} de {Math.ceil(total / PAGINA)}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pending || (pagina + 1) * PAGINA >= total}
+                  onClick={() => irParaPagina(pagina + 1)}
+                  aria-label="Próxima página"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
             )}
             <Button
               size="sm"
@@ -295,8 +340,8 @@ export function ContatosClient({
                 size="sm"
                 variant="default"
                 disabled={pending}
-                onClick={promoverTodos}
-                title="Promove todos os contatos com telefone, mesmo os não exibidos"
+                onClick={() => setConfirmandoPromoverTodos(true)}
+                title="Promove todos os contatos com telefone, inclusive os que não estão nesta página"
               >
                 <UserPlus className="mr-1 h-4 w-4" /> Promover todos ({promoviveis})
               </Button>
@@ -359,9 +404,9 @@ export function ContatosClient({
                   </TableCell>
                   <TableCell>
                     {c.promovido_at ? (
-                      <Badge>no CRM</Badge>
+                      <Badge variant="success">No CRM</Badge>
                     ) : (
-                      <span className="text-xs text-muted-foreground">staging</span>
+                      <Badge variant="outline">Só capturado</Badge>
                     )}
                   </TableCell>
                 </TableRow>
@@ -381,6 +426,19 @@ export function ContatosClient({
           </Table>
         </CardContent>
       </Card>
+
+      {/* Ação em massa acima de 50 registros exige digitar o total (contrato
+          C4): quem clicou sem ler não consegue confirmar por acidente. */}
+      <ConfirmDestrutivo
+        aberto={confirmandoPromoverTodos}
+        onAbertoChange={setConfirmandoPromoverTodos}
+        titulo="Promover todos os contatos para o CRM"
+        objeto={`${plural(promoviveis, "contato")} que ainda não está${promoviveis === 1 ? "" : "ão"} no CRM`}
+        descricao="Vale para todos os contatos capturados com telefone — inclusive os que não aparecem nesta página."
+        rotuloAcao="Promover todos"
+        exigeDigitar={promoviveis > 50 ? String(promoviveis) : undefined}
+        onConfirmar={promoverTodos}
+      />
     </div>
   );
 }
