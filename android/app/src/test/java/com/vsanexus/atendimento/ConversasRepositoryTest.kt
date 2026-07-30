@@ -1,0 +1,191 @@
+package com.vsanexus.atendimento
+
+import com.vsanexus.atendimento.data.Aba
+import com.vsanexus.atendimento.data.ConversasRepository
+import com.vsanexus.atendimento.data.Sincronizacao
+import com.vsanexus.atendimento.data.local.ConversaDao
+import com.vsanexus.atendimento.data.local.ConversaEntity
+import com.vsanexus.atendimento.data.local.Sessao
+import com.vsanexus.atendimento.data.local.SessaoStore
+import com.vsanexus.atendimento.data.remote.AtendimentoApi
+import com.vsanexus.atendimento.data.remote.AtendimentoDto
+import com.vsanexus.atendimento.data.remote.AtendimentosResponse
+import com.vsanexus.atendimento.data.remote.EmpresasResponse
+import com.vsanexus.atendimento.data.remote.MensagensResponse
+import com.vsanexus.atendimento.data.remote.ResponderRequest
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import retrofit2.Response
+
+/**
+ * Regras do cache de conversas.
+ *
+ * O que importa aqui não é "chamou a API": é o comportamento na FALHA. Erro de
+ * rede não pode esvaziar a lista, porque no celular a rede cai o tempo todo e
+ * uma tela vazia parece que o atendimento sumiu.
+ */
+class ConversasRepositoryTest {
+    private fun repo(api: AtendimentoApi, dao: ConversaDao, empresaId: Long? = 1L) =
+        ConversasRepository(api, dao, FakeSessao(empresaId))
+
+    @Test
+    fun `sincronizar substitui o conteudo da aba`() =
+        runTest {
+            val dao = FakeDao()
+            val api =
+                FakeApi(
+                    aoListar = {
+                        AtendimentosResponse(
+                            listOf(
+                                dto(1, "Ana"),
+                                dto(2, "Bruno"),
+                            ),
+                        )
+                    },
+                )
+
+            val r = repo(api, dao).sincronizar(Aba.AGUARDANDO)
+
+            assertTrue(r is Sincronizacao.Ok)
+            assertEquals(listOf("Ana", "Bruno"), dao.salvos.map { it.clienteNome })
+            // Substituir, não acumular: conversa que saiu da aba tem que sair
+            // da lista.
+            assertEquals(1, dao.vezesQueLimpou)
+        }
+
+    @Test
+    fun `falha de rede PRESERVA o cache`() =
+        runTest {
+            val dao = FakeDao(existentes = listOf(entidade(9, "Já estava aqui")))
+            val api = FakeApi(aoListar = { throw java.io.IOException("sem rede") })
+
+            val r = repo(api, dao).sincronizar(Aba.AGUARDANDO)
+
+            assertTrue(r is Sincronizacao.Falha)
+            // O ponto do teste: NADA foi apagado.
+            assertEquals(0, dao.vezesQueLimpou)
+            assertEquals(1, dao.observar(1L, "aguardando").first().size)
+        }
+
+    @Test
+    fun `sem empresa ativa nao chama a API nem devolve lista`() =
+        runTest {
+            val dao = FakeDao()
+            var chamou = false
+            val api = FakeApi(aoListar = { chamou = true; AtendimentosResponse() })
+
+            val r = repo(api, dao, empresaId = null).sincronizar(Aba.AGUARDANDO)
+
+            assertTrue(r is Sincronizacao.Falha)
+            // Sem empresa a API responderia 403 (get_empresa_context exige
+            // membership); chamar seria só gastar rede pra tomar erro.
+            assertEquals(false, chamou)
+            assertEquals(emptyList<ConversaEntity>(), repo(api, dao, null).observar(Aba.MEUS).first())
+        }
+
+    @Test
+    fun `busca em branco nao vai como parametro pro servidor`() =
+        runTest {
+            val dao = FakeDao()
+            var buscaRecebida: String? = "não-sobrescrito"
+            val api =
+                FakeApi(
+                    aoListar = { AtendimentosResponse() },
+                    registraBusca = { buscaRecebida = it },
+                )
+
+            repo(api, dao).sincronizar(Aba.MEUS, busca = "   ")
+
+            // `q` vazio no endpoint viraria filtro por string vazia; melhor
+            // omitir.
+            assertEquals(null, buscaRecebida)
+        }
+}
+
+private fun dto(id: Long, nome: String) =
+    AtendimentoDto(id = id, empresaId = 1, clienteNome = nome, status = "aguardando")
+
+private fun entidade(id: Long, nome: String) =
+    ConversaEntity(
+        id = id,
+        empresaId = 1,
+        aba = "aguardando",
+        clienteNome = nome,
+        clienteTelefone = null,
+        status = "aguardando",
+        prioridade = null,
+        protocolo = null,
+        atribuidoA = null,
+        departamentoId = null,
+        conexaoNome = null,
+        ultimaMensagemEm = null,
+    )
+
+private class FakeSessao(private val empresa: Long?) : SessaoStore {
+    override val estado: StateFlow<Sessao> = MutableStateFlow(Sessao(token = "t", empresaId = empresa))
+    override val token: String? = "t"
+    override val empresaId: Long? = empresa
+
+    override fun salvarToken(token: String, nomeUsuario: String?) = Unit
+
+    override fun salvarEmpresa(empresaId: Long, nome: String?) = Unit
+
+    override fun limpar() = Unit
+}
+
+private class FakeDao(existentes: List<ConversaEntity> = emptyList()) : ConversaDao {
+    val salvos = mutableListOf<ConversaEntity>()
+    var vezesQueLimpou = 0
+    private val conteudo = MutableStateFlow(existentes)
+
+    override fun observar(empresaId: Long, aba: String): Flow<List<ConversaEntity>> = conteudo
+
+    override suspend fun salvar(itens: List<ConversaEntity>) {
+        salvos += itens
+        conteudo.value = conteudo.value + itens
+    }
+
+    override suspend fun limparAba(empresaId: Long, aba: String) {
+        vezesQueLimpou++
+        conteudo.value = emptyList()
+    }
+
+    override suspend fun limparTudo() {
+        conteudo.value = emptyList()
+    }
+}
+
+private class FakeApi(
+    private val aoListar: () -> AtendimentosResponse,
+    private val registraBusca: (String?) -> Unit = {},
+) : AtendimentoApi {
+    override suspend fun listar(
+        tipo: String,
+        limit: Int,
+        offset: Int,
+        busca: String?,
+    ): AtendimentosResponse {
+        registraBusca(busca)
+        return aoListar()
+    }
+
+    override suspend fun detalhe(id: Long) = dto(id, "x")
+
+    override suspend fun mensagens(id: Long, limit: Int, beforeId: Long?) = MensagensResponse()
+
+    override suspend fun responder(id: Long, body: ResponderRequest) = vazio()
+
+    override suspend fun assumir(id: Long) = vazio()
+
+    override suspend fun marcarLido(id: Long) = vazio()
+
+    override suspend fun empresas() = EmpresasResponse()
+
+    private fun vazio(): Response<Unit> = Response.success(Unit)
+}
