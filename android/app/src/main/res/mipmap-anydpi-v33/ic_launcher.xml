@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13+ ("ícones temáticos"): quando o usuário liga o ícone temático, o
+     sistema descarta background/foreground e pinta a silhueta de <monochrome>
+     com as cores do papel de parede. Sem esta camada, o launcher cai num
+     recorte automático do foreground, que costuma sair borrado.
+
+     Arquivo separado em -v33 porque <monochrome> só existe a partir da API 33 e
+     este app roda desde a 26. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+</adaptive-icon>

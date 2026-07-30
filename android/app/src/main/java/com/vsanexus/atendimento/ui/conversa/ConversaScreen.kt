@@ -74,6 +74,20 @@ fun ConversaScreen(
 
     LaunchedEffect(atendimentoId) { vm.abrir(atendimentoId) }
 
+    // Acompanhar a mensagem nova. Com `reverseLayout`, o índice 0 é a mais
+    // recente, e inserir ali NÃO rola sozinho: o LazyColumn preserva o item que
+    // estava visível, então a mensagem que acabou de chegar nasce fora da tela.
+    //
+    // Só rola se o operador já estava no fim (índice <= 2). Se ele subiu pra ler
+    // histórico, puxar a tela pra baixo no meio da leitura seria pior que não
+    // atualizar — o caso que ele reclamou é chegar mensagem enquanto olha o fim.
+    val idMaisRecente = estado.bolhas.lastOrNull()?.id
+    LaunchedEffect(idMaisRecente) {
+        if (idMaisRecente != null && listState.firstVisibleItemIndex <= 2) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     // Carregar histórico ao chegar perto do topo. Com reverseLayout, "topo
     // visual" é o FIM dos índices — daí comparar com o total.
     LaunchedEffect(listState, estado.cursor) {
@@ -92,11 +106,14 @@ fun ConversaScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
                     }
                 },
+                // Barra clara com texto escuro, não uma faixa laranja: no tema
+                // clean da VSA a marca aparece em acento (botão de enviar, aba
+                // ativa), e o topo é superfície.
                 colors =
                     TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
                     ),
             )
         },
@@ -292,12 +309,13 @@ private fun Composer(texto: String, onTexto: (String) -> Unit, onEnviar: () -> U
                 enabled = texto.isNotBlank(),
                 modifier =
                     Modifier.clip(RoundedCornerShape(24.dp))
-                        .background(MaterialTheme.colorScheme.secondary),
+                        // Laranja da marca: enviar é a ação primária da tela.
+                        .background(MaterialTheme.colorScheme.primary),
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
                     contentDescription = "Enviar",
-                    tint = MaterialTheme.colorScheme.onSecondary,
+                    tint = MaterialTheme.colorScheme.onPrimary,
                 )
             }
         }

@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Espelham a paleta de ui/theme/Theme.kt. Duplicação inevitável: XML e
-         Compose não compartilham fonte de cor, e o tema XML é o que pinta a
-         janela antes do Compose montar. -->
-    <color name="verde_teal">#FF075E54</color>
-    <color name="fundo_app">#FFF7F8FA</color>
-    <color name="ic_launcher_background">#FF075E54</color>
+    <!-- Espelham os tokens da VSA em ui/theme/Theme.kt. Duplicação inevitável:
+         XML e Compose não compartilham fonte de cor, e o tema XML é o que pinta
+         a janela antes do Compose montar. -->
+    <color name="brand_laranja">#FFF97316</color>
+    <color name="canvas">#FFFFFFFF</color>
+    <color name="superficie_barra">#FFF8FAFC</color>
+
+    <!-- Chapa do ícone. Escura de propósito: é a mesma chapa do ícone PWA da
+         VSA (frontend/public/icon-maskable-512.png), onde o laranja e o azul do
+         mark ganham contraste máximo. O tema claro do app não vale no launcher,
+         que tem papel de parede próprio e imprevisível atrás. -->
+    <color name="ic_launcher_background">#FF0D0D10</color>
 </resources>

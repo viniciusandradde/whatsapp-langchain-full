@@ -70,20 +70,23 @@ fun ConversasScreen(
                     title = { Text(empresaNome ?: "Conversas") },
                     actions = {
                         TextButton(onClick = onSair) {
-                            Text("Sair", color = MaterialTheme.colorScheme.onPrimary)
+                            Text("Sair", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
+                    // Tema clean: topo é superfície clara com texto escuro. O
+                    // laranja da marca fica no indicador da aba ativa, que é
+                    // onde ele informa algo.
                     colors =
                         TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                            actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 )
                 TabRow(
                     selectedTabIndex = Aba.entries.indexOf(ui.aba),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
                 ) {
                     Aba.entries.forEach { aba ->
                         Tab(

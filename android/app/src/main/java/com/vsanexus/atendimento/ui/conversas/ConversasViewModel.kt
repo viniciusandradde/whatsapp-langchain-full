@@ -6,6 +6,7 @@ import com.vsanexus.atendimento.data.Aba
 import com.vsanexus.atendimento.data.ConversasRepository
 import com.vsanexus.atendimento.data.Sincronizacao
 import com.vsanexus.atendimento.data.local.ConversaEntity
+import com.vsanexus.atendimento.data.remote.EventosAtendimento
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -31,7 +33,10 @@ data class ConversasUiState(
 @HiltViewModel
 class ConversasViewModel
 @Inject
-constructor(private val repo: ConversasRepository) : ViewModel() {
+constructor(
+    private val repo: ConversasRepository,
+    private val eventos: EventosAtendimento,
+) : ViewModel() {
     private val _ui = MutableStateFlow(ConversasUiState())
     val ui: StateFlow<ConversasUiState> = _ui.asStateFlow()
 
@@ -60,6 +65,29 @@ constructor(private val repo: ConversasRepository) : ViewModel() {
 
     init {
         sincronizar()
+        ouvirEventos()
+    }
+
+    /**
+     * Tempo real da lista.
+     *
+     * O evento do SSE não traz a conversa inteira, só diz que algo mudou —
+     * então a reação é RESSINCRONIZAR a aba, não remendar a lista em memória.
+     * Assim o RBAC e a ordenação continuam sendo do servidor: montar a linha no
+     * cliente a partir do evento significaria reimplementar aqui quem pode ver
+     * o quê.
+     *
+     * `debounce` porque uma rajada de mensagens dispara um evento por mensagem,
+     * e cada um viraria um GET. Silencioso porque isto acontece sozinho: piscar
+     * o indicador de carregamento a cada mensagem recebida seria ruído.
+     */
+    private fun ouvirEventos() {
+        viewModelScope.launch {
+            eventos.eventos
+                .filter { it.mudouConversa }
+                .debounce(400)
+                .collect { sincronizar(silencioso = true) }
+        }
     }
 
     fun trocarAba(aba: Aba) {
@@ -73,15 +101,31 @@ constructor(private val repo: ConversasRepository) : ViewModel() {
         _ui.value = _ui.value.copy(busca = texto)
     }
 
-    fun sincronizar() {
-        _ui.value = _ui.value.copy(sincronizando = true, avisoSincronizacao = null)
+    /**
+     * @param silencioso sincronização disparada por evento, não pelo operador —
+     *   não mostra indicador nem aviso de falha. Falhar aqui só deixa a lista um
+     *   momento desatualizada, e um banner de erro que aparece sozinho sem
+     *   ninguém ter pedido nada é pior que isso.
+     */
+    fun sincronizar(silencioso: Boolean = false) {
+        if (!silencioso) {
+            _ui.value = _ui.value.copy(sincronizando = true, avisoSincronizacao = null)
+        }
         viewModelScope.launch {
             val r = repo.sincronizar(abaSelecionada.value, textoBusca.value)
             _ui.value =
-                _ui.value.copy(
-                    sincronizando = false,
-                    avisoSincronizacao = (r as? Sincronizacao.Falha)?.mensagem,
-                )
+                when {
+                    // Silencioso e deu certo: limpa aviso antigo, se havia.
+                    silencioso && r is Sincronizacao.Ok ->
+                        _ui.value.copy(avisoSincronizacao = null)
+                    // Silencioso e falhou: não mexe em nada.
+                    silencioso -> _ui.value
+                    else ->
+                        _ui.value.copy(
+                            sincronizando = false,
+                            avisoSincronizacao = (r as? Sincronizacao.Falha)?.mensagem,
+                        )
+                }
         }
     }
 }

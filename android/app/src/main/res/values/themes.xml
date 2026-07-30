@@ -2,10 +2,18 @@
 <resources>
     <!-- Tema base do sistema. A aparência real é definida em Compose
          (ui/theme/Theme.kt); aqui só o suficiente pra Activity e splash não
-         piscarem em branco antes do primeiro frame do Compose. -->
-    <style name="Theme.NexusAtendimento" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@color/verde_teal</item>
-        <item name="android:navigationBarColor">@color/verde_teal</item>
-        <item name="android:windowBackground">@color/fundo_app</item>
+         piscarem numa cor errada antes do primeiro frame do Compose.
+
+         `windowBackground` no canvas branco é o que importa: o app é o tema
+         CLEAN da VSA, e um flash escuro na abertura entregaria a troca. Os
+         ícones da status bar vão escuros porque a barra é clara — com o default
+         (ícones brancos) eles desapareceriam no branco.
+
+         Cor de status/navigation bar não é fixada aqui: MainActivity chama
+         `enableEdgeToEdge()`, que as deixa transparentes e passa o controle da
+         aparência pro Compose. -->
+    <style name="Theme.NexusAtendimento" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/canvas</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

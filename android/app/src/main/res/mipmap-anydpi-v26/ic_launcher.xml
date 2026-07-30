@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone do app: o mark da VSA sobre a chapa escura da marca.
+
+     O foreground é BITMAP, não vetor: o mark tem gradiente laranja→azul, e
+     reproduzir isso em <vector> exigiria redesenhar a arte à mão. Os PNGs são
+     gerados de frontend/public/icon-maskable-512.png (a mesma arte do ícone
+     PWA), com a chapa escura convertida em transparência e o mark dimensionado
+     em 62% do canvas — dentro dos 72dp de safe zone dos 108dp, com margem pra
+     máscara circular apertada.
+
+     A camada <monochrome> (ícone temático) fica em mipmap-anydpi-v33, porque o
+     elemento só existe a partir da API 33 e este arquivo é lido desde a 26. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>

@@ -28,6 +28,9 @@ import javax.inject.Singleton
 /** Retrofit do Better Auth (Next.js, chat.vsanexus.com). */
 @Qualifier @Retention(AnnotationRetention.BINARY) annotation class AuthRetrofit
 
+/** OkHttp sem timeout de leitura, para streams SSE. */
+@Qualifier @Retention(AnnotationRetention.BINARY) annotation class SseClient
+
 @Module
 @InstallIn(SingletonComponent::class)
 object RedeModule {
@@ -95,12 +98,29 @@ object RedeModule {
             .addInterceptor(log)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            // SSE fica aberto indefinidamente com heartbeat a cada 25s; sem
-            // isto o OkHttp mataria a conexão por inatividade de leitura.
-            .pingInterval(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
     }
+
+    /**
+     * Cliente para SSE — o mesmo, só sem timeout de leitura.
+     *
+     * `readTimeout(0)` é obrigatório: um stream SSE fica minutos sem enviar
+     * nada, e com os 30s do cliente normal o OkHttp cortaria a conexão. O
+     * heartbeat do servidor é de 25s, o que sobreviveria por 5 segundos de
+     * margem — perto o bastante para quebrar no primeiro soluço de rede.
+     *
+     * `pingInterval` NÃO serve aqui: ping frame é HTTP/2 e WebSocket, e não
+     * mantém viva uma resposta SSE em HTTP/1.1.
+     *
+     * Deriva de `newBuilder()` para herdar os interceptors — é o de
+     * autenticação que injeta o Bearer e limpa a sessão no 401.
+     */
+    @Provides
+    @Singleton
+    @SseClient
+    fun okHttpSse(client: OkHttpClient): OkHttpClient =
+        client.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()
 
     @Provides
     @Singleton
