@@ -668,6 +668,14 @@ export interface AtendimentoMensagem {
   // campo, e misturar as duas põe o que o operador mandou do lado do cliente.
   response_media_url?: string | null;
   response_media_type?: string | null;
+  /**
+   * Há mídia, mas o conteúdo não veio no payload.
+   *
+   * A lista é pedida com `incluir_midia=false`; os bytes vêm de
+   * `/api/proxy/midia/...` quando a bolha aparece.
+   */
+  media_disponivel?: boolean;
+  response_media_disponivel?: boolean;
 }
 
 export interface AtendimentoMensagensResponse {
@@ -2490,8 +2498,11 @@ export async function getAtendimentoMensagens(
   id: number,
   limit: number = 200
 ): Promise<AtendimentoMensagensResponse> {
+  // `incluir_midia=false`: a mídia é data-URL base64 na própria linha, e a lista
+  // vinha com tudo embutido — 98,74 MB numa conversa medida em produção. Cada
+  // anexo é buscado depois por `/api/proxy/midia/...`, quando de fato aparece.
   return apiFetch<AtendimentoMensagensResponse>(
-    `/api/atendimentos/${id}/mensagens?limit=${limit}`
+    `/api/atendimentos/${id}/mensagens?limit=${limit}&incluir_midia=false`
   );
 }
 

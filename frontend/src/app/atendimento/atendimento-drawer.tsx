@@ -1106,6 +1106,7 @@ function MessageBubbles({
     | {
         side: "in" | "out";
         kind: "media";
+        /** URL do proxy do Next — o conteúdo NÃO vem na lista. */
         mediaUrl: string;
         mediaType: string | null;
         caption?: string;
@@ -1113,11 +1114,13 @@ function MessageBubbles({
 
   const bubbles: Bubble[] = [];
 
-  if (m.media_url) {
+  if (m.media_disponivel || m.media_url) {
     bubbles.push({
       side: "in",
       kind: "media",
-      mediaUrl: m.media_url,
+      mediaUrl:
+        m.media_url ??
+        `/api/proxy/midia/${atendimentoId}/${m.id}?lado=in`,
       mediaType: m.media_type ?? null,
       caption: m.incoming_message ?? undefined,
     });
@@ -1154,11 +1157,13 @@ function MessageBubbles({
   // bolha vem da origem do campo, e reusar `media_url` poria o que o operador
   // mandou do lado do cliente. Quando há mídia, `response` é a LEGENDA dela, e
   // não uma segunda bolha de texto.
-  if (m.response_media_url) {
+  if (m.response_media_disponivel || m.response_media_url) {
     bubbles.push({
       side: "out",
       kind: "media",
-      mediaUrl: m.response_media_url,
+      mediaUrl:
+        m.response_media_url ??
+        `/api/proxy/midia/${atendimentoId}/${m.id}?lado=out`,
       mediaType: m.response_media_type ?? null,
       caption: !isHandoff && m.response ? m.response : undefined,
     });
