@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,6 +40,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// TopAppBar e TopAppBarDefaults ainda são @ExperimentalMaterial3Api no Compose
+// BOM 2024.10.01 — sem o opt-in o build FALHA (o projeto trata warning de API
+// experimental como erro). Vale pra toda tela com barra superior daqui pra
+// frente.
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlaceholderScreen() {
     Scaffold(

@@ -19,8 +19,11 @@
 # Secrets (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_BASE64   — keystore .jks em base64
 #   ANDROID_KEYSTORE_PASSWORD — senha do keystore
-#   ANDROID_KEY_ALIAS         — alias da chave
 #   ANDROID_KEY_PASSWORD      — senha da chave
+#
+# O ALIAS não é secret (está fixo em app/build.gradle.kts): como segredo, o
+# GitHub censurava o valor em todo log, e "nexus" aparece dentro do nome do
+# pacote — cada linha virava `com.vsa***/atendimento`, ilegível pra debug.
 
 name: android
 
@@ -85,7 +88,6 @@ jobs:
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 

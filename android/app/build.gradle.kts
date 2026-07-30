@@ -38,7 +38,11 @@ android {
             if (ksPath != null) {
                 storeFile = file(ksPath)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
+                // Alias fixo, NÃO secret: nome de alias não é sensível, e como
+                // segredo ele piorava tudo — o GitHub censura o valor em todo
+                // log, e "nexus" aparece dentro do próprio nome do pacote, o
+                // que transformava cada linha em `com.vsa***/atendimento`.
+                keyAlias = "nexus"
                 keyPassword = System.getenv("KEY_PASSWORD")
             }
         }
