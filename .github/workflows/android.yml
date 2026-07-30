@@ -64,6 +64,13 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
+      # Antes do Gradle: falha em segundos, não em um minuto. Pega fake de
+      # teste fora de sintonia com a interface e comentário de bloco aninhado —
+      # os dois erros que mais custaram voltas de CI aqui. É o mesmo script que
+      # se roda na máquina de dev, onde o app não compila (aarch64 sem aapt2).
+      - name: Conferência rápida (fakes e comentários)
+        run: python3 scripts/checar_antes_de_subir.py
+
       - name: Garantir permissão do gradlew
         run: chmod +x ./gradlew
 

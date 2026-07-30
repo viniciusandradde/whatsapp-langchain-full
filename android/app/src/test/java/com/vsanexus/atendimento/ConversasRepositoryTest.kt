@@ -23,6 +23,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
 
 /**
@@ -179,7 +181,18 @@ private class FakeApi(
 
     override suspend fun detalhe(id: Long) = dto(id, "x")
 
-    override suspend fun mensagens(id: Long, limit: Int, beforeId: Long?) = MensagensResponse()
+    override suspend fun mensagens(
+        id: Long,
+        limit: Int,
+        beforeId: Long?,
+        incluirMidia: Boolean,
+    ) = MensagensResponse()
+
+    override suspend fun midia(
+        id: Long,
+        mensagemId: Long,
+        lado: String,
+    ): Response<ResponseBody> = Response.success(ByteArray(0).toResponseBody())
 
     override suspend fun responder(id: Long, body: ResponderRequest) = vazio()
 
