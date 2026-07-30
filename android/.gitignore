@@ -1,0 +1,14 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+.cxx/
+*.iml
+.idea/
+
+# NUNCA versionar material de assinatura. A chave de release vive só como
+# secret do GitHub (ANDROID_KEYSTORE_BASE64) e num backup fora do repo — se
+# vazar, qualquer um publica update assinado como se fosse nosso.
+*.jks
+*.keystore
+keystore.properties
