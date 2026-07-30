@@ -7,10 +7,7 @@ import { EmpresaSwitcher } from "@/components/empresa-switcher";
 import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { PermissionsProvider } from "@/components/permissions-context";
 import { ServiceWorkerRegister } from "@/components/sw-register";
-import {
-  SidebarProvider,
-  SIDEBAR_INIT_SCRIPT,
-} from "@/components/sidebar-context";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getMyEmpresas, getMyPermissions } from "@/lib/api";
@@ -162,6 +159,10 @@ export default async function RootLayout({
     resolveInitialPermissions(),
   ]);
   const brandCss = brandStyleVars(brand);
+  // O primitivo Sidebar grava `sidebar_state` a cada toggle; ler aqui faz o SSR
+  // já sair com a largura certa. Substitui o script anti-flash que existia.
+  const sidebarAberta =
+    (await cookies()).get("sidebar_state")?.value !== "false";
 
   return (
     // `suppressHydrationWarning` é exigência do next-themes: ele escreve a
@@ -169,9 +170,6 @@ export default async function RootLayout({
     // divergem nesse atributo de propósito.
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
-        {/* Anti-flash sidebar: aplica data-sidebar-collapsed antes da
-            hidratação. Evita flicker w-64 → w-16 quando colapsada. */}
-        <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT_SCRIPT }} />
         {/* White-label: cores da marca da empresa ativa (sobrescreve --brand-*). */}
         {brandCss && (
           <style id="brand-vars" dangerouslySetInnerHTML={{ __html: brandCss }} />
@@ -186,7 +184,7 @@ export default async function RootLayout({
             initialPerms={initialPerms.permissoes}
             initialPerfis={initialPerms.perfis}
           >
-            <SidebarProvider>
+            <SidebarProvider defaultOpen={sidebarAberta}>
               <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>
                 {children}
               </AppShell>

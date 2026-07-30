@@ -1,25 +1,22 @@
 "use client";
 
 /**
- * Shell da aplicação — controla se a sidebar aparece.
+ * Shell da aplicação — sidebar + área de conteúdo.
  *
- * Na rota /login, renderiza apenas o conteúdo (full viewport).
- * Nas demais rotas, renderiza sidebar + conteúdo com margem.
+ * Em `/login` renderiza só o conteúdo (viewport inteira).
  *
- * `empresaSwitcher` (opcional) é renderizado no header da sidebar — server-
- * resolvido em `app/layout.tsx` pra evitar fetch client-side.
+ * A largura máxima do conteúdo é decisão daqui: sem ela, 59 das 68 páginas
+ * esticavam até a borda do monitor, e o campo de "slug" do formulário de agente
+ * ficava com 1.500px pra receber 20 caracteres.
  */
 
 import { usePathname } from "next/navigation";
-import { Sidebar } from "@/components/sidebar";
-import { useSidebar } from "@/components/sidebar-context";
-import { TopNavTabs } from "@/components/top-nav-tabs";
-import { cn } from "@/lib/utils";
 
-export interface SidebarBrand {
-  nome: string;
-  logo_path: string | null;
-}
+import { AppSidebar } from "@/components/app-sidebar";
+import type { SidebarBrand } from "@/components/nav-brand";
+import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+
+export type { SidebarBrand };
 
 export function AppShell({
   children,
@@ -31,26 +28,22 @@ export function AppShell({
   brand?: SidebarBrand | null;
 }) {
   const pathname = usePathname();
-  const { collapsed } = useSidebar();
-  const isLogin = pathname === "/login";
 
-  if (isLogin) {
+  if (pathname === "/login") {
     return <>{children}</>;
   }
 
   return (
     <>
-      <Sidebar empresaSwitcher={empresaSwitcher} brand={brand} />
-      <main
-        className={cn(
-          "min-h-screen p-6 pt-16 md:pt-6",
-          "transition-[margin] duration-200 ease-out",
-          collapsed ? "md:ml-16" : "md:ml-64"
-        )}
-      >
-        <TopNavTabs />
-        {children}
-      </main>
+      <AppSidebar empresaSwitcher={empresaSwitcher} brand={brand} />
+      <SidebarInset>
+        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <SidebarTrigger />
+        </header>
+        <div className="mx-auto w-full max-w-(--breakpoint-2xl) p-6">
+          {children}
+        </div>
+      </SidebarInset>
     </>
   );
 }
