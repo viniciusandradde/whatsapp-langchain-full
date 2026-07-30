@@ -58,7 +58,7 @@ export function AtendentesSidebar({
           count={offline.length}
           color="bg-zinc-500"
           items={offline}
-          emptyText="Todos online ✨"
+          emptyText="Todos online"
         />
       </div>
     </div>

@@ -11,6 +11,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { KPIs } from "@/lib/dashboard-atendimento-api";
+import { duracaoMin } from "@/lib/formato";
 
 export function KPICards({ kpis }: { kpis: KPIs }) {
   const cards = [
@@ -44,7 +45,7 @@ export function KPICards({ kpis }: { kpis: KPIs }) {
     },
     {
       label: "Tempo médio espera",
-      value: `${kpis.tempo_medio_espera_min}m`,
+      value: duracaoMin(kpis.tempo_medio_espera_min),
       icon: TrendingUp,
       color: "text-zinc-300",
       bg: "bg-zinc-500/10 border-zinc-500/30",

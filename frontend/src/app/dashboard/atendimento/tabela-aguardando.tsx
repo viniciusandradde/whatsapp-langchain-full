@@ -5,6 +5,7 @@ import { Eye, Hourglass } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { RowAguardando } from "@/lib/dashboard-atendimento-api";
+import { duracaoMin } from "@/lib/formato";
 
 export function TabelaAguardando({ rows }: { rows: RowAguardando[] }) {
   return (
@@ -28,7 +29,7 @@ export function TabelaAguardando({ rows }: { rows: RowAguardando[] }) {
       </div>
       {rows.length === 0 ? (
         <div className="p-6 text-center text-xs text-muted-foreground">
-          🎉 Fila vazia! Nenhum cliente aguardando.
+          Fila vazia — nenhum cliente aguardando.
         </div>
       ) : (
         <table className="w-full text-xs">
@@ -74,17 +75,11 @@ export function TabelaAguardando({ rows }: { rows: RowAguardando[] }) {
 }
 
 function TempoEspera({ minutos }: { minutos: number }) {
+  // Mesma função do KPI do topo: a tela mostrava "264.3m" num lugar e
+  // "4h24m" no outro, para a mesma grandeza.
   let cls = "text-muted-foreground";
-  if (minutos > 30) cls = "text-rose-400 font-medium";
-  else if (minutos > 10) cls = "text-amber-400";
-  else if (minutos > 5) cls = "text-blue-300";
+  if (minutos > 30) cls = "font-medium text-destructive";
+  else if (minutos > 10) cls = "text-warning";
 
-  const display =
-    minutos < 1
-      ? "agora"
-      : minutos < 60
-        ? `${Math.round(minutos)}m`
-        : `${Math.floor(minutos / 60)}h${String(Math.round(minutos % 60)).padStart(2, "0")}m`;
-
-  return <span className={`font-mono ${cls}`}>{display}</span>;
+  return <span className={`font-mono ${cls}`}>{duracaoMin(minutos)}</span>;
 }

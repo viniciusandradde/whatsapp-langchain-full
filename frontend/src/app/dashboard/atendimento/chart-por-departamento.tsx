@@ -59,8 +59,15 @@ export function ChartPorDepartamento({
     const x2 = cx + r * Math.cos(cumAngle);
     const y2 = cy + r * Math.sin(cumAngle);
     const largeArc = angle > Math.PI ? 1 : 0;
+    // Fatia única de 100%: o arco começa e termina no MESMO ponto, e o SVG
+    // simplesmente não desenha nada — o gráfico sumia sempre que um
+    // departamento concentrava tudo. Círculo cheio precisa de dois semiarcos.
+    const path =
+      pct >= 0.999
+        ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx} ${cy + r} A ${r} ${r} 0 1 1 ${cx} ${cy - r} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
     arcs.push({
-      path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+      path,
       color: COLORS[i % COLORS.length],
       label: d.departamento,
       total: d.total,

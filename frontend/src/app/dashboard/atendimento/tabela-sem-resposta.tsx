@@ -28,7 +28,7 @@ export function TabelaSemResposta({ rows }: { rows: RowSemResposta[] }) {
       </div>
       {rows.length === 0 ? (
         <div className="p-6 text-center text-xs text-muted-foreground">
-          ✅ Tudo em dia — atendentes respondendo no prazo.
+          Tudo em dia — atendentes respondendo no prazo.
         </div>
       ) : (
         <table className="w-full text-xs">
