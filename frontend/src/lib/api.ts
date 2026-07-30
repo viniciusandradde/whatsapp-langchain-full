@@ -2057,7 +2057,6 @@ export interface ContadoresAtendimento {
     nao_lidas: number;
   };
   abas: Record<string, number>;
-  sem_aba: number;
 }
 
 export async function getMyAbas(): Promise<{ items: Aba[] }> {
@@ -2107,19 +2106,6 @@ export async function reorderAbas(
 
 export async function getContadoresAtendimento(): Promise<ContadoresAtendimento> {
   return apiFetch<ContadoresAtendimento>("/api/atendimentos/contadores");
-}
-
-export async function attachAtendimentoAba(
-  atendimentoId: number,
-  abaId: number | null
-): Promise<{ ok: boolean; aba_id: number | null }> {
-  return apiFetch<{ ok: boolean; aba_id: number | null }>(
-    `/api/atendimentos/${atendimentoId}/aba`,
-    {
-      method: "POST",
-      body: { aba_id: abaId },
-    }
-  );
 }
 
 // --- Sprint Atendimento UX 1.2: Tags ---

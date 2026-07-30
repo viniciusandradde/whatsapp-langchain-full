@@ -169,15 +169,30 @@ async def update_tag(
 async def delete_tag(
     pool: AsyncConnectionPool, *, tag_id: int, empresa_id: int
 ) -> bool:
-    """Hard delete da tag (CASCADE: remove de `atendimento_tag`).
+    """Hard delete da tag, limpando também os clientes que a tinham.
 
-    Tag de CLIENTE é texto livre em `cliente_tag`, sem FK — apagar a tag aqui
-    não a remove dos clientes. É assimetria do schema, não esquecimento: a
-    tabela com FK (`cliente_tag_v2`) foi removida na mig 149 por estar órfã.
+    `atendimento_tag` some por CASCADE (tem FK). `cliente_tag` **não tem FK** —
+    guarda o NOME em texto livre —, então precisa de DELETE explícito. Sem ele a
+    tag sumia do catálogo e continuava colada nos clientes: invisível na UI de
+    tags, viva na ficha de cada pessoa, e ainda capaz de alimentar a aba que
+    filtrasse por aquele nome.
 
-    Retorna False se tag não é da empresa.
+    Escopo por empresa nos DOIS lados: o nome da tag é livre, então "Financeiro"
+    de uma empresa não pode limpar o "Financeiro" de outra.
+
+    Retorna False se a tag não é da empresa.
     """
     async with pool.connection() as conn:
+        # Nome ANTES de apagar — depois do DELETE não há de onde tirá-lo.
+        cur = await conn.execute(
+            "SELECT nome FROM tag WHERE id = %s AND empresa_id = %s",
+            (tag_id, empresa_id),
+        )
+        achada = await cur.fetchone()
+        if achada is None:
+            return False
+        nome = achada[0]
+
         cur = await conn.execute(
             """
             DELETE FROM tag WHERE id = %s AND empresa_id = %s
@@ -186,5 +201,22 @@ async def delete_tag(
             (tag_id, empresa_id),
         )
         row = await cur.fetchone()
+        if row is not None:
+            cur = await conn.execute(
+                """
+                DELETE FROM cliente_tag ct
+                 USING cliente c
+                 WHERE ct.cliente_id = c.id
+                   AND c.empresa_id = %s
+                   AND ct.tag = %s
+                """,
+                (empresa_id, nome),
+            )
+            logger.info(
+                "tag_removida_dos_clientes",
+                empresa_id=empresa_id,
+                tag=nome,
+                clientes_afetados=cur.rowcount,
+            )
         await conn.commit()
     return row is not None

@@ -59,9 +59,18 @@ class TestSmoke:
         resp = _client().get("/api/atendimentos/contadores")
         assert resp.status_code == 401
 
-    def test_attach_aba_sem_auth_401(self) -> None:
-        resp = _client().post("/api/atendimentos/1/aba", json={"aba_id": 1})
-        assert resp.status_code == 401
+    def test_endpoint_de_pinar_nao_existe_mais(self) -> None:
+        """`POST /atendimentos/{id}/aba` saiu na mig 150.
+
+        A aba virou filtro salvo por cliente: pinar conversa a conversa não se
+        sustentava, porque cada nova conversa do mesmo cliente nasceria fora da
+        pasta. 404 aqui é o comportamento certo — e o teste existe pra alguém
+        não reintroduzir o endpoint sem reintroduzir a coluna.
+        """
+        from whatsapp_langchain.server.main import app
+
+        rotas = {getattr(r, "path", "") for r in app.routes}
+        assert "/api/atendimentos/{atendimento_id}/aba" not in rotas
 
 
 # ============================================================================
@@ -312,25 +321,28 @@ class TestE2E:
         assert upd["descricao"] == f"Urgentes {_RUN}"
         assert upd["cor"] == "#ea580c"
 
-        # --- 6. POST /atendimentos/{id}/aba — pinning ---
-        r = httpx.post(
-            f"{API_BASE_URL}/api/atendimentos/{atendimento_id}/aba",
-            json={"aba_id": aba1["id"]},
+        # --- 6. A aba agrupa por TAG DE CLIENTE, não por pinagem ---
+        # `PATCH /abas/{id}` grava o critério; marcar a tag no cliente é o que
+        # faz a conversa entrar. Sem tag no cliente, a aba fica vazia — e é isso
+        # que o contador do passo 7 confirma.
+        r = httpx.patch(
+            f"{API_BASE_URL}/api/abas/{aba1['id']}",
+            json={"cliente_tags": ["e2e-aba"]},
             headers=h,
             timeout=5,
         )
         assert r.status_code == 200, r.text
-        assert r.json()["aba_id"] == aba1["id"]
+        assert r.json()["filtro"]["cliente_tags"] == ["e2e-aba"]
 
-        # Verifica direto no DB
         with psycopg.connect(db_url) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT aba_id FROM atendimento WHERE id = %s",
+                    "INSERT INTO cliente_tag (cliente_id, tag) "
+                    "SELECT cliente_id, 'e2e-aba' FROM atendimento WHERE id = %s "
+                    "ON CONFLICT DO NOTHING",
                     (atendimento_id,),
                 )
-                row = cur.fetchone()
-                assert row is not None and row[0] == aba1["id"]
+                conn.commit()
 
         # --- 7. GET /atendimentos/contadores — vê o pin na aba1 ---
         r = httpx.get(

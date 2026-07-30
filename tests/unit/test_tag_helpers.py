@@ -108,11 +108,49 @@ async def test_update_tag_returns_none_se_outra_empresa():
 
 @pytest.mark.asyncio
 async def test_delete_tag_hard_delete():
-    pool, conn = _mock_pool((1,))
+    # 1ª fetchone: nome da tag; 2ª: RETURNING id do DELETE.
+    pool, conn = _mock_pool(("Urgente",), (1,))
     ok = await delete_tag(pool, tag_id=1, empresa_id=1)
     assert ok is True
-    sql = conn.execute.await_args.args[0]
-    assert "DELETE FROM tag" in sql
+    sqls = [c.args[0] for c in conn.execute.await_args_list]
+    assert any("DELETE FROM tag" in s for s in sqls)
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_limpa_os_clientes_que_a_tinham():
+    """A tag some do catálogo E das fichas dos clientes.
+
+    `atendimento_tag` cai por CASCADE (tem FK), mas `cliente_tag` guarda o NOME
+    em texto livre: sem DELETE explícito a tag ficava invisível na tela de tags
+    e viva na ficha de cada pessoa — ainda alimentando a aba que filtrasse por
+    aquele nome.
+    """
+    pool, conn = _mock_pool(("Urgente",), (1,))
+    ok = await delete_tag(pool, tag_id=1, empresa_id=1)
+    assert ok is True
+
+    limpeza = [
+        c
+        for c in conn.execute.await_args_list
+        if "DELETE FROM cliente_tag" in c.args[0]
+    ]
+    assert len(limpeza) == 1, "cliente_tag ficou com a tag órfã"
+
+    sql, args = limpeza[0].args[0], limpeza[0].args[1]
+    # Casa por NOME (cliente_tag não tem FK) e escopado por empresa: nome de tag
+    # é livre, então "Financeiro" de uma empresa não pode limpar o de outra.
+    assert "c.empresa_id = %s" in sql
+    assert "ct.tag = %s" in sql
+    assert args == (1, "Urgente")
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_le_o_nome_antes_de_apagar():
+    """Ordem é o contrato: depois do DELETE não há de onde tirar o nome."""
+    pool, conn = _mock_pool(("Urgente",), (1,))
+    await delete_tag(pool, tag_id=1, empresa_id=1)
+    sqls = [c.args[0] for c in conn.execute.await_args_list]
+    assert "SELECT nome FROM tag" in sqls[0]
 
 
 @pytest.mark.asyncio

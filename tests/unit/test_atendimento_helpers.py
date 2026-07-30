@@ -8,6 +8,7 @@ import pytest
 
 from whatsapp_langchain.shared.atendimento import (
     SITUACOES,
+    _row_to_atendimento,
     claim_atendimento,
     close_atendimento,
     derivar_situacao,
@@ -32,12 +33,14 @@ def _row(
     status="aguardando",
     assigned_to_user_id=None,
     closed_at=None,
-    aba_id=None,
     conexao_nome=None,
     conexao_numero=None,
     conexao_provider=None,
 ):
-    """11 base + 5 mig 047 + 7 mig 061 + 2 mig 081/082 + 1 mig 085 + 3 mig 129 = 29."""
+    """11 base + 5 mig 047 + 7 mig 061 + 2 coleta + 3 mig 129 + 2 CSAT = 30.
+
+    `aba_id` saiu na mig 150 — os índices a partir de 25 desceram um.
+    """
     now = datetime.now(UTC)
     return (
         # Base (0..10)
@@ -69,13 +72,11 @@ def _row(
         # Mig 081/082 coleta (23..24)
         None,  # coleta_estado
         None,  # coleta_resumo
-        # Mig 085 aba (25)
-        aba_id,
-        # Mig 129 snapshot do canal (26..28)
+        # Mig 129 snapshot do canal (25..27)
         conexao_nome,
         conexao_numero,
         conexao_provider,
-        # Mig 073 estado do CSAT (29..30) — lido pelo gate de agrupamento
+        # Mig 073 estado do CSAT (28..29) — lido pelo gate de agrupamento
         None,  # aguardando_avaliacao_at
         None,  # aguardando_comentario_at
     )
@@ -97,6 +98,62 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
     pool.connection.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.connection.return_value.__aexit__ = AsyncMock(return_value=None)
     return pool, conn
+
+
+def test_mapeamento_por_indice_nao_desalinhou():
+    """Cada coluna cai no campo certo — com valores DISTINTOS.
+
+    `_row_to_atendimento` posiciona por índice. Ao remover `aba_id` na mig 150,
+    tudo a partir da posição 25 desceu um, e esse tipo de erro é SILENCIOSO:
+    vira campo trocado, não exceção. Um fixture com `None` em tudo passaria
+    mesmo desalinhado — daí um valor diferente em cada posição.
+    """
+    agora = datetime.now(UTC)
+    linha = (
+        1,
+        2,
+        3,
+        4,
+        "agente",
+        "aguardando",
+        "dono",
+        agora,
+        None,
+        agora,
+        agora,
+        "PROTO",
+        7,
+        True,
+        "fim",
+        False,
+        99,
+        "classif",
+        "alta",
+        "positivo",
+        "resumo",
+        True,
+        agora,
+        {"c": 1},
+        {"r": 2},
+        "NOME-CONEXAO",
+        "+5567000",
+        "evolution",
+        agora,
+        None,
+    )
+    assert len(linha) == 30, "a linha do SELECT tem 30 colunas desde a mig 150"
+
+    a = _row_to_atendimento(linha)
+
+    assert a.protocolo == "PROTO"
+    assert a.departamento_id == 99
+    assert a.coleta_resumo == {"r": 2}
+    # As quatro últimas são as que se deslocaram:
+    assert a.conexao_nome == "NOME-CONEXAO"
+    assert a.conexao_numero == "+5567000"
+    assert a.conexao_provider == "evolution"
+    assert a.aguardando_avaliacao_at is not None
+    assert a.aguardando_comentario_at is None
 
 
 class TestDerivarSituacao:

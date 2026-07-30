@@ -10,7 +10,7 @@ critério vive em `aba.filtro` (JSONB da mig 050), no formato
 oferecer isso — em produção havia 6 abas criadas e ZERO conversas dentro. Mesmo
 com o botão, o modelo não se sustentaria: cada nova conversa do mesmo cliente
 nasceria fora da pasta, e o operador teria que re-pinar para sempre. A coluna
-`aba_id` fica no schema (nada a migrar) mas não é mais lida pela listagem.
+`atendimento.aba_id` foi removida na mig 150.
 
 Abas são SEMPRE do próprio user — RBAC na query (`WHERE user_id = %s`), e é isso
 que também fecha o furo antigo: a listagem filtrava `AND a.aba_id = %s` sem
@@ -175,9 +175,10 @@ async def update_aba(
 
 
 async def delete_aba(pool: AsyncConnectionPool, *, aba_id: int, user_id: str) -> bool:
-    """Soft delete (ativo=FALSE) + limpa pinning dos atendimentos.
+    """Soft delete (ativo=FALSE). Retorna False se a aba não é do user.
 
-    Retorna False se aba não é do user."""
+    Não há pinagem a limpar desde a mig 150: a aba é filtro salvo, e as conversas
+    nunca ficaram presas a ela."""
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -188,11 +189,6 @@ async def delete_aba(pool: AsyncConnectionPool, *, aba_id: int, user_id: str) ->
             (aba_id, user_id),
         )
         row = await cur.fetchone()
-        if row:
-            await conn.execute(
-                "UPDATE atendimento SET aba_id = NULL WHERE aba_id = %s",
-                (aba_id,),
-            )
         await conn.commit()
     return row is not None
 
@@ -292,40 +288,6 @@ async def reorder_abas(
                 count += 1
         await conn.commit()
     return count
-
-
-async def attach_atendimento_to_aba(
-    pool: AsyncConnectionPool,
-    *,
-    atendimento_id: int,
-    aba_id: int | None,
-    user_id: str,
-    empresa_id: int,
-) -> bool:
-    """Atribui atendimento a aba pessoal do user (ou desatribui se aba_id=None).
-
-    Valida:
-    - Atendimento existe e é da empresa.
-    - Se aba_id != None: aba é do mesmo user.
-
-    Retorna False se algo não bate.
-    """
-    if aba_id is not None:
-        aba = await get_aba(pool, aba_id=aba_id, user_id=user_id)
-        if aba is None:
-            return False
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
-            UPDATE atendimento SET aba_id = %s, updated_at = NOW()
-             WHERE id = %s AND empresa_id = %s
-             RETURNING id
-            """,
-            (aba_id, atendimento_id, empresa_id),
-        )
-        row = await cur.fetchone()
-        await conn.commit()
-    return row is not None
 
 
 async def count_atendimentos_por_aba(

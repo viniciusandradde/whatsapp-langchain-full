@@ -32,7 +32,6 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.aba import (
-    attach_atendimento_to_aba,
     count_atendimentos_por_aba,
 )
 from whatsapp_langchain.shared.atendimento import (
@@ -129,12 +128,6 @@ class TransferInput(BaseModel):
 
 class ResponderInput(BaseModel):
     conteudo: str
-
-
-class AttachAbaInput(BaseModel):
-    """Atribuir/desatribuir aba (None desatribui)."""
-
-    aba_id: int | None = None
 
 
 class ApplyTagsInput(BaseModel):
@@ -247,7 +240,6 @@ async def list_contadores(
                 "nao_lidas": 0,
             },
             "abas": {},
-            "sem_aba": 0,
         }
     dept_filter_sql = ""
     dept_filter_args: list = []
@@ -263,7 +255,6 @@ async def list_contadores(
                     "nao_lidas": 0,
                 },
                 "abas": {},
-                "sem_aba": 0,
             }
         dept_filter_sql = " AND departamento_id = ANY(%s)"
         dept_filter_args = [list(dept_ids)]
@@ -318,19 +309,6 @@ async def list_contadores(
         )
         nao_lidas = (await cur.fetchone() or (0,))[0]
 
-        # Sem aba (pra "Não classificados" na sidebar)
-        cur = await conn.execute(
-            f"""
-            SELECT COUNT(*)
-              FROM atendimento
-             WHERE empresa_id = %s
-               AND status IN ('aguardando', 'em_andamento')
-               AND aba_id IS NULL{dept_filter_sql}
-            """,
-            (empresa_id, *dept_filter_args),
-        )
-        sem_aba = (await cur.fetchone() or (0,))[0]
-
     # Contadores por aba (sempre do próprio user — abas são pessoais)
     por_aba = await count_atendimentos_por_aba(
         pool, user_id=user_id, empresa_id=empresa_id
@@ -346,7 +324,8 @@ async def list_contadores(
             "nao_lidas": nao_lidas,
         },
         "abas": {str(k): v for k, v in por_aba.items()},
-        "sem_aba": sem_aba,
+        # `sem_aba` some com a mig 150: conversa não "pertence" mais a uma aba,
+        # então "sem aba" seria o total da empresa — número que não informa nada.
     }
 
 
@@ -1242,48 +1221,6 @@ async def marcar_lido_endpoint(
     pool = await get_pool()
     await marcar_lido(pool, atendimento_id=atendimento_id, user_id=user_id)
     return {"ok": True}
-
-
-@router.post("/{atendimento_id}/aba")
-async def attach_aba(
-    atendimento_id: int,
-    payload: AttachAbaInput,
-    empresa_id: int = Depends(get_empresa_context),
-    user_id: str = Depends(get_user_id_from_request),
-) -> dict:
-    """Atribui/desatribui aba pessoal a um atendimento (pinning).
-
-    Aba é sempre do user logado — `attach_atendimento_to_aba` valida
-    que `aba_id` pertence ao user. `aba_id=null` desatribui.
-
-    Não exige `atendimento.write` — atribuir aba é organização pessoal,
-    não mexe no conteúdo da conversa. Atendimento precisa estar visível
-    pro user (RBAC.read aplicado via `_load_atendimento_in_empresa`).
-    """
-    # Garante que atendimento existe e é da empresa.
-    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
-    pool = await get_pool()
-    ok = await attach_atendimento_to_aba(
-        pool,
-        atendimento_id=atendimento_id,
-        aba_id=payload.aba_id,
-        user_id=user_id,
-        empresa_id=empresa_id,
-    )
-    if not ok:
-        # aba_id != None e não é do user — 404 pra não vazar existência
-        raise HTTPException(
-            status_code=404,
-            detail="Aba não encontrada ou não pertence ao usuário.",
-        )
-    logger.info(
-        "atendimento_aba_attached",
-        empresa_id=empresa_id,
-        atendimento_id=atendimento_id,
-        aba_id=payload.aba_id,
-        user_id=user_id,
-    )
-    return {"ok": True, "aba_id": payload.aba_id}
 
 
 # ---- Cleanup de atendimentos zumbis (manual via UI) ----

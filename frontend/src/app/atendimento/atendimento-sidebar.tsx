@@ -309,12 +309,6 @@ export function AtendimentoSidebar({
             );
           })}
         </ul>
-        {!collapsed && contadores && contadores.sem_aba > 0 && (
-          <p className="mt-2 px-2 text-xs text-muted-foreground">
-            <MoreHorizontal className="mr-1 inline h-3 w-3" />
-            {contadores.sem_aba} sem aba
-          </p>
-        )}
       </section>
 
       {modalAba !== null && (

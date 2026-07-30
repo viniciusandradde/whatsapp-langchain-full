@@ -34,8 +34,11 @@ logger = structlog.get_logger()
 
 # Sem alias — usado em RETURNING de INSERT/UPDATE (RETURNING não enxerga alias).
 # Ordem: 11 colunas base + 5 mig 047 (padrão profissional) + 7 mig 061
-# (triagem) + 2 mig 081/082 (coleta) + 1 mig 085 (aba_id) + 3 mig 129
-# (snapshot do canal) + 2 mig 073 (estado do CSAT) = 31.
+# (triagem) + 2 mig 081/082 (coleta) + 3 mig 129 (snapshot do canal) +
+# 2 mig 073 (estado do CSAT) = 30.
+#
+# `aba_id` (mig 085) saiu na mig 150 — era pinagem manual sem tela, e a aba
+# virou filtro salvo por cliente.
 #
 # Colunas NOVAS entram sempre NO FIM: `_row_to_atendimento` posiciona por
 # índice, então inserir no meio reindexaria tudo silenciosamente.
@@ -51,8 +54,6 @@ _BARE_COLS = (
     "resumo_ia, triagem_completa, triagem_at, "
     # Mig 081/082 wizard coleta
     "coleta_estado, coleta_resumo, "
-    # Mig 085 aba customizável
-    "aba_id, "
     # Mig 129 snapshot do canal (persiste após apagar a conexão)
     "conexao_nome, conexao_numero, conexao_provider, "
     # Mig 073 estado do CSAT — lido pelo gate de agrupamento (mig 144)
@@ -65,9 +66,13 @@ _JOIN_COLS = f"{_BASE_COLS}, c.nome, c.telefone"
 
 def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
     # Índices: 0..10 base, 11..15 mig 047, 16..22 mig 061, 23..24 coleta,
-    # 25 aba_id (mig 085), 26..28 snapshot do canal (mig 129),
-    # 29..30 estado do CSAT (mig 073)
-    base_len = 31
+    # 25..27 snapshot do canal (mig 129), 28..29 estado do CSAT (mig 073).
+    #
+    # Os índices a partir de 25 DESCERAM UM ao remover `aba_id` na mig 150. É a
+    # razão de o comentário acima mandar acrescentar coluna sempre NO FIM:
+    # mexer no meio reindexa tudo, e o erro é silencioso — vira campo trocado,
+    # não exceção.
+    base_len = 30
     return Atendimento(
         id=row[0],
         empresa_id=row[1],
@@ -97,15 +102,13 @@ def _row_to_atendimento(row, *, with_cliente: bool = False) -> Atendimento:
         # Mig 081/082 wizard coleta
         coleta_estado=row[23],
         coleta_resumo=row[24],
-        # Mig 085 aba
-        aba_id=row[25],
         # Mig 129 snapshot do canal (sobrevive ao apagar a conexão)
-        conexao_nome=row[26],
-        conexao_numero=row[27],
-        conexao_provider=row[28],
+        conexao_nome=row[25],
+        conexao_numero=row[26],
+        conexao_provider=row[27],
         # Mig 073 estado do CSAT (lido pelo gate de agrupamento, mig 144)
-        aguardando_avaliacao_at=row[29],
-        aguardando_comentario_at=row[30],
+        aguardando_avaliacao_at=row[28],
+        aguardando_comentario_at=row[29],
         # JOIN extras (apenas quando _JOIN_COLS é usado)
         cliente_nome=row[base_len] if with_cliente and len(row) > base_len else None,
         cliente_telefone=row[base_len + 1]
@@ -767,7 +770,7 @@ async def list_atendimento_mensagens(
              WHERE {" AND ".join(where)}
              ORDER BY id DESC
              LIMIT %s
-            """,
+            """,  # type: ignore[arg-type]
             tuple(args),
         )
         rows = list(reversed(await cur.fetchall()))

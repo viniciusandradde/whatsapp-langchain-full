@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 
 import {
   applyTagsAtendimento,
-  attachAtendimentoAba,
   claimAtendimento,
   devolverAtendimentoParaIa,
   closeAtendimento,
@@ -345,19 +344,6 @@ export async function reorderAbasAction(
 ): Promise<Result> {
   try {
     await reorderAbas(orderedIds);
-    revalidatePath("/atendimento");
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
-
-export async function attachAtendimentoAbaAction(
-  atendimentoId: number,
-  abaId: number | null
-): Promise<Result> {
-  try {
-    await attachAtendimentoAba(atendimentoId, abaId);
     revalidatePath("/atendimento");
     return { ok: true };
   } catch (e) {
