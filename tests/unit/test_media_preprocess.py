@@ -2,6 +2,9 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from pydantic import SecretStr
+
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_AUDIO_DISABLED,
@@ -111,3 +114,51 @@ class TestMediaPreprocess:
         assert result.media_processing_status == "failed"
         assert result.auto_response == AUTO_RESPONSE_MEDIA_FAILURE
         assert "network error" in (result.media_processing_error or "")
+
+
+class TestEnvelopeDeErroDoOpenRouter:
+    """HTTP 200 sem `choices` não pode virar `KeyError: 'choices'`.
+
+    O OpenRouter responde 200 com envelope de erro quando o provedor recusa
+    (capacidade, rate limit, indisponibilidade). O código acessava
+    `result["choices"]` direto, e o log recebia a palavra `'choices'` — que não
+    diz nada a quem investiga. Aconteceu no atendimento 574: o áudio do cliente
+    foi descartado e o mesmo arquivo transcreveu normalmente minutos depois.
+    """
+
+    async def test_erro_com_200_vira_mensagem_legivel(self):
+        import httpx
+
+        from whatsapp_langchain.shared import midia_processing as mp
+
+        class _FakeResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"error": {"message": "Provider returned error", "code": 429}}
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **kw):
+                return _FakeResp()
+
+        with (
+            patch.object(httpx, "AsyncClient", lambda *a, **kw: _FakeClient()),
+            patch.object(
+                mp.settings, "openrouter_api_key", SecretStr("sk-or-v1-teste")
+            ),
+        ):
+            with pytest.raises(RuntimeError) as exc:
+                await mp.chat_completion_media([{"role": "user", "content": "oi"}])
+
+        # A mensagem tem que carregar a razão, não a chave que faltou.
+        assert "Provider returned error" in str(exc.value)
+        assert "choices" not in str(exc.value)

@@ -2316,7 +2316,40 @@ async def process_message(
             midia_model=midia_model,
         )
 
-        # Se mídia está desabilitada ou falhou, não chama o agente
+        # Falha TRANSITÓRIA de mídia volta pra fila em vez de virar desculpa.
+        #
+        # Transcrição e descrição dependem de um provedor externo que falha por
+        # segundos (capacidade, rate limit). Até aqui qualquer tropeço marcava a
+        # mensagem como `done` na hora, com "estamos com dificuldades" — o áudio
+        # do cliente era descartado PARA SEMPRE numa falha de instantes.
+        # Aconteceu no atendimento 574: o cliente falou de uma reunião e de um
+        # e-mail, o agente nunca soube, e o mesmo áudio transcreveu sem
+        # problema minutos depois.
+        #
+        # `disabled` e `unsupported` NÃO entram aqui: são configuração, e repetir
+        # daria o mesmo resultado três vezes mais devagar.
+        # `mark_failed` já decide sozinho entre reenfileirar e desistir: ele lê
+        # `attempts`/`max_attempts` da própria linha. Só é chamado enquanto
+        # sobram tentativas — esgotadas, cai no fluxo de desculpa abaixo, que é
+        # o que o cliente precisa ver.
+        if pre.media_processing_status == "failed" and message.attempts < (
+            message.max_attempts or settings.max_attempts
+        ):
+            await mark_failed(
+                pool,
+                message.id,
+                f"media_transitoria:{pre.media_processing_error or 'sem detalhe'}",
+            )
+            logger.warning(
+                "media_falhou_reenfileirada",
+                message_id=message.id,
+                tentativa=message.attempts,
+                erro=pre.media_processing_error,
+            )
+            return
+
+        # Se mídia está desabilitada ou falhou (sem tentativas restantes), não
+        # chama o agente
         if not pre.should_invoke_agent:
             auto_response = pre.auto_response or AUTO_RESPONSE_MEDIA_FAILURE
 

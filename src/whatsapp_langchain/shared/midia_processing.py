@@ -237,6 +237,16 @@ async def chat_completion_media(messages: list[dict], model: str | None = None) 
         )
         response.raise_for_status()
         result = response.json()
+        # O OpenRouter responde **HTTP 200 com envelope de erro** quando o
+        # provedor recusa (capacidade, rate limit, indisponibilidade momentânea).
+        # Acessar `["choices"]` direto virava `KeyError: 'choices'`, que chega no
+        # log como uma palavra solta e não diz nada — foi o que aconteceu no
+        # atendimento 574: o áudio do cliente foi descartado e ninguém soube por
+        # quê. O mesmo áudio transcreveu normalmente minutos depois.
+        if "choices" not in result:
+            erro = result.get("error") or {}
+            detalhe = erro.get("message") or str(result)[:200]
+            raise RuntimeError(f"OpenRouter recusou a chamada de mídia: {detalhe}")
         content = result["choices"][0]["message"].get("content")
         return _extract_text(content).strip()
 
