@@ -1,14 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Headphones } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import type { Atendimento, TipoVisualizacao } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -25,27 +20,37 @@ interface Props {
   tipo: TipoVisualizacao;
 }
 
-const PRIORIDADE_COLOR: Record<string, string> = {
-  urgente:
-    "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40",
-  alta: "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/40",
-  media: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/40",
-  baixa: "bg-muted text-muted-foreground border-muted",
+const PRIORIDADE_CLASSE: Record<string, string> = {
+  urgente: "border-destructive/40 bg-destructive/10 text-destructive",
+  alta: "border-warning/40 bg-warning/10 text-warning",
+  media: "border-border bg-muted text-muted-foreground",
+  baixa: "border-border bg-muted text-muted-foreground",
 };
 
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const min = Math.round(diffMs / 60_000);
   if (min < 1) return "agora";
-  if (min < 60) return `${min}m atrás`;
+  if (min < 60) return `${min}min`;
   const h = Math.round(min / 60);
-  if (h < 24) return `${h}h atrás`;
+  if (h < 24) return `${h}h`;
   const d = Math.round(h / 24);
-  return `${d}d atrás`;
+  return `${d}d`;
 }
 
+/**
+ * Fila + conversa, lado a lado.
+ *
+ * Antes: grade de cards de ~250px de altura, e a conversa abria num drawer
+ * sobre backdrop escuro — o operador via a fila OU lia a conversa, nunca as
+ * duas. Com 77 atendimentos abertos isso é rolagem o dia inteiro.
+ *
+ * Agora a fila é uma coluna densa de linhas e a conversa ocupa a coluna da
+ * direita. Abaixo de `lg` (tablet/celular) o drawer continua, porque 390px não
+ * comportam duas colunas.
+ */
 export function AtendimentoList({ atendimentos, tipo }: Props) {
-  const [active, setActive] = useState<Atendimento | null>(null);
+  const [ativo, setAtivo] = useState<Atendimento | null>(null);
 
   if (atendimentos.length === 0) {
     return (
@@ -61,130 +66,113 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
   }
 
   return (
-    <>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {atendimentos.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            onClick={() => setActive(a)}
-            className="text-left transition hover:scale-[1.01]"
-          >
-            <Card className="h-full hover:border-foreground/20">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <CardTitle className="truncate">
+    <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border lg:w-[380px] lg:shrink-0">
+        <ul className="divide-y overflow-y-auto">
+          {atendimentos.map((a) => {
+            const selecionado = ativo?.id === a.id;
+            return (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  onClick={() => setAtivo(a)}
+                  aria-current={selecionado ? "true" : undefined}
+                  className={cn(
+                    "w-full px-3 py-2.5 text-left transition-colors",
+                    selecionado
+                      ? "bg-accent"
+                      : "hover:bg-accent/50"
+                  )}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-sm font-medium">
                       {a.cliente_nome ?? a.cliente_telefone ?? "Cliente"}
-                    </CardTitle>
-                    <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                      {a.cliente_telefone ?? "—"}
-                    </p>
+                    </span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      {formatRelative(a.last_message_at)}
+                    </span>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="flex items-center gap-1.5">
-                      {/* Contador de não lidas ANTES do selo: é o que decide se
-                          o operador abre a conversa agora. */}
-                      {a.nao_lidas > 0 && (
-                        <span
-                          className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
-                          title={`${a.nao_lidas} mensagem(ns) nova(s) do cliente`}
-                        >
-                          {formatarNaoLidas(a.nao_lidas)}
-                        </span>
+
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {a.nao_lidas > 0 && (
+                      <span
+                        className="inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-4 text-destructive-foreground"
+                        title={`${a.nao_lidas} nova(s) do cliente`}
+                      >
+                        {formatarNaoLidas(a.nao_lidas)}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded border px-1.5 py-px text-[10px] font-medium",
+                        SITUACAO_CLASSE[a.situacao]
                       )}
+                      title={SITUACAO_AJUDA[a.situacao]}
+                    >
+                      {SITUACAO_LABEL[a.situacao]}
+                    </span>
+                    {a.prioridade && a.prioridade !== "media" && (
                       <span
                         className={cn(
-                          "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium",
-                          SITUACAO_CLASSE[a.situacao]
+                          "inline-flex items-center rounded border px-1.5 py-px text-[10px] font-medium",
+                          PRIORIDADE_CLASSE[a.prioridade]
                         )}
-                        title={SITUACAO_AJUDA[a.situacao]}
-                      >
-                        {SITUACAO_LABEL[a.situacao]}
-                      </span>
-                    </div>
-                    {a.prioridade && (
-                      <span
-                        className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${PRIORIDADE_COLOR[a.prioridade] || ""}`}
                       >
                         {a.prioridade}
                       </span>
                     )}
+                    <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
+                      #{a.id}
+                    </span>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-1.5 text-sm">
-                <Row label="Atendimento #" value={`${a.id}`} />
-                <Row label="Agente" value={a.agente_atual} />
-                <Row
-                  label="Última mensagem"
-                  value={formatRelative(a.last_message_at)}
-                />
-                {a.assigned_to_user_id && (
-                  <Row
-                    label="Atribuído a"
-                    value={a.assigned_to_user_id}
-                    mono
-                  />
-                )}
-                {a.cliente_tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {a.cliente_tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center rounded-full border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-[10px] font-medium"
-                        title="Tag do cliente"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(a.classificacao || a.sentimento) && (
-                  <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
-                    {a.classificacao && (
-                      <Badge variant="outline" className="font-mono">
-                        {a.classificacao}
-                      </Badge>
-                    )}
-                    {a.sentimento && (
-                      <Badge variant="outline">
-                        {a.sentimento}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </button>
-        ))}
+
+                  {a.cliente_tags.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {a.cliente_tags.slice(0, 3).map((tag) => (
+                        <Badge key={tag} variant="outline" className="h-4 px-1 text-[10px]">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {a.cliente_tags.length > 3 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{a.cliente_tags.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
-      {active && (
-        <AtendimentoDrawer
-          atendimento={active}
-          onClose={() => setActive(null)}
-        />
-      )}
-    </>
-  );
-}
+      {/* Coluna da conversa — só desktop. */}
+      <div className="hidden min-w-0 flex-1 overflow-hidden rounded-lg border lg:flex">
+        {ativo ? (
+          <AtendimentoDrawer
+            key={ativo.id}
+            atendimento={ativo}
+            onClose={() => setAtivo(null)}
+            modo="painel"
+          />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+            <Headphones className="size-8 opacity-40" />
+            <p className="text-sm">Escolha uma conversa na fila ao lado.</p>
+          </div>
+        )}
+      </div>
 
-function Row({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={mono ? "truncate font-mono text-xs" : "truncate"}>
-        {value}
-      </span>
+      {/* Mobile mantém o overlay. */}
+      {ativo && (
+        <div className="lg:hidden">
+          <AtendimentoDrawer
+            atendimento={ativo}
+            onClose={() => setAtivo(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }
