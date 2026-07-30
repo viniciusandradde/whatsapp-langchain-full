@@ -4,24 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vsanexus.atendimento.ui.conversas.ConversasScreen
 import com.vsanexus.atendimento.ui.login.LoginScreen
 import com.vsanexus.atendimento.ui.login.LoginViewModel
 import com.vsanexus.atendimento.ui.theme.NexusAtendimentoTheme
@@ -51,43 +38,13 @@ class MainActivity : ComponentActivity() {
 private fun Raiz(vm: LoginViewModel = hiltViewModel()) {
     val sessao by vm.sessao.collectAsStateWithLifecycle()
     if (sessao.logado && !sessao.precisaEscolherEmpresa) {
-        PlaceholderConversas(empresa = sessao.empresaNome, onSair = vm::sair)
+        ConversasScreen(
+            empresaNome = sessao.empresaNome,
+            // Abrir a conversa entra na fatia 4, com a tela de mensagens.
+            onAbrirConversa = {},
+            onSair = vm::sair,
+        )
     } else {
         LoginScreen(vm)
-    }
-}
-
-// TopAppBar e TopAppBarDefaults ainda são @ExperimentalMaterial3Api no Compose
-// BOM 2024.10.01 — sem o opt-in o build FALHA (o projeto trata warning de API
-// experimental como erro). Vale pra toda tela com barra superior daqui pra
-// frente.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PlaceholderConversas(empresa: String?, onSair: () -> Unit) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(empresa ?: "Nexus Atendimento") },
-                colors =
-                    TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-            )
-        },
-    ) { inner ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(inner).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("Sessão ativa", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Login e empresa funcionando. A lista de conversas entra na " +
-                    "próxima fatia.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            TextButton(onClick = onSair) { Text("Sair") }
-        }
     }
 }
