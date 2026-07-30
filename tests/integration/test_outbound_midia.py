@@ -45,6 +45,39 @@ class TestSmoke:
         assert "/api/atendimentos/{atendimento_id}/responder-midia" in rotas
 
 
+class TestDevolverParaIa:
+    """Desfazer o "Atender".
+
+    O gate do worker cala o agente enquanto o atendimento está `em_andamento` com
+    dono. Até este endpoint, assumir era irreversível: as duas saídas — `close`
+    (dispara pesquisa de satisfação) e `transfer` (avisa o cliente do setor) —
+    falam com o cliente, e nenhuma serve pra corrigir um toque errado.
+    """
+
+    def test_sem_auth_401(self) -> None:
+        resp = _client().post("/api/atendimentos/1/devolver-ia")
+        assert resp.status_code == 401, resp.text
+
+    def test_rota_registrada(self) -> None:
+        from whatsapp_langchain.server.main import app
+
+        rotas = {getattr(r, "path", "") for r in app.routes}
+        assert "/api/atendimentos/{atendimento_id}/devolver-ia" in rotas
+
+    def test_nao_envia_nada_ao_cliente(self) -> None:
+        """A diferença essencial em relação a `claim` e `transfer`.
+
+        `claim` manda "Você foi transferido para o atendente X" e `transfer`
+        anuncia o setor. Aqui o cliente não pode receber nada: do lado dele a IA
+        apenas volta a responder.
+        """
+        from whatsapp_langchain.server.routes import atendimento as rotas
+
+        fonte = inspect.getsource(rotas.devolver_ia)
+        assert "send_system_outbound" not in fonte
+        assert "send_outbound" not in fonte
+
+
 class TestMidiaSobDemanda:
     """Mídia servida por endpoint, não embutida na lista.
 

@@ -391,6 +391,41 @@ async def claim_atendimento(
     return _row_to_atendimento(row) if row else None
 
 
+async def devolver_atendimento_para_ia(
+    pool: AsyncConnectionPool, atendimento_id: int
+) -> Atendimento | None:
+    """Desfaz o "Atender": limpa o dono e volta pra `aguardando`.
+
+    O inverso de [claim_atendimento], e o motivo de existir é que assumir era
+    **irreversível**. O gate do worker cala o agente quando o atendimento está
+    `em_andamento` COM dono; sem uma volta, um clique errado em "Atender" deixava
+    aquela conversa sem IA para sempre — as duas saídas que havia eram `close`
+    (dispara pesquisa de satisfação no cliente) e `transfer` (avisa o cliente que
+    mudou de setor). Nenhuma das duas serve pra corrigir um clique.
+
+    Diferente de `transfer_atendimento_to_departamento`, que também desatribui:
+    aqui **nada é enviado ao cliente** e o departamento é preservado. Para quem
+    está do outro lado, nada aconteceu — a IA simplesmente volta a responder.
+
+    Só mexe em atendimento ABERTO: devolver um `resolvido` pra fila o reabriria
+    pelas costas de quem fechou.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            UPDATE atendimento
+               SET assigned_to_user_id = NULL,
+                   status = 'aguardando',
+                   updated_at = NOW()
+             WHERE id = %s AND status IN ('aguardando', 'em_andamento')
+            RETURNING {_BARE_COLS}
+            """,
+            (atendimento_id,),
+        )
+        row = await cur.fetchone()
+    return _row_to_atendimento(row) if row else None
+
+
 async def close_atendimento(
     pool: AsyncConnectionPool,
     atendimento_id: int,

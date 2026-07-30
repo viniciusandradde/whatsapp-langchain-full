@@ -39,6 +39,7 @@ from whatsapp_langchain.shared.atendimento import (
     MARKERS_REPROCESSAVEIS,
     claim_atendimento,
     close_atendimento,
+    devolver_atendimento_para_ia,
     get_atendimento_by_id,
     get_mensagem_midia,
     list_atendimento_mensagens,
@@ -615,6 +616,45 @@ async def claim(
             "assigned_to_user_id": user_id,
             "cliente_id": out.cliente_id,
         },
+    )
+    return out
+
+
+@router.post("/{atendimento_id}/devolver-ia")
+async def devolver_ia(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.write")),
+) -> Atendimento:
+    """Devolve o atendimento pra IA: desfaz o "Atender".
+
+    Existe porque assumir era **irreversível**. O worker cala o agente quando o
+    atendimento está `em_andamento` com dono, e as duas saídas que havia —
+    `close` (dispara pesquisa de satisfação) e `transfer` (avisa o cliente que
+    mudou de setor) — falam com o cliente. Nenhuma serve pra corrigir um toque
+    errado, e num celular o toque errado é fácil.
+
+    **Nada é enviado ao cliente**, ao contrário do `claim` (que anuncia o
+    atendente) e do `transfer`. Do lado dele, a IA simplesmente volta a
+    responder.
+
+    409 se o atendimento já está fechado: devolvê-lo pra fila o reabriria por
+    cima de quem encerrou.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    out = await devolver_atendimento_para_ia(pool, atendimento_id)
+    if out is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Atendimento já fechado — não pode voltar para a fila da IA.",
+        )
+    logger.info(
+        "atendimento_devolvido_para_ia",
+        empresa_id=empresa_id,
+        atendimento_id=atendimento_id,
+        user_id=user_id,
     )
     return out
 

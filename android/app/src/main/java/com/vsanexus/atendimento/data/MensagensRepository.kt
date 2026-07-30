@@ -14,6 +14,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Response
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,7 +32,22 @@ data class EstadoConversa(
     /** Null = início da conversa alcançado, não há mais o que carregar. */
     val cursor: Long? = null,
     val aviso: String? = null,
-)
+    /**
+     * `aguardando` | `em_andamento` | `resolvido` | `abandonado`.
+     *
+     * Decide qual ação a tela oferece: em `aguardando` cabe "Atender" (que cala
+     * a IA), em `em_andamento` cabe "Devolver para a IA".
+     */
+    val status: String? = null,
+    /** Ação de assumir/devolver em curso — desabilita os botões. */
+    val mudandoDono: Boolean = false,
+) {
+    val podeAtender: Boolean
+        get() = status == "aguardando"
+
+    val podeDevolverParaIa: Boolean
+        get() = status == "em_andamento"
+}
 
 /**
  * Mensagens de UMA conversa aberta.
@@ -62,9 +78,67 @@ constructor(private val api: AtendimentoApi) {
         recebidas = emptyList()
         _estado.value = EstadoConversa(carregando = true)
         buscar(beforeId = null)
-        // Best-effort: falhar em marcar lido não impede ler a conversa.
+        // Status vem do detalhe, não da lista: a lista pode estar em cache de
+        // minutos atrás, e é o status que decide se a tela oferece "Atender" ou
+        // "Devolver para a IA". Errar isso mostraria a ação errada.
+        // Best-effort nos dois: falhar aqui não impede LER a conversa.
+        runCatching { api.detalhe(id) }
+            .getOrNull()
+            ?.let { _estado.value = _estado.value.copy(status = it.status) }
         runCatching { api.marcarLido(id) }
     }
+
+    /**
+     * "Atender": tira da fila da IA.
+     *
+     * A IA para de responder este cliente enquanto o atendimento tiver dono — é
+     * o objetivo da ação. O backend também avisa o cliente que um atendente
+     * assumiu (mesmo comportamento do painel web).
+     */
+    suspend fun assumir(): Boolean = trocarDono { api.assumir(it) }
+
+    /**
+     * Devolve pra fila da IA. **Nada é enviado ao cliente.**
+     *
+     * O par de [assumir]: sem isto, um toque errado em "Atender" deixaria aquela
+     * conversa sem IA para sempre, porque as outras saídas falam com o cliente
+     * (fechar dispara a pesquisa de satisfação, transferir anuncia o setor).
+     */
+    suspend fun devolverParaIa(): Boolean = trocarDono { api.devolverParaIa(it) }
+
+    private suspend fun trocarDono(chamada: suspend (Long) -> Response<Unit>): Boolean {
+        val id = atendimentoId ?: return false
+        _estado.value = _estado.value.copy(mudandoDono = true, aviso = null)
+        return try {
+            val r = chamada(id)
+            if (r.isSuccessful) {
+                // Relê o status do servidor em vez de assumir o resultado: o
+                // claim pode ser recusado por capacidade (409) e o status real é
+                // o que decide qual botão a tela mostra a seguir.
+                val novo = runCatching { api.detalhe(id) }.getOrNull()?.status
+                _estado.value = _estado.value.copy(status = novo, mudandoDono = false)
+                atualizar()
+                true
+            } else {
+                _estado.value =
+                    _estado.value.copy(mudandoDono = false, aviso = avisoDonoDe(r.code()))
+                false
+            }
+        } catch (e: Exception) {
+            _estado.value =
+                _estado.value.copy(mudandoDono = false, aviso = "Sem conexão. Tente de novo.")
+            false
+        }
+    }
+
+    /** 409 no claim é limite de atendimentos simultâneos, não erro de rede. */
+    private fun avisoDonoDe(codigo: Int) =
+        when (codigo) {
+            409 -> "Não foi possível: o atendimento já foi fechado ou você atingiu o limite."
+            403 -> "Você não tem permissão para isso."
+            404 -> "Atendimento não encontrado."
+            else -> "Não foi possível concluir a ação."
+        }
 
     /** Carrega a página anterior do histórico usando o cursor. */
     suspend fun carregarHistorico() {

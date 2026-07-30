@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -122,6 +123,25 @@ fun ConversaScreen(
                 navigationIcon = {
                     IconButton(onClick = onVoltar) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                },
+                // "Atender" tira da fila da IA e a cala nesta conversa;
+                // "Devolver à IA" desfaz. Só um dos dois aparece, pelo status —
+                // e enquanto a chamada está em curso os dois ficam desabilitados,
+                // porque tocar duas vezes assumiria e devolveria em sequência.
+                actions = {
+                    if (estado.podeAtender) {
+                        TextButton(onClick = vm::assumir, enabled = !estado.mudandoDono) {
+                            Text("Atender")
+                        }
+                    }
+                    if (estado.podeDevolverParaIa) {
+                        TextButton(
+                            onClick = vm::devolverParaIa,
+                            enabled = !estado.mudandoDono,
+                        ) {
+                            Text("Devolver à IA")
+                        }
                     }
                 },
                 // Barra clara com texto escuro, não uma faixa laranja: no tema

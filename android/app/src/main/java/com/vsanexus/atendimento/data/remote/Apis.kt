@@ -132,8 +132,25 @@ interface AtendimentoApi {
         @Part("legenda") legenda: RequestBody,
     ): Response<Unit>
 
+    /**
+     * "Atender": tira da fila da IA e vira `em_andamento` com dono.
+     *
+     * Enquanto tem dono, o worker **cala o agente** — é justamente o objetivo.
+     * Atenção: o backend também envia ao cliente "Você foi transferido para o
+     * atendente X" (mesmo comportamento do painel web).
+     */
     @POST("api/atendimentos/{id}/claim")
     suspend fun assumir(@Path("id") id: Long): Response<Unit>
+
+    /**
+     * Devolve pra fila da IA — desfaz o [assumir].
+     *
+     * **Nada é enviado ao cliente.** Existe porque assumir era irreversível: as
+     * saídas eram fechar (dispara a pesquisa de satisfação) ou transferir (avisa
+     * o cliente), e nenhuma serve pra corrigir um toque errado na tela.
+     */
+    @POST("api/atendimentos/{id}/devolver-ia")
+    suspend fun devolverParaIa(@Path("id") id: Long): Response<Unit>
 
     @POST("api/atendimentos/{id}/marcar-lido")
     suspend fun marcarLido(@Path("id") id: Long): Response<Unit>

@@ -6,6 +6,7 @@ import {
   applyTagsAtendimento,
   attachAtendimentoAba,
   claimAtendimento,
+  devolverAtendimentoParaIa,
   closeAtendimento,
   createAba,
   createTag,
@@ -142,6 +143,18 @@ export async function responderAction(
 export async function claimAction(atendimentoId: number): Promise<Result> {
   try {
     await claimAtendimento(atendimentoId);
+    revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function devolverParaIaAction(
+  atendimentoId: number
+): Promise<Result> {
+  try {
+    await devolverAtendimentoParaIa(atendimentoId);
     revalidatePath("/atendimento");
     return { ok: true };
   } catch (e) {

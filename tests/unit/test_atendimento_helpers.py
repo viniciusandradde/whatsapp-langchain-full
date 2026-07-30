@@ -9,6 +9,7 @@ import pytest
 from whatsapp_langchain.shared.atendimento import (
     claim_atendimento,
     close_atendimento,
+    devolver_atendimento_para_ia,
     get_atendimento_by_id,
     get_mensagem_midia,
     list_atendimento_mensagens,
@@ -221,6 +222,50 @@ async def test_claim_returns_none_when_already_closed():
     pool, _ = _mock_pool(None)  # WHERE status IN aberto não bate
     out = await claim_atendimento(pool, 99, "user-x")
     assert out is None
+
+
+@pytest.mark.asyncio
+async def test_devolver_para_ia_limpa_dono_e_volta_pra_aguardando():
+    """O inverso do "Atender".
+
+    O gate do worker cala o agente quando o atendimento está `em_andamento` COM
+    dono. As duas condições têm que ser desfeitas: limpar só o dono deixaria
+    `em_andamento` (e a lista mostraria como se alguém estivesse atendendo);
+    mudar só o status deixaria o dono (e o gate continuaria calando a IA).
+    """
+    pool, conn = _mock_pool(_row(id_=8, status="aguardando", assigned_to_user_id=None))
+    out = await devolver_atendimento_para_ia(pool, 8)
+
+    assert out is not None
+    assert out.status == "aguardando"
+    assert out.assigned_to_user_id is None
+
+    sql = conn.execute.await_args.args[0]
+    assert "assigned_to_user_id = NULL" in sql
+    assert "status = 'aguardando'" in sql
+    # Só atendimento ABERTO: devolver um resolvido o reabriria por cima de quem
+    # fechou.
+    assert "status IN ('aguardando', 'em_andamento')" in sql
+
+
+@pytest.mark.asyncio
+async def test_devolver_para_ia_nao_mexe_no_departamento():
+    """Diferente de `transfer_atendimento_to_departamento`, que também
+    desatribui: aqui o departamento é preservado e NADA é enviado ao cliente."""
+    pool, conn = _mock_pool(_row(id_=8, status="aguardando"))
+    await devolver_atendimento_para_ia(pool, 8)
+
+    sql = conn.execute.await_args.args[0]
+    # Só o SET: `departamento_id` aparece legitimamente no RETURNING, porque faz
+    # parte de `_BARE_COLS`. Olhar o SQL inteiro media outra coisa.
+    atribuicoes = sql[sql.index("SET") : sql.index("WHERE")]
+    assert "departamento_id" not in atribuicoes
+
+
+@pytest.mark.asyncio
+async def test_devolver_para_ia_devolve_none_se_ja_fechado():
+    pool, _ = _mock_pool(None)  # WHERE status IN aberto não bate
+    assert await devolver_atendimento_para_ia(pool, 99) is None
 
 
 @pytest.mark.asyncio

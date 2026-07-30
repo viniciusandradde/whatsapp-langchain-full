@@ -2678,6 +2678,22 @@ export async function claimAtendimento(id: number): Promise<Atendimento> {
   });
 }
 
+/**
+ * Devolve o atendimento pra fila da IA — desfaz o "Atender".
+ *
+ * O worker cala o agente quando o atendimento está `em_andamento` com dono, e
+ * até existir isto assumir era irreversível: as duas saídas eram fechar (dispara
+ * a pesquisa de satisfação) ou transferir (avisa o cliente). Aqui **nada é
+ * enviado ao cliente**; a IA só volta a responder.
+ */
+export async function devolverAtendimentoParaIa(
+  id: number
+): Promise<Atendimento> {
+  return apiFetch<Atendimento>(`/api/atendimentos/${id}/devolver-ia`, {
+    method: "POST",
+  });
+}
+
 export async function closeAtendimento(
   id: number,
   status: "resolvido" | "abandonado" = "resolvido"

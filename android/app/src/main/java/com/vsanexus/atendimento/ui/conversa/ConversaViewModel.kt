@@ -81,6 +81,16 @@ constructor(
         viewModelScope.launch { repo.enviar(texto) }
     }
 
+    /** "Atender": tira da fila da IA (e a IA para de responder este cliente). */
+    fun assumir() {
+        viewModelScope.launch { repo.assumir() }
+    }
+
+    /** Devolve pra fila da IA. Nada é enviado ao cliente. */
+    fun devolverParaIa() {
+        viewModelScope.launch { repo.devolverParaIa() }
+    }
+
     /**
      * Arquivo local de uma mídia da conversa, baixando na primeira vez.
      *

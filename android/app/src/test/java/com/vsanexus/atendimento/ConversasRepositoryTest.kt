@@ -207,6 +207,8 @@ private class FakeApi(
 
     override suspend fun assumir(id: Long) = vazio()
 
+    override suspend fun devolverParaIa(id: Long) = vazio()
+
     override suspend fun marcarLido(id: Long) = vazio()
 
     override suspend fun empresas() = EmpresasResponse()

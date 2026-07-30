@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
+  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 import {
   claimAction,
   closeAction,
+  devolverParaIaAction,
   criarNotaInternaAction,
   loadAtendentesOnlineAction,
   enviarTemplateAction,
@@ -598,6 +600,25 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
               >
                 <Hand className="size-3.5" />
                 Atender
+              </Button>
+            )}
+            {/* Desfaz o "Atender". Enquanto o atendimento tem dono o worker cala
+                o agente, e até existir este botão assumir era irreversível: as
+                saídas eram fechar (dispara a pesquisa de satisfação) ou
+                transferir (avisa o cliente). Nada é enviado ao cliente aqui — a
+                IA só volta a responder. */}
+            {atendimento.status === "em_andamento" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  runAction(() => devolverParaIaAction(atendimento.id))
+                }
+                disabled={isPending}
+                title="A IA volta a responder este cliente. Nada é enviado a ele."
+              >
+                <Bot className="size-3.5" />
+                Devolver para a IA
               </Button>
             )}
             <div className="relative">
