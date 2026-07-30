@@ -10,9 +10,15 @@ import retrofit2.http.Query
 /**
  * Better Auth, que vive no Next.js — host DIFERENTE da API.
  *
- * `chat.vsanexus.com/api/auth/*` (frontend) contra
- * `api.vsanexus.com/api/*` (FastAPI). Não é escolha de arquitetura, é onde cada
- * um está: o Better Auth é um handler do Next e não existe no FastAPI.
+ * `chat.vsanexus.com/api/auth/…` (frontend) contra `api.vsanexus.com/api/…`
+ * (FastAPI). Não é escolha de arquitetura, é onde cada um está: o Better Auth é
+ * um handler do Next e não existe no FastAPI.
+ *
+ * Nota pra quem editar: NÃO escreva barra seguida de asterisco dentro de
+ * comentário. Diferente de Java, comentário de bloco em Kotlin ANINHA — um
+ * caminho como "api/auth/" terminado em asterisco abre um comentário que nunca
+ * fecha, e o compilador acusa "Unclosed comment" no FIM do arquivo, longe da
+ * causa. Foi assim que a fatia 2 falhou no primeiro build.
  */
 interface AuthApi {
     /**
