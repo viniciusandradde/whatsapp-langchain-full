@@ -47,7 +47,16 @@ OVERLAY=$(fora_de_ui 'fixed inset-0')
 # Cor fora do sistema de tokens (C1). A lista de paletas é a do Tailwind.
 PALETA='(bg|text|border|ring|from|to|via|shadow)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(50|100|200|300|400|500|600|700|800|900|950)'
 PALETA_CRUA=$(todo_src "$PALETA")
-HEX_LITERAL=$(todo_src '#[0-9a-fA-F]{6}\b')
+
+# Hex literal. Três usos são legítimos e ficam de fora, nomeados — o resto é
+# cor fora do sistema de tokens:
+#   - paleta que o USUÁRIO escolhe (cor de tag, cor da marca da empresa): é
+#     dado, não estilo do painel;
+#   - CSS de export em PDF: documento impresso, fora do tema do app;
+#   - `layout.tsx`: cálculo de contraste da cor de marca (branco vs quase-preto).
+HEX_EXCECOES='tags-admin.tsx|aba-modal.tsx|tag-chip.tsx|agente-editor.tsx|empresa-form.tsx|layout.tsx'
+HEX_LITERAL=$(grep -rEn '#[0-9a-fA-F]{6}\b' "$SRC" --include='*.tsx' 2>/dev/null |
+  grep -vE "$HEX_EXCECOES" | wc -l | tr -d ' ')
 
 # CSS morto: o arquivo inteiro é lixo enquanto existir (S1 da auditoria).
 # Conta CLASSE distinta, não linha de seletor — `.vsa-btn` e `.vsa-btn:hover`
@@ -61,8 +70,11 @@ fi
 
 # `dark:` só vale se alguma coisa aplicar a classe `.dark`. Enquanto ninguém
 # aplica, todo utilitário desses é código morto — e o número se zera sozinho
-# quando a migração de tokens ligar o tema (ADR-010).
-APLICA_DARK=$(grep -rE 'classList\.(add|toggle)\(\s*["'"'"']dark|className=["'"'"']dark["'"'"']' \
+# quando o tema passa a usar classe (ADR-010).
+#
+# Duas formas contam: o `next-themes` com `attribute="class"` (que é como o
+# painel faz hoje) ou alguém mexendo na classe na mão.
+APLICA_DARK=$(grep -rE 'attribute=["'"'"']class["'"'"']|classList\.(add|toggle)\(\s*["'"'"']dark' \
   "$SRC" --include='*.ts' --include='*.tsx' 2>/dev/null | wc -l | tr -d ' ')
 DARK_UTILS=$(todo_src 'dark:(text|bg|border|ring|hover|from|to|via|placeholder|shadow|divide|outline)-[^"[:space:]]+')
 if [ "$APLICA_DARK" -gt 0 ]; then DARK_INERTE=0; else DARK_INERTE="$DARK_UTILS"; fi

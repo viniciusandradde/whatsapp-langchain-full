@@ -46,8 +46,8 @@ export function CloneUsuarioModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-foreground/10 bg-obsidian-900 shadow-vsa-xl">
-        <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
+      <div className="w-full max-w-md rounded-xl border border-border bg-popover shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <Copy className="size-4 text-brand-primary" />
             Clonar {origem.nome || origem.email}
@@ -68,7 +68,7 @@ export function CloneUsuarioModal({
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              className="w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-sm"
+              className="w-full rounded-md border border-border bg-popover px-3 py-1.5 text-sm"
               placeholder="Nome do novo usuário"
               autoFocus
             />
@@ -78,7 +78,7 @@ export function CloneUsuarioModal({
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-sm"
+              className="w-full rounded-md border border-border bg-popover px-3 py-1.5 text-sm"
               placeholder="opcional"
             />
           </div>
@@ -87,14 +87,14 @@ export function CloneUsuarioModal({
             <input
               value={telefone}
               onChange={(e) => setTelefone(e.target.value)}
-              className="w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-sm"
+              className="w-full rounded-md border border-border bg-popover px-3 py-1.5 text-sm"
               placeholder="opcional"
             />
           </div>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-foreground/10 px-4 py-3">
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>

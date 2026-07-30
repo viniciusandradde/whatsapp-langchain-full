@@ -12,9 +12,12 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        // Obsidian glassmorphism — fundo cristalino sobre obsidian-950, borda
-        // que reforça no hover. Mantém shadcn slots (header/content/footer).
-        "group/card flex flex-col gap-4 overflow-hidden rounded-xl glass-panel py-4 text-sm text-card-foreground transition-all has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl hover:border-foreground/10",
+        // Superfície canônica (`bg-card` + `border`), no lugar do
+        // glassmorphism com `backdrop-filter`: o vidro dependia da classe
+        // `.glass-panel`, que era a única referência a um arquivo CSS de 465
+        // linhas, e o blur custava caro em lista com dezenas de cards.
+        // `size` continua como `data-size`, que 5 seletores dos filhos leem.
+        "group/card flex flex-col gap-4 overflow-hidden rounded-xl border bg-card py-4 text-sm text-card-foreground shadow-sm transition-colors has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className
       )}
       {...props}

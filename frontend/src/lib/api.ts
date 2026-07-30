@@ -1687,20 +1687,6 @@ export async function setTracesProvider(
   });
 }
 
-export interface AtendimentoTraceLink {
-  provider: "langfuse" | "langsmith" | null;
-  thread_id: string | null;
-  trace_url: string | null;
-}
-
-export async function getAtendimentoTraceLink(
-  atendimentoId: number
-): Promise<AtendimentoTraceLink> {
-  return apiFetch<AtendimentoTraceLink>(
-    `/api/traces/atendimento/${atendimentoId}`
-  );
-}
-
 // --- Clientes ---
 
 export async function getClientes(params: {

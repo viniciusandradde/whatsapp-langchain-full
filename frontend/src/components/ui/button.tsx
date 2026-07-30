@@ -10,19 +10,24 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Obsidian default — gradient brand (orange→blue) com glow no hover.
-        default:
-          "bg-vsa-brand text-white font-semibold shadow-vsa-orange hover:bg-vsa-brand-hover hover:shadow-glow-orange-lg hover:-translate-y-px active:translate-y-0",
+        // Sólido, com a cor da marca vinda do token. Era um gradiente
+        // laranja→azul com glow e `-translate-y-px`: como TODO botão primário
+        // usava, a auditoria contou nove gradientes numa tela só, e a lista de
+        // agentes virava uma pilha de barras coloridas. Ver ADR-014.
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
         outline:
-          "border-foreground/10 bg-foreground/[0.04] text-foreground hover:bg-foreground/[0.08] hover:border-foreground/20 hover:-translate-y-px",
-        // Secondary — gradient blue.
+          "border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
         secondary:
-          "bg-vsa-blue-gradient text-white font-semibold shadow-vsa-blue hover:shadow-glow-blue-lg hover:-translate-y-px active:translate-y-0",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
-          "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground aria-expanded:bg-foreground/[0.08] aria-expanded:text-foreground",
+          "text-muted-foreground hover:bg-accent hover:text-accent-foreground aria-expanded:bg-accent aria-expanded:text-accent-foreground",
         destructive:
-          "bg-destructive/15 text-destructive border-destructive/30 hover:bg-destructive/25 hover:border-destructive/50 focus-visible:ring-destructive/30",
-        link: "text-brand-primary underline-offset-4 hover:underline hover:text-brand-primary-light",
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/30",
+        link: "text-primary underline-offset-4 hover:underline",
+        // O gradiente sobrevive como escolha explícita: UMA ação primária por
+        // tela pode pedir destaque extra. Deixar de ser o default é o ponto.
+        brand:
+          "bg-linear-to-r from-brand-primary to-brand-secondary text-white font-semibold hover:brightness-110",
       },
       size: {
         default:

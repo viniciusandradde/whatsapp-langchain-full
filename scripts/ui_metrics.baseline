@@ -1,9 +1,9 @@
 form_cru=347
 confirm_alert=82
 overlay_mao=31
-paleta_crua=686
-hex_literal=32
-vsa_morto=46
-dark_inerte=130
+paleta_crua=685
+hex_literal=0
+vsa_morto=0
+dark_inerte=0
 input_cls=40
 rotas_orfas=2

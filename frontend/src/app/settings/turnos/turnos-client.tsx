@@ -92,7 +92,7 @@ export function TurnosClient() {
           {turnos.map((t) => (
             <div
               key={t.id}
-              className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4"
+              className="rounded-xl border border-border bg-popover p-4"
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -225,8 +225,8 @@ function TurnoFormModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-foreground/10 bg-obsidian-900 shadow-vsa-xl">
-        <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
+      <div className="w-full max-w-lg rounded-xl border border-border bg-popover shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold">{isEdit ? "Editar turno" : "Novo turno"}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="size-4" />
@@ -238,7 +238,7 @@ function TurnoFormModal({
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               placeholder="Nome do turno (ex: Comercial)"
-              className="flex-1 rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5"
+              className="flex-1 rounded-md border border-border bg-popover px-3 py-1.5"
               autoFocus
             />
             <label className="flex items-center gap-1.5 text-xs">
@@ -263,7 +263,7 @@ function TurnoFormModal({
                   value={d.inicio}
                   disabled={!d.enabled}
                   onChange={(e) => setDia(i, { inicio: e.target.value })}
-                  className="rounded-md border border-foreground/10 bg-obsidian-800 px-2 py-1 disabled:opacity-40"
+                  className="rounded-md border border-border bg-popover px-2 py-1 disabled:opacity-40"
                 />
                 <span className="text-muted-foreground">até</span>
                 <input
@@ -271,14 +271,14 @@ function TurnoFormModal({
                   value={d.fim}
                   disabled={!d.enabled}
                   onChange={(e) => setDia(i, { fim: e.target.value })}
-                  className="rounded-md border border-foreground/10 bg-obsidian-800 px-2 py-1 disabled:opacity-40"
+                  className="rounded-md border border-border bg-popover px-2 py-1 disabled:opacity-40"
                 />
               </div>
             ))}
           </div>
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-foreground/10 px-4 py-3">
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>
@@ -346,8 +346,8 @@ function TurnoUsersModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-foreground/10 bg-obsidian-900 shadow-vsa-xl">
-        <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
+      <div className="w-full max-w-md rounded-xl border border-border bg-popover shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold">Atendentes — {turno.nome}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="size-4" />
@@ -379,7 +379,7 @@ function TurnoUsersModal({
           )}
           {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-foreground/10 px-4 py-3">
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>

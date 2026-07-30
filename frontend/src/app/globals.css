@@ -1,9 +1,17 @@
 @import "./vsa-design-tokens.css";
-@import "./vsa-components.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/**
+ * Tema: par claro/escuro canônico do shadcn, com UMA indireção deliberada.
+ *
+ * `dark` é classe, não atributo — é o que o `@custom-variant` abaixo exige e o
+ * que o `next-themes` aplica no <html>. Até 2026-07-30 o tema morava em
+ * `data-theme` e esta variante nunca casava com nada: 130 utilitários `dark:`
+ * espalhados pelo app eram código morto, incluindo os que vêm dentro dos
+ * próprios componentes do shadcn.
+ */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -12,7 +20,53 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
-  /* VSA Tech — Design System Obsidian v2.0 */
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* --- compat: utilitários herdados, em remoção onda a onda ---------------
+   * `bg-obsidian-800`, `text-vsa-orange-500` e afins ainda aparecem em 19
+   * arquivos. Os valores agora derivam dos tokens canônicos (ver
+   * vsa-design-tokens.css), então respondem ao tema — mas o alvo é zero.
+   */
   --color-obsidian-950: var(--obsidian-950);
   --color-obsidian-900: var(--obsidian-900);
   --color-obsidian-800: var(--obsidian-800);
@@ -52,111 +106,118 @@
   --color-vsa-error: var(--vsa-error);
   --color-vsa-warning: var(--vsa-warning);
   --color-vsa-info: var(--vsa-info);
-
-  --shadow-glow-orange: var(--glow-orange);
-  --shadow-glow-orange-lg: var(--glow-orange-lg);
-  --shadow-glow-blue: var(--glow-blue);
-  --shadow-glow-blue-lg: var(--glow-blue-lg);
-  --shadow-glow-brand: var(--glow-brand);
-  --shadow-vsa-orange: 0 4px 14px rgba(249, 115, 22, 0.25);
-  --shadow-vsa-orange-lg: 0 8px 24px rgba(249, 115, 22, 0.35);
-  --shadow-vsa-blue: 0 4px 14px rgba(59, 130, 246, 0.25);
-  --shadow-vsa-blue-lg: 0 8px 24px rgba(59, 130, 246, 0.35);
-  --shadow-vsa-brand: 0 4px 14px rgba(249, 115, 22, 0.20), 0 4px 14px rgba(59, 130, 246, 0.15);
-
-  --background-image-vsa-brand: linear-gradient(135deg, #F97316 0%, #EA580C 40%, #3B82F6 100%);
-  --background-image-vsa-brand-hover: linear-gradient(135deg, #EA580C 0%, #C2410C 40%, #2563EB 100%);
-  --background-image-vsa-soft: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
-  --background-image-vsa-orange-gradient: linear-gradient(135deg, #F97316 0%, #EA580C 50%, #FDBA74 100%);
-  --background-image-vsa-blue-gradient: linear-gradient(135deg, #3B82F6 0%, #2563EB 50%, #60A5FA 100%);
-  --background-image-vsa-orange: linear-gradient(180deg, #F97316 0%, #EA580C 100%);
-  --background-image-vsa-blue: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
-  --background-image-vsa-radial: radial-gradient(circle at top right, rgba(249, 115, 22, 0.08), transparent 50%), radial-gradient(circle at bottom left, rgba(59, 130, 246, 0.06), transparent 50%);
-
-  --animate-float: float 6s ease-in-out infinite;
-  --animate-pulse-slow: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-  --color-vsa-blue: oklch(0.68 0.14 200);
-  --color-vsa-navy: oklch(0.25 0.08 265);
-  --color-vsa-navy-deep: oklch(0.18 0.06 265);
-  --color-vsa-orange: oklch(0.62 0.21 30);
 }
 
-/* Dark-first Obsidian — não há tema light. Tokens shadcn apontam pros tokens VSA. */
+/**
+ * A indireção que segura o white-label.
+ *
+ * `--brand-primary` e `--brand-secondary` são as ÚNICAS variáveis que o painel
+ * injeta em runtime: `app/layout.tsx` lê a cor da empresa no banco e escreve um
+ * <style> no <head>. Por isso os tokens de marca abaixo DERIVAM delas em vez de
+ * carregar valor próprio — trocar `--primary: oklch(...)` fixo aqui não
+ * quebraria build nenhum, só faria o painel parar de pintar com a cor do
+ * cliente, em silêncio. Ver ADR-010.
+ */
 :root {
-  --font-sans: var(--vsa-font-body);
-  --font-mono: var(--vsa-font-mono);
+  --brand-primary: #ff7300;
+  --brand-primary-dark: color-mix(in srgb, var(--brand-primary), black 18%);
+  --brand-primary-light: color-mix(in srgb, var(--brand-primary), white 18%);
+  --brand-secondary: #0f71a2;
+  --brand-secondary-dark: color-mix(in srgb, var(--brand-secondary), black 18%);
+  --brand-secondary-light: color-mix(in srgb, var(--brand-secondary), white 18%);
 
-  --background: var(--obsidian-950);
-  --foreground: var(--text-primary);
-  --card: var(--glass-bg);
-  --card-foreground: var(--text-primary);
-  --popover: var(--obsidian-800);
-  --popover-foreground: var(--text-primary);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
   --primary: var(--brand-primary);
-  --primary-foreground: #ffffff;
-  --secondary: var(--obsidian-700);
-  --secondary-foreground: var(--text-primary);
-  --muted: var(--obsidian-700);
-  --muted-foreground: var(--text-secondary);
-  --accent: rgba(249, 115, 22, 0.1);
-  --accent-foreground: var(--brand-primary-light);
-  --destructive: var(--vsa-error);
-  --border: var(--border-default);
-  --input: var(--obsidian-700);
+  /* Calculado no servidor a partir da luminância da cor da empresa
+   * (`layout.tsx::brandStyleVars`) — marca clara pede texto escuro. O default
+   * cobre o caso sem white-label. */
+  --primary-foreground: var(--brand-primary-foreground, oklch(0.985 0 0));
+
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+
+  --accent: color-mix(in oklab, var(--brand-secondary) 10%, var(--background));
+  --accent-foreground: var(--brand-secondary-dark);
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  /* `success` e `warning` não existem no conjunto canônico do shadcn, mas o
+   * painel é cheio de estado (conectado, resolvido, aguardando, quota). Sem
+   * token, viravam `text-emerald-300`/`text-amber-400` chumbados — 85 das 686
+   * cores fora do sistema eram só isso. */
+  --success: oklch(0.596 0.145 163.225);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-foreground: oklch(0.145 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
   --ring: var(--brand-primary);
 
   --chart-1: var(--brand-primary);
   --chart-2: var(--brand-secondary);
-  --chart-3: var(--vsa-success);
-  --chart-4: var(--vsa-warning);
-  --chart-5: var(--vsa-info);
-  --radius: 0.625rem;
+  --chart-3: oklch(0.6 0.118 184.704);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
 
-  /* Sidebar — obsidian-900 com accent laranja */
-  --sidebar: var(--obsidian-900);
-  --sidebar-foreground: var(--text-secondary);
+  --sidebar: color-mix(in oklab, var(--brand-secondary) 6%, var(--background));
+  --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: var(--brand-primary);
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(249, 115, 22, 0.1);
-  --sidebar-accent-foreground: var(--brand-primary);
-  --sidebar-border: var(--border-subtle);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: color-mix(in oklab, var(--brand-secondary) 12%, var(--background));
+  --sidebar-accent-foreground: var(--brand-secondary-dark);
+  --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: var(--brand-primary);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: var(--brand-primary-light);
+  --primary-foreground: var(--brand-primary-foreground, oklch(0.145 0 0));
+
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+
+  --accent: color-mix(in oklab, var(--brand-secondary) 22%, oklch(0.269 0 0));
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.696 0.17 162.48);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.828 0.189 84.429);
+  --warning-foreground: oklch(0.145 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: var(--brand-primary-light);
+
+  --sidebar: color-mix(in oklab, var(--brand-secondary) 12%, oklch(0.205 0 0));
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: var(--brand-primary-light);
+  --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-accent: color-mix(in oklab, var(--brand-secondary) 26%, oklch(0.269 0 0));
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: var(--brand-primary-light);
 }
 
 @layer base {
@@ -164,88 +225,32 @@
     @apply border-border outline-ring/50;
   }
   body {
-    /* var(--background) responde ao data-theme; antes era hardcoded em
-       --obsidian-950 e quebrava o tema light. */
     background-color: var(--background);
     color: var(--foreground);
     min-height: 100dvh;
-    font-family: var(--vsa-font-body);
-    /* SEM transition aqui: com streaming SSR o data-theme pode ser
-       aplicado logo após o first paint e a transition transformava isso
-       num fade escuro→claro visível a cada load (FOUC animado). */
+    /* SEM transition aqui: com streaming SSR a classe de tema pode ser
+       aplicada logo após o first paint, e a transition transformava isso num
+       fade escuro→claro visível a cada load (FOUC animado). */
   }
   html {
     @apply font-sans;
   }
 }
 
-/* Glass panel utility — crystalline glassmorphism */
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glass-panel:hover {
-  /* Tokens (não branco fixo): em fundo claro o hover branco sumia. */
-  background: color-mix(in srgb, var(--foreground) 5%, transparent);
-  border-color: var(--border-default);
-}
-
-/* Skeleton shimmer — foreground com alpha (adapta aos 3 temas) */
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--foreground) 3%, transparent) 25%,
-    color-mix(in srgb, var(--foreground) 8%, transparent) 50%,
-    color-mix(in srgb, var(--foreground) 3%, transparent) 75%
-  );
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s ease-in-out infinite;
-  border-radius: var(--vsa-radius-md);
-}
-
-@keyframes skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-15px); }
-}
-
-@keyframes pulse-slow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
-}
-
 /*
- * Fix global pro dropdown <select>: as <option>s são renderizadas pelo OS
- * (não pelo navegador), e quando o select tem `bg-transparent` o dropdown
- * herda fundo branco do OS → no dark mode fica texto branco em fundo
- * branco (invisível). Forçamos bg sólido + cor explícita pra TODAS as
- * options da app inteira — assim novos selects criados em qualquer lugar
- * já nascem corretos, sem precisar lembrar do `selectCls`.
- *
- * `select` em si não muda (mantém o `bg-transparent` ou o que vier do
- * componente). Só as `option` ganham fundo/cor explícitos.
+ * Fix global pro dropdown <select>: as <option>s são renderizadas pelo OS, e
+ * com `bg-transparent` o dropdown herda fundo branco → texto branco em fundo
+ * branco no tema escuro. Some quando o último <select> nativo virar o
+ * primitivo `Select` (ainda são 55, em 33 arquivos).
  */
-select option {
+select option,
+select optgroup {
   background-color: var(--background);
   color: var(--foreground);
 }
 select optgroup {
-  background-color: var(--background);
-  color: var(--foreground);
   font-weight: 600;
 }
-/* Default sane pro <select> em si: bg sólido + cor herdada do tema.
- * Componentes podem sobrescrever via Tailwind, mas o default já fica
- * visível em dark mode sem precisar de classe extra. */
 select {
   background-color: var(--background);
   color: var(--foreground);

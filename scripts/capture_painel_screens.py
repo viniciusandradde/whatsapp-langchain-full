@@ -176,27 +176,12 @@ def storage_de_cookie(valor: str, base: str, tema: str | None = None) -> dict:
             "expires": -1,
         }
     ]
-    # O tema mora em cookie (`vsa-theme`) porque o SSR precisa dele pra
-    # renderizar <html data-theme> sem flash. Setar aqui é o que permite
-    # capturar a mesma tela nos três temas sem passar pelo seletor.
-    if tema:
-        cookies.append(
-            {
-                "name": "vsa-theme",
-                "value": tema,
-                "domain": dominio,
-                "path": "/",
-                "httpOnly": False,
-                "secure": base.startswith("https"),
-                "sameSite": "Lax",
-                "expires": -1,
-            }
-        )
-    # ...e também em localStorage: o THEME_INIT_SCRIPT do <head> lê o
-    # localStorage e SOBRESCREVE o data-theme do SSR quando não acha nada lá
-    # (cai no default "light"). Semear só o cookie não segura o tema.
+    # O tema mora em localStorage (`theme`), que é onde o next-themes guarda a
+    # escolha; ele aplica a classe no <html> antes da hidratação. Semear a
+    # chave é o que permite capturar a mesma tela nos dois temas sem clicar no
+    # seletor. (Antes era um cookie `vsa-theme` de três valores — ver ADR-010.)
     origins = (
-        [{"origin": base, "localStorage": [{"name": "vsa-theme", "value": tema}]}]
+        [{"origin": base, "localStorage": [{"name": "theme", "value": tema}]}]
         if tema
         else []
     )
@@ -400,9 +385,7 @@ def main() -> int:
         default=[],
         help="caminho avulso (repetível); ignora --grupo",
     )
-    ap.add_argument(
-        "--tema", choices=["light", "obsidian", "black"], help="força o tema"
-    )
+    ap.add_argument("--tema", choices=["light", "dark"], help="força o tema")
     ap.add_argument(
         "--cookie",
         default=os.environ.get("COOKIE_SESSAO"),
