@@ -143,6 +143,23 @@ async def _resolve_session_user(token: str) -> str | None:
     """
     if len(token) < 16:  # nada em auth.session é tão curto; evita query inútil
         return None
+
+    # O Better Auth ASSINA o valor do cookie de sessão, e o plugin `bearer`
+    # devolve esse mesmo valor no header `set-auth-token` — no formato
+    # `<token>.<assinatura>`. Mas `auth.session.token` guarda só o token (32
+    # caracteres, sem ponto, conferido em produção). Comparar a string inteira
+    # nunca casa: foi o que fez o app logar com sucesso e tomar 401 na chamada
+    # seguinte, 15 vezes seguidas.
+    #
+    # Tentamos as duas formas. Ignorar a assinatura não afrouxa a segurança: o
+    # token é um segredo aleatório de 32 caracteres e o lookup no banco é a
+    # autenticação de fato — a assinatura protege contra manipulação do cookie
+    # no browser, cenário que não existe num cliente nativo. O próprio Better
+    # Auth valida a assinatura e depois busca este mesmo token.
+    candidatos = [token]
+    if "." in token:
+        candidatos.append(token.split(".", 1)[0])
+
     try:
         pool = await get_pool()
         with empresa_scope(None, bypass=True):
@@ -151,18 +168,29 @@ async def _resolve_session_user(token: str) -> str | None:
                     """
                     SELECT s."userId" FROM auth.session s
                      JOIN auth."user" u ON u.id = s."userId"
-                     WHERE s.token = %s
+                     WHERE s.token = ANY(%s)
                        AND s."expiresAt" > NOW()
                        AND u.status = 'active'
                      LIMIT 1
                     """,
-                    (token,),
+                    (candidatos,),
                 )
                 row = await cur.fetchone()
     except Exception as exc:  # noqa: BLE001 — falha de lookup não autentica
         logger.warning("session_lookup_failed", error=str(exc))
         return None
-    return str(row[0]) if row else None
+
+    if row is None:
+        # Diagnóstico sem vazar credencial: só formato. Se o token não casar
+        # nem assim, é aqui que se descobre por quê.
+        logger.warning(
+            "session_token_desconhecido",
+            tamanho=len(token),
+            tem_ponto="." in token,
+            partes=len(token.split(".")),
+        )
+        return None
+    return str(row[0])
 
 
 async def verify_service_token(

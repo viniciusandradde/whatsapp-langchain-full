@@ -184,3 +184,85 @@ class TestPrecedenciaDaSessao:
         with pytest.raises(HTTPException) as exc:
             get_user_id_from_request(_request())
         assert exc.value.status_code == 401
+
+
+class TestTokenAssinado:
+    """O Better Auth devolve o token do cookie ASSINADO.
+
+    O plugin `bearer` entrega o mesmo valor do cookie no header
+    `set-auth-token`, no formato `<token>.<assinatura>`. Mas
+    `auth.session.token` guarda só o token — 32 caracteres, sem ponto,
+    conferido em produção.
+
+    Sem tratar isso, o app loga com sucesso e toma 401 na chamada seguinte, e o
+    sintoma na tela é a seleção de empresa aparecer e voltar pro login em
+    milissegundos (o interceptor apaga a sessão em 401). Aconteceu 15 vezes no
+    primeiro teste em aparelho real.
+    """
+
+    async def test_token_assinado_valida_pela_parte_antes_do_ponto(self):
+        capturado = {}
+
+        def _pool(row):
+            from contextlib import asynccontextmanager
+
+            cur = AsyncMock()
+            cur.fetchone = AsyncMock(return_value=row)
+            conn = AsyncMock()
+
+            async def _exec(sql, args):
+                capturado["candidatos"] = args[0]
+                return cur
+
+            conn.execute = AsyncMock(side_effect=_exec)
+            pool = AsyncMock()
+
+            @asynccontextmanager
+            async def _c():
+                yield conn
+
+            pool.connection = _c
+            return pool
+
+        assinado = f"{SESSION_TOKEN}.assinatura-hmac-em-base64"
+        with patch(
+            "whatsapp_langchain.server.dependencies.get_pool",
+            AsyncMock(return_value=_pool((USER_DA_SESSAO,))),
+        ):
+            assert await _resolve_session_user(assinado) == USER_DA_SESSAO
+
+        # As duas formas vão pro banco: a crua (caso o cookie não seja
+        # assinado) e a parte antes do ponto.
+        assert capturado["candidatos"] == [assinado, SESSION_TOKEN]
+
+    async def test_token_sem_ponto_consulta_apenas_uma_forma(self):
+        capturado = {}
+
+        def _pool():
+            from contextlib import asynccontextmanager
+
+            cur = AsyncMock()
+            cur.fetchone = AsyncMock(return_value=(USER_DA_SESSAO,))
+            conn = AsyncMock()
+
+            async def _exec(sql, args):
+                capturado["candidatos"] = args[0]
+                return cur
+
+            conn.execute = AsyncMock(side_effect=_exec)
+            pool = AsyncMock()
+
+            @asynccontextmanager
+            async def _c():
+                yield conn
+
+            pool.connection = _c
+            return pool
+
+        with patch(
+            "whatsapp_langchain.server.dependencies.get_pool",
+            AsyncMock(return_value=_pool()),
+        ):
+            await _resolve_session_user(SESSION_TOKEN)
+
+        assert capturado["candidatos"] == [SESSION_TOKEN]
