@@ -7,6 +7,7 @@ Uso:
     uvicorn whatsapp_langchain.server.main:app --reload --port 8000
 """
 
+import contextlib
 import hmac
 import os
 from collections.abc import AsyncIterator
@@ -219,7 +220,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
     # Shutdown
+    #
+    # `cancel()` só SINALIZA — sem esperar, a task pode continuar viva depois
+    # do lifespan terminar. Em produção isso passava despercebido porque o
+    # processo morre logo em seguida, mas sob `TestClient` o portal do anyio faz
+    # join das tasks do loop ao fechar, encontra o poller ainda rodando e espera
+    # para sempre: era o que pendurava a suíte inteira sem mensagem de erro.
     scheduled_poller_task.cancel()
+    with contextlib.suppress(_asyncio.CancelledError):
+        await scheduled_poller_task
     await close_pool()
     logger.info("server_stopped")
 

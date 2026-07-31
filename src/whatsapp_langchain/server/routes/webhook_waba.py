@@ -139,12 +139,25 @@ async def waba_webhook_post(
         logger.warning("waba_webhook_bad_json", error=str(exc))
         return {"status": "bad_json"}
 
-    pool = await get_pool()
-
     # Mensagens inbound
     from whatsapp_langchain.shared.rls_context import set_request_context
 
     inbound_messages = parse_inbound(payload)
+    template_updates = parse_template_status_updates(payload)
+
+    # Sem nada a processar, não toca o banco. A Meta entrega vários eventos que
+    # não são mensagem nem status de template, e abrir conexão só para
+    # descartá-los é trabalho à toa.
+    #
+    # Também era o que travava a suíte: o pool é singleton e nascia preso ao
+    # event loop efêmero de um `TestClient` sem lifespan, onde cada request cria
+    # e destrói o próprio portal do anyio — que então esperava para sempre por
+    # tasks que ninguém ia fechar. Ver docs/MIGRACAO_DEV.md.
+    if not inbound_messages and not template_updates:
+        logger.info("waba_webhook_sem_conteudo")
+        return {"status": "received", "inbound_count": "0"}
+
+    pool = await get_pool()
     enqueue_failed = False
     for msg in inbound_messages:
         conexao = await get_conexao_by_waba_phone_id(pool, msg.waba_phone_id)
@@ -198,8 +211,7 @@ async def waba_webhook_post(
             logger.exception("waba_webhook_enqueue_failed", error=str(exc))
             enqueue_failed = True
 
-    # Updates de template status
-    template_updates = parse_template_status_updates(payload)
+    # Updates de template status (já lidos acima, junto do inbound)
     for upd in template_updates:
         event = upd.get("event", "").upper()
         # Mapeia evento Meta → status local
