@@ -71,5 +71,22 @@ jobs:
 
       # Mesmos marcadores do Makefile: `docker_demo` precisa do stack de pé e
       # `twilio_real` envia mensagem de verdade.
+      #
+      # O bloco `env` existe porque `Settings.validate_runtime_settings()` roda
+      # no import e derruba sem `INTERNAL_SERVICE_TOKEN` — sozinho, isso
+      # respondia por 48 das 64 falhas da primeira execução. Não é segredo
+      # nenhum: são valores de mentira, e é justamente por não serem reais que
+      # podem ficar no arquivo. O que precisa ser secreto entra por
+      # `secrets.*`.
+      #
+      # ENVIRONMENT fica em `development` de propósito: em produção o mesmo
+      # validador passa a exigir token de 32+ caracteres e
+      # VALIDATE_TWILIO_SIGNATURE=true, e o CI reprovaria por configuração, não
+      # por código.
       - name: Testes
+        env:
+          ENVIRONMENT: development
+          INTERNAL_SERVICE_TOKEN: ci-token-de-mentira-nao-vale-em-lugar-nenhum
+          BETTER_AUTH_SECRET: ci-secret-de-mentira-com-mais-de-32-caracteres
+          WARELINE_ENCRYPTION_KEY: Kc5BsSaIeEGGNsh0ZHjis80yKUTg0krI024wauX9rUc=
         run: uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-fail-under=50
