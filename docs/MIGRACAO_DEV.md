@@ -233,20 +233,116 @@ ao terminar e não faz push — te mostra o comando e deixa a decisão com você
 Faça isso **depois** de a migração estar validada, e só quando não houver
 outra cópia viva do repositório.
 
+### O dia a dia
+
+O repositório de trabalho passa a ser **um só**: `/home/projects/chatnexus` na
+máquina Ubuntu. O do VPS vira leitura até ser aposentado (seção abaixo) — com
+duas cópias vivas, commitar dos dois lados diverge e o merge duplica commits.
+
+```bash
+cd /home/projects/chatnexus
+
+# sobe o stack (quatro serviços, frontend incluído)
+docker compose -p chatnexus-dev -f docker-compose.yml -f docker-compose.override.yml up -d
+
+# painel  http://10.10.1.105:3100      login admin@dev.local
+# API     http://10.10.1.105:8081
+# logs    docker compose -p chatnexus-dev logs -f api worker
+# parar   docker compose -p chatnexus-dev down
+```
+
+Mudou código Python: `docker compose -p chatnexus-dev up -d --build api worker`
+— restart não pega edit, a imagem precisa ser refeita. Para iterar em UI com
+recarga automática, `cd frontend && npm run dev` (porta 3100) em vez do
+container.
+
+Antes de abrir PR, os mesmos comandos que o CI roda: `make ci` e
+`make check-web`.
+
 ### Levar uma mudança de `src/` até a produção
+
+O push agora sai da máquina de desenvolvimento; a produção continua sendo
+recriada pelo Dokploy a partir do registry, sem ninguém compilar no VPS.
 
 1. Trabalhe em branch. Nunca commite direto em `master` — é o gatilho do
    deploy.
-2. `make ci` (lint + tipos + testes) e `make check-web` passando.
+2. `make ci` (lint + tipos + testes) e `make check-web` passando **na sua
+   máquina**. Os dois têm par no GitHub Actions (`ci.yml` e `frontend.yml`),
+   que rodam no PR; rodar antes só evita a viagem de ida e volta.
 3. **Se a mudança tem migration**, ensaie a restauração antes:
    `scripts/backup_prod.sh --restaurar <backup> ensaio_migration`, aplique lá,
    confira. Migration que derruba coluna vai **depois** do deploy do código
    que parou de usar — a ordem inversa é outage esperando tráfego (lição do
    incidente I1).
-4. Abra PR. O merge em `master` dispara `deploy.yml`, que publica no registry
-   e manda o Dokploy recriar.
+4. `git push -u origin <branch>` e abra PR. O merge em `master` dispara
+   `deploy.yml`, que publica no registry e manda o Dokploy recriar.
 5. Depois do deploy: `docker logs ...-worker-1 --since 10m | grep -i error` e
-   confira a fila.
+   confira a fila. **Deploy verde não é migration aplicada** — as migrations
+   rodam no boot da API, então espere o container *novo* (id diferente) ficar
+   healthy; o antigo segue healthy e dá falso negativo.
+
+> **`feat/shadcn-onda-0` nunca foi para o GitHub**, por decisão de 30/07: ela
+> muda a aparência de ~200 arquivos e `master` recria o painel que atende
+> cliente real. Hoje ela existe em duas cópias locais e em nenhum servidor —
+> o `git push` dela é uma decisão consciente, não parte do fluxo acima. Se for
+> expurgar o Baileys da história, faça **antes** de publicá-la: o expurgo
+> reescreve SHAs e exigiria `--force-with-lease` num branch já publicado.
+
+### Os gates do GitHub Actions
+
+Nada de CI roda na sua máquina nem no VPS: os checks continuam no GitHub, e o
+que você roda localmente (`make ci`, `make check-web`) é o mesmo conteúdo,
+adiantado. O que muda com a migração é que agora **existe** um gate de backend.
+
+| workflow | quando dispara | o que roda |
+|---|---|---|
+| `ci.yml` | push e **PR**, quando mexe em `src/`, `tests/`, `pyproject.toml`, `uv.lock` | `ruff check`, `ruff format --check`, `pyright src/`, `pytest` com gate de cobertura 50% |
+| `frontend.yml` | push e **PR**, quando mexe em `frontend/` | `npm ci`, lint, `typecheck`, `build`, métricas de UI |
+| `deploy.yml` | push em `master` | builda as imagens, publica no registry e manda o Dokploy recriar — **não roda teste** |
+| `android.yml` | push que toca o app | build do APK |
+
+O `ci.yml` é novo. Até então o único workflow que tocava o backend era o
+`deploy.yml`, que não roda teste nenhum: o check verde queria dizer "a imagem
+compilou", não "o código está correto" — e como ele só dispara em `master`, a
+informação chegava depois de já estar em produção.
+
+Os dois gates rodam em `ubuntu-latest`, amd64 nativo. A build de produção
+continua sendo arm64 (o VPS é `aarch64`) e é feita pelo `deploy.yml` via
+cross-compile, fora do servidor — foi o que tirou o build de cima da produção.
+
+**Cuidado com o token**: um Personal Access Token sem o escopo `workflow` faz
+o `git push` ser recusado quando o commit toca `.github/workflows/`. O erro
+não diz isso com clareza.
+
+### Aposentar o desenvolvimento no VPS
+
+O objetivo da migração só se completa quando o VPS deixa de ter árvore de
+trabalho: enquanto existir um repositório lá, existe a tentação de rodar
+`uvicorn`/`pytest` apontando pro banco de produção — que é exatamente o
+incidente I1.
+
+Antes de apagar qualquer coisa, prove que nada ficou só no VPS:
+
+```bash
+# no VPS — algum commit que a máquina de desenvolvimento não tem?
+git -C /home/dev/projetos/chatnexus log --all --oneline | sort > /tmp/vps.txt
+# na máquina de desenvolvimento
+git -C /home/projects/chatnexus log --all --oneline | sort > /tmp/dev.txt
+comm -23 /tmp/vps.txt /tmp/dev.txt      # vazio = nada exclusivo do VPS
+```
+
+Compare por **lista**, nunca por contagem. Confira também o que o `.gitignore`
+esconde e por isso não aparece no git — `.env`, `frontend/.env.local`,
+`docker-compose.override.yml` e as capturas do benchmark. Só então:
+
+```bash
+sudo rm -rf /home/dev/projetos/chatnexus /home/dev/projetos/whatsapp-langchain
+```
+
+O que **fica** no VPS: os containers do Dokploy (`projetos-chatvsanexus-er02mp-*`),
+`/etc/dokploy`, o backup em `/home/dev/backup` e o timer que o alimenta.
+Nenhum deles depende da árvore de trabalho — o Dokploy puxa imagem do
+registry, não compila do diretório.
 
 ---
 
