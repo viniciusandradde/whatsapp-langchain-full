@@ -1,5 +1,7 @@
 "use client"
 
+import * as React from "react"
+import Link from "next/link"
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -65,4 +67,27 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/**
+ * Botão que navega — visual de `Button`, semântica de link.
+ *
+ * O `ButtonPrimitive` do Base UI assume `nativeButton` e reclama em runtime
+ * quando o `render` devolve outra coisa: "A component that acts as a button
+ * expected a native <button>". `Button render={<Link/>}` cru dispara isso em
+ * toda tela com um "Novo X" que leva pra outra rota.
+ *
+ * Aninhar `<Link><Button/></Link>` (o padrão antigo) esconde o aviso e cria
+ * um `<button>` dentro de `<a>` — dois alvos interativos empilhados, que o
+ * leitor de tela anuncia duas vezes.
+ *
+ * Uso: `<ButtonLink href="/catalog/models/new">Novo modelo</ButtonLink>`
+ */
+function ButtonLink({
+  href,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, "render" | "nativeButton"> & {
+  href: string
+}) {
+  return <Button nativeButton={false} render={<Link href={href} />} {...props} />
+}
+
+export { Button, ButtonLink, buttonVariants }
