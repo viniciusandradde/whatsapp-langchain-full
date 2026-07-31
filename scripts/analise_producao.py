@@ -58,9 +58,17 @@ def carregar_config():
 
 def sh(cmd, timeout=60):
     try:
-        r = subprocess.run(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            universal_newlines=True, timeout=timeout
+        # `capture_output`/`text` seriam mais limpos, e é o que o ruff pede
+        # (UP022/UP021) — mas os dois só existem no 3.7+, e o cabeçalho deste
+        # arquivo promete rodar no 3.6 caso o host não tenha o 3.11. Lint não
+        # vale quebrar compatibilidade declarada.
+        r = subprocess.run(  # noqa: UP022
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,  # noqa: UP021
+            timeout=timeout,
         )
         return (r.stdout or r.stderr or "").strip()
     except subprocess.TimeoutExpired:
@@ -105,7 +113,7 @@ def coletar():
         ),
         "erros_worker": sh(
             f"docker logs {PREFIXO_PROD}-worker-1 --since 24h 2>&1 | "
-            "grep -oE '\"event\": \"[a-z_]+\"' | sort | uniq -c | sort -rn | head -15"
+            'grep -oE \'"event": "[a-z_]+"\' | sort | uniq -c | sort -rn | head -15'
         ),
         "erros_api": sh(
             f"docker logs {PREFIXO_PROD}-api-1 --since 24h 2>&1 | "
@@ -196,9 +204,20 @@ def datas_inventadas(relatorio, dados):
     e nenhum dos dois dia estava nos dados. Aqui a checagem é determinística —
     se citou o que não existe, o leitor é avisado em vez de acreditar.
     """
-    MESES = {"jan": "01", "fev": "02", "mar": "03", "abr": "04", "mai": "05",
-             "jun": "06", "jul": "07", "ago": "08", "set": "09", "out": "10",
-             "nov": "11", "dez": "12"}
+    MESES = {
+        "jan": "01",
+        "fev": "02",
+        "mar": "03",
+        "abr": "04",
+        "mai": "05",
+        "jun": "06",
+        "jul": "07",
+        "ago": "08",
+        "set": "09",
+        "out": "10",
+        "nov": "11",
+        "dez": "12",
+    }
 
     def dias(texto):
         """Normaliza para MM-DD: o modelo alterna entre ISO, 24/07 e 24/jul."""
@@ -206,9 +225,12 @@ def datas_inventadas(relatorio, dados):
         for d in re.findall(r"\d{4}-(\d{2}-\d{2})", texto):
             achados.add(d)
         for dia, mes in re.findall(r"\b(\d{1,2})/(\d{1,2})\b", texto):
-            achados.add("%02d-%02d" % (int(mes), int(dia)))
-        for dia, mes in re.findall(r"\b(\d{1,2})/(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)", texto.lower()):
-            achados.add("%s-%02d" % (MESES[mes], int(dia)))
+            achados.add(f"{int(mes):02d}-{int(dia):02d}")
+        for dia, mes in re.findall(
+            r"\b(\d{1,2})/(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)",
+            texto.lower(),
+        ):
+            achados.add(f"{MESES[mes]}-{int(dia):02d}")
         return achados
 
     presentes = dias(json.dumps(dados, ensure_ascii=False))
