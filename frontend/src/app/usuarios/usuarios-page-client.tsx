@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import {
   Copy,
   KeyRound,
-  Loader2,
   Pencil,
   Plus,
   Power,
@@ -13,10 +12,38 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
+import { toast } from "sonner";
 
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
+import { PageHeader } from "@/components/page-header";
+import { ApiError } from "@/components/ui/api-error";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ApiError } from "@/components/ui/api-error";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { plural } from "@/lib/formato";
 import type { Usuario } from "@/lib/api";
 
 import {
@@ -32,8 +59,14 @@ import { CloneUsuarioModal } from "./clone-usuario-modal";
 
 const PAGE_SIZE = 20;
 
-function _formatRelative(iso: string | null): string {
-  if (!iso) return "—";
+const STATUS_LABEL: Record<string, string> = {
+  todos: "Todos os status",
+  active: "Com acesso",
+  disabled: "Sem acesso",
+};
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return "nunca entrou";
   const d = new Date(iso);
   const ms = Date.now() - d.getTime();
   const min = Math.floor(ms / 60000);
@@ -46,7 +79,7 @@ function _formatRelative(iso: string | null): string {
   return d.toLocaleDateString("pt-BR");
 }
 
-function _initials(nome: string | null, email: string | null): string {
+function iniciais(nome: string | null, email: string | null): string {
   const src = (nome || email || "?").trim();
   const parts = src.split(/\s+/);
   if (parts.length >= 2) {
@@ -54,6 +87,12 @@ function _initials(nome: string | null, email: string | null): string {
   }
   return src.slice(0, 2).toUpperCase();
 }
+
+/** Ação destrutiva pendente de confirmação — uma por vez. */
+type Pendente =
+  | { tipo: "reset"; usuario: Usuario }
+  | { tipo: "reativar"; usuario: Usuario }
+  | { tipo: "remover"; usuario: Usuario };
 
 export function UsuariosPageClient() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -63,13 +102,19 @@ export function UsuariosPageClient() {
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"todos" | "active" | "disabled">("todos");
+  const [statusFilter, setStatusFilter] = useState<
+    "todos" | "active" | "disabled"
+  >("todos");
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<Usuario | null>(null);
   const [creating, setCreating] = useState(false);
   const [disabling, setDisabling] = useState<Usuario | null>(null);
   const [cloning, setCloning] = useState<Usuario | null>(null);
-  const [senhaGerada, setSenhaGerada] = useState<{ password: string; userName: string } | null>(null);
+  const [confirmando, setConfirmando] = useState<Pendente | null>(null);
+  const [senhaGerada, setSenhaGerada] = useState<{
+    password: string;
+    userName: string;
+  } | null>(null);
 
   // Debounce da busca → reseta paginação ao digitar.
   useEffect(() => {
@@ -110,266 +155,295 @@ export function UsuariosPageClient() {
 
   useEffect(() => reload(), [reload]);
 
-  function handleReset(u: Usuario) {
-    if (!confirm(`Gerar nova senha pra ${u.nome || u.email}?`)) return;
+  const nomeDe = (u: Usuario) => u.nome || u.email || u.id;
+
+  function executarPendente() {
+    if (!confirmando) return;
+    const { tipo, usuario } = confirmando;
     startTransition(async () => {
-      const r = await resetarSenhaUsuarioAction(u.id);
+      if (tipo === "reset") {
+        const r = await resetarSenhaUsuarioAction(usuario.id);
+        if (r.ok) {
+          setSenhaGerada({ password: r.password, userName: nomeDe(usuario) });
+        } else {
+          toast.error("Não deu pra gerar a senha", { description: r.error });
+        }
+        return;
+      }
+      if (tipo === "reativar") {
+        const r = await setStatusUsuarioAction(usuario.id, { status: "active" });
+        if (r.ok) {
+          toast.success(`${nomeDe(usuario)} voltou a ter acesso.`);
+          reload();
+        } else {
+          toast.error("Não deu pra reativar", { description: r.error });
+        }
+        return;
+      }
+      const r = await removerUsuarioAction(usuario.id);
       if (r.ok) {
-        setSenhaGerada({
-          password: r.password,
-          userName: u.nome || u.email || u.id,
-        });
+        toast.success(`${nomeDe(usuario)} saiu desta empresa.`);
+        reload();
       } else {
-        alert("Erro: " + r.error);
+        toast.error("Não deu pra remover", { description: r.error });
       }
     });
   }
 
-  function handleToggleStatus(u: Usuario) {
-    if (u.status === "active") {
-      // Desativar passa pelo modal (tratamento de atendimentos abertos).
-      setDisabling(u);
-      return;
+  const textoConfirmacao: Record<
+    Pendente["tipo"],
+    {
+      titulo: string;
+      acao: string;
+      tom: "destrutivo" | "serio";
+      descricao: React.ReactNode;
     }
-    if (!confirm(`Reativar ${u.nome || u.email}?`)) return;
-    startTransition(async () => {
-      const r = await setStatusUsuarioAction(u.id, { status: "active" });
-      if (r.ok) reload();
-      else alert("Erro: " + r.error);
-    });
-  }
-
-  function handleDelete(u: Usuario) {
-    if (
-      !confirm(
-        `Remover ${u.nome || u.email} desta empresa? ` +
-          "Perfis, departamentos, conexões e avatar serão apagados."
-      )
-    )
-      return;
-    startTransition(async () => {
-      const r = await removerUsuarioAction(u.id);
-      if (r.ok) reload();
-      else alert("Erro: " + r.error);
-    });
-  }
-
-  const filtered = usuarios;
+  > = {
+    reset: {
+      titulo: "Gerar uma senha nova?",
+      acao: "Gerar senha",
+      // Não apaga nada, mas derruba a senha atual na hora — merece a pausa.
+      tom: "serio",
+      descricao: (
+        <p>
+          A senha atual para de funcionar imediatamente. A nova aparece uma
+          única vez na tela seguinte — copie antes de fechar.
+        </p>
+      ),
+    },
+    reativar: {
+      titulo: "Devolver o acesso?",
+      acao: "Reativar",
+      tom: "serio",
+      descricao: <p>A pessoa volta a conseguir entrar no painel.</p>,
+    },
+    remover: {
+      titulo: "Remover desta empresa?",
+      acao: "Remover",
+      tom: "destrutivo",
+      descricao: (
+        <p>
+          Perfis, departamentos, conexões e avatar são apagados junto. O
+          histórico de atendimento fica.
+        </p>
+      ),
+    },
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <Users className="size-5 text-brand-primary" />
-            Usuários
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gestão completa: criar, editar perfis &amp; departamentos, resetar senha, ativar/desativar.
-          </p>
-        </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="mr-1 size-4" />
-          Novo usuário
-        </Button>
-      </div>
+    <div>
+      <PageHeader
+        titulo="Usuários"
+        descricao="Quem entra no painel, o que cada um pode fazer e em que departamento atende."
+        icon={Users}
+        acoes={
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="size-4" />
+            Novo usuário
+          </Button>
+        }
+      />
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-          <input
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nome, email ou telefone…"
-            className="h-9 w-72 rounded-md border border-foreground/10 bg-obsidian-800 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+            className="w-80 pl-9"
+            aria-label="Buscar usuários"
           />
         </div>
-        <select
+        <Select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          className="h-9 rounded-md border border-foreground/10 bg-obsidian-800 px-3 text-sm"
+          onValueChange={(v) => {
+            setStatusFilter((v ?? "todos") as typeof statusFilter);
+            setOffset(0);
+          }}
         >
-          <option value="todos">Todos status</option>
-          <option value="active">Ativos</option>
-          <option value="disabled">Desativados</option>
-        </select>
+          <SelectTrigger className="h-9 w-44" aria-label="Filtrar por status">
+            {/* Sem a função, o Base UI imprime o VALOR ("todos"), não o
+                rótulo — a lista mostra "Todos os status" e o gatilho mostra
+                "todos". A função é o contrato pra formatar. */}
+            <SelectValue>
+              {(v: string | null) => STATUS_LABEL[v ?? "todos"]}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(STATUS_LABEL).map(([v, label]) => (
+              <SelectItem key={v} value={v}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Conteúdo */}
       {error ? (
         <ApiError error={error} variant="card" />
       ) : loading ? (
-        <div className="flex items-center gap-2 p-8 text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Carregando usuários…
-        </div>
-      ) : filtered.length === 0 ? (
+        <TabelaEsqueleto />
+      ) : usuarios.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={search ? "Nenhum usuário encontrado" : "Nenhum usuário cadastrado"}
-          description={
-            search
-              ? "Ajuste o filtro ou limpe a busca."
-              : "Comece adicionando o primeiro usuário pra atender clientes."
+          title={
+            search || statusFilter !== "todos"
+              ? "Nenhum usuário com esse filtro"
+              : "Nenhum usuário cadastrado"
           }
-          action={search ? undefined : {
-            label: "Novo usuário",
-            onClick: () => setCreating(true),
-          }}
+          description={
+            search || statusFilter !== "todos"
+              ? "Ajuste a busca ou volte pra todos os status."
+              : "Cadastre a primeira pessoa que vai atender pelo painel."
+          }
+          action={
+            search || statusFilter !== "todos"
+              ? {
+                  label: "Limpar filtros",
+                  onClick: () => {
+                    setSearch("");
+                    setStatusFilter("todos");
+                  },
+                }
+              : { label: "Novo usuário", onClick: () => setCreating(true) }
+          }
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-foreground/10 bg-obsidian-900">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-foreground/10 text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-4 py-3 text-left">Usuário</th>
-                <th className="px-4 py-3 text-left">Contato</th>
-                <th className="px-4 py-3 text-left">Perfis</th>
-                <th className="px-4 py-3 text-left">Depto</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Último acesso</th>
-                <th className="px-4 py-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u) => (
-                <tr key={u.id} className="border-b border-foreground/5 hover:bg-foreground/[0.02]">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <UserAvatar usuario={u} />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">
-                          {u.nome || <span className="italic text-muted-foreground">Sem nome</span>}
-                        </p>
-                        {u.is_default_empresa && (
-                          <p className="text-[10px] uppercase tracking-wider text-brand-primary">
-                            Default
+        <div className="overflow-hidden rounded-xl border">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Usuário</TableHead>
+                  <TableHead>Contato</TableHead>
+                  <TableHead>Perfis</TableHead>
+                  <TableHead>Departamento</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Último acesso</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {usuarios.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <UserAvatar usuario={u} />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">
+                            {u.nome || (
+                              <span className="italic text-muted-foreground">
+                                Sem nome
+                              </span>
+                            )}
                           </p>
-                        )}
+                          {u.is_default_empresa && (
+                            <p className="text-xs text-muted-foreground">
+                              Empresa padrão desta pessoa
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {u.email && !u.email.endsWith("@no-email.local") ? (
-                      <p>{u.email}</p>
-                    ) : (
-                      <p className="italic">Sem email</p>
-                    )}
-                    {u.telefone && <p className="font-mono mt-0.5">{u.telefone}</p>}
-                  </td>
-                  <td className="px-4 py-3">
-                    {u.perfis.length === 0 ? (
-                      <span className="text-xs text-muted-foreground italic">—</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {u.perfis.slice(0, 3).map((p) => (
-                          <span
-                            key={p.id}
-                            className="rounded bg-brand-primary/15 px-1.5 py-0.5 text-[11px] text-brand-primary border border-brand-primary/20"
-                          >
-                            {p.nome}
-                          </span>
-                        ))}
-                        {u.perfis.length > 3 && (
-                          <span className="text-[11px] text-muted-foreground">
-                            +{u.perfis.length - 3}
-                          </span>
-                        )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {u.email && !u.email.endsWith("@no-email.local") ? (
+                        <p>{u.email}</p>
+                      ) : (
+                        <p className="italic">Sem email</p>
+                      )}
+                      {u.telefone && (
+                        <p className="mt-0.5 font-mono">{u.telefone}</p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <ListaDeChips
+                        itens={u.perfis.map((p) => p.nome)}
+                        limite={3}
+                        variant="secondary"
+                        vazio="Sem perfil"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <ListaDeChips
+                        itens={u.departamentos.map((d) => d.nome)}
+                        limite={2}
+                        variant="outline"
+                        vazio="Nenhum"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge usuario={u} />
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatRelative(u.last_login_at)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        <AcaoIcone
+                          rotulo="Editar"
+                          onClick={() => setEditing(u)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </AcaoIcone>
+                        <AcaoIcone
+                          rotulo="Gerar nova senha"
+                          disabled={pending}
+                          onClick={() =>
+                            setConfirmando({ tipo: "reset", usuario: u })
+                          }
+                        >
+                          <KeyRound className="size-3.5" />
+                        </AcaoIcone>
+                        <AcaoIcone
+                          rotulo="Clonar usuário"
+                          disabled={pending}
+                          onClick={() => setCloning(u)}
+                        >
+                          <Copy className="size-3.5" />
+                        </AcaoIcone>
+                        <AcaoIcone
+                          rotulo={
+                            u.status === "active"
+                              ? "Desativar acesso"
+                              : "Reativar acesso"
+                          }
+                          disabled={pending}
+                          onClick={() =>
+                            u.status === "active"
+                              ? setDisabling(u)
+                              : setConfirmando({ tipo: "reativar", usuario: u })
+                          }
+                        >
+                          {u.status === "active" ? (
+                            <PowerOff className="size-3.5 text-destructive" />
+                          ) : (
+                            <Power className="size-3.5 text-success" />
+                          )}
+                        </AcaoIcone>
+                        <AcaoIcone
+                          rotulo="Remover da empresa"
+                          disabled={pending}
+                          onClick={() =>
+                            setConfirmando({ tipo: "remover", usuario: u })
+                          }
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </AcaoIcone>
                       </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {u.departamentos.length === 0 ? (
-                      <span className="text-xs text-muted-foreground italic">—</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {u.departamentos.slice(0, 2).map((d) => (
-                          <span
-                            key={d.id}
-                            className="rounded bg-foreground/[0.06] px-1.5 py-0.5 text-[11px]"
-                          >
-                            {d.nome}
-                          </span>
-                        ))}
-                        {u.departamentos.length > 2 && (
-                          <span className="text-[11px] text-muted-foreground">
-                            +{u.departamentos.length - 2}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge usuario={u} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {_formatRelative(u.last_login_at)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Editar"
-                        onClick={() => setEditing(u)}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Resetar senha"
-                        disabled={pending}
-                        onClick={() => handleReset(u)}
-                      >
-                        <KeyRound className="size-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Clonar usuário"
-                        disabled={pending}
-                        onClick={() => setCloning(u)}
-                      >
-                        <Copy className="size-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title={u.status === "active" ? "Desativar" : "Reativar"}
-                        disabled={pending}
-                        onClick={() => handleToggleStatus(u)}
-                      >
-                        {u.status === "active" ? (
-                          <PowerOff className="size-3.5 text-destructive" />
-                        ) : (
-                          <Power className="size-3.5 text-emerald-500" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Remover da empresa"
-                        disabled={pending}
-                        onClick={() => handleDelete(u)}
-                      >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-          {/* Paginação */}
-          <div className="flex items-center justify-between border-t border-foreground/10 px-4 py-2 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
             <span>
               {total === 0
-                ? "0 usuários"
-                : `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} de ${total}`}
+                ? "Nenhum usuário"
+                : `${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} de ${plural(total, "usuário", "usuários")}`}
             </span>
             <div className="flex items-center gap-1">
               <Button
@@ -393,7 +467,19 @@ export function UsuariosPageClient() {
         </div>
       )}
 
-      {/* Modais */}
+      {confirmando && (
+        <ConfirmDestrutivo
+          aberto
+          onAbertoChange={(v) => !v && setConfirmando(null)}
+          titulo={textoConfirmacao[confirmando.tipo].titulo}
+          objeto={nomeDe(confirmando.usuario)}
+          descricao={textoConfirmacao[confirmando.tipo].descricao}
+          rotuloAcao={textoConfirmacao[confirmando.tipo].acao}
+          tom={textoConfirmacao[confirmando.tipo].tom}
+          onConfirmar={executarPendente}
+        />
+      )}
+
       {(creating || editing) && (
         <UsuarioFormModal
           usuario={editing}
@@ -422,7 +508,11 @@ export function UsuariosPageClient() {
           onDone={(transferidos) => {
             setDisabling(null);
             if (transferidos > 0) {
-              alert(`Usuário desativado. ${transferidos} atendimento(s) transferido(s).`);
+              toast.success("Usuário desativado", {
+                description: `${plural(transferidos, "atendimento transferido", "atendimentos transferidos")}.`,
+              });
+            } else {
+              toast.success("Usuário desativado.");
             }
             reload();
           }}
@@ -453,59 +543,121 @@ export function UsuariosPageClient() {
   );
 }
 
-function UserAvatar({ usuario }: { usuario: Usuario }) {
-  const src = usuario.avatar_path
-    ? usuario.avatar_path
-    : usuario.image_url;
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={usuario.nome || "Avatar"}
-        className="size-9 shrink-0 rounded-full object-cover border border-foreground/10"
-      />
-    );
-  }
+/**
+ * Botão de ícone com tooltip de verdade.
+ *
+ * Antes era `title=` — que só aparece depois de ~1s parado, não aparece em
+ * toque, e não é lido como rótulo por leitor de tela. Com 5 ícones seguidos
+ * numa linha de tabela, isso significava adivinhar qual é qual.
+ */
+function AcaoIcone({
+  rotulo,
+  onClick,
+  disabled,
+  children,
+}: {
+  rotulo: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="size-9 shrink-0 rounded-full bg-brand-primary/15 border border-brand-primary/30 flex items-center justify-center text-xs font-medium text-brand-primary">
-      {_initials(usuario.nome, usuario.email)}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={rotulo}
+            disabled={disabled}
+            onClick={onClick}
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{rotulo}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Chips com corte em N e "+X" — perfis e departamentos usam o mesmo. */
+function ListaDeChips({
+  itens,
+  limite,
+  variant,
+  vazio,
+}: {
+  itens: string[];
+  limite: number;
+  variant: "secondary" | "outline";
+  vazio: string;
+}) {
+  if (itens.length === 0) {
+    return <span className="text-xs italic text-muted-foreground">{vazio}</span>;
+  }
+  const excedente = itens.slice(limite);
+  return (
+    <div className="flex flex-wrap gap-1">
+      {itens.slice(0, limite).map((nome) => (
+        <Badge key={nome} variant={variant}>
+          {nome}
+        </Badge>
+      ))}
+      {excedente.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="cursor-default text-xs text-muted-foreground" />
+            }
+          >
+            +{excedente.length}
+          </TooltipTrigger>
+          <TooltipContent>{excedente.join(", ")}</TooltipContent>
+        </Tooltip>
+      )}
     </div>
+  );
+}
+
+function TabelaEsqueleto() {
+  return (
+    <div className="overflow-hidden rounded-xl border">
+      <div className="space-y-px">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+            <Skeleton className="size-9 shrink-0 rounded-full" />
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="ml-auto h-4 w-52" />
+            <Skeleton className="h-4 w-20" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function UserAvatar({ usuario }: { usuario: Usuario }) {
+  const src = usuario.avatar_path || usuario.image_url;
+  return (
+    <Avatar className="size-9 shrink-0">
+      {src ? <AvatarImage src={src} alt="" /> : null}
+      <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+        {iniciais(usuario.nome, usuario.email)}
+      </AvatarFallback>
+    </Avatar>
   );
 }
 
 function StatusBadge({ usuario }: { usuario: Usuario }) {
   if (usuario.status === "disabled") {
-    return (
-      <span className="inline-flex rounded-md border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
-        Desativado
-      </span>
-    );
+    return <Badge variant="destructive">Sem acesso</Badge>;
   }
-  const online = usuario.atendente_status === "online";
-  const color = online
-    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-    : usuario.atendente_status === "ausente"
-      ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-      : "border-foreground/10 bg-foreground/5 text-muted-foreground";
-  const label = online
-    ? "Online"
-    : usuario.atendente_status === "ausente"
-      ? "Ausente"
-      : usuario.atendente_status === "pausa"
-        ? "Em pausa"
-        : "Ativo";
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${color}`}>
-      <span
-        className={`size-1.5 rounded-full ${
-          online
-            ? "bg-emerald-400"
-            : usuario.atendente_status === "ausente"
-              ? "bg-amber-400"
-              : "bg-muted-foreground"
-        }`}
-      />
-      {label}
-    </span>
-  );
+  // Ativo é o piso: a pessoa entra no painel. `atendente_status` é a camada
+  // de cima e só existe pra quem atende — por isso "Ativo" quando não há.
+  const presenca = usuario.atendente_status;
+  if (presenca === "online") return <Badge variant="success">Online</Badge>;
+  if (presenca === "ausente") return <Badge variant="warning">Ausente</Badge>;
+  if (presenca === "pausa") return <Badge variant="warning">Em pausa</Badge>;
+  return <Badge variant="outline">Ativo</Badge>;
 }

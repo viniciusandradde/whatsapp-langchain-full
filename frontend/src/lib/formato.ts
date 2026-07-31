@@ -22,8 +22,14 @@ export function plural(n: number, singular: string, pluralForma?: string) {
   return `${n.toLocaleString("pt-BR")} ${palavra}`;
 }
 
-/** Data e hora: "30/07/2026 18:22". */
-export function dataHora(v: string | number | Date): string {
+/**
+ * Data e hora: "30/07/2026 18:22".
+ *
+ * Aceita nulo e devolve travessão. Sem isso cada tela inventava o próprio
+ * `?? "—"` antes de chamar — e algumas esqueciam, imprimindo "Invalid Date".
+ */
+export function dataHora(v: string | number | Date | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
   return new Date(v).toLocaleString("pt-BR", {
     timeZone: FUSO,
     day: "2-digit",
@@ -34,8 +40,9 @@ export function dataHora(v: string | number | Date): string {
   });
 }
 
-/** Só a data: "30/07/2026". */
-export function data(v: string | number | Date): string {
+/** Só a data: "30/07/2026". Nulo vira travessão, como em `dataHora`. */
+export function data(v: string | number | Date | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
   return new Date(v).toLocaleDateString("pt-BR", {
     timeZone: FUSO,
     day: "2-digit",

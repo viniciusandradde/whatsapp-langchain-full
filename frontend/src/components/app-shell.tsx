@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import type { SidebarBrand } from "@/components/nav-brand";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export type { SidebarBrand };
 
@@ -33,8 +34,11 @@ export function AppShell({
     return <>{children}</>;
   }
 
+  // `delay=300` vale pro painel inteiro: o default do Base UI é 600ms, que é
+  // tempo demais pra uma barra de 5 botões de ícone numa linha de tabela — o
+  // ponteiro já passou pro botão seguinte antes de a dica aparecer.
   return (
-    <>
+    <TooltipProvider delay={300}>
       <AppSidebar empresaSwitcher={empresaSwitcher} brand={brand} />
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -44,6 +48,6 @@ export function AppShell({
           {children}
         </div>
       </SidebarInset>
-    </>
+    </TooltipProvider>
   );
 }

@@ -34,6 +34,7 @@ export function ConfirmDestrutivo({
   objeto,
   descricao,
   rotuloAcao = "Excluir",
+  tom = "destrutivo",
   exigeDigitar,
   onConfirmar,
 }: {
@@ -44,6 +45,12 @@ export function ConfirmDestrutivo({
   objeto?: string;
   descricao?: React.ReactNode;
   rotuloAcao?: string;
+  /**
+   * `destrutivo` (default) pinta o botão de vermelho e avisa que não dá pra
+   * desfazer. `serio` é pra confirmação que merece uma pausa mas não apaga
+   * nada — reativar acesso, por exemplo. Vermelho em tudo é vermelho em nada.
+   */
+  tom?: "destrutivo" | "serio";
   /** Quando definido, o botão só libera se o usuário digitar exatamente isto. */
   exigeDigitar?: string;
   onConfirmar: () => void | Promise<void>;
@@ -72,7 +79,7 @@ export function ConfirmDestrutivo({
               </p>
             ) : null}
             {descricao ? <div>{descricao}</div> : null}
-            <p>Esta ação não pode ser desfeita.</p>
+            {tom === "destrutivo" ? <p>Esta ação não pode ser desfeita.</p> : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -93,7 +100,11 @@ export function ConfirmDestrutivo({
 
         <AlertDialogFooter>
           <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          {/* Vermelho, não a cor primária: o botão que apaga não pode ter a
+              mesma aparência do botão que salva. `AlertDialogAction` herda o
+              `default` do Button, que é a marca. */}
           <AlertDialogAction
+            variant={tom === "destrutivo" ? "destructive" : "default"}
             disabled={!liberado}
             onClick={async () => {
               await onConfirmar();

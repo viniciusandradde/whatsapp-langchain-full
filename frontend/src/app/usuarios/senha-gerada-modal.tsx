@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, KeyRound, ShieldCheck, X } from "lucide-react";
+import { Check, Copy, KeyRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Props {
   password: string;
@@ -11,76 +19,71 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * A senha aparece uma única vez, então clique fora **não** fecha: perder o
+ * diálogo por um clique torto significa resetar de novo, com a pessoa
+ * esperando do outro lado.
+ *
+ * `Escape` e o X continuam fechando de propósito — travar as duas saídas seria
+ * prender quem prefere anotar no papel a copiar pra área de transferência.
+ */
 export function SenhaGeradaModal({ password, userName, onClose }: Props) {
-  const [copied, setCopied] = useState(false);
+  const [copiado, setCopiado] = useState(false);
 
-  async function handleCopy() {
+  async function copiar() {
     try {
       await navigator.clipboard.writeText(password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
     } catch {
-      // Fallback antigo
+      // Clipboard API exige contexto seguro; em HTTP local cai aqui.
       const ta = document.createElement("textarea");
       ta.value = password;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
       document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
     }
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2500);
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-xl border border-amber-500/30 bg-obsidian-900 shadow-2xl">
-        <div className="flex items-start justify-between border-b border-foreground/10 p-4">
-          <div className="flex items-center gap-2">
-            <KeyRound className="size-5 text-amber-400" />
-            <h2 className="text-lg font-semibold">Senha gerada</h2>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="size-4" />
+    <Dialog open onOpenChange={(v) => !v && onClose()} disablePointerDismissal>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="size-5 text-warning" />
+            Senha gerada
+          </DialogTitle>
+          <DialogDescription>
+            Senha temporária de{" "}
+            <span className="font-medium text-foreground">{userName}</span>.
+            Ela aparece uma única vez — copie antes de fechar e envie por um
+            canal em que você confie.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-md border border-warning/30 bg-warning/5 px-3 py-2.5 font-mono text-base tracking-wide">
+            {password}
+          </code>
+          <Button
+            size="icon"
+            variant={copiado ? "outline" : "default"}
+            onClick={copiar}
+            aria-label="Copiar senha"
+          >
+            {copiado ? (
+              <Check className="size-4 text-success" />
+            ) : (
+              <Copy className="size-4" />
+            )}
           </Button>
         </div>
 
-        <div className="space-y-4 p-4">
-          <p className="text-sm text-muted-foreground">
-            Senha temporária pra <span className="font-medium text-foreground">{userName}</span>:
-          </p>
-
-          <div className="flex items-center gap-2">
-            <code className="flex-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 font-mono text-base tracking-wide text-amber-200">
-              {password}
-            </code>
-            <Button
-              size="icon"
-              variant="outline"
-              onClick={handleCopy}
-              title="Copiar senha"
-            >
-              {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
-            </Button>
-          </div>
-
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-amber-400" />
-            <div className="text-xs text-amber-200/90 space-y-1">
-              <p className="font-medium">Esta senha aparece UMA vez.</p>
-              <p>
-                Copie agora e envie pelo WhatsApp ou canal seguro. Não será
-                possível visualizar de novo — use &ldquo;Resetar senha&rdquo;
-                se precisar.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end border-t border-foreground/10 p-4">
-          <Button onClick={onClose}>Entendi, já copiei</Button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Já anotei, pode fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
