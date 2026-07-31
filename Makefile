@@ -1,4 +1,4 @@
-.PHONY: dev-acesso dev-isolamento dev-banco-refresh migrar-exportar migrar-preparar migrar-importar backup backup-instalar backup-restaurar repo-comparar help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
+.PHONY: dev-acesso dev-isolamento dev-banco-refresh migrar-exportar migrar-preparar migrar-importar backup backup-instalar backup-restaurar repo-comparar help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
 
 # Cores para output
 CYAN := \033[36m
@@ -66,7 +66,7 @@ dev-acesso: ## Mostra URLs, login e o estado dos serviços do ambiente de dev
 
 dev-isolamento: ## Confere as travas que impedem o dev de falar com a produção
 	@falhou=0; \
-	for trava in EVOLUTION_OUTBOUND_MODE=mock TWILIO_OUTBOUND_MODE=mock \
+	for trava in EVOLUTION_OUTBOUND_MODE=mock \
 	             LANGFUSE_ENABLED=false ENVIRONMENT=development; do \
 	  if grep -qE "^$$trava$$" .env; then echo "  ok     $$trava"; \
 	  else echo "  FALHOU $$trava"; falhou=1; fi; \
@@ -206,32 +206,20 @@ LOCUST  = cd stress && uv run --with locust --with faker --with python-dotenv \
           locust --headless -u $(USERS) -r $(RATE) -t $(TIME) -f locustfile.py --host $(HOST)
 
 stress-evolution: ## Stress test do webhook Evolution (default: 10u, 2/s, 60s)
-	LOCUST_PROVIDER=evolution $(LOCUST)
-
-stress-twilio: ## Stress test do webhook Twilio (precisa TWILIO_AUTH_TOKEN)
-	LOCUST_PROVIDER=twilio $(LOCUST)
-
-stress-both: ## Stress nos dois providers ao mesmo tempo
-	LOCUST_PROVIDER=both $(LOCUST)
+	$(LOCUST)
 
 stress: stress-evolution ## Alias do stress-evolution (default)
 
 # Alternativa via Docker (sem precisar de uv local)
 LOCUST_DOCKER = sg docker -c "docker build -q -t whatsapp-stress stress >/dev/null && \
                 docker run --rm \
-                -e LOCUST_PROVIDER=$$LOCUST_PROVIDER \
                 -e EVOLUTION_INSTANCE_NAME=$${EVOLUTION_INSTANCE_NAME:-vsa-tecnologia} \
                 -e EVOLUTION_API_KEY \
-                -e TWILIO_AUTH_TOKEN \
-                -e TWILIO_WEBHOOK_URL \
                 whatsapp-stress \
                 locust --headless -u $(USERS) -r $(RATE) -t $(TIME) -f locustfile.py --host $(HOST)"
 
 stress-evolution-docker: ## Stress Evolution via Docker (sem uv)
-	LOCUST_PROVIDER=evolution $(LOCUST_DOCKER)
-
-stress-twilio-docker: ## Stress Twilio via Docker (precisa TWILIO_AUTH_TOKEN no env)
-	LOCUST_PROVIDER=twilio $(LOCUST_DOCKER)
+	$(LOCUST_DOCKER)
 
 ##@ Langfuse (observabilidade LLM self-hosted)
 # Stack separada (5 serviços de infra própria). Sobe sob demanda — não
