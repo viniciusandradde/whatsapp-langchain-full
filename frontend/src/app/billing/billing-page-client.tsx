@@ -13,7 +13,9 @@ import {
   X,
 } from "lucide-react";
 
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
 import { Button } from "@/components/ui/button";
+import { plural } from "@/lib/formato";
 import type { BillingStatus, BillingTransacao } from "@/lib/api";
 
 import {
@@ -39,14 +41,14 @@ const PLANOS_FALLBACK: Plano[] = [
     nome: "Free",
     preco: "R$ 0",
     features: ["Suporte por email"],
-    limites: ["1 conexão WhatsApp", "2 usuários", "100 atendimentos/mês", "5 docs KB"],
+    limites: ["1 conexão WhatsApp", "2 usuários", "100 atendimentos/mês", "5 documentos na base"],
   },
   {
     slug: "pessoal",
     nome: "Pessoal",
     preco: "R$ 97/mês",
     features: ["IA com consumo controlado", "Suporte por email"],
-    limites: ["1 conexão WhatsApp", "2 usuários", "500 atendimentos/mês", "20 docs KB"],
+    limites: ["1 conexão WhatsApp", "2 usuários", "500 atendimentos/mês", "20 documentos na base"],
   },
   {
     slug: "pro",
@@ -54,14 +56,19 @@ const PLANOS_FALLBACK: Plano[] = [
     preco: "R$ 299/mês",
     destaque: true,
     features: ["Google Calendar", "RBAC granular", "Menu chatbot moderno", "Suporte prioritário"],
-    limites: ["3 conexões WhatsApp", "10 usuários", "5.000 atendimentos/mês", "100 docs KB"],
+    limites: ["3 conexões WhatsApp", "10 usuários", "5.000 atendimentos/mês", "100 documentos na base"],
   },
   {
     slug: "enterprise",
     nome: "Enterprise",
     preco: "R$ 1.499/mês",
     features: ["Tudo do Pro +", "MCP custom", "White label", "SLA + suporte dedicado"],
-    limites: ["Conexões ∞", "Usuários ∞", "Atendimentos ∞", "Docs KB ∞"],
+    limites: [
+      "Conexões WhatsApp: ilimitado",
+      "Usuários: ilimitado",
+      "Atendimentos por mês: ilimitado",
+      "Documentos na base: ilimitado",
+    ],
   },
 ];
 
@@ -76,8 +83,13 @@ const FEATURE_LABELS: Record<string, string> = {
 };
 
 function mapCatalogoToCard(p: import("@/lib/api").PlanoCatalogo): Plano {
-  const inf = (v: number | null, singular: string, plural?: string) =>
-    v == null ? `${plural ?? singular} ∞` : `${v} ${v === 1 ? singular : (plural ?? singular)}`;
+  // "Conexões ∞" invertia a ordem da frase e deixava o símbolo solto no fim.
+  // "Ilimitado" é o que o cliente entende sem decodificar.
+  const inf = (v: number | null, singular: string, plural?: string) => {
+    if (v != null) return `${v} ${v === 1 ? singular : (plural ?? singular)}`;
+    const nome = plural ?? singular;
+    return `${nome.charAt(0).toUpperCase()}${nome.slice(1)}: ilimitado`;
+  };
   return {
     slug: p.slug,
     nome: p.nome,
@@ -88,16 +100,18 @@ function mapCatalogoToCard(p: import("@/lib/api").PlanoCatalogo): Plano {
       .map(([k]) => FEATURE_LABELS[k] ?? k)
       .concat(
         p.limite_orcamento_ia_usd
-          ? [`IA até US$${p.limite_orcamento_ia_usd.toFixed(0)}/mês`]
+          ? [`Uso de IA até US$ ${p.limite_orcamento_ia_usd.toFixed(0)}/mês`]
           : []
       ),
     limites: [
       inf(p.limite_conexoes, "conexão WhatsApp", "conexões WhatsApp"),
       inf(p.limite_usuarios, "usuário", "usuários"),
       p.limite_atendimentos_mes == null
-        ? "Atendimentos ∞"
-        : `${p.limite_atendimentos_mes} atendimentos/mês`,
-      p.limite_documentos_kb == null ? "Docs KB ∞" : `${p.limite_documentos_kb} docs KB`,
+        ? "Atendimentos por mês: ilimitado"
+        : `${p.limite_atendimentos_mes.toLocaleString("pt-BR")} atendimentos/mês`,
+      p.limite_documentos_kb == null
+        ? "Documentos na base: ilimitado"
+        : `${p.limite_documentos_kb} documentos na base`,
     ],
   };
 }
@@ -108,6 +122,7 @@ export function BillingPageClient() {
   const [historico, setHistorico] = useState<BillingTransacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, startTransition] = useTransition();
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState(false);
   const [feedback, setFeedback] = useState<
     { kind: "ok" | "err"; message: string } | null
   >(null);
@@ -162,9 +177,6 @@ export function BillingPageClient() {
   }
 
   function handleCancel() {
-    if (!confirm("Cancelar assinatura? Plano volta pra Free imediatamente.")) {
-      return;
-    }
     setFeedback(null);
     startTransition(async () => {
       const r = await cancelSubscriptionAction();
@@ -216,7 +228,13 @@ export function BillingPageClient() {
       )}
 
       {/* Status atual */}
-      {status && <PlanoAtualCard status={status} onCancel={handleCancel} pending={pending} />}
+      {status && (
+        <PlanoAtualCard
+          status={status}
+          onCancel={() => setConfirmandoCancelar(true)}
+          pending={pending}
+        />
+      )}
 
       {/* Comparativo + upgrade */}
       <div>
@@ -240,6 +258,16 @@ export function BillingPageClient() {
 
       {/* Histórico */}
       <HistoricoTable items={historico} />
+
+      <ConfirmDestrutivo
+        aberto={confirmandoCancelar}
+        onAbertoChange={setConfirmandoCancelar}
+        titulo="Cancelar assinatura"
+        objeto="o plano atual da empresa"
+        descricao="A conta volta para o plano Free na hora, com os limites dele — conexões, usuários, atendimentos e documentos."
+        rotuloAcao="Cancelar assinatura"
+        onConfirmar={handleCancel}
+      />
     </div>
   );
 }
@@ -276,7 +304,7 @@ function PlanoAtualCard({
           {status.valor_mensal && status.valor_mensal > 0 && (
             <p className="mt-1 text-sm text-muted-foreground">
               R$ {status.valor_mensal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês
-              · {status.total_pagamentos} pagamento(s)
+              · {plural(status.total_pagamentos, "pagamento")}
               {status.ultimo_pagamento_em && (
                 <>
                   {" "}
