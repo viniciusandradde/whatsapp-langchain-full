@@ -51,6 +51,10 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/dashboard/atendimento",
     itens: [
       { label: "Atendimentos", href: "/dashboard/atendimento" },
+      // Segunda tela órfã: existia, ninguém linkava. É a visão pessoal do
+      // atendente (produção de hoje e dos últimos 30 dias), então mora aqui
+      // e não em Governança/Pessoas, que é a visão de quem gerencia.
+      { label: "Meu desempenho", href: "/atendentes/me/dashboard" },
       // A tela existia e não era alcançável por nada — nenhum link, menu ou
       // redirect apontava pra ela. Ver `app/page.tsx`.
       { label: "Primeiros passos", href: "/onboarding" },
@@ -164,7 +168,12 @@ export const NAV_GROUPS: NavGroup[] = [
  * `/settings/security/audit` cair em observabilidade e não em governança.
  */
 const GRUPO_PREFIXOS: { grupo: string; prefixos: string[] }[] = [
-  { grupo: "visao", prefixos: ["/dashboard", "/onboarding"] },
+  {
+    grupo: "visao",
+    // `/atendentes/me` precisa ser mais longo que o `/atendentes` de
+    // governança, senão a visão pessoal cai no grupo de quem gerencia.
+    prefixos: ["/dashboard", "/onboarding", "/atendentes/me"],
+  },
   {
     grupo: "operacao",
     prefixos: [

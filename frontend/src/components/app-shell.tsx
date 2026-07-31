@@ -13,6 +13,7 @@
 import { usePathname } from "next/navigation";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { CommandPalette, CommandPaletteTrigger } from "@/components/command-palette";
 import type { SidebarBrand } from "@/components/nav-brand";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -43,7 +44,9 @@ export function AppShell({
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <SidebarTrigger />
+          <CommandPaletteTrigger />
         </header>
+        <CommandPalette />
         <div className="mx-auto w-full max-w-(--breakpoint-2xl) p-6">
           {children}
         </div>

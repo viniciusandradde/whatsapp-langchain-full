@@ -178,9 +178,28 @@ function GrupoDeNavegacao({
 }) {
   const Icone = grupo.icon;
 
+  // Aberto é estado controlado, não `defaultOpen`.
+  //
+  // Com `defaultOpen`, navegar de um grupo pro outro mudava o padrão de um
+  // componente já montado, e o Base UI avisava no console ("changing the
+  // default open state of an uncontrolled Collapsible"). Pior: o valor novo
+  // era ignorado, então o grupo da rota nem sempre abria.
+  //
+  // O ajuste é feito durante o render (padrão do React pra derivar estado de
+  // prop), sem efeito. O `|| aberto` é deliberado: chegar num grupo o abre,
+  // mas sair dele NÃO fecha — nada colapsa embaixo do cursor de quem estava
+  // navegando por ali.
+  const [aberto, setAberto] = useState(abertoPorPadrao);
+  const [padraoAnterior, setPadraoAnterior] = useState(abertoPorPadrao);
+  if (abertoPorPadrao !== padraoAnterior) {
+    setPadraoAnterior(abertoPorPadrao);
+    setAberto(abertoPorPadrao || aberto);
+  }
+
   return (
     <Collapsible
-      defaultOpen={abertoPorPadrao}
+      open={aberto}
+      onOpenChange={setAberto}
       className="group/collapsible"
       render={<SidebarMenuItem />}
     >
