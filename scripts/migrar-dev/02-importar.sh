@@ -37,7 +37,7 @@ erro()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; }
 
 [ -z "$ORIGEM" ] && { erro "informe a origem: $0 vps-docker03:/tmp/chatnexus-migracao"; exit 1; }
 
-for cmd in docker rsync tar pg_restore uv node; do
+for cmd in docker rsync tar uv node; do
   command -v "$cmd" >/dev/null || { erro "'$cmd' não encontrado — rode 01-preparar-maquina.sh"; exit 1; }
 done
 docker compose version >/dev/null 2>&1 || { erro "falta o plugin 'docker compose' v2"; exit 1; }
@@ -229,10 +229,20 @@ for _ in $(seq 1 60); do
 done
 
 azul "     Restaurando o banco de desenvolvimento"
-# `--clean --if-exists`: a API já criou schema no boot; o dump manda.
-pg_restore -d postgresql://postgres:postgres@localhost:5434/whatsapp_langchain \
-  --no-owner --no-acl --clean --if-exists "$TRABALHO/dev.dump" 2>&1 \
-  | grep -vE 'does not exist|already exists' || true
+# `pg_restore` do host é opcional: nem toda máquina tem postgresql-client, e
+# o container tem o mesmo binário na versão certa. `--clean --if-exists`
+# porque a API já criou schema no boot e o dump é quem manda.
+if command -v pg_restore >/dev/null; then
+  pg_restore -d postgresql://postgres:postgres@localhost:5434/whatsapp_langchain \
+    --no-owner --no-acl --clean --if-exists "$TRABALHO/dev.dump" 2>&1 \
+    | grep -vE 'does not exist|already exists' || true
+else
+  aviso "pg_restore não existe no host — usando o do container"
+  docker compose -p "$PROJETO_DOCKER" exec -T db \
+    pg_restore -U postgres -d whatsapp_langchain \
+    --no-owner --no-acl --clean --if-exists < "$TRABALHO/dev.dump" 2>&1 \
+    | grep -vE 'does not exist|already exists' || true
+fi
 verde "dev.dump restaurado"
 
 # --- 8. Dependências e verificação final -----------------------------------
@@ -243,16 +253,25 @@ uv pip install -e ".[dev]" >/dev/null 2>&1
 verde "Python (.venv)"
 (cd frontend && npm ci --silent) && verde "Node (frontend/node_modules)"
 
+# psql do host quando existe; senão o do container. Mesma resposta.
+consultar() {
+  if command -v psql >/dev/null; then
+    psql postgresql://postgres:postgres@localhost:5434/whatsapp_langchain -At -c "$1" 2>/dev/null || echo 999
+  else
+    docker compose -p "$PROJETO_DOCKER" exec -T db \
+      psql -U postgres -d whatsapp_langchain -At -c "$1" 2>/dev/null | tr -d '\r' || echo 999
+  fi
+}
+
 echo
 azul "Verificação final"
-MIGS=$(psql postgresql://postgres:postgres@localhost:5434/whatsapp_langchain -At \
-       -c "select count(*) from _migrations;" 2>/dev/null || echo 0)
+MIGS=$(consultar "select count(*) from _migrations;")
 verde "$MIGS migrations aplicadas"
 
-VAZOU=$(psql postgresql://postgres:postgres@localhost:5434/whatsapp_langchain -At -c "
+VAZOU=$(consultar "
   select (select count(*) from cliente where telefone not like '55119%')
        + (select count(*) from checkpoints)
-       + (select count(*) from conexao where credentials_encrypted is not null);" 2>/dev/null || echo 999)
+       + (select count(*) from conexao where credentials_encrypted is not null);")
 if [ "$VAZOU" = "0" ]; then
   verde "banco sem PII: nenhum telefone real, checkpoint ou credencial"
 else
