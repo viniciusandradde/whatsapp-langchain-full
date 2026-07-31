@@ -24,6 +24,7 @@ Uso:
 
 from __future__ import annotations
 
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -33,6 +34,7 @@ import pytest
 
 from .helpers import (
     API_BASE_URL,
+    EVOLUTION_INSTANCE,
     clear_thread_checkpoints,
     count_queue_entries,
     get_admin_api_headers,
@@ -51,6 +53,39 @@ from .helpers import (
 )
 
 pytestmark = pytest.mark.docker_demo
+
+
+def _evolution_payload(
+    *,
+    phone: str,
+    sid: str,
+    body: str,
+    media_url: str | None = None,
+    mimetype: str | None = None,
+) -> dict:
+    """Monta um MESSAGES_UPSERT da Evolution, com ou sem mídia."""
+    if media_url:
+        mime = mimetype or "image/png"
+        chave = "audioMessage" if mime.startswith("audio/") else "imageMessage"
+        mensagem: dict = {chave: {"url": media_url, "mimetype": mime, "caption": body}}
+    else:
+        mensagem = {"conversation": body}
+    return {
+        "event": "messages.upsert",
+        "instance": EVOLUTION_INSTANCE,
+        "data": {
+            "key": {
+                "remoteJid": f"{phone.lstrip('+')}@s.whatsapp.net",
+                "fromMe": False,
+                "id": sid,
+            },
+            "message": mensagem,
+            "pushName": "E2E",
+            "messageTimestamp": int(time.time()),
+        },
+    }
+
+
 ADMIN_API_HEADERS = get_admin_api_headers()
 
 
@@ -627,22 +662,31 @@ class TestMultiplasMidias:
         print(f"{'=' * 60}")
 
         print("\n[1/3] Enviando webhook com NumMedia=2...")
-        resp = httpx.post(
-            f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-            data={
-                "MessageSid": sid,
-                "From": f"whatsapp:{phone}",
-                "To": "whatsapp:+14155238886",
-                "Body": "olha",
-                "NumMedia": "2",
-                "MediaUrl0": "https://demo.twilio.com/owl.png",
-                "MediaContentType0": "image/png",
-                "MediaUrl1": "https://demo.twilio.com/owl.png",
-                "MediaContentType1": "image/png",
-            },
-            timeout=10,
-        )
-        assert resp.status_code == 200, f"Webhook retornou {resp.status_code}"
+        # A Evolution manda 1 mídia por evento; o caso de N mídias no mesmo
+        # `message_id` (que a API enfileira como N rows) é reproduzido postando
+        # o mesmo `key.id` duas vezes, uma por imagem, mais o texto.
+        payloads = [
+            _evolution_payload(phone=phone, sid=sid, body="olha"),
+            _evolution_payload(
+                phone=phone,
+                sid=sid,
+                body="",
+                media_url="https://cdn.example.com/owl.png",
+                mimetype="image/png",
+            ),
+            _evolution_payload(
+                phone=phone,
+                sid=sid,
+                body="",
+                media_url="https://cdn.example.com/owl2.png",
+                mimetype="image/png",
+            ),
+        ]
+        for payload in payloads:
+            resp = httpx.post(
+                f"{API_BASE_URL}/webhook/evolution", json=payload, timeout=10
+            )
+            assert resp.status_code == 200, f"Webhook retornou {resp.status_code}"
         print(f"  ✓ Webhook aceito (SID: {sid})")
 
         print("[2/3] Aguardando todas as 3 rows atingirem status terminal...")

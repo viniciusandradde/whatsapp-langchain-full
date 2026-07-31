@@ -7,7 +7,6 @@ from whatsapp_langchain.shared.models import (
     EnqueueResult,
     MessageQueue,
     MessageStatus,
-    TwilioWebhookPayload,
 )
 
 
@@ -63,47 +62,6 @@ class TestMessageQueue:
                 thread_id="test",
                 incoming_message="Olá!",
             )
-
-
-class TestTwilioWebhookPayload:
-    """Testes do modelo TwilioWebhookPayload."""
-
-    def test_full_payload(self):
-        """Payload completo do Twilio."""
-        payload = TwilioWebhookPayload(
-            MessageSid="SM123",
-            From="whatsapp:+5511999999999",
-            To="whatsapp:+14155238886",
-            Body="Olá, tudo bem?",
-            NumMedia="0",
-        )
-        assert payload.MessageSid == "SM123"
-        assert payload.Body == "Olá, tudo bem?"
-
-    def test_payload_with_media(self):
-        """Payload com mídia anexada."""
-        payload = TwilioWebhookPayload(
-            MessageSid="SM456",
-            From="whatsapp:+5511999999999",
-            To="whatsapp:+14155238886",
-            Body="",
-            NumMedia="1",
-            MediaUrl0="https://api.twilio.com/media/123",
-            MediaContentType0="image/jpeg",
-        )
-        assert payload.MediaUrl0 == "https://api.twilio.com/media/123"
-        assert payload.MediaContentType0 == "image/jpeg"
-
-    def test_payload_defaults(self):
-        """Campos opcionais têm defaults corretos."""
-        payload = TwilioWebhookPayload(
-            MessageSid="SM789",
-            From="whatsapp:+5511999999999",
-            To="whatsapp:+14155238886",
-        )
-        assert payload.Body == ""
-        assert payload.NumMedia == "0"
-        assert payload.MediaUrl0 is None
 
 
 class TestEnqueueResult:

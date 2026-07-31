@@ -112,13 +112,14 @@ async def create_conexao(
     empresa_id: int = Depends(get_empresa_context),
     _quota: None = Depends(require_plano_limit("conexoes")),
 ) -> Conexao:
-    """Cria conexão Twilio (provider twilio_sandbox/twilio_prod).
+    """Cria conexão a partir de um payload simples.
 
     Sprint Q.3: bloqueado com HTTP 402 se atingiu limite de conexões do
     plano (Free=1, Pro=3, Enterprise=∞).
 
-    WABA usa /waba/finalize (após OAuth) e Evolution usa /evolution/provision.
-    Twilio é o único path que mantém form simples.
+    O caminho completo de cada provider tem endpoint próprio — WABA usa
+    /waba/finalize (após OAuth) e Evolution usa /evolution/provision. Este
+    aqui é o registro direto, usado pelo modal de QR da Evolution.
     """
     pool = await get_pool()
     out = await upsert_conexao(pool, empresa_id, body)

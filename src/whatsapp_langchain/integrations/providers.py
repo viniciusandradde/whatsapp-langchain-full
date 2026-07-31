@@ -72,7 +72,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
         campos=[],  # OAuth Web é via redirect, sem campos manuais
         legacy_storage="empresa_calendar_config",
     ),
-    # Asaas REMOVIDO do catálogo Wareline (2026-05-22).
+    # Asaas REMOVIDO do catálogo (2026-05-22).
     # Asaas é integração GLOBAL do SaaS (Chat Nexus → conta Asaas única
     # pra faturar empresas-clientes), não integração POR-EMPRESA. UI
     # dedicada em /billing (Sprint B), config via env vars ASAAS_API_KEY
@@ -138,7 +138,7 @@ def get_provider(slug: str) -> ProviderSpec | None:
 
 def list_providers(include_legacy: bool = True) -> list[ProviderSpec]:
     """Lista providers do catálogo. Quando include_legacy=False, omite
-    Wareline+Google Calendar (que têm UI dedicada)."""
+    Google Calendar (que tem UI dedicada)."""
     out = list(PROVIDERS.values())
     if not include_legacy:
         out = [p for p in out if p.legacy_storage is None]

@@ -12,6 +12,7 @@ Pré-requisito:
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +32,7 @@ from whatsapp_langchain.shared.config import settings
 
 from .helpers import (
     API_BASE_URL,
+    EVOLUTION_INSTANCE,
     clear_thread_checkpoints,
     get_db_url,
     wait_memory_saved,
@@ -40,6 +42,38 @@ from .helpers import (
 pytestmark = pytest.mark.docker_demo
 
 ASSETS_DIR = Path(__file__).parents[1] / "assets"
+
+
+def _evolution_payload(
+    *,
+    phone: str,
+    sid: str,
+    body: str,
+    media_url: str | None = None,
+    mimetype: str | None = None,
+) -> dict:
+    """Monta um MESSAGES_UPSERT da Evolution, com ou sem mídia."""
+    if media_url:
+        mime = mimetype or "image/png"
+        chave = "audioMessage" if mime.startswith("audio/") else "imageMessage"
+        mensagem: dict = {chave: {"url": media_url, "mimetype": mime, "caption": body}}
+    else:
+        mensagem = {"conversation": body}
+    return {
+        "event": "messages.upsert",
+        "instance": EVOLUTION_INSTANCE,
+        "data": {
+            "key": {
+                "remoteJid": f"{phone.lstrip('+')}@s.whatsapp.net",
+                "fromMe": False,
+                "id": sid,
+            },
+            "message": mensagem,
+            "pushName": "Demo",
+            "messageTimestamp": int(time.time()),
+        },
+    }
+
 
 save_memory_fn = save_memory.coroutine
 read_memory_fn = read_memory.coroutine
@@ -115,16 +149,14 @@ def test_demo_webhook_image_e2e(
     phone = f"+5511{uuid.uuid4().int % 10**8:08d}"
 
     response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": "Descreva esta imagem.",
-            "NumMedia": "1",
-            "MediaUrl0": media_server_urls["image_url"],
-            "MediaContentType0": "image/png",
-        },
+        f"{API_BASE_URL}/webhook/evolution",
+        json=_evolution_payload(
+            phone=phone,
+            sid=sid,
+            body="Descreva esta imagem.",
+            media_url=media_server_urls["image_url"],
+            mimetype="image/png",
+        ),
         timeout=10,
     )
     assert response.status_code == 200
@@ -144,16 +176,14 @@ def test_demo_webhook_audio_e2e(
     phone = f"+5521{uuid.uuid4().int % 10**8:08d}"
 
     response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": "Transcreva e responda.",
-            "NumMedia": "1",
-            "MediaUrl0": media_server_urls["audio_url"],
-            "MediaContentType0": "audio/ogg",
-        },
+        f"{API_BASE_URL}/webhook/evolution",
+        json=_evolution_payload(
+            phone=phone,
+            sid=sid,
+            body="Transcreva e responda.",
+            media_url=media_server_urls["audio_url"],
+            mimetype="audio/ogg",
+        ),
         timeout=10,
     )
     assert response.status_code == 200
@@ -169,7 +199,7 @@ async def test_demo_semantic_memory_roundtrip(ensure_docker_stack: str):
     """Demonstra roundtrip de memória por usuário no Postgres Store.
 
     O namespace segue o contrato do projeto: (user_id, "memories"),
-    onde user_id é o telefone (mesmo identificador vindo do payload Twilio).
+    onde user_id é o telefone (mesmo identificador vindo do payload do webhook).
     """
     api_key = settings.openrouter_api_key
     if not api_key:
@@ -245,18 +275,16 @@ def test_demo_webhook_memory_recall_e2e(ensure_docker_stack: str):
 
     sid_save = f"SMMEM{uuid.uuid4().hex[:12]}"
     save_response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid_save,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": (
+        f"{API_BASE_URL}/webhook/evolution",
+        json=_evolution_payload(
+            phone=phone,
+            sid=sid_save,
+            body=(
                 "Use a ferramenta save_memory e salve este fato sobre mim: "
                 f"meu identificador secreto é {token}. "
                 "Depois confirme em uma frase curta."
             ),
-            "NumMedia": "0",
-        },
+        ),
         timeout=10,
     )
     assert save_response.status_code == 200
@@ -272,17 +300,15 @@ def test_demo_webhook_memory_recall_e2e(ensure_docker_stack: str):
 
     sid_recall = f"SMMEM{uuid.uuid4().hex[:12]}"
     recall_response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid_recall,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": (
+        f"{API_BASE_URL}/webhook/evolution",
+        json=_evolution_payload(
+            phone=phone,
+            sid=sid_recall,
+            body=(
                 "Sem usar save_memory agora, use read_memory para recuperar "
                 "meu identificador secreto e responda apenas com o valor."
             ),
-            "NumMedia": "0",
-        },
+        ),
         timeout=10,
     )
     assert recall_response.status_code == 200

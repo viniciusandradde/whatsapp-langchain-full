@@ -66,7 +66,6 @@ class TestRuntimeSettingsValidation:
         settings = Settings(
             environment="production",
             internal_service_token="x" * MIN_PRODUCTION_SECRET_LENGTH,
-            validate_twilio_signature=True,
             database_url_app="postgresql://chat_nexus_app:pw@db:5432/app",
             evolution_outbound_mode="mock",
         )
@@ -78,7 +77,6 @@ class TestRuntimeSettingsValidation:
         settings = Settings(
             environment="production",
             internal_service_token="x" * MIN_PRODUCTION_SECRET_LENGTH,
-            validate_twilio_signature=True,
             database_url_app="",
             evolution_outbound_mode="mock",
         )
@@ -102,9 +100,6 @@ def test_validate_runtime_passes_when_signature_enabled_in_prod(monkeypatch):
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
     monkeypatch.setenv("DATABASE_URL_APP", "postgresql://chat_nexus_app:pw@db:5432/app")
     monkeypatch.setenv("EVOLUTION_OUTBOUND_MODE", "mock")
-    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
-    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
     from whatsapp_langchain.shared.config import Settings
 
     s = Settings()
@@ -114,9 +109,6 @@ def test_validate_runtime_passes_when_signature_enabled_in_prod(monkeypatch):
 def test_validate_runtime_fails_when_frontend_origins_empty_in_prod(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
-    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
-    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
     monkeypatch.setenv("FRONTEND_ORIGINS", "")
     from whatsapp_langchain.shared.config import Settings
 
@@ -130,9 +122,6 @@ def test_validate_runtime_passes_when_frontend_origins_set_in_prod(monkeypatch):
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
     monkeypatch.setenv("DATABASE_URL_APP", "postgresql://chat_nexus_app:pw@db:5432/app")
     monkeypatch.setenv("EVOLUTION_OUTBOUND_MODE", "mock")
-    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
-    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
     monkeypatch.setenv("FRONTEND_ORIGINS", "https://chat.nexus.com")
     from whatsapp_langchain.shared.config import Settings
 

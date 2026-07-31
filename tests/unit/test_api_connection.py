@@ -69,7 +69,7 @@ def test_providers_validos_modelo_pydantic():
 
 
 def test_list_providers_skip_legacy():
-    """include_legacy=False omite wareline + google_calendar."""
+    """include_legacy=False omite google_calendar (que tem UI dedicada)."""
     non_legacy = list_providers(include_legacy=False)
     slugs = {p.slug for p in non_legacy}
     assert "wareline" not in slugs

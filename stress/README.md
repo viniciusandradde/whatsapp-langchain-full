@@ -11,14 +11,14 @@ Stress testing simula múltiplos usuários enviando mensagens simultaneamente pa
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) instalado
 - A API rodando localmente (`make up`) ou em ambiente remoto
-- O mesmo `TWILIO_AUTH_TOKEN` configurado na API
+- O nome da instância Evolution da conexão que vai receber a carga
 
 ## Variáveis de ambiente
 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
-| `TWILIO_AUTH_TOKEN` | Sim | Token do Twilio (mesmo da API) — usado para assinar requests |
-| `TWILIO_WEBHOOK_URL` | Sim | URL base do webhook (ex: `http://localhost:8000`) |
+| `EVOLUTION_INSTANCE_NAME` | Sim | Instância da conexão — o webhook resolve por ela; nome desconhecido é descartado |
+| `EVOLUTION_API_KEY` | Não | Header `apikey`, só se a API roda com `EVOLUTION_VALIDATE_APIKEY=true` |
 
 ## Como rodar localmente
 
@@ -30,9 +30,9 @@ uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
 
-# Configura as variáveis (use o mesmo token da API)
-export TWILIO_AUTH_TOKEN=seu_token_aqui
-export TWILIO_WEBHOOK_URL=http://localhost:8000
+# Configura as variáveis
+export EVOLUTION_INSTANCE_NAME=sua-instancia
+export EVOLUTION_API_KEY=sua_chave   # só se a API exigir
 
 # Inicia o Locust
 locust
@@ -50,8 +50,8 @@ docker build -t whatsapp-stress .
 
 # Roda o container
 docker run -p 8089:8089 \
-  -e TWILIO_AUTH_TOKEN=seu_token_aqui \
-  -e TWILIO_WEBHOOK_URL=http://host.docker.internal:8000 \
+  -e EVOLUTION_INSTANCE_NAME=sua-instancia \
+  -e EVOLUTION_API_KEY=sua_chave \
   whatsapp-stress
 ```
 
@@ -76,7 +76,7 @@ No dashboard do Railway, altere temporariamente:
 
 | Serviço | Variável | Alterar para | Por quê |
 |---------|----------|-------------|---------|
-| **worker** | `TWILIO_OUTBOUND_MODE` | `mock` | Impede envio real de mensagens pelo Twilio (custo + spam) |
+| **worker** | `EVOLUTION_OUTBOUND_MODE` | `mock` | Impede envio real de mensagens (spam + 400 em número falso) |
 | **worker** | `LLM_RATE_LIMIT_REQUESTS_PER_SECOND` | `5` | Aumenta throughput do LLM para drenar a fila |
 | **worker** | `LLM_RATE_LIMIT_MAX_BURST` | `20` | Permite rajadas maiores ao LLM |
 | **api** | `RATE_LIMIT_PER_HOUR` | `500` | O padrão (30/hora) bloqueia os usuários virtuais rapidamente |
@@ -88,8 +88,8 @@ cd stress
 source .venv/bin/activate
 
 # Use os valores do serviço API no Railway
-export TWILIO_AUTH_TOKEN=token_do_railway
-export TWILIO_WEBHOOK_URL=https://api-production-xxxx.up.railway.app
+export EVOLUTION_INSTANCE_NAME=nome-da-instancia
+export EVOLUTION_API_KEY=chave   # só se a API exigir
 
 locust -f locustfile.py --host https://api-production-xxxx.up.railway.app
 ```
@@ -104,12 +104,12 @@ Acesse http://localhost:8089 para configurar usuários e iniciar.
 
 | Serviço | Variável | Reverter para |
 |---------|----------|--------------|
-| **worker** | `TWILIO_OUTBOUND_MODE` | `real` |
+| **worker** | `EVOLUTION_OUTBOUND_MODE` | `real` |
 | **worker** | `LLM_RATE_LIMIT_REQUESTS_PER_SECOND` | `0.5` |
 | **worker** | `LLM_RATE_LIMIT_MAX_BURST` | `10` |
 | **api** | `RATE_LIMIT_PER_HOUR` | `30` |
 
-> **Se esquecer de reverter `TWILIO_OUTBOUND_MODE`**, o bot para de responder no WhatsApp.
+> **Se esquecer de reverter `EVOLUTION_OUTBOUND_MODE`**, o bot para de responder no WhatsApp.
 
 Para documentação completa com resultados reais e análise de escalabilidade, veja [docs/STRESS_TESTING.md](../docs/STRESS_TESTING.md).
 

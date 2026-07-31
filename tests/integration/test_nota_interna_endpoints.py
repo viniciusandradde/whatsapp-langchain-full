@@ -162,7 +162,7 @@ def atendimento_id(db_url: str, empresa_id: int) -> int:
                 """
                 INSERT INTO conexao (empresa_id, provider, from_number,
                                       display_name, status)
-                VALUES (%s, 'twilio_sandbox', %s, %s, 'active')
+                VALUES (%s, 'evolution', %s, %s, 'active')
                 RETURNING id
                 """,
                 (empresa_id, f"+155502{_RUN[:5]}", f"conn-nota-{_RUN}"),
@@ -422,7 +422,7 @@ class TestE2EIsolamento:
                     """
                     INSERT INTO conexao (empresa_id, provider, from_number,
                                           display_name, status)
-                    VALUES (%s, 'twilio_sandbox', %s, %s, 'active')
+                    VALUES (%s, 'evolution', %s, %s, 'active')
                     RETURNING id
                     """,
                     (emp_a, f"+155503{_RUN[:5]}", f"conn-iso-{_RUN}"),

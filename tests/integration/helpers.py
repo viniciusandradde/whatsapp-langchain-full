@@ -23,6 +23,9 @@ DEFAULT_DB_URL = "postgresql://postgres:postgres@localhost:5434/whatsapp_langcha
 DEFAULT_API_BASE_URL = "http://localhost:8081"
 API_BASE_URL = os.getenv("API_BASE_URL", DEFAULT_API_BASE_URL)
 TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
+# Instância da conexão que recebe os webhooks — o `instance` do payload precisa
+# bater com uma conexão cadastrada, senão a API descarta sem enfileirar.
+EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE_NAME", "vsa-tecnologia")
 
 
 def get_db_url() -> str:
@@ -42,7 +45,7 @@ def unique_phone(ddd: str = "99") -> str:
 
 
 def unique_sid(prefix: str = "SM") -> str:
-    """Gera MessageSid único no formato do Twilio."""
+    """Gera um id de mensagem único para correlacionar turnos."""
     return f"{prefix}{uuid.uuid4().hex[:12]}"
 
 
@@ -259,7 +262,7 @@ def wait_queue_done(
 def assert_outbound_sent(db_url: str, message_sid: str) -> dict:
     """Valida que a mensagem alcançou status terminal `done` com response não-vazio.
 
-    Em modo Twilio real, isso garante que `TwilioClient.send_message` retornou OK
+    Em modo real, isso garante que o envio outbound retornou OK
     (porque `mark_done` só corre depois). Retorna a row da fila pra inspeção.
 
     AVISO: para mensagens com NumMedia > 1 (que geram N rows com mesmo message_id),
@@ -296,16 +299,27 @@ def send_webhook(
     message_sid: str | None = None,
     timeout: int = 10,
 ) -> httpx.Response:
-    """Envia POST para /webhook/twilio simulando mensagem do Twilio."""
+    """Envia POST para /webhook/evolution simulando mensagem inbound.
+
+    `agent` fica por compatibilidade de assinatura: o agente vem da conexão
+    resolvida pelo `instance`, não mais de query string.
+    """
     sid = message_sid or unique_sid()
     return httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent={agent}",
-        data={
-            "MessageSid": sid,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": body,
-            "NumMedia": "0",
+        f"{API_BASE_URL}/webhook/evolution",
+        json={
+            "event": "messages.upsert",
+            "instance": EVOLUTION_INSTANCE,
+            "data": {
+                "key": {
+                    "remoteJid": f"{phone.lstrip('+')}@s.whatsapp.net",
+                    "fromMe": False,
+                    "id": sid,
+                },
+                "message": {"conversation": body},
+                "pushName": "E2E",
+                "messageTimestamp": int(time.time()),
+            },
         },
         timeout=timeout,
     )
@@ -341,7 +355,7 @@ def wait_until_n_rows_done(
 
     Args:
         db_url: URL de conexão ao banco.
-        message_sid: Twilio MessageSid compartilhado pelas N rows.
+        message_sid: id externo compartilhado pelas N rows.
         expected: Quantidade de rows terminais esperadas.
         timeout_seconds: Tempo máximo de espera.
     """

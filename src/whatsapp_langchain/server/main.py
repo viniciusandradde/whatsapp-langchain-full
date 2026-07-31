@@ -294,7 +294,7 @@ app.add_middleware(
     allow_origins=settings.frontend_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Twilio-Signature"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 install_security_headers(app, is_production=settings.is_production)
@@ -492,7 +492,7 @@ app.include_router(hitl_router)
 app.include_router(workflows_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
-# Em producao, use o webhook async (Twilio) que passa pela fila.
+# Em producao, use o webhook async do provider, que passa pela fila.
 if settings.environment != "production":
     from whatsapp_langchain.server.routes.webhook_sync import (
         router as webhook_sync_router,

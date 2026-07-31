@@ -47,7 +47,7 @@ async def _require_superadmin(user_id: str):
 
 class AsaasConfigInput(BaseModel):
     environment: str = Field("sandbox", pattern=r"^(sandbox|production)$")
-    # Campos sensíveis: branco/omitido = MANTÉM o valor anterior (padrão wareline).
+    # Campos sensíveis: branco/omitido = MANTÉM o valor anterior.
     api_key: str | None = None
     webhook_token: str | None = None
     success_url: str | None = None

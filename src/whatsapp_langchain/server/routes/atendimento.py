@@ -809,7 +809,7 @@ async def responder_midia(
     A legenda passa pelo mesmo render de `{{cliente.*}}` do texto — o operador
     pode legendar uma foto com `Olá {{cliente.nome}}` e o cliente recebe o nome.
 
-    Só conexões Evolution suportam mídia hoje; WABA e Twilio devolvem 400 com a
+    Só conexões Evolution suportam mídia hoje; WABA devolve 400 com a
     razão, em vez de aceitar o upload e não entregar nada.
     """
     mime = (arquivo.content_type or "").lower()
@@ -857,7 +857,7 @@ async def send_template(
     """Envia um template HSM **aprovado** ao cliente do atendimento.
 
     Útil pra reabrir conversa fora da janela 24h (no WhatsApp oficial só
-    template é permitido). Roteia por provider (WABA/Twilio) e persiste na
+    template é permitido). Roteia por provider e persiste na
     timeline do drawer.
     """
     atd = await _load_atendimento_in_empresa(atendimento_id, empresa_id)

@@ -33,7 +33,7 @@ Tests:
 - `make test-demo` / `make test-demo-up` — `docker_demo` marker; needs full Docker stack running
 - `make test-flows` — realistic flow tests (`tests/integration/test_realistic_flows.py`); needs Docker stack
 - pytest is configured `asyncio_mode = "auto"` — async tests don't need `@pytest.mark.asyncio`
-- **Rodando a suite local fora de CI, use `-m "not docker_demo and not twilio_real"`** — os testes `twilio_real` (smoke que envia mensagem real, requer `TWILIO_LIVE_TESTS=1`) + TestClient travam em máquina local por causa do lookup de metadata da cloud
+- **A suíte completa não termina em máquina local** — cada `with TestClient(app)` roda o lifespan inteiro contra o banco e o portal do anyio faz join no teardown. Localmente rode arquivos dirigidos; a suíte é responsabilidade do CI. Ver `docs/MIGRACAO_DEV.md`
 
 **E2E pós-feature obrigatório** — toda feature nova (sprint/endpoint/fluxo BE+FE) ganha suite no modelo `tests/integration/test_aba_endpoints.py` (canônico, commit `4aebe36`):
 - **TestSmoke** (TestClient, sem DB): 1 test por endpoint validando que existe + exige auth (401 sem service token). Roda em CI.
@@ -50,7 +50,7 @@ Frontend (run from `frontend/`):
 
 The system intentionally splits into two processes that share Postgres. Understanding the boundary is the prerequisite for almost any change.
 
-**API (`src/whatsapp_langchain/server/`)** — FastAPI HTTP edge. Validates Twilio webhook (HMAC via official Twilio SDK when `VALIDATE_TWILIO_SIGNATURE=true`), applies per-phone rate limit, normalizes payload, and enqueues into `message_queue`. Returns empty TwiML in <100ms. Never invokes the agent inline. `/webhook/sync` exists for development only and is auto-disabled when `ENVIRONMENT=production`. Rate limit do webhook usa in-memory por default (single-process); em multi-instância habilite `RATE_LIMIT_DISTRIBUTED=true` para sliding window em Postgres (tabela `rate_limit_buckets`, migration `005`).
+**API (`src/whatsapp_langchain/server/`)** — FastAPI HTTP edge. Validates the inbound webhook (WABA: HMAC-SHA256 via `META_APP_SECRET`; Evolution: header `apikey` when `EVOLUTION_VALIDATE_APIKEY=true`), applies per-phone rate limit, normalizes payload, and enqueues into `message_queue`. Responds in <100ms. Never invokes the agent inline. `/webhook/sync` exists for development only and is auto-disabled when `ENVIRONMENT=production`. Rate limit do webhook usa in-memory por default (single-process); em multi-instância habilite `RATE_LIMIT_DISTRIBUTED=true` para sliding window em Postgres (tabela `rate_limit_buckets`, migration `005`).
 
 **Three middlewares are stacked in `server/main.py`** (Starlette LIFO — registered last runs first):
 - `install_correlation_id` — accepts client `X-Request-Id` or generates UUID16, binds to `structlog.contextvars` so every log of the request carries `request_id=X`. Echoes the ID in response header.
@@ -59,7 +59,7 @@ The system intentionally splits into two processes that share Postgres. Understa
 
 Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 attempts/15min on `/sign-in/email`, 3/15min on `/sign-up/email`, 3/h on `/forget-password`, 5/h on `/reset-password`).
 
-**Worker (`src/whatsapp_langchain/worker/`)** — Async loop polling `message_queue`. Claims a row with `FOR UPDATE SKIP LOCKED` + lease, preprocesses media (image/audio → text via OpenRouter multimodal), sends Twilio typing indicator (best-effort), invokes the LangGraph agent, sends the outbound reply via Twilio, *then* calls `mark_done`. **`mark_done` only runs after the outbound send succeeds** — a Twilio failure flows into `mark_failed`'s retry path. This ordering is load-bearing for at-least-once delivery.
+**Worker (`src/whatsapp_langchain/worker/`)** — Async loop polling `message_queue`. Claims a row with `FOR UPDATE SKIP LOCKED` + lease, preprocesses media (image/audio → text via OpenRouter multimodal), sends the typing indicator (best-effort), invokes the LangGraph agent, sends the outbound reply through the connection's provider, *then* calls `mark_done`. **`mark_done` only runs after the outbound send succeeds** — a provider failure flows into `mark_failed`'s retry path. This ordering is load-bearing for at-least-once delivery.
 
 **Postgres is the queue** — no Redis/RabbitMQ. State machine: `queued → processing → done | failed`, with retry going `processing → queued` (with `process_after = NOW() + attempts*5s` backoff) until `attempts >= max_attempts`. Lease expiry on a stuck `processing` row promotes to `failed` only when attempts are exhausted; otherwise the row is reclaimable.
 
@@ -81,7 +81,7 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 
 **Frontend / admin auth** — Next.js panel in `frontend/` uses Better Auth against the same Postgres in a separate `auth` schema (migrations `003_auth_schema.sql`, `004_better_auth_tables.sql`). Server-side fetches to `/api/*` go via `INTERNAL_API_URL` + bearer `INTERNAL_SERVICE_TOKEN` (enforced by `verify_service_token` dependency on the admin router). On first `/login` the frontend bootstraps the initial admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` if `auth."user"` is empty. **`INTERNAL_SERVICE_TOKEN` and `BETTER_AUTH_SECRET` must be set even locally** — `Settings.validate_runtime_settings()` raises at API startup otherwise; in production the token is also length-checked (≥32).
 
-**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 132 migration files** numbered up to `138` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem). Recent highlights:
+**Migrations** — application schema lives in `db/migrations/*.sql` (controlled by `_migrations` table; lock id `8_642_000`). LangGraph schema (`checkpoints*`, `store*`) is created in-code by `bootstrap_langgraph_schema()` at startup. Don't write SQL migrations for LangGraph tables. **Currently 145 migration files** numbered up to `153` (chronological gaps existem — não são problema; o número do arquivo ≠ contagem; as `151`/`152` foram aplicadas em produção mas os arquivos vivem noutra branch). Recent highlights:
 - `022_rate_limit_generic.sql` — generic `rate_limit_bucket` (used by admin endpoints middleware)
 - `023_hook_dead_letter.sql` — DLQ for hooks that exhaust retries
 - `024_user_status.sql` — `auth.user.status` (active/disabled) blocks login + kills sessions
@@ -94,11 +94,11 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 - `106_user_profile_fields.sql` — Sprint U: `auth.user.telefone`/`last_login_at`/`avatar_path` + trigger `last_login_at` (ver módulo `/api/usuarios` abaixo)
 - `107_langfuse_trace_link.sql` — link bidirecional `ia_execucao`/`message_queue` ↔ Langfuse trace (worker gera `trace_id` determinístico quando `LANGFUSE_ENABLED`)
 - `108_conexao_default_unique.sql` — garante 1 só conexão `is_default` por empresa (defesa em profundidade)
-- `109_message_template_provider.sql` — generaliza `waba_template` → multi-provider (WABA + Twilio Content API)
+- `109_message_template_provider.sql` — generalizou `waba_template` para multi-provider; voltou a ser só WABA na `153`
 - `110_historico_indexes.sql` — índices pro módulo Histórico (/chats repaginado: filtros + export CSV/XLSX)
 - `111_usuario_conexao.sql` / `112_turnos.sql` — Sprint U: conexão padrão por usuário + turnos/jornada (gate de distribuição no `pick_best_atendente`)
 - `113_campanha_template.sql` — campanha dispara template HSM aprovado (selector no form + variáveis)
-- `114_twilio_legacy.sql` — marca Twilio como legado (WABA-first); coluna/flag de depreciação
+- `114_twilio_legacy.sql` — marcou Twilio como legado (WABA-first); a remoção veio na `153`
 - `115_empresa_branding.sql` — **white-label por empresa**: `empresa` += `logo_path`/`nome_exibicao`/`cor_primaria`/`cor_secundaria` (ver módulo White-label abaixo)
 - `118`–`125` — **Disparador** (extensão Chrome + captura + disparo em massa): `empresa_api_key`, schema captura, jitter anti-ban, compliance, mídia/agendamento/origem na campanha
 - `126_conexao_teto_diario.sql` — **anti-ban: teto diário + aquecimento por conexão**: `conexao` += `daily_send_cap`/`warmup_started_at` + tabela contadora `conexao_envio_diario`. O dispatcher reagenda a campanha pro dia seguinte ao bater o teto (warm-up, não aborta). Lógica em `shared/conexao_quota.py`; UI no painel anti-ban de `/connections/[id]`; `GET /api/conexoes/{id}/quota`
@@ -108,9 +108,9 @@ Better Auth has its own `rateLimit` config in `frontend/src/lib/auth.ts` (5 atte
 - `136_rls_catalogo_global_visivel.sql` — RLS deixa ver linhas globais (`empresa_id IS NULL`) de `modelo_llm`/`mcp_server` (USING permite NULL); `137_fewshot_source_trace.sql` — auto-dataset Langfuse: `fewshot_example` += `source_trace_id`/`fonte` + índice único parcial (idempotência do re-run)
 - `138_modelos_catalogo_openrouter.sql` — **catálogo de modelos curado (OpenRouter)**: adiciona globais em `modelo_llm` (gemini-3.1-flash-lite, deepseek-v3.2, glm-4.5-air/4.7-flash, tencent/hy3-preview, qwen VL) + **corrige 3 slugs 404** (claude-haiku/sonnet/opus com traço→ponto). Fonte dos selects = `modelo_llm` (editor monta `provedor/nome`); `CURATED_MODELS` em `shared/llm.py` dirige o painel `/models`. IDs conferir SEMPRE contra `curl openrouter.ai/api/v1/models` (grok-4.1-fast foi aposentado). Módulo Testar: comparar até 4 modelos + anexar áudio/doc/imagem (reusa `worker.media.preprocess_incoming_message`)
 
-**Twilio outbound modes** (`TWILIO_OUTBOUND_MODE`) — `mock` (logs only, default in dev) vs `real` (Twilio Messages API via API Key auth). Worker startup fail-fasts if `real` mode is missing any of `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_FROM_NUMBER`. Empty value resolves to `real` in production, `mock` otherwise (`Settings.resolved_twilio_outbound_mode`).
+- `153_drop_twilio_provider.sql` — **Twilio removido**: os CHECKs de `conexao.provider` e `waba_template.provider` passam a aceitar só `waba`/`evolution`. Migration guarda contra CASCADE em `menu_chatbot` antes de apagar. O código correspondente (`TwilioClient`, `/webhook/twilio`, Content API, 10 settings) saiu no mesmo PR. `waba_template.content_sid` ficou órfã de propósito — ver comentário da coluna
 
-**Outbound manual** (`shared/outbound.py::send_outbound_manual`) — used by composer in `/atendimento` drawer. Routes by `Conexao.provider` via `_build_client()`: `twilio_*`/`waba` → `TwilioClient`, `evolution` → `EvolutionClient`. Same `OutboundClient` Protocol the worker uses (`worker/outbound_client.py`). Don't reintroduce hardcoded Twilio.
+**Outbound manual** (`shared/outbound.py::send_outbound_manual`) — used by composer in `/atendimento` drawer. Routes by `Conexao.provider` via `_build_client()`: `waba` → `WabaClient`, `evolution` → `EvolutionClient`. Same `OutboundClient` Protocol the worker uses (`worker/outbound_client.py`). A `waba` connection without `waba_phone_id` raises `OutboundError` — before migration 153 it silently fell back to Twilio.
 
 **Hooks dispatcher** (`shared/hook_dispatcher.py`) — fire-and-forget with **retry exponencial (1s, 5s, 25s) + DLQ**. Each attempt is logged in `hook_log`; if all attempts fail, the event lands in `hook_dead_letter` (migration 023). Admin can list/retry/archive via `GET/POST /api/hooks/dead-letter[/{id}/retry|archive]`. `EVENTOS_VALIDOS` currently lists 7: `mensagem.recebida`, `atendimento.{aberto,atendido,fechado,transferido}`, `agendamento.criado`, `agendamento.cancelado`.
 
@@ -141,16 +141,14 @@ The repo is structured as a teaching harness across phases (`Fase_1` → `Fase_4
 
 All config flows through `pydantic-settings` in `shared/config.py` as a singleton `settings` object — import that, don't read env vars directly. The full env surface is documented in `.env.example`. Notable defaults that matter at runtime: `CONTEXT_STRATEGY=trim`, `MEMORY_ENABLED=true`, `MAX_ATTEMPTS=3`, `LEASE_SECONDS=60`, `RATE_LIMIT_PER_HOUR=30`, `RATE_LIMIT_DISTRIBUTED=false`, `MESSAGE_BUFFER_SECONDS=2.0`, `FRONTEND_ORIGINS=http://localhost:3000`. All LLM, embeddings, and audio transcription go through one OpenRouter key (`OPENROUTER_API_KEY`). Rate limit: por default usa dict in-memory por processo (`RATE_LIMIT_DISTRIBUTED=false`); em implantações multi-instância ative `RATE_LIMIT_DISTRIBUTED=true` para sliding window em Postgres via tabela `rate_limit_buckets` (migration `005_rate_limit_buckets.sql`).
 
-`Settings.validate_runtime_settings()` enforces four invariants no startup: (1) `INTERNAL_SERVICE_TOKEN` não pode ser vazio; (2) em produção, o token deve ter ≥32 caracteres; (3) em produção, `VALIDATE_TWILIO_SIGNATURE` deve ser `true` — sem isso o endpoint `/webhook/twilio` aceita payloads não autenticados; (4) em produção, `FRONTEND_ORIGINS` deve ter pelo menos uma origem configurada — sem isso o CORS nega todos os requests cross-origin e o painel quebra silenciosamente. O startup falha imediatamente em qualquer desses casos.
+`Settings.validate_runtime_settings()` enforces five invariants no startup: (1) `INTERNAL_SERVICE_TOKEN` não pode ser vazio; (2) em produção, o token deve ter ≥32 caracteres; (3) em produção, `FRONTEND_ORIGINS` deve ter pelo menos uma origem — sem isso o CORS nega todos os requests cross-origin e o painel quebra silenciosamente; (4) em produção, `DATABASE_URL_APP` deve apontar pro role `chat_nexus_app` (sem ele o RLS fica inerte); (5) em produção com `EVOLUTION_OUTBOUND_MODE=real`, `EVOLUTION_VALIDATE_APIKEY` deve ser `true` — senão `/webhook/evolution` aceita payload forjado. O startup falha imediatamente em qualquer desses casos.
 
 ## Stress testing (Locust)
 
-Locust profile in `stress/` (Dockerfile + locustfile.py). Supports both providers via `LOCUST_PROVIDER` env:
-- `make stress-evolution` (default — `LOCUST_PROVIDER=evolution`) — sends `/webhook/evolution` JSON payloads
-- `make stress-twilio` — sends `/webhook/twilio` form-urlencoded with valid HMAC-SHA1 signature (needs `TWILIO_AUTH_TOKEN`)
-- `make stress-both` — both classes spawn together
+Locust profile in `stress/` (Dockerfile + locustfile.py), targeting `/webhook/evolution`:
+- `make stress-evolution` (ou `make stress`) — sends `/webhook/evolution` JSON payloads
 - Defaults `-u 10 -r 2 -t 60s` against `https://api.vsanexus.com`. Sobrescrevíveis via `USERS=20 RATE=5 TIME=120s HOST=https://other.url`.
-- Fallback Docker (`stress-evolution-docker`/`stress-twilio-docker`) for environments without `uv` — builds image from `stress/Dockerfile`.
+- Fallback Docker (`stress-evolution-docker`) for environments without `uv` — builds image from `stress/Dockerfile`.
 
 When stress-testing for real worker throughput, temporarily set `EVOLUTION_OUTBOUND_MODE=mock` and `RATE_LIMIT_PER_HOUR=500` in env to avoid Evolution rejecting fake numbers (400) and rate limit blocking. Revert after.
 
@@ -160,7 +158,6 @@ When in doubt, prefer these over inferring from code:
 - `docs/ARCHITECTURE.md` — full data flow + endpoint inventory
 - `docs/ADDING_AGENTS.md` — the agent contract above, with examples
 - `docs/DATABASE.md` — schema overview + ready-to-run inspection queries (queue, conversation, memory, checkpoints)
-- `docs/TWILIO.md` — sandbox vs production cutover, signature validation, tunneling
 - `docs/EVOLUTION.md` — Evolution API provider (M2.b)
 - `docs/WABA_SETUP.md` — passo a passo completo do app Meta + Embedded Signup (FB JS SDK): criar app, config_id, domínios, webhook, envs Dokploy, troubleshooting "tela branca"
 - `docs/AUTH.md` — Better Auth + user status + reset sem SMTP + login history + SSO Google + rate limits

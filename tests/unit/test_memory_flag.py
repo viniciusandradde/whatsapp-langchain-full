@@ -141,9 +141,9 @@ class TestProcessorMemoryFlag:
                 incoming_message="Olá!",
             )
 
-            mock_twilio = AsyncMock()
-            mock_twilio.send_typing = AsyncMock(return_value=True)
-            mock_twilio.send_message = AsyncMock(return_value="SM123")
+            mock_outbound = AsyncMock()
+            mock_outbound.send_typing = AsyncMock(return_value=True)
+            mock_outbound.send_message = AsyncMock(return_value="SM123")
 
             # Worker monta o client por-conexão (build_outbound_client do DB);
             # curto-circuita a resolução pro mock.
@@ -152,7 +152,7 @@ class TestProcessorMemoryFlag:
                     "whatsapp_langchain.worker.processor._resolve_outbound_client",
                     new=AsyncMock(
                         return_value=(
-                            mock_twilio,
+                            mock_outbound,
                             SimpleNamespace(id=77, tipo_atendimento="ia"),
                         )
                     ),

@@ -228,7 +228,7 @@ def test_responder_returns_persisted_row(client):
 
 
 def test_responder_renders_template_before_send(client):
-    """M5.d: `{{cliente.nome}}` é resolvido server-side antes de ir pro Twilio."""
+    """M5.d: `{{cliente.nome}}` é resolvido server-side antes de sair."""
     persisted = {
         "id": 100,
         "agent_id": "vsa_tech",

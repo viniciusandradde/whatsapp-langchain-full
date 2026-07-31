@@ -130,13 +130,15 @@ class Settings(BaseSettings):
             return "https://api.asaas.com/v3"
         return "https://api-sandbox.asaas.com/v3"
 
-    # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
-    # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
-    # Wareline (password + client_secret) na tabela `wareline_credentials`.
-    # Gerar: python -c "from cryptography.fernet import Fernet;
+    # --- Chave de cifra das integrações (multi-tenant) ---
+    # Chave Fernet (base64 urlsafe 32 bytes) que cifra `credentials_encrypted`
+    # de TODA integração — Google Calendar, conexões WABA/Evolution, conector
+    # REST. Gerar: python -c "from cryptography.fernet import Fernet;
     #         print(Fernet.generate_key().decode())"
-    # Sem essa chave, integração Wareline (e qualquer outra integração que use
-    # `integrations.crypto`) fica desabilitada (rotas retornam 503).
+    # Sem ela, as rotas de integração retornam 503.
+    #
+    # O nome nasceu no Wareline, que já saiu do produto, e NÃO deve ser
+    # renomeado: é o que decifra o que já está gravado em produção.
     wareline_encryption_key: SecretStr | None = None
 
     # --- Sprint Conexões — WhatsApp Cloud API (Meta WABA Embedded Signup) ---
@@ -333,8 +335,6 @@ class Settings(BaseSettings):
         """Valida configuração mínima e hardening por ambiente.
 
         Em produção, aplica hardening de Sprint D (2026-05-22):
-        - Twilio: se `TWILIO_OUTBOUND_MODE=real`, signature validation
-          OBRIGATÓRIA (raise). Webhook sem HMAC = forgery trivial.
         - Evolution: se `EVOLUTION_OUTBOUND_MODE=real`, apikey validation
           OBRIGATÓRIA (raise). Webhook sem apikey = forgery trivial.
         - WABA: se `META_APP_SECRET` configurado, fica documentado que

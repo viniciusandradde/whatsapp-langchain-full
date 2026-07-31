@@ -102,7 +102,7 @@ worker subir**. Se alguma falhar, nada é levantado.
 | # | trava | por quê |
 |---|---|---|
 | 1 | `DATABASE_URL` aponta pra `localhost:5434` | a API roda migrations no boot; apontar pra produção aplica DDL lá |
-| 2 | `EVOLUTION_OUTBOUND_MODE=mock` e `TWILIO_OUTBOUND_MODE=mock` | **a que mais importa** — mesmo que todo o resto falhe, nada sai pra telefone real |
+| 2 | `EVOLUTION_OUTBOUND_MODE=mock` | **a que mais importa** — mesmo que todo o resto falhe, nada sai pra telefone real |
 | 3 | webhook não apontado pro dev | a Evolution posta pra URL do VPS; o dev nunca é chamado |
 | 4 | trabalho em branch, `master` intocado | `deploy.yml` dispara em push pra `master` e recria produção via Dokploy |
 | 5 | `LANGFUSE_ENABLED=false` | traces de teste não entram no painel de produção |
@@ -116,7 +116,7 @@ API. Mesmo trocando a trava 2 pra `real`, não há com o que autenticar.
 
 ```bash
 cd ~/projetos/chatnexus
-grep -cE '^(EVOLUTION|TWILIO)_OUTBOUND_MODE=mock$' .env   # 2
+grep -cE '^EVOLUTION_OUTBOUND_MODE=mock$' .env            # 1
 grep -E '^DATABASE_URL=' .env                             # localhost:5434
 
 psql postgresql://postgres:postgres@localhost:5434/whatsapp_langchain -c "

@@ -26,7 +26,7 @@ def _conexao(**overrides) -> Conexao:
     base: dict = {
         "id": 1,
         "empresa_id": 1,
-        "provider": "twilio_sandbox",
+        "provider": "evolution",
         "sid": None,
         "from_number": "+14155238886",
         "display_name": "Sandbox",
@@ -103,7 +103,7 @@ def test_create_conexao_persists(client):
         response = client.post(
             "/api/conexoes",
             json={
-                "provider": "twilio_prod",
+                "provider": "evolution",
                 "from_number": "+1555NEW",
                 "display_name": "Nova",
                 "default_agent_id": "vsa_tech",
@@ -122,7 +122,7 @@ def test_update_conexao_404_when_missing(client):
     ):
         response = client.put(
             "/api/conexoes/99",
-            json={"provider": "twilio_prod", "from_number": "+1555"},
+            json={"provider": "evolution", "from_number": "+1555"},
         )
     assert response.status_code == 404
 

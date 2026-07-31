@@ -208,7 +208,6 @@ GOOGLE_OAUTH_REDIRECT_URI=https://chat.vsanexus.com/api/google-calendar/oauth/ca
 # === Hardening de produção ===
 INTERNAL_SERVICE_TOKEN=<token-forte-min-32-chars-DIFERENTE-do-dev>
 BETTER_AUTH_SECRET=<segredo-forte-min-32-chars-DIFERENTE-do-dev>
-VALIDATE_TWILIO_SIGNATURE=true   # se for usar Twilio real
 ```
 
 **Críticos pra trocar antes do primeiro deploy:**
@@ -263,7 +262,7 @@ Aba **Domains** do serviço Compose.
 > Frontend já chama `INTERNAL_API_URL=http://api:8000` server-side pela
 > rede interna do compose, então `/api` externo só é necessário se
 > alguma chamada client-side bater direto na API. Hoje, **não bate** —
-> mas Twilio/Evolution sim, daí o `/webhook`.
+> mas Evolution/Meta sim, daí o `/webhook`.
 
 **Salvar.**
 
@@ -313,8 +312,8 @@ No browser:
 
 Logs do worker (no painel Dokploy → service `worker` → Logs):
 ```
-clients_ready twilio_mode=mock evolution_mode=real evolution_instance=vsa-tecnologia
-worker_ready providers=[evolution, twilio_prod, twilio_sandbox, waba]
+clients_ready evolution_mode=real evolution_instance=vsa-tecnologia
+worker_ready providers=[evolution, waba]
 ```
 
 ---
@@ -399,7 +398,7 @@ idempotente, mas adiciona ~3 tabelas no DB.
 | `502 Bad Gateway` em `chat.vsanexus.com` | container `frontend` ainda não healthy | Aguardar ~30s; se persistir, ver logs do frontend |
 | Frontend retorna 500 ao clicar Login | `BETTER_AUTH_URL` ou `INTERNAL_API_URL` errados | Confere envs no painel; recreate frontend |
 | Worker nem inicia | `DATABASE_URL` errado OU env_file não populou | Logs do container worker no painel |
-| Webhook Twilio rejeita 403 | `VALIDATE_TWILIO_SIGNATURE=true` mas `TWILIO_AUTH_TOKEN` errado | Reconferir token no painel Twilio Console |
+| Webhook WABA rejeita | `META_APP_SECRET` errado ou ausente | Reconferir o App Secret no painel Meta |
 
 ---
 
@@ -465,4 +464,3 @@ sg docker -c "docker exec -i $DB_ID pg_restore -U postgres -d whatsapp_langchain
 - `docs/DEPLOY.md` — visão geral de deploy
 - `docs/RAILWAY.md` — alternativa Railway (referência histórica)
 - `docs/EVOLUTION.md` — webhook Evolution (passo 8 acima)
-- `docs/TWILIO.md` — sandbox vs produção

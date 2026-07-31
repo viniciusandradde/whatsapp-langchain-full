@@ -1,6 +1,6 @@
 """Webhook síncrono — endpoint educacional para testes rápidos.
 
-Diferente do webhook Twilio (assíncrono via fila), este endpoint processa
+Diferente dos webhooks dos providers (assíncronos via fila), este endpoint processa
 a mensagem inline e retorna a resposta diretamente. Útil para:
 - Testes rápidos sem Worker rodando
 - Entender o fluxo sem a complexidade da fila

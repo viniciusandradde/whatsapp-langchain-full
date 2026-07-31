@@ -2,7 +2,7 @@
 
 Cada inbound do webhook resolve a empresa via conexão e em seguida garante
 um `cliente` cadastrado pra aquela empresa+telefone (`upsert_cliente`). O
-nome do cliente vem do ProfileName do Twilio quando ainda não existe — e
+nome do cliente vem do pushName do provider quando ainda não existe — e
 nunca é sobrescrito pelo webhook depois (operador edita pela UI).
 
 Tags ficam em `cliente_tag` (PK composta cliente_id+tag, idempotente via

@@ -6,14 +6,14 @@ entrada confiável, processamento assíncrono, persistência, recuperação de f
 
 ## Estado Atual
 
-> **Nota de evolução.** Este documento descreve o **núcleo do harness** (a parte pedagógica: borda HTTP → fila → worker → agente). Desde então o projeto cresceu para uma plataforma de atendimento completa — multi-tenant (empresa como raiz), multi-conexão (WABA-first, Evolution, Twilio legado), multi-agente (catálogo + config em DB), com RBAC, NPS, calendar, campanhas, histórico, white-label e observabilidade (Langfuse/LangSmith). O harness abaixo continua sendo a fundação; para o panorama de produto veja o [README](../README.md) e o `CLAUDE.md`.
+> **Nota de evolução.** Este documento descreve o **núcleo do harness** (a parte pedagógica: borda HTTP → fila → worker → agente). Desde então o projeto cresceu para uma plataforma de atendimento completa — multi-tenant (empresa como raiz), multi-conexão (WABA-first, Evolution), multi-agente (catálogo + config em DB), com RBAC, NPS, calendar, campanhas, histórico, white-label e observabilidade (Langfuse/LangSmith). O harness abaixo continua sendo a fundação; para o panorama de produto veja o [README](../README.md) e o `CLAUDE.md`.
 
 Implementado (núcleo do harness):
-- API FastAPI com webhook assíncrono multi-provider (`POST /webhook/twilio`, `/webhook/evolution`, `/webhook/waba`)
-- validação criptográfica real de assinatura (HMAC) por provider — `X-Twilio-Signature` via SDK oficial Twilio, HMAC-SHA256 nos demais
+- API FastAPI com webhook assíncrono multi-provider (`POST /webhook/evolution`, `/webhook/waba`)
+- validação criptográfica real de assinatura por provider — HMAC-SHA256 (`X-Hub-Signature-256`) no WABA, header `apikey` na Evolution
 - fila em PostgreSQL (`message_queue`) com debounce texto-only, flush antes de mídia e lease
 - worker assíncrono consumindo fila com `FOR UPDATE SKIP LOCKED`
-- cliente outbound resolvido por `Conexao.provider` via `OutboundClient` Protocol (Twilio/Evolution/WABA, mesmo contrato)
+- cliente outbound resolvido por `Conexao.provider` via `OutboundClient` Protocol (Evolution/WABA, mesmo contrato)
 - typing indicator best-effort antes da execução do agente
 - envio da resposta para o WhatsApp via provider da conexão antes de `mark_done`
 - execução de agentes via loader dinâmico
@@ -28,22 +28,18 @@ Implementado (núcleo do harness):
 - autenticação administrativa com Better Auth no schema `auth`
 - proteção das rotas `/api/*` com `INTERNAL_SERVICE_TOKEN`
 - CORS estrito via `FRONTEND_ORIGINS` + cabeçalhos de segurança (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS em prod)
-- fail-fast no startup quando production está sem `VALIDATE_TWILIO_SIGNATURE=true` ou `FRONTEND_ORIGINS` configurado
+- fail-fast no startup quando production está sem `FRONTEND_ORIGINS`, sem `DATABASE_URL_APP` ou com envio real sem `EVOLUTION_VALIDATE_APIKEY=true`
 - rate limit distribuído opcional via Postgres (`RATE_LIMIT_DISTRIBUTED=true`) com sliding window por hora — para multi-instância
 - suporte a múltiplas mídias por webhook (`NumMedia > 1`) — N rows independentes com mesmo `message_id`
-- smoke test e2e opt-in com Twilio real (`make test-twilio-smoke`, gating via `TWILIO_LIVE_TESTS=1`)
 - deploy documentado em Railway
 - stress testing documentado
-
-Limitações conhecidas:
-- o smoke test e2e (`tests/integration/test_twilio_smoke.py`) custa crédito Twilio por execução; rodar manualmente apenas no cutover
 
 ## Visão do Harness
 
 ![Arquitetura](diagrams/harness_whatsapp.jpg)
 
 ```text
-[WhatsApp via WABA / Evolution / Twilio]
+[WhatsApp via WABA / Evolution]
       |
       v
 [Frontend Next.js]
@@ -69,7 +65,7 @@ Limitações conhecidas:
   - processa mídia
   - envia typing
   - invoca agente
-  - envia resposta via provider da conexão (WABA/Evolution/Twilio)
+  - envia resposta via provider da conexão (WABA/Evolution)
   - marca done/failed
 
 [PostgreSQL auth]
@@ -82,17 +78,17 @@ Limitações conhecidas:
 ### API (`src/whatsapp_langchain/server/`)
 
 Responsabilidades:
-- aceitar webhook Twilio
+- aceitar o webhook do provider (Evolution, WABA)
 - validar assinatura quando habilitada
-- responder rápido com TwiML vazio
+- responder rápido, com corpo vazio
 - não executar agente inline
 - enfileirar payload normalizado
 - proteger `/api/*` via token interno compartilhado com o frontend
 
 Contratos relevantes:
-- `agent` via query string
-- payload form-encoded Twilio (`From`, `To`, `Body`, `NumMedia`, etc)
-- identidade inbound principal em `From`, com fallback para `WaId`
+- o agente vem da conexão resolvida (`default_agent_id`), não da query string
+- payload JSON do provider — Evolution (`data.key.remoteJid`, `data.message`) ou
+  WABA (`entry[].changes[].value.messages[]`)
 - `thread_id = "{phone}:{agent}"`
 
 ### Worker (`src/whatsapp_langchain/worker/`)
@@ -103,12 +99,12 @@ Responsabilidades:
 - enviar typing antes do agente (best-effort)
 - carregar agente com checkpointer/store compartilhados (abertos no boot)
 - invocar grafo com `thread_id` e `user_id`
-- enviar resposta ao usuário via Twilio
+- enviar resposta ao usuário pelo provider da conexão
 - persistir sucesso/falha, com `mark_done` só após envio confirmado
 
 Contrato de execução do agente:
 - `thread_id`: memória de conversa (checkpointer)
-- `user_id`: memória cross-thread (store semântico), derivado do telefone do webhook Twilio
+- `user_id`: memória cross-thread (store semântico), derivado do telefone que vem no webhook
 
 ### Frontend (`frontend/`)
 
@@ -157,17 +153,17 @@ Tabela agregada para consultas administrativas.
 ## Fluxo End-to-End
 
 1. Usuário envia mensagem no WhatsApp.
-2. Twilio faz `POST /webhook/twilio?agent=<agent_id>`.
-3. API valida agente, assinatura (quando habilitada), aplica rate limit e chama `enqueue_or_buffer`.
+2. O provider faz `POST /webhook/evolution` (ou `/webhook/waba`).
+3. API resolve a conexão, valida assinatura (quando habilitada), aplica rate limit e chama `enqueue_or_buffer`.
 4. Debounce concatena textos rápidos; mídia entra imediata e faz flush de texto pendente.
 5. Worker faz `claim_next` com lease.
 6. Worker pré-processa a entrada e monta `HumanMessage` (texto, imagem ou transcrição de áudio).
-7. Worker tenta enviar typing via Twilio (best-effort).
+7. Worker tenta enviar o indicador de digitação (best-effort).
 8. Worker carrega agente com:
    - `AsyncPostgresSaver` (checkpointer) aberto no startup do worker
    - `AsyncPostgresStore` + embeddings (quando memória habilitada), também aberto no startup
 9. Agente executa e retorna resposta.
-10. Worker envia a resposta outbound via Twilio.
+10. Worker envia a resposta outbound pelo provider da conexão.
 11. Só depois o worker persiste resultado (`mark_done`) e atualiza `conversations`.
 12. Em erro de processamento ou envio, `mark_failed` decide retry com backoff ou falha final.
 
@@ -182,7 +178,7 @@ Persistência de mensagens de uma conversa específica (`thread_id`).
 - namespace: `(user_id, "memories")`
 - `save_memory` grava fatos relevantes
 - `read_memory` recupera memórias por similaridade quando o agente precisar
-- `user_id` no runtime vem de `phone_number` (payload Twilio)
+- `user_id` no runtime vem de `phone_number` (payload do webhook)
 - não usamos escopo `tenant_user`/`tenant_shared` neste projeto
 
 Isso separa duas necessidades diferentes:
@@ -220,7 +216,7 @@ Logs estruturados com `structlog` em todos os componentes.
 Núcleo do harness (didático):
 
 - `GET /health`
-- `POST /webhook/twilio?agent=<id>` · `POST /webhook/evolution` · `POST /webhook/waba`
+- `POST /webhook/evolution` · `POST /webhook/waba`
 - `POST /webhook/sync?agent=<id>` (educacional, auto-desabilitado em produção)
 - `GET /api/agents`
 - `GET /api/chats`
@@ -240,7 +236,7 @@ Além desses, a API administrativa expõe **~290 rotas REST** (`/api/*`) cobrind
 
 ## Próximos passos do Harness
 
-(Itens prioritários encerrados: smoke e2e Twilio real, rate limit distribuído, hardening admin/CORS, suporte a NumMedia > 1.)
+(Itens prioritários encerrados: rate limit distribuído, hardening admin/CORS, suporte a NumMedia > 1.)
 
 - avaliar Content-Security-Policy estrito quando o frontend estabilizar
 - automatizar a execução do smoke test no cutover (sem habilitar em CI por causa do custo)

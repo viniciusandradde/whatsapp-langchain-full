@@ -23,8 +23,8 @@ from whatsapp_langchain.shared.db import get_pool
 
 
 def _suporta_template(provider: str | None) -> bool:
-    """WABA (Meta) e Twilio têm template HSM; Evolution não."""
-    return provider == "waba" or (provider or "").startswith("twilio")
+    """Só WABA (Meta) tem template HSM; Evolution não."""
+    return provider == "waba"
 
 
 logger = structlog.get_logger()
@@ -125,7 +125,7 @@ async def ext_criar_campanha(
     }
 
 
-# ---- Canal oficial (WABA/Twilio) pela extensão — roteado pelo backend ----
+# ---- Canal oficial (WABA) pela extensão — roteado pelo backend ----
 # A extensão NÃO chama a Graph API direto (sem token Meta no browser). Reusa a
 # conexão WABA do painel + templates aprovados; o dispatcher do backend envia.
 
@@ -143,7 +143,7 @@ class ExtCampanhaTemplateInput(BaseModel):
 async def ext_conexoes(
     ctx: ApiKeyContext = Depends(require_scope("dispatch")),
 ) -> dict:
-    """Conexões oficiais (WABA/Twilio) ativas da empresa, pro seletor da extensão."""
+    """Conexões oficiais (WABA) ativas da empresa, pro seletor da extensão."""
     pool = await get_pool()
     conns = await list_conexoes(pool, ctx.empresa_id)
     items = [
@@ -215,7 +215,7 @@ async def ext_campanha_template(
     if not _suporta_template(conn.provider):
         raise HTTPException(
             status_code=400,
-            detail="Conexão não suporta templates (use WhatsApp Oficial/WABA ou Twilio).",
+            detail="Conexão não suporta templates (use WhatsApp Oficial/WABA).",
         )
     async with pool.connection() as c:
         cur = await c.execute(

@@ -175,6 +175,12 @@ Originalmente um harness educacional para agentes de WhatsApp com LangGraph, evo
 - ✅ `POST /api/empresas/{id}/logo` (Pillow PNG ≤512px) → `/uploads/logos` (StaticFiles + volume)
 - ✅ Cores viram CSS vars `--brand-primary`/`--brand-secondary` injetadas no `<head>` sem tocar nos temas
 
+### Twilio e Wareline removidos (2026-07-31)
+
+- ✅ Twilio sai por inteiro: `TwilioClient`, `/webhook/twilio`, Content API, 10 settings, o modal do painel e 98 testes. A migration `153` aperta o CHECK de `conexao.provider` para `waba`/`evolution`
+- ✅ Wareline sai junto (as tabelas já haviam sido dropadas na `151`) — só a env `WARELINE_ENCRYPTION_KEY` fica, porque é a chave Fernet de todas as integrações
+- ℹ️ As seções acima são registro do que foi entregue **na data indicada**; onde citam Twilio, leia como história
+
 ---
 
 ## Roadmap — próximas sprints
@@ -228,7 +234,7 @@ Originalmente um harness educacional para agentes de WhatsApp com LangGraph, evo
 ![Arquitetura](docs/diagrams/harness_whatsapp.jpg)
 
 ```text
-WhatsApp via WABA / Evolution / Twilio
+WhatsApp via WABA / Evolution
         ↓
 API (/webhook/*) — valida HMAC + rate limit + debounce + lock advisory
         ↓
@@ -266,11 +272,15 @@ INTERNAL_SERVICE_TOKEN=seu-token-local-32chars-no-min
 BETTER_AUTH_SECRET=seu-secret-local
 ADMIN_EMAIL=admin@suaempresa.com
 ADMIN_PASSWORD=trocar-no-primeiro-login
-TWILIO_OUTBOUND_MODE=mock
+EVOLUTION_OUTBOUND_MODE=mock
 WARELINE_ENCRYPTION_KEY=  # gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 `INTERNAL_SERVICE_TOKEN`, `BETTER_AUTH_SECRET` e `WARELINE_ENCRYPTION_KEY` precisam estar preenchidos mesmo localmente.
+
+> O nome `WARELINE_ENCRYPTION_KEY` é histórico e **não deve ser renomeado**: é a
+> chave Fernet que decifra as credenciais de TODAS as integrações (Google
+> Calendar inclusive). Trocar o nome torna ilegível o que já está gravado.
 
 ### 2. Suba o stack
 
@@ -316,7 +326,6 @@ make test-live         # testes live OpenRouter (OPENROUTER_LIVE_TESTS=1)
 make test-demo         # testes Docker realísticos (docker_demo)
 make ci                # check + suite normal (o que CI roda)
 make stress-evolution  # Locust contra /webhook/evolution
-make stress-twilio     # Locust contra /webhook/twilio
 make logs              # docker compose logs -f
 make reset             # rebuild Docker do zero
 ```
@@ -331,8 +340,9 @@ Em `ENVIRONMENT=production`, o startup faz **fail-fast** se qualquer destes inva
 |---|---|---|
 | Token interno presente | `INTERNAL_SERVICE_TOKEN` | não-vazio |
 | Token forte em prod | `INTERNAL_SERVICE_TOKEN` | ≥ 32 caracteres |
-| Signature obrigatória | `VALIDATE_TWILIO_SIGNATURE` | `true` |
 | CORS configurado | `FRONTEND_ORIGINS` | pelo menos 1 origem |
+| RLS realmente ativo | `DATABASE_URL_APP` | role `chat_nexus_app` |
+| Webhook autenticado | `EVOLUTION_VALIDATE_APIKEY` | `true` quando o envio é `real` |
 
 Cabeçalhos de segurança automáticos: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Strict-Transport-Security` (1 ano em prod).
 
@@ -345,7 +355,7 @@ Cabeçalhos de segurança automáticos: `X-Content-Type-Options: nosniff`, `X-Fr
 - [Banco de Dados](docs/DATABASE.md) — schema + queries de inspeção
 - [Criando Agentes](docs/ADDING_AGENTS.md) — contrato + exemplos
 - [Onboarding](ONBOARDING.md) — guia rápido para novos colaboradores
-- **Provedores WhatsApp:** [WABA / Meta (recomendado)](docs/WABA_SETUP.md) · [Evolution API](docs/EVOLUTION.md) · [Twilio (legado)](docs/TWILIO.md)
+- **Provedores WhatsApp:** [WABA / Meta (recomendado)](docs/WABA_SETUP.md) · [Evolution API](docs/EVOLUTION.md)
 - [Autenticação](docs/AUTH.md) — Better Auth + user status + reset sem SMTP + SSO Google
 - [Gestão de Usuários](docs/USUARIOS.md) — módulo `/usuarios` + turnos
 - [Histórico](docs/HISTORICO.md) — `/chats` + filtros + export

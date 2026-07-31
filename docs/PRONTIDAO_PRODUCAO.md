@@ -2,6 +2,12 @@
 
 > **Gerado em** 2026-06-05 pela suíte de dynamic workflows `prontidao-producao` (`.claude/workflows/`), consolidando 3 auditorias multi-agente: `maturidade-saas` (scorecard 8 dimensões), `problemas-erros` (caça adversarial a bugs) e `status-planejamento` (roadmap vs entregue). Re-executável a qualquer momento via `Workflow({name})` ou `/workflows`.
 
+> **Nota de 2026-07-31.** Este relatório é um retrato daquela data. Dois achados
+> deixaram de existir com a remoção do Twilio e do Wareline (migration `153`):
+> **R11** (SSRF com credencial Twilio anexada — o guard de validação por hop
+> ficou, a auth do provider saiu) e **R16** (defaults Mackenzie no
+> `agents/tools/wareline.py`, arquivo deletado). Os demais seguem válidos.
+
 ---
 
 ## 1. Veredito de Go-Live

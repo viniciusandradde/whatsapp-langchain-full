@@ -36,24 +36,28 @@ Você verá todos os endpoints documentados com formulários interativos.
 
 ## Passo 2: Enviar uma Mensagem via Webhook
 
-1. No Swagger, localize **POST /webhook/twilio**
+1. No Swagger, localize **POST /webhook/evolution**
 2. Clique em **Try it out**
-3. No campo `agent` (query param), digite: `vsa_tech`
-4. No corpo (form data), preencha:
+3. No corpo (JSON), preencha:
 
-| Campo | Valor |
-|---|---|
-| `MessageSid` | `SM_TESTE_001` |
-| `From` | `whatsapp:+5511999990001` |
-| `To` | `whatsapp:+14155238886` |
-| `Body` | `Olá! O que vocês fazem?` |
-| `NumMedia` | `0` |
+```json
+{
+  "event": "messages.upsert",
+  "instance": "sua-instancia",
+  "data": {
+    "key": {"remoteJid": "5511999990001@s.whatsapp.net", "fromMe": false, "id": "TESTE_001"},
+    "message": {"conversation": "Olá! O que vocês fazem?"},
+    "pushName": "Teste",
+    "messageTimestamp": 1780000000
+  }
+}
+```
 
-5. Clique em **Execute**
-6. A resposta deve ser **200** com TwiML vazio:
-   ```xml
-   <?xml version="1.0" encoding="UTF-8"?><Response></Response>
-   ```
+> `instance` precisa bater com o `instance_name` de uma conexão cadastrada —
+> instância desconhecida é descartada com log, sem enfileirar.
+
+4. Clique em **Execute**
+5. A resposta deve ser **200**
 
 > O 200 significa apenas que a mensagem foi **enfileirada**. O processamento
 > acontece no Worker em background.

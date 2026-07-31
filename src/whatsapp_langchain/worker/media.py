@@ -89,7 +89,7 @@ async def preprocess_incoming_message(
 
     Args:
         body: Texto recebido (pode ser vazio quando é só mídia).
-        media_url: URL Twilio da mídia (None = sem mídia).
+        media_url: URL da mídia no provider, ou data-URL (None = sem mídia).
         media_type: MIME type da mídia.
         midia_model: Override do modelo multimodal.
                      None = usa settings.openrouter_midia_model.

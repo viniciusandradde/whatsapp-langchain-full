@@ -703,14 +703,10 @@ async def notify_gestor(
         return None
 
     # Resolve conexão ativa pra mandar WhatsApp, preferindo o canal oficial.
-    # Prioridade: waba (Meta oficial) > evolution > twilio_prod > twilio_sandbox.
-    # Sandbox é o último recurso (não entrega outbound proativo sem "join").
-    # Twilio é legado — WABA tem precedência quando ambas existem.
+    # Prioridade: waba (Meta oficial) > evolution.
     _PROVIDER_PRIORITY = {
         "waba": 0,
         "evolution": 1,
-        "twilio_prod": 2,
-        "twilio_sandbox": 3,
     }
     conexoes = await list_conexoes(pool, empresa_id)
     ativas = [c for c in conexoes if c.status == "active"]
@@ -730,14 +726,6 @@ async def notify_gestor(
             agendamento_id=agendamento_id,
         )
         return None
-    if ativa.provider == "twilio_sandbox":
-        logger.warning(
-            "notify_gestor_using_sandbox_fallback",
-            empresa_id=empresa_id,
-            agendamento_id=agendamento_id,
-            note="destino precisa ter feito 'join <code>' no sandbox antes",
-        )
-
     # Cria row de aprovação com token novo
     aprov = await create_pending_approval(
         pool,

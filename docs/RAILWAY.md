@@ -15,9 +15,9 @@ O projeto usa 4 serviços no Railway:
 
 ### API
 
-Serviço público que recebe webhooks do Twilio e expõe o health check.
+Serviço público que recebe os webhooks dos providers e expõe o health check.
 
-- **Rotas públicas:** `/webhook/twilio` e `/health`
+- **Rotas públicas:** `/webhook/evolution`, `/webhook/waba` e `/health`
 - **Rotas protegidas:** `/api/*` requerem o header `INTERNAL_SERVICE_TOKEN`
 - O Frontend se comunica com a API via rede interna do Railway (`http://api.railway.internal:8000`), nunca pelo domínio público
 - **2 réplicas** para reduzir indisponibilidade durante redeploy e servir como exemplo de load balancing no curso
@@ -30,7 +30,7 @@ Serviço privado que consome a fila de mensagens do PostgreSQL.
 
 - Sem porta exposta --- não recebe requisições HTTP
 - Faz polling na tabela de fila do banco para processar mensagens pendentes
-- Executa os agentes LangGraph e envia respostas via Twilio
+- Executa os agentes LangGraph e envia respostas pelo provider da conexão
 
 ### Frontend
 
@@ -254,9 +254,9 @@ Abaixo estão todas as variáveis necessárias, organizadas por serviço.
 | `LOG_LEVEL` | `info` | Nível de log (debug, info, warning, error) |
 | `LOG_JSON` | `true` | Logs em formato JSON estruturado (melhor para produção) |
 | `PORT` | `8000` | Porta do FastAPI |
-| `VALIDATE_TWILIO_SIGNATURE` | `true` | Validar assinatura dos webhooks do Twilio |
-| `TWILIO_AUTH_TOKEN` | --- | Token de autenticação do Twilio (necessário para validação de assinatura) |
-| `TWILIO_WEBHOOK_URL` | `https://api-*.up.railway.app` | URL base pública da API (sem path) |
+| `META_APP_SECRET` | --- | Valida o HMAC-SHA256 do webhook WABA |
+| `WABA_WEBHOOK_VERIFY_TOKEN` | --- | Token do handshake `GET /webhook/waba` |
+| `EVOLUTION_VALIDATE_APIKEY` | `true` | Exige o header `apikey` no webhook Evolution |
 | `RATE_LIMIT_PER_HOUR` | `30` | Maximo de mensagens por telefone por hora |
 | `MESSAGE_BUFFER_SECONDS` | `2.0` | Tempo de espera para agrupar mensagens consecutivas |
 | `INTERNAL_SERVICE_TOKEN` | --- | Token para proteger rotas `/api/*` **(shared com Frontend)** |
@@ -281,11 +281,9 @@ Abaixo estão todas as variáveis necessárias, organizadas por serviço.
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | URL base do OpenRouter |
 | `OPENROUTER_MODEL` | --- | Modelo principal para o agente |
 | `OPENROUTER_MIDIA_MODEL` | --- | Modelo para processamento de mídia |
-| `TWILIO_ACCOUNT_SID` | --- | Account SID do Twilio |
-| `TWILIO_API_KEY_SID` | --- | API Key SID para envio de mensagens e download de mídia |
-| `TWILIO_API_KEY_SECRET` | --- | API Key Secret para envio de mensagens e download de mídia |
-| `TWILIO_FROM_NUMBER` | `whatsapp:+14155238886` | Numero do WhatsApp remetente |
-| `TWILIO_OUTBOUND_MODE` | `real` | Em produção, manter envio Twilio em modo real |
+| `EVOLUTION_API_URL` | --- | URL do servidor Evolution |
+| `EVOLUTION_GLOBAL_API_KEY` | --- | Chave global do servidor (provisionamento de instância) |
+| `EVOLUTION_OUTBOUND_MODE` | `real` | Em produção, manter o envio em modo real |
 | `POLL_INTERVAL_SECONDS` | `1.0` | Intervalo de polling na fila |
 | `LEASE_SECONDS` | `60` | Tempo máximo de processamento antes de retry |
 | `MAX_ATTEMPTS` | `3` | Numero máximo de tentativas por mensagem |
@@ -304,9 +302,9 @@ Abaixo estão todas as variáveis necessárias, organizadas por serviço.
 | `EMBEDDING_DIMS` | `1536` | Dimensões do vetor de embeddings |
 | `RAILWAY_DOCKERFILE_PATH` | `Dockerfile.worker` | Aponta para o Dockerfile do Worker |
 
-> O `TWILIO_AUTH_TOKEN` fica somente no serviço `api`, onde a assinatura
-> inbound do webhook é validada. O worker usa `TWILIO_ACCOUNT_SID`,
-> `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` e `TWILIO_FROM_NUMBER`.
+> Os segredos de webhook (`META_APP_SECRET`, `WABA_WEBHOOK_VERIFY_TOKEN`) ficam
+> somente no serviço `api`, que valida a assinatura inbound. O número remetente
+> **não** é env: vive na tabela `conexao`, cadastrado pela UI.
 
 ### Frontend
 
@@ -373,7 +371,7 @@ Opcional em ambientes compartilhados:
 5. Configurar `DATABASE_URL` com reference variables nos 3 serviços
 6. Configurar variáveis específicas de cada serviço (tabelas acima)
 7. Gerar domínio público para API e Frontend
-8. Atualizar `TWILIO_WEBHOOK_URL` com o domínio real da API
+8. Apontar o webhook do provider para o domínio real da API
 9. Atualizar `BETTER_AUTH_URL` com o domínio real do Frontend
 10. Configurar watch paths por serviço (ver tabela acima)
 11. Configurar 2 réplicas na API

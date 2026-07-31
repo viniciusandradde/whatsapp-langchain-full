@@ -6,10 +6,10 @@ conectar um número WhatsApp oficial ao Nexus via o botão "Conectar com Meta".
 Método usado: **Embedded Signup via Facebook JS SDK** (igual ZigChat) — o popup
 oficial da Meta retorna `waba_id` + `phone_number_id` e o backend cria a conexão.
 
-> **WABA é o provider PRIMARY** desde 2026 (Twilio marcado como legado na migration
-> `114`). É o caminho recomendado para qualquer número WhatsApp oficial novo. Para
-> provider não-oficial (Baileys) veja [docs/EVOLUTION.md](EVOLUTION.md); para a
-> integração legada veja [docs/TWILIO.md](TWILIO.md).
+> **WABA é o provider PRIMARY** desde 2026 (o Twilio foi marcado como legado na
+> migration `114` e removido na `153`). É o caminho recomendado para qualquer
+> número WhatsApp oficial novo. Para provider não-oficial (Baileys) veja
+> [docs/EVOLUTION.md](EVOLUTION.md).
 
 > Pré-requisito de negócio: o número WhatsApp que você vai conectar **não pode**
 > estar registrado em outro app/WABA ao mesmo tempo. Se já estiver (ex: no app

@@ -15,7 +15,7 @@ Este guia tem duas trilhas:
 - `uv` (gerenciador de pacotes)
 - Docker + Docker Compose
 - conta OpenRouter (API key)
-- conta Twilio com sandbox WhatsApp (obrigatória apenas para envio real; o compose local pode rodar em modo mock)
+- um canal WhatsApp — Evolution API ou WABA/Meta — obrigatório apenas para envio real; o compose local roda em modo mock
 
 ## 1. Setup local
 
@@ -35,27 +35,16 @@ INTERNAL_SERVICE_TOKEN=seu-token-local
 BETTER_AUTH_SECRET=seu-secret-local
 BETTER_AUTH_URL=http://localhost:3000
 INTERNAL_API_URL=http://localhost:8000
-TWILIO_OUTBOUND_MODE=mock
+EVOLUTION_OUTBOUND_MODE=mock
 ```
 
 Para desenvolvimento local, basta preencher `INTERNAL_SERVICE_TOKEN` e
 `BETTER_AUTH_SECRET` com valores não-vazios. Em production, ambos devem ter
 32+ caracteres.
 
-Se quiser validar envio real pelo Twilio no ambiente local:
-
-```bash
-TWILIO_OUTBOUND_MODE=real
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_API_KEY_SID=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_API_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_FROM_NUMBER=whatsapp:+14155238886
-
-# Inbound (obrigatório apenas para validação real de assinatura)
-TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-VALIDATE_TWILIO_SIGNATURE=false
-TWILIO_WEBHOOK_URL=
-```
+Se quiser validar envio real no ambiente local, o número não vai no `.env` — é
+cadastrado pela UI, em **Conexões**. Ver [Evolution API](EVOLUTION.md) ou
+[WABA / Meta](WABA_SETUP.md) conforme o canal.
 
 ## 2. Trilha A: desenvolvimento de agente no Studio
 
@@ -144,11 +133,11 @@ make up
 Isso sobe:
 - `db` (PostgreSQL + pgvector)
 - `api` (FastAPI)
-- `worker` (consumidor da fila; em dev usa Twilio mock por default)
+- `worker` (consumidor da fila; em dev usa envio mock por default)
 - `frontend` (painel administrativo)
 
-> O worker faz fail-fast apenas quando `TWILIO_OUTBOUND_MODE=real` e alguma credencial outbound do Twilio estiver ausente.
-> Para webhook público, sandbox e cloudflared, siga também [Integração Twilio](TWILIO.md).
+> O worker faz fail-fast apenas quando `EVOLUTION_OUTBOUND_MODE=real` e alguma credencial de saída estiver ausente.
+> Para expor o webhook publicamente, veja [Evolution API](EVOLUTION.md) ou [WABA / Meta](WABA_SETUP.md).
 
 ### Reset completo do ambiente Docker
 
@@ -184,13 +173,23 @@ Use para debugging rápido sem fila.
 
 ### 4.2 Webhook assíncrono (arquitetura real)
 
+O webhook resolve a conexão pelo campo `instance`, então cadastre antes uma
+conexão Evolution no painel (**Conexões**) e use o mesmo `instance_name` aqui —
+uma instância desconhecida é descartada com log, não enfileirada.
+
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
-  -d "MessageSid=SM123" \
-  -d "From=whatsapp:+5511999999999" \
-  -d "To=whatsapp:+14155238886" \
-  -d "Body=Mensagem de teste" \
-  -d "NumMedia=0"
+curl -X POST "http://localhost:8000/webhook/evolution" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "messages.upsert",
+    "instance": "sua-instancia",
+    "data": {
+      "key": {"remoteJid": "5511999999999@s.whatsapp.net", "fromMe": false, "id": "MSG001"},
+      "message": {"conversation": "Mensagem de teste"},
+      "pushName": "Teste",
+      "messageTimestamp": 1780000000
+    }
+  }'
 ```
 
 Depois consulte:
@@ -205,16 +204,11 @@ curl -H "Authorization: Bearer <seu_INTERNAL_SERVICE_TOKEN>" http://localhost:80
 
 1. Abra `http://localhost:8000/docs`.
 2. Execute `GET /api/agents` e confirme `vsa_tech`.
-3. Abra `POST /webhook/twilio` e clique em `Try it out`.
-4. Preencha:
-   - `agent` (query): `vsa_tech`
-   - `MessageSid`: `SMDOCS001`
-   - `From`: `whatsapp:+5511999999999`
-   - `To`: `whatsapp:+14155238886`
-   - `Body`: `Mensagem de teste via Swagger`
-   - `NumMedia`: `0`
+3. Abra `POST /webhook/evolution` e clique em `Try it out`.
+4. Cole o mesmo JSON da seção 4.2, trocando o `id` da chave (o enfileiramento é
+   idempotente por `message_id` — repetir o mesmo id não cria nova mensagem).
 5. Execute e verifique:
-   - resposta `200` com TwiML vazio
+   - resposta `200`
    - dados em `GET /api/chats/+5511999999999`
 
 ### 4.3 Teste de memória semântica (save + recall via tools)
@@ -222,23 +216,35 @@ curl -H "Authorization: Bearer <seu_INTERNAL_SERVICE_TOKEN>" http://localhost:80
 1. Envie uma mensagem pedindo para salvar um fato:
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
-  -d "MessageSid=SMMEM001" \
-  -d "From=whatsapp:+5511999999999" \
-  -d "To=whatsapp:+14155238886" \
-  -d "Body=Use a ferramenta save_memory e salve este fato: meu código é codex-12345" \
-  -d "NumMedia=0"
+curl -X POST "http://localhost:8000/webhook/evolution" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "messages.upsert",
+    "instance": "sua-instancia",
+    "data": {
+      "key": {"remoteJid": "5511999999999@s.whatsapp.net", "fromMe": false, "id": "MEM001"},
+      "message": {"conversation": "Use a ferramenta save_memory e salve este fato: meu código é codex-12345"},
+      "pushName": "Teste",
+      "messageTimestamp": 1780000000
+    }
+  }'
 ```
 
 2. Envie outra mensagem pedindo recall explícito:
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
-  -d "MessageSid=SMMEM002" \
-  -d "From=whatsapp:+5511999999999" \
-  -d "To=whatsapp:+14155238886" \
-  -d "Body=Sem salvar nada novo agora, use read_memory e me diga meu código" \
-  -d "NumMedia=0"
+curl -X POST "http://localhost:8000/webhook/evolution" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "messages.upsert",
+    "instance": "sua-instancia",
+    "data": {
+      "key": {"remoteJid": "5511999999999@s.whatsapp.net", "fromMe": false, "id": "MEM002"},
+      "message": {"conversation": "Sem salvar nada novo agora, use read_memory e me diga meu código"},
+      "pushName": "Teste",
+      "messageTimestamp": 1780000060
+    }
+  }'
 ```
 
 3. Verifique evidências no banco:
@@ -350,7 +356,7 @@ grep OPENROUTER_API_KEY .env
 
 ## Próximos passos
 
-- [Integração Twilio](TWILIO.md)
+- [Evolution API](EVOLUTION.md) · [WABA / Meta](WABA_SETUP.md)
 - [Arquitetura](ARCHITECTURE.md)
 - [Criando Agentes](ADDING_AGENTS.md)
 - [Banco de Dados](DATABASE.md)

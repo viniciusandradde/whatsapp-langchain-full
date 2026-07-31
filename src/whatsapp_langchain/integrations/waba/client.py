@@ -1,9 +1,9 @@
 """Cliente outbound WhatsApp Cloud API (Meta WABA).
 
-Implementa o `OutboundClient` Protocol — mesma interface que `TwilioClient`
+Implementa o `OutboundClient` Protocol — mesma interface que `EvolutionClient`
 e `EvolutionClient`. O worker resolve qual cliente usar via `Conexao.provider`.
 
-Diferente do Twilio (API Key) e do Evolution (apikey header), WABA usa
+Diferente do Evolution (apikey header), WABA usa
 Bearer token (system user token) específico de cada conexão. Cada `WabaClient`
 é instanciado por conexão (com credenciais decifradas) — não há singleton
 global.
