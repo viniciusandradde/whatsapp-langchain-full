@@ -68,7 +68,7 @@ while read -r arquivo _ hash; do
   else
     verde "$arquivo"
   fi
-done < <(grep -E '\.(dump|tar\.[a-z]+)\s' "$TRABALHO/MANIFESTO.txt")
+done < <(grep -E '^[[:alnum:]._-]+\.(dump|tar\.[a-z]+)[[:space:]]+[0-9.]+[KMG]?[[:space:]]+[0-9a-f]{64}$' "$TRABALHO/MANIFESTO.txt")
 [ "$FALHOU" -eq 1 ] && exit 1
 
 # --- 3. Repositório --------------------------------------------------------

@@ -170,14 +170,31 @@ verde "repo.tar.$EXT ($(du -h "$SAIDA/repo.tar.$EXT" | cut -f1)) — sem Baileys
 
 azul "5/6  Empacotando histórico e memória do Claude"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
-if [ -d "$CLAUDE_DIR/projects/-home-dev-projetos-chatnexus" ]; then
-  tar -C "$CLAUDE_DIR" -cf - \
-      projects/-home-dev-projetos-chatnexus \
-      $([ -d "$CLAUDE_DIR/plans" ] && echo plans) \
+
+# O histórico do Claude é indexado pelo CAMINHO do projeto, com as barras
+# viradas em hífen — mudou de pasta, nasce um diretório novo e o antigo fica
+# onde estava. Este repositório já morou em dois caminhos, então exportar só o
+# do diretório atual perde o resto: em 2026-07-31 foram 95 memórias deixadas
+# para trás em `-home-dev-projetos-whatsapp-langchain` enquanto
+# `-home-dev-projetos-chatnexus` tinha só 2.
+#
+# São nomes inteiros, não sufixos: casar por sufixo arrastaria junto o
+# `-home-projects-agentes-ai-whatsapp-langchain`, que é outro projeto.
+# `CLAUDE_SLUGS_EXTRA` acrescenta caminhos antigos se este mudar de novo.
+SLUG_ATUAL="$(printf '%s' "$RAIZ" | tr '/' '-')"
+CLAUDE_SLUGS_EXTRA="${CLAUDE_SLUGS_EXTRA:--home-dev-projetos-whatsapp-langchain}"
+ALVOS=()
+for slug in $SLUG_ATUAL $CLAUDE_SLUGS_EXTRA; do
+  [ -d "$CLAUDE_DIR/projects/$slug" ] || continue
+  ALVOS+=("projects/$slug")
+done
+if [ "${#ALVOS[@]}" -gt 0 ]; then
+  [ -d "$CLAUDE_DIR/plans" ] && ALVOS+=(plans)
+  tar -C "$CLAUDE_DIR" -cf - "${ALVOS[@]}" \
     | $COMPRIMIR > "$SAIDA/claude.tar.$EXT"
-  verde "claude.tar.$EXT ($(du -h "$SAIDA/claude.tar.$EXT" | cut -f1))"
+  verde "claude.tar.$EXT ($(du -h "$SAIDA/claude.tar.$EXT" | cut -f1)) — ${ALVOS[*]}"
 else
-  erro "não achei $CLAUDE_DIR/projects/-home-dev-projetos-chatnexus — pulando"
+  erro "nenhum diretório de projeto em $CLAUDE_DIR/projects casou com: $CLAUDE_SLUGS"
 fi
 
 # --- 6. Segredos, separados ------------------------------------------------
