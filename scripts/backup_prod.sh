@@ -14,13 +14,16 @@
 #   scripts/backup_prod.sh
 #
 # Restaurar (leia antes de precisar, não durante):
-#   scripts/backup_prod.sh --restaurar /var/backups/chatnexus/prod-AAAA-MM-DD.dump.$EXT
+#   scripts/backup_prod.sh --restaurar /home/dev/backup/prod-AAAA-MM-DD.dump.$EXT
 #
 set -euo pipefail
 
 CONTAINER_DB="${CONTAINER_DB:-projetos-chatvsanexus-er02mp-db-1}"
 BANCO="${BANCO:-whatsapp_langchain}"
-DESTINO="${DESTINO:-/var/backups/chatnexus}"
+# `/home/dev/backup`, não `/var/backups`: fica no mesmo lugar do projeto,
+# sobrevive a `dnf` mexendo em /var, e é gravável pelo `opc` — o timer roda
+# como root, mas rodar na mão não deve exigir sudo.
+DESTINO="${DESTINO:-/home/dev/backup}"
 RETENCAO_DIAS="${RETENCAO_DIAS:-14}"
 # MinIO já roda neste host (crm-minio). Espelhar ali dá versionamento sem
 # infraestrutura nova — mas é a MESMA máquina. Ver "limitação" no fim.
@@ -120,13 +123,38 @@ docker exec "$CONTAINER_DB" pg_dump -U postgres -Fc "$BANCO" \
 TAMANHO=$(du -h "$ARQUIVO" | cut -f1)
 log "gravado: $ARQUIVO ($TAMANHO)"
 
-# Um dump que não restaura não é backup. `pg_restore -l` lê o índice do
-# arquivo e falha se ele estiver truncado ou corrompido — barato o bastante
-# pra rodar todo dia.
-if $DESCOMPRIMIR "$ARQUIVO" | pg_restore -l >/dev/null 2>&1; then
-  log "integridade conferida (índice legível)"
+# Um dump que não restaura não é backup.
+#
+# `pg_restore -l` lê o índice (TOC) e falha se o arquivo estiver truncado ou
+# corrompido. Duas armadilhas, ambas descobertas testando:
+#
+#   1. NÃO funciona em pipe — o formato custom precisa de arquivo posicionável,
+#      e `... | pg_restore -l` devolve "did not find magic string in file
+#      header" mesmo num dump perfeito. Descomprime pra arquivo temporário.
+#   2. `pg_restore` pode não existir no host (é o caso deste VPS, onde o
+#      Postgres só vive no container). Por isso a verificação roda por dentro
+#      do container quando não há binário local.
+TMP_VERIF="$(mktemp "${TMPDIR:-/tmp}/verifica-backup-XXXXXX.dump")"
+trap 'rm -f "$TMP_VERIF"' EXIT
+$DESCOMPRIMIR "$ARQUIVO" > "$TMP_VERIF" 2>/dev/null
+
+if command -v pg_restore >/dev/null; then
+  VERIFICA=(pg_restore -l "$TMP_VERIF")
+  ENTRADAS=$("${VERIFICA[@]}" 2>/dev/null | grep -c '^[0-9]' || true)
 else
-  log "ERRO: o dump não é legível. Apagando e falhando."
+  docker cp "$TMP_VERIF" "$CONTAINER_DB:/tmp/verifica.dump" >/dev/null 2>&1
+  ENTRADAS=$(docker exec "$CONTAINER_DB" pg_restore -l /tmp/verifica.dump 2>/dev/null \
+             | grep -c '^[0-9]' || true)
+  docker exec "$CONTAINER_DB" rm -f /tmp/verifica.dump >/dev/null 2>&1 || true
+fi
+
+# Um dump íntegro deste banco tem ~1.570 entradas. Menos de 100 significa
+# arquivo truncado ou dump de banco vazio — nos dois casos, não serve.
+if [ "${ENTRADAS:-0}" -ge 100 ]; then
+  log "integridade conferida ($ENTRADAS objetos no índice)"
+else
+  log "ERRO: o dump tem só ${ENTRADAS:-0} objeto(s) — truncado ou corrompido."
+  log "Apagando e falhando. NÃO existe backup válido de hoje."
   rm -f "$ARQUIVO"
   exit 1
 fi
