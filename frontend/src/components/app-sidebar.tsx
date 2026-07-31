@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ChevronRight, LogOut } from "lucide-react";
 
 import { MyStatusToggle } from "@/components/my-status-toggle";
@@ -150,6 +150,23 @@ export function AppSidebar({
   );
 }
 
+/**
+ * Agrupa preservando a ordem de declaração. Itens sem `secao` saem primeiro,
+ * num bloco sem rótulo — grupo pequeno não ganha cabeçalho à toa.
+ */
+function agruparPorSecao(itens: NavItem[]): [string | undefined, NavItem[]][] {
+  const ordem: (string | undefined)[] = [];
+  const mapa = new Map<string | undefined, NavItem[]>();
+  for (const item of itens) {
+    if (!mapa.has(item.secao)) {
+      mapa.set(item.secao, []);
+      ordem.push(item.secao);
+    }
+    mapa.get(item.secao)!.push(item);
+  }
+  return ordem.map((s) => [s, mapa.get(s)!]);
+}
+
 function GrupoDeNavegacao({
   grupo,
   pathname,
@@ -178,15 +195,26 @@ function GrupoDeNavegacao({
       />
       <CollapsibleContent>
         <SidebarMenuSub>
-          {grupo.itens.map((item) => (
-            <SidebarMenuSubItem key={item.href}>
-              <SidebarMenuSubButton
-                isActive={isItemActive(pathname, item.href)}
-                render={<Link href={item.href} />}
-              >
-                <span>{item.label}</span>
-              </SidebarMenuSubButton>
-            </SidebarMenuSubItem>
+          {agruparPorSecao(grupo.itens).map(([secao, itens]) => (
+            <Fragment key={secao ?? "_"}>
+              {/* Rótulo de seção: Governança tem 11 destinos, e lista corrida
+                  não separa "quem é a empresa" de "quem pode o quê". */}
+              {secao && (
+                <li className="mt-2 px-2 pt-1 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/45 first:mt-0">
+                  {secao}
+                </li>
+              )}
+              {itens.map((item) => (
+                <SidebarMenuSubItem key={item.href}>
+                  <SidebarMenuSubButton
+                    isActive={isItemActive(pathname, item.href)}
+                    render={<Link href={item.href} />}
+                  >
+                    <span>{item.label}</span>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              ))}
+            </Fragment>
           ))}
         </SidebarMenuSub>
       </CollapsibleContent>

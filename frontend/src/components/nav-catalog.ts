@@ -23,6 +23,15 @@ export interface NavItem {
   href: string;
   /** Permissão necessária. Undefined = sempre visível. */
   requires?: string | string[];
+  /**
+   * Subseção dentro do grupo. Serve pra grupos grandes, onde uma lista
+   * corrida de 11 destinos não diz o que faz o quê — Governança junta
+   * "quem é a empresa", "quem são as pessoas", "quem pode o quê" e "quando
+   * a operação funciona" na mesma pilha.
+   *
+   * Itens sem seção aparecem antes das seções, soltos.
+   */
+  secao?: string;
 }
 
 export interface NavGroup {
@@ -100,17 +109,21 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: ShieldCheck,
     href: "/companies",
     itens: [
-      { label: "Empresas", href: "/companies", requires: "empresa.update" },
-      { label: "Usuários", href: "/usuarios", requires: "empresa.member.add" },
-      { label: "Atendentes", href: "/atendentes", requires: "empresa.member.add" },
-      { label: "Plano e cobrança", href: "/billing", requires: "empresa.update" },
-      { label: "Orçamento de IA", href: "/governanca/ia-budget", requires: "empresa.update" },
-      { label: "Perfis de acesso", href: "/settings/perfis", requires: "perfil.read" },
-      { label: "Departamentos", href: "/settings/departamentos", requires: "departamento.read" },
-      { label: "Turnos e jornada", href: "/settings/turnos", requires: "departamento.read" },
-      { label: "Horário de atendimento", href: "/settings/horarios", requires: "horario.write" },
-      { label: "Regras de agendamento", href: "/settings/calendar-rules", requires: "agendamento.regras.write" },
-      { label: "Segurança", href: "/settings", requires: "security.audit.read" },
+      // Quem é a empresa e quanto ela custa
+      { secao: "Empresa", label: "Cadastro", href: "/companies", requires: "empresa.update" },
+      { secao: "Empresa", label: "Plano e cobrança", href: "/billing", requires: "empresa.update" },
+      { secao: "Empresa", label: "Orçamento de IA", href: "/governanca/ia-budget", requires: "empresa.update" },
+      // Quem trabalha nela
+      { secao: "Pessoas", label: "Usuários", href: "/usuarios", requires: "empresa.member.add" },
+      { secao: "Pessoas", label: "Atendentes", href: "/atendentes", requires: "empresa.member.add" },
+      { secao: "Pessoas", label: "Departamentos", href: "/settings/departamentos", requires: "departamento.read" },
+      // Quem pode o quê
+      { secao: "Acesso", label: "Perfis de acesso", href: "/settings/perfis", requires: "perfil.read" },
+      { secao: "Acesso", label: "Segurança", href: "/settings", requires: "security.audit.read" },
+      // Quando a operação funciona
+      { secao: "Regras", label: "Turnos e jornada", href: "/settings/turnos", requires: "departamento.read" },
+      { secao: "Regras", label: "Horário de atendimento", href: "/settings/horarios", requires: "horario.write" },
+      { secao: "Regras", label: "Regras de agendamento", href: "/settings/calendar-rules", requires: "agendamento.regras.write" },
     ],
   },
   {
