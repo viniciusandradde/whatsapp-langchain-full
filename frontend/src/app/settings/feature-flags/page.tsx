@@ -1,5 +1,6 @@
 import { Flag } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { getFeatureFlags } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -21,18 +22,14 @@ export default async function FeatureFlagsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Flag className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Feature flags</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Liga/desliga features experimentais por empresa sem redeploy.
-            Cache TTL 60s — invalida automático no save.
-          </p>
-        </div>
-      </div>
+      {/* "Cache TTL 60s — invalida automático no save" era nota de
+          implementação na tela do cliente. Sai; o que importa é que demora
+          até um minuto pra valer. */}
+      <PageHeader
+        titulo="Recursos ativados"
+        descricao="Liga e desliga recursos em teste nesta empresa. A mudança vale em até um minuto, sem precisar de atualização do sistema."
+        icon={Flag}
+      />
 
       {error ? (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

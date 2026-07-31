@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,11 +62,12 @@ export function ApiKeysClient({ initial }: { initial: DisparadorApiKey[] }) {
   }
 
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex items-center gap-2">
-        <KeyRound className="h-5 w-5" />
-        <h1 className="text-xl font-semibold">API keys do Disparador</h1>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        titulo="Chaves da extensão"
+        descricao="Cada chave autoriza a extensão do Chrome a capturar contatos e disparar campanhas em nome desta empresa. Revogue uma e o dispositivo que a usava para na hora."
+        icon={KeyRound}
+      />
 
       {erro && (
         <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</div>

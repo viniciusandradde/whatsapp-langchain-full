@@ -10,6 +10,7 @@ import type { PerfilAcesso, PermissaoCatalogo } from "@/lib/api";
 
 import { PerfilEditor } from "./perfil-editor";
 import { deletePerfilAction } from "./actions";
+import { plural } from "@/lib/formato";
 
 interface Props {
   perfis: PerfilAcesso[];
@@ -28,12 +29,12 @@ export function PerfisList({ perfis, catalogo }: Props) {
 
   function handleDelete(p: PerfilAcesso) {
     if (p.is_system) {
-      setError("Perfil system não pode ser deletado.");
+      setError("Perfil do sistema não pode ser excluído.");
       return;
     }
     if (
       !confirm(
-        `Deletar perfil "${p.nome}"?\n\n${p.users_count} user(s) atribuído(s) perdem essas permissões.`
+        `Excluir o perfil "${p.nome}"? ${plural(p.users_count, "usuário")} perde essas permissões.`
       )
     )
       return;
@@ -48,11 +49,13 @@ export function PerfisList({ perfis, catalogo }: Props) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {perfis.length} perfil(s) — {perfis.filter((p) => p.is_system).length} system, {perfis.filter((p) => !p.is_system).length} customizado(s)
+          {plural(perfis.length, "perfil", "perfis")} ·{" "}
+          {perfis.filter((p) => p.is_system).length} do sistema ·{" "}
+          {plural(perfis.filter((p) => !p.is_system).length, "personalizado")}
         </p>
         <Button onClick={() => setEditing({ kind: "new" })} disabled={isPending}>
           <Plus className="size-4" />
-          Novo perfil custom
+          Novo perfil
         </Button>
       </div>
 
@@ -72,7 +75,7 @@ export function PerfisList({ perfis, catalogo }: Props) {
                   <CardTitle className="text-base">{p.nome}</CardTitle>
                   {p.is_system && (
                     <Badge variant="outline" className="text-[10px]">
-                      system
+                      do sistema
                     </Badge>
                   )}
                 </div>
@@ -81,7 +84,7 @@ export function PerfisList({ perfis, catalogo }: Props) {
                     size="sm"
                     variant="ghost"
                     onClick={() => setEditing({ kind: "edit", perfilId: p.id })}
-                    title={p.is_system ? "Visualizar (system não edita)" : "Editar"}
+                    title={p.is_system ? "Visualizar — perfil do sistema não é editável" : "Editar perfil"}
                   >
                     <Pencil className="size-3.5" />
                   </Button>
@@ -104,7 +107,8 @@ export function PerfisList({ perfis, catalogo }: Props) {
                 <p className="text-sm text-muted-foreground">{p.descricao}</p>
               )}
               <p className="mt-2 text-xs text-muted-foreground">
-                {p.perms_count} permissão(ões) · {p.users_count} user(s)
+                {plural(p.perms_count, "permissão", "permissões")} ·{" "}
+                {plural(p.users_count, "usuário")}
               </p>
             </CardContent>
           </Card>
