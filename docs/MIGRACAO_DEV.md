@@ -207,6 +207,32 @@ pg_restore -d postgresql://postgres:postgres@localhost:5434/whatsapp_langchain \
   --no-owner --no-acl --clean --if-exists /tmp/dev.dump
 ```
 
+### Expurgar o Baileys da história do git
+
+Apagar a pasta `docs/Baileys` liberou 672 MB da árvore de trabalho, mas o
+`.git` continuou com **1,8 GB**: os arquivos estão na história, em dois
+commits que os adicionaram. Git não esquece por deleção.
+
+É a razão de `repo.tar.zst` ser o item mais pesado da transferência.
+
+```bash
+scripts/migrar-dev/expurgar-baileys.sh
+```
+
+Recupera ~1,75 GB — o `.git` cai para menos de 100 MB. Mas **reescreve a
+história**: todo commit a partir de `9b95c15` ganha SHA novo, e esse commit
+**já está em `origin/master`**. Consequências:
+
+- `git push` normal passa a ser rejeitado; exige `--force-with-lease`.
+- Qualquer outra cópia do repositório fica divergente e precisa re-clonar.
+- PR aberto aponta pra commits que deixam de existir.
+
+Por isso o script faz um espelho antes, pede confirmação, **remove o remote**
+ao terminar e não faz push — te mostra o comando e deixa a decisão com você.
+
+Faça isso **depois** de a migração estar validada, e só quando não houver
+outra cópia viva do repositório.
+
 ### Levar uma mudança de `src/` até a produção
 
 1. Trabalhe em branch. Nunca commite direto em `master` — é o gatilho do
