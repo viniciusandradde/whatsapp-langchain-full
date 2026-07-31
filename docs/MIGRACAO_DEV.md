@@ -259,7 +259,7 @@ sudo scripts/backup_prod.sh --instalar   # timer systemd, 03:15 diário
 scripts/backup_prod.sh                   # roda uma vez pra validar
 ```
 
-Guarda 14 dias em `/var/backups/chatnexus`, confere que o dump é legível
+Guarda 14 dias em `/home/dev/backup`, confere que o dump é legível
 (`pg_restore -l`) e apaga o que passou da retenção. Restaurar sempre cria uma
 base nova — nunca sobrescreve a produção.
 
