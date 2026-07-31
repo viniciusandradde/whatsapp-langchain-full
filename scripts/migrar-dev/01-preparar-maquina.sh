@@ -27,8 +27,8 @@ echo
 azul "1/6  Pacotes básicos"
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
-  git rsync curl ca-certificates gnupg zstd jq make build-essential
-verde "git, rsync, curl, zstd, jq, make"
+  git rsync curl ca-certificates gnupg pigz jq make build-essential
+verde "git, rsync, curl, pigz, jq, make"
 
 # --- Docker ----------------------------------------------------------------
 

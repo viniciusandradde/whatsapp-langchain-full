@@ -14,7 +14,7 @@
 #   scripts/backup_prod.sh
 #
 # Restaurar (leia antes de precisar, não durante):
-#   scripts/backup_prod.sh --restaurar /var/backups/chatnexus/prod-AAAA-MM-DD.dump.zst
+#   scripts/backup_prod.sh --restaurar /var/backups/chatnexus/prod-AAAA-MM-DD.dump.$EXT
 #
 set -euo pipefail
 
@@ -26,6 +26,18 @@ RETENCAO_DIAS="${RETENCAO_DIAS:-14}"
 # infraestrutura nova — mas é a MESMA máquina. Ver "limitação" no fim.
 MINIO_ALIAS="${MINIO_ALIAS:-}"
 MINIO_BUCKET="${MINIO_BUCKET:-chatnexus-backups}"
+
+# Compressor, em ordem de preferência. `zstd` comprime melhor e mais rápido;
+# `pigz` usa todos os núcleos e é drop-in do gzip; `gzip` é o piso que sempre
+# existe. A detecção em runtime evita que o script dependa de qual máquina o
+# está rodando — o VPS e a máquina local não têm o mesmo conjunto.
+if command -v zstd >/dev/null; then
+  COMPRIMIR="zstd -T0 -3 -q -c"; DESCOMPRIMIR="zstd -dc"; EXT="zst"
+elif command -v pigz >/dev/null; then
+  COMPRIMIR="pigz -3 -c";        DESCOMPRIMIR="pigz -dc"; EXT="gz"
+else
+  COMPRIMIR="gzip -3 -c";        DESCOMPRIMIR="gzip -dc"; EXT="gz"
+fi
 
 log() { printf '%s  %s\n' "$(date -Is)" "$*"; }
 
@@ -79,11 +91,11 @@ fi
 
 if [ "${1:-}" = "--restaurar" ]; then
   ARQ="${2:-}"
-  [ -f "$ARQ" ] || { echo "uso: $0 --restaurar <arquivo.dump.zst>" >&2; exit 1; }
+  [ -f "$ARQ" ] || { echo "uso: $0 --restaurar <arquivo.dump.$EXT>" >&2; exit 1; }
   ALVO="${3:-restaurado_$(date +%Y%m%d_%H%M)}"
   log "restaurando $ARQ em '$ALVO' (a produção NÃO é tocada)"
   docker exec "$CONTAINER_DB" psql -U postgres -q -c "CREATE DATABASE \"$ALVO\";"
-  zstd -dc "$ARQ" | docker exec -i "$CONTAINER_DB" \
+  $DESCOMPRIMIR "$ARQ" | docker exec -i "$CONTAINER_DB" \
     pg_restore -U postgres -d "$ALVO" --no-owner --no-acl 2>&1 | tail -5 || true
   log "pronto. Confira com:"
   log "  docker exec $CONTAINER_DB psql -U postgres -d $ALVO -c 'select count(*) from cliente;'"
@@ -94,16 +106,16 @@ fi
 # --- Backup ----------------------------------------------------------------
 
 mkdir -p "$DESTINO"
-ARQUIVO="$DESTINO/prod-$(date +%F).dump.zst"
+ARQUIVO="$DESTINO/prod-$(date +%F).dump.$EXT"
 
 log "iniciando backup de $BANCO"
 docker ps --format '{{.Names}}' | grep -qx "$CONTAINER_DB" \
   || { log "ERRO: container $CONTAINER_DB não está rodando"; exit 1; }
 
 # `-Fc` (custom) porque permite restauração seletiva de tabela e já vem
-# comprimido; o zstd por cima ainda tira uns 30%.
+# comprimido; o pigz por cima ainda tira mais um pouco.
 docker exec "$CONTAINER_DB" pg_dump -U postgres -Fc "$BANCO" \
-  | zstd -T0 -3 -q -o "$ARQUIVO" -f
+  | $COMPRIMIR > "$ARQUIVO"
 
 TAMANHO=$(du -h "$ARQUIVO" | cut -f1)
 log "gravado: $ARQUIVO ($TAMANHO)"
@@ -111,7 +123,7 @@ log "gravado: $ARQUIVO ($TAMANHO)"
 # Um dump que não restaura não é backup. `pg_restore -l` lê o índice do
 # arquivo e falha se ele estiver truncado ou corrompido — barato o bastante
 # pra rodar todo dia.
-if zstd -dc "$ARQUIVO" | pg_restore -l >/dev/null 2>&1; then
+if $DESCOMPRIMIR "$ARQUIVO" | pg_restore -l >/dev/null 2>&1; then
   log "integridade conferida (índice legível)"
 else
   log "ERRO: o dump não é legível. Apagando e falhando."
@@ -133,10 +145,10 @@ fi
 
 # --- Retenção --------------------------------------------------------------
 
-APAGADOS=$(find "$DESTINO" -name 'prod-*.dump.zst' -mtime "+$RETENCAO_DIAS" -print -delete | wc -l)
+APAGADOS=$(find "$DESTINO" -name "prod-*.dump.$EXT" -mtime "+$RETENCAO_DIAS" -print -delete | wc -l)
 [ "$APAGADOS" -gt 0 ] && log "removidos $APAGADOS backup(s) com mais de $RETENCAO_DIAS dias"
 
-log "backups em disco: $(find "$DESTINO" -name 'prod-*.dump.zst' | wc -l) ocupando $(du -sh "$DESTINO" | cut -f1)"
+log "backups em disco: $(find "$DESTINO" -name "prod-*.dump.$EXT" | wc -l) ocupando $(du -sh "$DESTINO" | cut -f1)"
 
 # ---------------------------------------------------------------------------
 # LIMITAÇÃO CONHECIDA

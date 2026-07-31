@@ -18,6 +18,18 @@ DESTINO="${DESTINO:-$HOME/projetos/chatnexus}"
 TRABALHO="${TRABALHO:-/tmp/chatnexus-migracao-recebido}"
 PROJETO_DOCKER="chatnexus-dev"
 
+# Compressor, em ordem de preferência. `zstd` comprime melhor e mais rápido;
+# `pigz` usa todos os núcleos e é drop-in do gzip; `gzip` é o piso que sempre
+# existe. A detecção em runtime evita que o script dependa de qual máquina o
+# está rodando — o VPS e a máquina local não têm o mesmo conjunto.
+if command -v zstd >/dev/null; then
+  COMPRIMIR="zstd -T0 -3 -q -c"; DESCOMPRIMIR="zstd -dc"; EXT="zst"
+elif command -v pigz >/dev/null; then
+  COMPRIMIR="pigz -3 -c";        DESCOMPRIMIR="pigz -dc"; EXT="gz"
+else
+  COMPRIMIR="gzip -3 -c";        DESCOMPRIMIR="gzip -dc"; EXT="gz"
+fi
+
 azul()  { printf '\033[1;34m%s\033[0m\n' "$*"; }
 verde() { printf '\033[1;32m  ✓ %s\033[0m\n' "$*"; }
 aviso() { printf '\033[1;33m  ! %s\033[0m\n' "$*"; }
@@ -25,7 +37,7 @@ erro()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; }
 
 [ -z "$ORIGEM" ] && { erro "informe a origem: $0 vps-docker03:/tmp/chatnexus-migracao"; exit 1; }
 
-for cmd in docker rsync zstd tar pg_restore uv node; do
+for cmd in docker rsync tar pg_restore uv node; do
   command -v "$cmd" >/dev/null || { erro "'$cmd' não encontrado — rode 01-preparar-maquina.sh"; exit 1; }
 done
 docker compose version >/dev/null 2>&1 || { erro "falta o plugin 'docker compose' v2"; exit 1; }
@@ -56,7 +68,7 @@ while read -r arquivo _ hash; do
   else
     verde "$arquivo"
   fi
-done < <(grep -E '\.(dump|tar\.zst)\s' "$TRABALHO/MANIFESTO.txt")
+done < <(grep -E '\.(dump|tar\.[a-z]+)\s' "$TRABALHO/MANIFESTO.txt")
 [ "$FALHOU" -eq 1 ] && exit 1
 
 # --- 3. Repositório --------------------------------------------------------
@@ -68,20 +80,20 @@ if [ -d "$DESTINO/.git" ]; then
   [ "$r" = "s" ] || { erro "abortado."; exit 1; }
 fi
 mkdir -p "$DESTINO"
-zstd -dc "$TRABALHO/repo.tar.zst" | tar -C "$DESTINO" -xf -
+$DESCOMPRIMIR "$TRABALHO/repo.tar.$EXT" | tar -C "$DESTINO" -xf -
 verde "branch $(git -C "$DESTINO" rev-parse --abbrev-ref HEAD) em $(git -C "$DESTINO" rev-parse --short HEAD)"
 
 # --- 4. Estado do Claude ---------------------------------------------------
 
 azul "4/8  Restaurando histórico e memória do Claude"
-if [ -f "$TRABALHO/claude.tar.zst" ]; then
+if [ -f "$TRABALHO/claude.tar.$EXT" ]; then
   mkdir -p "$HOME/.claude"
   if [ -d "$HOME/.claude/projects/-home-dev-projetos-chatnexus" ]; then
     aviso "já existe histórico deste projeto — preservando em .bak"
     mv "$HOME/.claude/projects/-home-dev-projetos-chatnexus" \
        "$HOME/.claude/projects/-home-dev-projetos-chatnexus.bak.$(date +%s)"
   fi
-  zstd -dc "$TRABALHO/claude.tar.zst" | tar -C "$HOME/.claude" -xf -
+  $DESCOMPRIMIR "$TRABALHO/claude.tar.$EXT" | tar -C "$HOME/.claude" -xf -
   verde "histórico, memórias e planos restaurados"
   # O caminho do projeto vira a chave do diretório. Se o destino não for o
   # mesmo caminho do VPS, o Claude não acha o histórico.
@@ -92,7 +104,7 @@ if [ -f "$TRABALHO/claude.tar.zst" ]; then
     aviso "o Claude reencontre a conversa."
   fi
 else
-  aviso "claude.tar.zst não veio — seguindo sem histórico"
+  aviso "claude.tar.$EXT não veio — seguindo sem histórico"
 fi
 
 # --- 5. Segredos com as travas do contrato ---------------------------------
@@ -101,11 +113,11 @@ fi
 # desenvolvimento com seis valores forçados, e cada um é conferido depois.
 
 azul "5/8  Gerando .env de desenvolvimento"
-if [ -f "$TRABALHO/segredos.tar.zst" ]; then
-  zstd -dc "$TRABALHO/segredos.tar.zst" | tar -C "$DESTINO" -xf -
+if [ -f "$TRABALHO/segredos.tar.$EXT" ]; then
+  $DESCOMPRIMIR "$TRABALHO/segredos.tar.$EXT" | tar -C "$DESTINO" -xf -
   verde "segredos de produção extraídos"
 else
-  erro "segredos.tar.zst não veio — sem ele o ambiente não sobe."
+  erro "segredos.tar.$EXT não veio — sem ele o ambiente não sobe."
   exit 1
 fi
 

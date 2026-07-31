@@ -9,9 +9,9 @@
 # O que sai daqui:
 #   prod.dump          backup íntegro da produção (o primeiro que existe)
 #   dev.dump           cópia saneada, sem PII, pra semear o desenvolvimento
-#   repo.tar.zst       repositório com .git, sem node_modules/.venv/.next/Baileys
-#   claude.tar.zst     histórico, memórias e planos do Claude
-#   segredos.tar.zst   .env e frontend/.env.local — SEPARADO de propósito
+#   repo.tar.$EXT       repositório com .git, sem node_modules/.venv/.next/Baileys
+#   claude.tar.$EXT     histórico, memórias e planos do Claude
+#   segredos.tar.$EXT   .env e frontend/.env.local — SEPARADO de propósito
 #   MANIFESTO.txt      tamanho e sha256 de cada peça
 #
 # Uso:
@@ -25,6 +25,18 @@ CONTAINER_DB="${CONTAINER_DB:-projetos-chatvsanexus-er02mp-db-1}"
 BANCO="${BANCO:-whatsapp_langchain}"
 # Base temporária onde o saneamento acontece. Nunca é a de produção.
 BANCO_ENSAIO="migracao_dev_tmp"
+
+# Compressor, em ordem de preferência. `zstd` comprime melhor e mais rápido;
+# `pigz` usa todos os núcleos e é drop-in do gzip; `gzip` é o piso que sempre
+# existe. A detecção em runtime evita que o script dependa de qual máquina o
+# está rodando — o VPS e a máquina local não têm o mesmo conjunto.
+if command -v zstd >/dev/null; then
+  COMPRIMIR="zstd -T0 -3 -q -c"; DESCOMPRIMIR="zstd -dc"; EXT="zst"
+elif command -v pigz >/dev/null; then
+  COMPRIMIR="pigz -3 -c";        DESCOMPRIMIR="pigz -dc"; EXT="gz"
+else
+  COMPRIMIR="gzip -3 -c";        DESCOMPRIMIR="gzip -dc"; EXT="gz"
+fi
 
 azul()  { printf '\033[1;34m%s\033[0m\n' "$*"; }
 verde() { printf '\033[1;32m  ✓ %s\033[0m\n' "$*"; }
@@ -151,8 +163,8 @@ tar --exclude='./node_modules' \
     --exclude='./.env' \
     --exclude='./frontend/.env.local' \
     -C "$RAIZ" -cf - . \
-  | zstd -T0 -3 -q -o "$SAIDA/repo.tar.zst" -f
-verde "repo.tar.zst ($(du -h "$SAIDA/repo.tar.zst" | cut -f1)) — sem Baileys, sem segredos"
+  | $COMPRIMIR > "$SAIDA/repo.tar.$EXT"
+verde "repo.tar.$EXT ($(du -h "$SAIDA/repo.tar.$EXT" | cut -f1)) — sem Baileys, sem segredos"
 
 # --- 5. Estado do Claude ---------------------------------------------------
 
@@ -162,8 +174,8 @@ if [ -d "$CLAUDE_DIR/projects/-home-dev-projetos-chatnexus" ]; then
   tar -C "$CLAUDE_DIR" -cf - \
       projects/-home-dev-projetos-chatnexus \
       $([ -d "$CLAUDE_DIR/plans" ] && echo plans) \
-    | zstd -T0 -3 -q -o "$SAIDA/claude.tar.zst" -f
-  verde "claude.tar.zst ($(du -h "$SAIDA/claude.tar.zst" | cut -f1))"
+    | $COMPRIMIR > "$SAIDA/claude.tar.$EXT"
+  verde "claude.tar.$EXT ($(du -h "$SAIDA/claude.tar.$EXT" | cut -f1))"
 else
   erro "não achei $CLAUDE_DIR/projects/-home-dev-projetos-chatnexus — pulando"
 fi
@@ -175,9 +187,9 @@ fi
 
 azul "6/6  Empacotando segredos (arquivo separado)"
 tar -C "$RAIZ" -cf - .env frontend/.env.local 2>/dev/null \
-  | zstd -T0 -3 -q -o "$SAIDA/segredos.tar.zst" -f
-chmod 600 "$SAIDA/segredos.tar.zst"
-verde "segredos.tar.zst — chmod 600, contém OPENROUTER/EVOLUTION/TWILIO/ADMIN"
+  | $COMPRIMIR > "$SAIDA/segredos.tar.$EXT"
+chmod 600 "$SAIDA/segredos.tar.$EXT"
+verde "segredos.tar.$EXT — chmod 600, contém OPENROUTER/EVOLUTION/TWILIO/ADMIN"
 
 # --- Manifesto -------------------------------------------------------------
 
@@ -190,7 +202,10 @@ verde "segredos.tar.zst — chmod 600, contém OPENROUTER/EVOLUTION/TWILIO/ADMIN
   echo "Commit:       $(git -C "$RAIZ" rev-parse --short HEAD)"
   echo
   printf '%-22s %10s  %s\n' ARQUIVO TAMANHO SHA256
-  for f in "$SAIDA"/*.dump "$SAIDA"/*.tar.zst; do
+  # Glob com a extensão real, não fixa: o compressor é escolhido em runtime
+  # e um `*.tar.gz` cravado aqui deixou os três tarballs fora do manifesto
+  # na primeira execução — o importador não teria como conferi-los.
+  for f in "$SAIDA"/*.dump "$SAIDA"/*.tar."$EXT"; do
     [ -e "$f" ] || continue
     printf '%-22s %10s  %s\n' \
       "$(basename "$f")" "$(du -h "$f" | cut -f1)" "$(sha256sum "$f" | cut -d' ' -f1)"
