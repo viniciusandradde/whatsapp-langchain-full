@@ -24,7 +24,7 @@ def _patch_fernet(monkeypatch):
     from whatsapp_langchain.shared.config import settings
 
     key = Fernet.generate_key().decode()
-    monkeypatch.setattr(settings, "wareline_encryption_key", SecretStr(key))
+    monkeypatch.setattr(settings, "integracoes_encryption_key", SecretStr(key))
 
 
 def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:

@@ -33,7 +33,7 @@ def _patch_fernet(monkeypatch):
     from whatsapp_langchain.shared.config import settings
 
     key = Fernet.generate_key().decode()
-    monkeypatch.setattr(settings, "wareline_encryption_key", SecretStr(key))
+    monkeypatch.setattr(settings, "integracoes_encryption_key", SecretStr(key))
 
 
 def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
@@ -54,10 +54,11 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
 # ---------- providers catalog ----------
 
 
-def test_catalogo_tem_3_providers():
-    # Asaas foi REMOVIDO do catálogo Wareline (2026-05-22): virou integração
-    # GLOBAL do SaaS (UI /billing + env vars), não mais por-empresa.
-    assert set(PROVIDERS.keys()) == {"wareline", "google_calendar", "custom"}
+def test_catalogo_de_providers():
+    # Asaas saiu em 2026-05-22 (virou integração GLOBAL do SaaS: UI /billing +
+    # env vars, não mais por-empresa). Wareline saiu em 2026-07-31 — integração
+    # externa agora é API REST + webhook pelo provider `custom`.
+    assert set(PROVIDERS.keys()) == {"google_calendar", "custom"}
 
 
 def test_providers_validos_modelo_pydantic():
@@ -69,10 +70,9 @@ def test_providers_validos_modelo_pydantic():
 
 
 def test_list_providers_skip_legacy():
-    """include_legacy=False omite wareline + google_calendar."""
+    """include_legacy=False omite provider com storage próprio."""
     non_legacy = list_providers(include_legacy=False)
     slugs = {p.slug for p in non_legacy}
-    assert "wareline" not in slugs
     assert "google_calendar" not in slugs
     assert "custom" in slugs
 
@@ -139,7 +139,7 @@ async def test_create_conexao_provider_legacy_rejeita():
         await create_conexao(
             pool,
             empresa_id=1,
-            provider_slug="wareline",  # legacy
+            provider_slug="google_calendar",  # legacy: tem storage próprio
             label="X",
             credentials={
                 "username": "x",

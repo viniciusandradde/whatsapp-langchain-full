@@ -32,6 +32,9 @@ import {
 } from "./actions";
 import { GoogleCalendarSettingsModal } from "./google-calendar-settings-modal";
 import { NewConnectionModal } from "./new-connection-modal";
+import { toast } from "sonner";
+
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
 
 interface Props {
   initialConnections: ApiConnection[];
@@ -41,7 +44,6 @@ interface Props {
 /**
  * Section unificada "Integrações de API":
  * - Google Calendar (storage legacy, OAuth Web flow)
- * - Wareline (card próprio acima — storage legacy também)
  * - Conexões cadastradas via api_connection (Custom REST, ...)
  *
  * Tudo na mesma lista visual. Quando user clica "+ Nova conexão" e
@@ -62,6 +64,8 @@ export function ApiConnectionsSection({
   const [loading, setLoading] = useState(false);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [aRemover, setARemover] = useState<ApiConnection | null>(null);
+  const [confirmandoGoogle, setConfirmandoGoogle] = useState(false);
   const [googleBusy, setGoogleBusy] = useState<
     "connecting" | "disconnecting" | null
   >(null);
@@ -101,12 +105,6 @@ export function ApiConnectionsSection({
   };
 
   const handleDelete = (conn: ApiConnection) => {
-    if (
-      !confirm(
-        `Remover conexão "${conn.label}" (${conn.provider_nome})? As tools que usam essa conexão vão parar de funcionar.`,
-      )
-    )
-      return;
     setDeletingId(conn.id);
     startTransition(async () => {
       const r = await deleteApiConnectionAction(conn.id);
@@ -114,7 +112,7 @@ export function ApiConnectionsSection({
       if (r.ok) {
         setConnections((prev) => prev.filter((c) => c.id !== conn.id));
       } else {
-        alert(`Erro: ${r.error}`);
+        toast.error(r.error);
       }
     });
   };
@@ -129,30 +127,25 @@ export function ApiConnectionsSection({
       if (r.ok) {
         window.location.href = r.url;
       } else {
-        alert(`Erro: ${r.error}`);
+        toast.error(r.error);
       }
     });
   };
 
   const handleGoogleDisconnect = () => {
-    if (
-      !confirm(
-        "Desconectar Google Calendar? Agendamentos via agente IA vão parar de funcionar até reconectar.",
-      )
-    )
-      return;
     setGoogleBusy("disconnecting");
     startTransition(async () => {
       const r = await disconnectGoogleCalendarAction();
       setGoogleBusy(null);
       if (r.ok) setGoogleCfg(null);
-      else alert(`Erro: ${r.error}`);
+      else toast.error(r.error);
     });
   };
 
   const hasGoogle = googleCfg !== null;
 
   return (
+    <>
     <div className="rounded-lg border bg-card p-4 md:p-6">
       <div className="mb-4 flex items-start gap-3">
         <div className="rounded-md bg-brand-primary/10 p-2">
@@ -164,11 +157,11 @@ export function ApiConnectionsSection({
               <h2 className="text-lg font-semibold">Integrações de API</h2>
               <p className="text-sm text-muted-foreground">
                 Conecte sua empresa com APIs externas. Suporta Google Calendar
-                (OAuth), Wareline e qualquer API REST customizada
+                (OAuth) e qualquer API REST customizada
                 (Bearer/Basic/API Key).
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                💳 Para cobrança da sua assinatura Chat Nexus, use{" "}
+                Para cobrança da sua assinatura Chat Nexus, use{" "}
                 <a href="/billing" className="text-brand-primary hover:underline">
                   Plano &amp; Cobrança
                 </a>{" "}
@@ -241,7 +234,7 @@ export function ApiConnectionsSection({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={handleGoogleDisconnect}
+                    onClick={() => setConfirmandoGoogle(true)}
                     disabled={googleBusy !== null}
                     className="hover:text-destructive"
                     title="Desconectar"
@@ -298,14 +291,14 @@ export function ApiConnectionsSection({
                   {(tr || conn.ultimo_teste_at) && (
                     <p className="mt-1 flex items-center gap-1 text-xs">
                       {(tr?.ok ?? conn.ultimo_teste_ok) ? (
-                        <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                        <CheckCircle2 className="h-3 w-3 text-success" />
                       ) : (
                         <AlertCircle className="h-3 w-3 text-destructive" />
                       )}
                       <span
                         className={
                           (tr?.ok ?? conn.ultimo_teste_ok)
-                            ? "text-emerald-700 dark:text-emerald-400"
+                            ? "text-emerald-700 dark:text-success"
                             : "text-destructive"
                         }
                       >
@@ -334,7 +327,7 @@ export function ApiConnectionsSection({
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => handleDelete(conn)}
+                    onClick={() => setARemover(conn)}
                     disabled={testingId === conn.id || deletingId === conn.id}
                     className="hover:text-destructive"
                     title="Remover"
@@ -354,7 +347,7 @@ export function ApiConnectionsSection({
         {connections.length === 0 && (
           <li className="rounded-md border border-dashed bg-muted/30 p-4 text-center text-xs text-muted-foreground">
             Nenhuma outra conexão cadastrada. Use &ldquo;+ Nova conexão&rdquo;
-            pra integrar Google Calendar, Wareline, custom REST, etc.
+            pra integrar Google Calendar, uma API REST ou um webhook.
           </li>
         )}
       </ul>
@@ -382,5 +375,28 @@ export function ApiConnectionsSection({
         />
       )}
     </div>
+
+      <ConfirmDestrutivo
+        aberto={aRemover !== null}
+        onAbertoChange={(v) => !v && setARemover(null)}
+        titulo="Remover integração"
+        objeto={aRemover ? `${aRemover.label} (${aRemover.provider_nome})` : undefined}
+        descricao="As ferramentas do agente que usam esta conexão param de funcionar."
+        rotuloAcao="Remover"
+        onConfirmar={() => {
+          if (aRemover) handleDelete(aRemover);
+        }}
+      />
+
+      <ConfirmDestrutivo
+        aberto={confirmandoGoogle}
+        onAbertoChange={setConfirmandoGoogle}
+        titulo="Desconectar Google Calendar"
+        objeto="a agenda conectada"
+        descricao="O agente para de consultar horários e de criar agendamentos até você reconectar."
+        rotuloAcao="Desconectar"
+        onConfirmar={handleGoogleDisconnect}
+      />
+    </>
   );
 }

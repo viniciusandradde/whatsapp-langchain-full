@@ -13,7 +13,7 @@ A maior parte das configurações tem defaults sensatos para desenvolvimento loc
 Segredos compartilhados do painel/admin devem ser preenchidos explicitamente.
 """
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_PRODUCTION_SECRET_LENGTH = 32
@@ -151,14 +151,20 @@ class Settings(BaseSettings):
             return "https://api.asaas.com/v3"
         return "https://api-sandbox.asaas.com/v3"
 
-    # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
-    # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
-    # Wareline (password + client_secret) na tabela `wareline_credentials`.
-    # Gerar: python -c "from cryptography.fernet import Fernet;
-    #         print(Fernet.generate_key().decode())"
-    # Sem essa chave, integração Wareline (e qualquer outra integração que use
-    # `integrations.crypto`) fica desabilitada (rotas retornam 503).
-    wareline_encryption_key: SecretStr | None = None
+    # --- Cifra das credenciais de integração externa -----------------------
+    # Fernet key que protege `api_connection.credentials_encrypted` (token,
+    # senha, client secret de qualquer provider).
+    #
+    # O nome antigo era WARELINE_ENCRYPTION_KEY, de quando a única integração
+    # era o Wareline. Ele continua aceito porque está setado nos deploys —
+    # renomear sem alias derrubaria a decifragem de tudo que já foi salvo.
+    integracoes_encryption_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "INTEGRACOES_ENCRYPTION_KEY",
+            "WARELINE_ENCRYPTION_KEY",
+        ),
+    )
 
     # --- Sprint Conexões — WhatsApp Cloud API (Meta WABA Embedded Signup) ---
     # App registrado em developers.facebook.com com produto "WhatsApp Business Platform"

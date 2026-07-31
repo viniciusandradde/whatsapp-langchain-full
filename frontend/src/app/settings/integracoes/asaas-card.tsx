@@ -118,7 +118,7 @@ export function AsaasCard({ initialConfig }: Props) {
         </label>
 
         <label className="text-sm">
-          API Key {cfg.tem_api_key && !sensitiveRequired && "(salva — em branco mantém)"}
+          Chave de API {cfg.tem_api_key && !sensitiveRequired && "(salva — em branco mantém)"}
           <input
             type="password"
             value={apiKey}
@@ -129,7 +129,7 @@ export function AsaasCard({ initialConfig }: Props) {
         </label>
 
         <label className="text-sm">
-          Webhook Token (header asaas-access-token)
+          Token do webhook
           <input
             type="password"
             value={webhookToken}
@@ -140,7 +140,7 @@ export function AsaasCard({ initialConfig }: Props) {
         </label>
 
         <label className="text-sm">
-          Success URL (opcional)
+          URL de sucesso (opcional)
           <input
             type="text"
             value={successUrl}
@@ -150,7 +150,7 @@ export function AsaasCard({ initialConfig }: Props) {
         </label>
 
         <label className="text-sm">
-          Cancel URL (opcional)
+          URL de cancelamento (opcional)
           <input
             type="text"
             value={cancelUrl}

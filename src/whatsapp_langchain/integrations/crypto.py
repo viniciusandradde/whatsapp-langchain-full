@@ -1,8 +1,8 @@
-"""Cripto Fernet compartilhada entre providers (Sprint Conector API).
+"""Cripto Fernet compartilhada entre integrações externas.
 
-Refator de `wareline/credentials.py` — extrai encrypt/decrypt e adiciona
-helpers pra dicts (JSON) usados pelo storage genérico
-`api_connection.credentials_encrypted`.
+Cifra o que vai em `api_connection.credentials_encrypted` — token, senha,
+client secret. Vale pra qualquer provider: Google Calendar, API REST
+customizada, webhook autenticado.
 """
 
 from __future__ import annotations
@@ -13,14 +13,11 @@ import json
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from whatsapp_langchain.integrations.wareline.errors import (
-    WarelineConfigError,
-)
 from whatsapp_langchain.shared.config import settings
 
 
-class IntegracaoConfigError(WarelineConfigError):
-    """Re-export pra novos providers (mesma semântica do Wareline)."""
+class IntegracaoConfigError(Exception):
+    """Credencial ausente no banco ou chave de cifra não configurada."""
 
 
 def _derive_fernet_key(secret: str) -> bytes:
@@ -30,12 +27,12 @@ def _derive_fernet_key(secret: str) -> bytes:
 
 
 def _get_fernet() -> Fernet:
-    """Lazy. Usa WARELINE_ENCRYPTION_KEY se setada; senão DERIVA a key de um
+    """Lazy. Usa a chave de cifra se setada; senão DERIVA a key de um
     segredo já presente (INTERNAL_SERVICE_TOKEN) — evita exigir uma env nova só
     pra isso e mantém as credenciais cifradas. A derivação é determinística;
     se o INTERNAL_SERVICE_TOKEN mudar, ciphertext antigo não decifra (mesma
     propriedade de "não perca a chave" da env explícita)."""
-    key = settings.wareline_encryption_key
+    key = settings.integracoes_encryption_key
     if key is not None:
         raw = key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
         return Fernet(raw.encode() if isinstance(raw, str) else raw)

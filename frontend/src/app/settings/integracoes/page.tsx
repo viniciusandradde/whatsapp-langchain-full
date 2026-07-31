@@ -5,7 +5,6 @@ import {
   type AsaasConfigStatus,
   getAsaasConfig,
   getGoogleCalendarConfig,
-  getWarelineConfig,
   isMyAdmin,
   listApiConnections,
 } from "@/lib/api";
@@ -13,7 +12,6 @@ import { requireSession } from "@/lib/session";
 
 import { ApiConnectionsSection } from "./api-connections-section";
 import { AsaasCard } from "./asaas-card";
-import { WarelineCard } from "./wareline-card";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +26,6 @@ interface PageProps {
  * Página /settings/integracoes — integrações externas da empresa ativa.
  *
  * - Google Calendar (M5.a): OAuth pra agendamento via Google
- * - Wareline ConecteHub (Sprint Wareline): consulta agenda + criar
  *   marcação no sistema do hospital
  * - Conexões de API genéricas (Sprint Conector API): provider custom
  *   (Bearer/Basic/API Key) cadastrável via UI
@@ -40,18 +37,15 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
   const sp = await searchParams;
 
   let googleConfig: Awaited<ReturnType<typeof getGoogleCalendarConfig>> = null;
-  let warelineConfig: Awaited<ReturnType<typeof getWarelineConfig>> = null;
   let apiConnections: ApiConnection[] = [];
   let loadError: string | null = null;
 
   try {
-    const [g, w, api] = await Promise.all([
+    const [g, api] = await Promise.all([
       getGoogleCalendarConfig().catch(() => null),
-      getWarelineConfig().catch(() => null),
       listApiConnections().catch(() => ({ items: [] })),
     ]);
     googleConfig = g;
-    warelineConfig = w;
     apiConnections = api.items;
   } catch (e) {
     loadError =
@@ -75,7 +69,7 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
       </div>
 
       {sp.google_calendar === "ok" && (
-        <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 p-4 text-sm text-emerald-300">
+        <div className="rounded-lg border border-success/40 bg-success/10 p-4 text-sm text-success">
           Google Calendar conectado com sucesso.
         </div>
       )}
@@ -92,7 +86,6 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
       )}
 
       {isSuper && asaasConfig && <AsaasCard initialConfig={asaasConfig} />}
-      <WarelineCard initialConfig={warelineConfig} />
       <ApiConnectionsSection
         initialConnections={apiConnections}
         googleCalendarConfig={googleConfig}

@@ -107,9 +107,6 @@ from whatsapp_langchain.server.routes.integracoes_api import (
 from whatsapp_langchain.server.routes.integracoes_asaas import (
     router as integracoes_asaas_router,
 )
-from whatsapp_langchain.server.routes.integracoes_wareline import (
-    router as integracoes_wareline_router,
-)
 from whatsapp_langchain.server.routes.lgpd import router as lgpd_router
 from whatsapp_langchain.server.routes.menu_chatbot import (
     router as menu_chatbot_router,
@@ -375,7 +372,6 @@ app.include_router(historico_router)
 app.include_router(aba_router)
 app.include_router(tag_router)
 app.include_router(whitelist_router)
-app.include_router(integracoes_wareline_router)
 app.include_router(integracoes_api_router)
 app.include_router(integracoes_asaas_router)
 app.include_router(lgpd_router)

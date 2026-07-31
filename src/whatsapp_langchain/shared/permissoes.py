@@ -157,12 +157,7 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "atendimento",
     ),
     ("tag.manage", "CRUD de tags da empresa (admin/gestor only)", "tag"),
-    # Integrações externas (Sprint Wareline)
-    (
-        "integracao.wareline.manage",
-        "Gerenciar credenciais da integração Wareline ConecteHub",
-        "integracao",
-    ),
+    # Integrações externas
     # Conector genérico de APIs (Sprint Conector API)
     (
         "integracao.manage",
@@ -255,7 +250,6 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "atendimento.tag.aplicar",
             "atendimento.nota_interna.criar",
             "tag.manage",
-            "integracao.wareline.manage",
             "integracao.manage",
             "security.audit.read",
             # Campanhas/Disparador + templates + whitelist — paridade exata

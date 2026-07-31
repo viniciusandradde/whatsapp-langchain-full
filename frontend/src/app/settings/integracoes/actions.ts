@@ -6,31 +6,20 @@ import {
   type ApiConnection,
   createApiConnection,
   deleteApiConnection,
-  deleteWarelineConfig,
   disconnectGoogleCalendar,
   getApiConnectionProviders,
   getGoogleCalendarOAuthUrl,
-  getWarelineConfig,
   listApiConnections,
   type ProviderSpec,
   saveAsaasConfig,
-  saveWarelineConfig,
   testApiConnection,
   testAsaasConnection,
-  testWarelineConnection,
   updateApiConnection,
   updateGoogleCalendarConfig,
-  type WarelineConfig,
 } from "@/lib/api";
 
 type Result = { ok: true } | { ok: false; error: string };
 type UrlResult = { ok: true; url: string } | { ok: false; error: string };
-type WarelineResult =
-  | { ok: true; config: WarelineConfig | null }
-  | { ok: false; error: string };
-type WarelineTestResult =
-  | { ok: boolean; mensagem: string }
-  | { ok: false; mensagem: string; error: string };
 type ConnectionsResult =
   | { ok: true; connections: ApiConnection[] }
   | { ok: false; error: string };
@@ -77,53 +66,10 @@ export async function updateAprovadorTelefoneAction(
   }
 }
 
-// --- Wareline ConecteHub ---
 
-export async function loadWarelineConfigAction(): Promise<WarelineResult> {
-  try {
-    const config = await getWarelineConfig();
-    return { ok: true, config };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
 
-export async function saveWarelineConfigAction(payload: {
-  username?: string;
-  password?: string;
-  client_id?: string;
-  client_secret?: string;
-  base_url?: string;
-  pacientes_base_url?: string;
-  ativo?: boolean;
-}): Promise<WarelineResult> {
-  try {
-    const config = await saveWarelineConfig(payload);
-    revalidatePath("/settings/integracoes");
-    return { ok: true, config };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
 
-export async function testWarelineAction(): Promise<WarelineTestResult> {
-  try {
-    const r = await testWarelineConnection();
-    return { ok: r.ok, mensagem: r.mensagem };
-  } catch (e) {
-    return { ok: false, mensagem: toError(e), error: toError(e) };
-  }
-}
 
-export async function deleteWarelineConfigAction(): Promise<Result> {
-  try {
-    await deleteWarelineConfig();
-    revalidatePath("/settings/integracoes");
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
 
 // --- Conector API genérico ---
 

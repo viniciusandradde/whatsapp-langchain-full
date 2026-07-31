@@ -278,7 +278,7 @@ class TestE2E:
         r = httpx.post(
             f"{API_BASE_URL}/api/integracoes",
             json={
-                "provider_slug": "wareline",
+                "provider_slug": "google_calendar",
                 "label": "X",
                 "credentials": {
                     "username": "u",
