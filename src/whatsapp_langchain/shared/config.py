@@ -53,6 +53,22 @@ class Settings(BaseSettings):
     # exposicao do webhook sincrono (desabilitado em production)
     environment: str = "development"
 
+    # Trava de segurança pra processo local ligado a um banco compartilhado.
+    #
+    # A API roda o migrator no startup (`run_migrations`). Isso é correto no
+    # container de deploy e é uma armadilha fora dele: subir um uvicorn local
+    # apontando `DATABASE_URL` pra um banco que não é seu **aplica todas as
+    # migrations pendentes daquele checkout** — inclusive DDL destrutivo que
+    # ainda não foi revisado, contra um schema cujo código em execução é outro.
+    #
+    # Aconteceu em 2026-07-31: dois restarts de um uvicorn de desenvolvimento
+    # aplicaram `151_drop_wareline.sql` e `152_perfis_descricao_pt.sql` num
+    # banco de produção. Ver `docs/benchmark/nosso-painel/defeitos.md`.
+    #
+    # Ligue (`SKIP_MIGRATIONS=true`) em qualquer processo local que fale com
+    # banco que você não pode alterar. O deploy nunca liga.
+    skip_migrations: bool = False
+
     # --- Server ---
     port: int = 8000
     log_level: str = "info"
