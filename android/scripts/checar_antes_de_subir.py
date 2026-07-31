@@ -189,9 +189,7 @@ def checar_fakes(interfaces: dict[str, dict[str, list[str]]]) -> list[str]:
         for m in RE_CLASSE.finditer(texto):
             classe = m.group(1)
             heranca, inicio_corpo = supertipos(texto, m.end())
-            alvos = [
-                nome for nome in interfaces if re.search(rf"\b{nome}\b", heranca)
-            ]
+            alvos = [nome for nome in interfaces if re.search(rf"\b{nome}\b", heranca)]
             if not alvos:
                 continue
             corpo = corpo_de(texto, inicio_corpo)
