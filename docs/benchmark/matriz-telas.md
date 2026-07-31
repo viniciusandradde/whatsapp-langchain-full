@@ -145,20 +145,40 @@ Lá: criar, revelar, excluir — **sem escopo, sem nome, sem validade, sem rota�
 sem último uso**. Já registrado em "não copiar" no
 [backlog](backlog-gaps.md).
 
-## `settings-llm-keys` × `/catalog/models` — **superar** — Onda 6
+## `settings-llm-keys` × `/catalog/models` — **superar** — Onda 6 — ✅ feito
 
 A tela deles mostra dois provedores travados no Premium, enquanto o objeto da
 organização carrega seis campos de chave: a régua de plano está na interface,
 não no backend. Nosso catálogo de modelos é editável e global/por empresa.
 
-## `permissoes-membros` × `/settings/perfis` + `/usuarios` — **superar** — Onda 6
+**Onde perdíamos na tela:** 18 cards num grid de três colunas, 4.220px de
+rolagem, para uma tela cujo propósito é **comparar preço**. Card em grid é o
+pior arranjo possível pra isso — os números caem em posições diferentes e não
+existe coluna pra percorrer com o olho.
+
+**Feito:** tabela ordenável por entrada / saída / contexto, busca, filtro por
+tipo. Preço com casas variáveis (embedding custa $0.020, o Opus custa $75) e
+contexto em "1M" em vez de 1.048.576. Nulo ordena sempre no fim — "sem preço
+informado" não é "o mais barato". 4.220px → 3.152px.
+
+## `permissoes-membros` × `/settings/perfis` + `/usuarios` — **superar** — Onda 6 — ✅ feito
 
 Eles têm permissão por agente e por base. Nós temos RBAC granular com perfis,
 departamentos, turnos e auditoria — muito além.
 
-**Onde perdemos na tela:** "4 perfil(s) — 4 system, 0 customizado(s)" e
+**Onde perdíamos na tela:** "4 perfil(s) — 4 system, 0 customizado(s)" e
 *"equivalente ao role 'admin' legacy"* — dívida de migração virou copy de
-produto (item U17).
+produto (item U17). Em `/usuarios`, 4 modais escritos à mão sem foco preso nem
+`Escape`, 3 `confirm()`, 5 `alert()`, e cinco botões de ícone por linha
+identificados só por `title=` — que não aparece em toque nem é lido como
+rótulo.
+
+**Feito:** Dialog/AlertDialog do Base UI (foco preso e devolvido ao gatilho,
+`Escape` fecha, fundo `aria-hidden` — verificado em runtime), Tooltip com
+rótulo acessível, Table/Select/Checkbox/RadioGroup, Skeleton no lugar de
+"Carregando…". "Tipo de acesso (legado)" virou "Cargo na empresa"; status
+passou a distinguir "tem acesso ao painel" de "está online agora"; e
+"Último acesso: —" virou "nunca entrou".
 
 ## `onboarding` × `/onboarding` — **empatar** — Onda 1
 

@@ -114,7 +114,38 @@ casa (`nav-catalog.ts:242`).
 Arco SVG com início e fim idênticos não desenha nada, então o gráfico ficava
 vazio exatamente no caso mais comum. Corrigido com dois semicírculos.
 
-### A8 — `.env` do repositório diverge dos containers em 3 segredos
+### A8 — `Button render={<Link/>}` quebra em runtime, e o padrão antigo é pior
+
+O `ButtonPrimitive` do Base UI assume `nativeButton` e derruba um erro de
+console quando o `render` devolve `<a>`: _"A component that acts as a button
+expected a native `<button>`"_. `/catalog/models` abria com **"1 Issue"** no
+overlay do Next.
+
+O padrão que já estava no código — `<Link><Button/></Link>` — não dispara o
+aviso porque nem passa pelo `render`, mas empilha **dois alvos interativos**:
+um `<button>` dentro de um `<a>`. Leitor de tela anuncia os dois.
+
+Corrigido com `ButtonLink` (`components/ui/button.tsx`), que fixa
+`nativeButton={false}`. **Restam 17 aninhamentos `<Link><Button>` no `src/app`**
+— cada tela migrada troca os seus.
+
+### A9 — `SelectValue` do Base UI imprime o valor, não o rótulo
+
+Sem uma função como filho, `Select.Value` renderiza o **valor** do item
+selecionado. O filtro de `/usuarios` mostrava `todos` no gatilho e "Todos os
+status" na lista; no modal de desativar, teria mostrado o **UUID** do
+atendente. Regra: todo `SelectValue` recebe
+`{(v) => RÓTULO[v]}` — não existe caso em que imprimir o valor cru está certo.
+
+### A10 — `AlertDialogAction` sai na cor da marca
+
+O primitivo herda `variant="default"` do `Button`, então a confirmação de
+**apagar** vinha laranja, igual ao botão de salvar. `ConfirmDestrutivo` ganhou
+`tom`: `destrutivo` pinta de vermelho e avisa que não dá pra desfazer;
+`serio` (reativar acesso, resetar senha) não pinta — vermelho em tudo é
+vermelho em nada.
+
+### A11 — `.env` do repositório diverge dos containers em 3 segredos
 
 Senha do banco, `BETTER_AUTH_SECRET` e `INTERNAL_SERVICE_TOKEN` no `.env` não
 são os que os containers usam. Não alterado — mas é a razão pela qual um
