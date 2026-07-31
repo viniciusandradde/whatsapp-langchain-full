@@ -88,6 +88,16 @@ pythonVersion = "3.11"
 typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
+# Sem isto o pytest varre o repositório inteiro e coleta
+# `src/whatsapp_langchain/integrations/test_handlers.py`, que não é teste: são
+# os handlers do POST /api/integracoes/{id}/testar, importados por
+# `integracoes_api.py`. Suas funções se chamam `test_asaas` e `test_custom`, e
+# o pytest tentava executá-las — daí dois ERROR fixos em toda rodada, por
+# fixture inexistente. Hoje o estrago é só ruído, mas um handler novo que não
+# receba argumento seria de fato EXECUTADO pela suíte, disparando chamada HTTP
+# com credencial real. Os alvos que passam caminho explícito (test-flows,
+# test-e2e) não são afetados.
+testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
