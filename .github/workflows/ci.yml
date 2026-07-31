@@ -1,0 +1,86 @@
+# Gate do Python — o par do `frontend.yml`.
+#
+# Até 2026-07-31 o único workflow que tocava o backend era o `deploy.yml`, e
+# ele **não roda teste nenhum**: builda a imagem e manda o Dokploy recriar. Ou
+# seja, o check verde do GitHub significava "a imagem compilou", não "o código
+# está correto" — e como ele só dispara em push pra `master`, a informação
+# chegava depois de já estar em produção.
+#
+# ---------------------------------------------------------------------------
+# POR QUE NÃO RODA A SUÍTE (ainda)
+#
+# Este gate cobre estilo e tipos, e é honesto sobre isso: não finge testar.
+# Rodar `pytest` aqui foi tentado em 2026-07-31 e não se sustentou:
+#
+#   1ª execução, sem banco: 64 falhas. 48 eram a mesma linha —
+#      `INTERNAL_SERVICE_TOKEN` ausente, porque `validate_runtime_settings()`
+#      roda no import e o runner não tem `.env`.
+#   2ª execução, com as variáveis: 56 falhas em 13m53s. 24 morriam em
+#      `PoolTimeout` esperando 30 segundos cada, porque o middleware de rate
+#      limit consulta o banco antes de qualquer resposta em `/api/*`.
+#   Com Postgres, aí sim, a suíte PENDURA — não falha, trava. O `TestClient`
+#      roda sobre `anyio.start_blocking_portal()`, e a documentação do Starlette
+#      é explícita: o shutdown do lifespan só termina depois que todas as
+#      conexões fecharem e as tasks de background acabarem. Duas fontes já
+#      foram corrigidas (o pool que o webhook WABA abria sem precisar, e o
+#      `cancel()` sem `await` no poller de campanhas) e ainda sobra outra: cada
+#      `with TestClient(app)` executa o lifespan inteiro — migrations,
+#      bootstrap do LangGraph, sync de catálogo — contra o banco, por teste.
+#
+# Ligar `pytest` aqui antes de resolver isso significa pendurar todo PR nos 20
+# minutos de timeout. O passo volta quando a suíte terminar sozinha; o
+# diagnóstico está em docs/MIGRACAO_DEV.md, seção "A suíte não termina
+# localmente".
+# ---------------------------------------------------------------------------
+
+name: ci
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # Mesmo comando do `make setup`. `uv sync --locked` seria mais rápido,
+      # mas quebra o CI quando o lock está atrasado — um motivo alheio ao
+      # código que está sendo revisado.
+      - name: Instalar dependências
+        run: uv venv && uv pip install -e ".[dev]"
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Formatação
+        run: uv run ruff format --check .
+
+      - name: Tipos
+        run: uv run pyright src/

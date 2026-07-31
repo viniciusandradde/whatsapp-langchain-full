@@ -1,12 +1,18 @@
-.PHONY: help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
+.PHONY: dev-acesso dev-isolamento dev-banco-refresh migrar-exportar migrar-preparar migrar-importar backup backup-instalar backup-restaurar repo-comparar help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
 
 # Cores para output
 CYAN := \033[36m
 RESET := \033[0m
 
+# Nome do projeto Docker. Sem isto o compose usa o nome do diretório, e um
+# `make up` sobe um SEGUNDO stack nas mesmas portas do override — conflito de
+# porta com o que já está no ar. Sobrescreva com: make up COMPOSE_PROJETO=outro
+COMPOSE_PROJETO ?= chatnexus-dev
+COMPOSE := docker compose -p $(COMPOSE_PROJETO)
+
 ##@ Geral
 help: ## Mostra esta mensagem de ajuda
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUso:\n  make $(CYAN)<comando>$(RESET)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(CYAN)%-15s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n%s\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUso:\n  make $(CYAN)<comando>$(RESET)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n%s\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Setup
 setup: ## Cria .venv e instala dependências
@@ -18,7 +24,7 @@ dev: ## Inicia LangGraph Studio (desenvolvimento de agentes)
 	uv run langgraph dev
 
 db: ## Inicia apenas o PostgreSQL (com pgvector)
-	docker compose up -d db
+	$(COMPOSE) up -d db
 
 migrate: ## Aplica migrações pendentes no banco
 	uv run python db/migrate.py
@@ -34,18 +40,79 @@ frontend: ## Admin Panel (Next.js)
 
 ##@ Docker
 up: ## Inicia todos os serviços (API + Worker + Frontend + DB)
-	docker compose up -d
+	$(COMPOSE) up -d
 
 down: ## Para todos os serviços
-	docker compose down
+	$(COMPOSE) down
 
 reset: ## Reseta stack Docker (remove containers/rede/volumes e sobe com build limpo)
-	docker compose down -v --remove-orphans
-	docker compose up -d --build
-	docker compose ps
+	$(COMPOSE) down -v --remove-orphans
+	$(COMPOSE) up -d --build
+	$(COMPOSE) ps
 
 logs: ## Mostra logs de todos os serviços
-	docker compose logs -f
+	$(COMPOSE) logs -f
+
+##@ Ambiente de desenvolvimento
+# O ambiente vive na máquina Ubuntu, isolado da produção. Ver docs/MIGRACAO_DEV.md.
+IP_LAN := $(shell ip route get 1.1.1.1 2>/dev/null | awk '{print $$7; exit}')
+
+dev-acesso: ## Mostra URLs, login e o estado dos serviços do ambiente de dev
+	@echo "  painel   http://$(IP_LAN):3100    login admin@dev.local"
+	@echo "  API      http://$(IP_LAN):8081"
+	@echo "  banco    postgresql://postgres:postgres@localhost:5434/whatsapp_langchain"
+	@echo ""
+	@$(COMPOSE) ps --format "  {{.Service}}\t{{.Status}}" 2>/dev/null || true
+
+dev-isolamento: ## Confere as travas que impedem o dev de falar com a produção
+	@falhou=0; \
+	for trava in EVOLUTION_OUTBOUND_MODE=mock TWILIO_OUTBOUND_MODE=mock \
+	             LANGFUSE_ENABLED=false ENVIRONMENT=development; do \
+	  if grep -qE "^$$trava$$" .env; then echo "  ok     $$trava"; \
+	  else echo "  FALHOU $$trava"; falhou=1; fi; \
+	done; \
+	if grep -qE '^DATABASE_URL=.*(vsanexus|100\.67\.148\.26|@db:)' .env; then \
+	  echo "  FALHOU DATABASE_URL aponta pra fora"; falhou=1; \
+	else echo "  ok     DATABASE_URL é local"; fi; \
+	exit $$falhou
+
+dev-banco-refresh: ## Restaura um dump saneado novo no banco de dev (DUMP=/caminho/dev.dump)
+	@test -n "$(DUMP)" || { echo "uso: make dev-banco-refresh DUMP=/caminho/dev.dump"; exit 1; }
+	$(COMPOSE) exec -T db pg_restore -U postgres -d whatsapp_langchain \
+	  --no-owner --no-acl --clean --if-exists < "$(DUMP)"
+
+##@ Migração e backup
+# Ver docs/MIGRACAO_DEV.md para o roteiro completo e o contrato de isolamento.
+migrar-exportar: ## Monta o pacote de migração — roda no VPS, só lê (SAIDA=/tmp/...)
+	scripts/migrar-dev/00-exportar.sh $(SAIDA)
+
+migrar-preparar: ## Instala o que a máquina de desenvolvimento precisa (Docker, uv, Node 22)
+	scripts/migrar-dev/01-preparar-maquina.sh
+
+migrar-importar: ## Importa o pacote e sobe o ambiente (ORIGEM=vps-docker03:/tmp/chatnexus-migracao)
+	@test -n "$(ORIGEM)" || { echo "uso: make migrar-importar ORIGEM=host:/caminho"; exit 1; }
+	scripts/migrar-dev/02-importar.sh "$(ORIGEM)"
+
+backup: ## Backup da produção agora (pg_dump -Fc comprimido em /home/dev/backup)
+	scripts/backup_prod.sh
+
+backup-instalar: ## Instala o timer systemd do backup diário (precisa sudo)
+	sudo scripts/backup_prod.sh --instalar
+
+backup-restaurar: ## Restaura um backup numa base NOVA, nunca por cima (ARQ=/home/dev/backup/...)
+	@test -n "$(ARQ)" || { echo "uso: make backup-restaurar ARQ=/home/dev/backup/prod-AAAA-MM-DD.dump.zst"; exit 1; }
+	scripts/backup_prod.sh --restaurar "$(ARQ)"
+
+repo-comparar: ## Prova por LISTA que nenhum commit ficou só na outra cópia (OUTRO=/caminho)
+	@test -n "$(OUTRO)" || { echo "uso: make repo-comparar OUTRO=/home/dev/projetos/chatnexus"; exit 1; }
+	@git log --all --oneline | sort > /tmp/repo-aqui.txt; \
+	git -C "$(OUTRO)" log --all --oneline | sort > /tmp/repo-outro.txt; \
+	if comm -23 /tmp/repo-outro.txt /tmp/repo-aqui.txt | grep -q .; then \
+	  echo "  commits que existem SÓ em $(OUTRO) — não apague ainda:"; \
+	  comm -23 /tmp/repo-outro.txt /tmp/repo-aqui.txt | sed 's/^/    /'; exit 1; \
+	else echo "  ok     nada exclusivo em $(OUTRO)"; \
+	  echo "  lembre: .env, docker-compose.override.yml e as capturas do benchmark"; \
+	  echo "          estão no .gitignore e NÃO aparecem nesta comparação"; fi
 
 ##@ Qualidade de Código
 # Estes comandos verificam estilo e tipos, NÃO lógica.
@@ -100,7 +167,7 @@ test-demo: ## Roda testes demonstrativos (requer stack Docker rodando)
 	uv run pytest -m docker_demo -v
 
 test-demo-up: ## Sobe stack Docker e roda testes demonstrativos
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 	uv run pytest -m docker_demo -v
 
 test-flows: ## Roda testes de fluxo realista (requer stack Docker)
