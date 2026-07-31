@@ -1,8 +1,14 @@
 """Cripto Fernet compartilhada entre providers (Sprint Conector API).
 
-Refator de `wareline/credentials.py` — extrai encrypt/decrypt e adiciona
-helpers pra dicts (JSON) usados pelo storage genérico
-`api_connection.credentials_encrypted`.
+Nasceu como refator de `wareline/credentials.py` — extrai encrypt/decrypt e
+adiciona helpers pra dicts (JSON) usados pelo storage genérico
+`api_connection.credentials_encrypted`. O Wareline saiu do produto, mas este
+módulo ficou: é o que cifra as credenciais do Google Calendar e das demais
+integrações.
+
+A env continua se chamando `WARELINE_ENCRYPTION_KEY` **de propósito**. Ela é a
+chave que decifra o que já está gravado; renomear tornaria ilegível todo
+`credentials_encrypted` existente em produção. O nome é histórico, o uso não.
 """
 
 from __future__ import annotations
@@ -13,14 +19,15 @@ import json
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from whatsapp_langchain.integrations.wareline.errors import (
-    WarelineConfigError,
-)
 from whatsapp_langchain.shared.config import settings
 
 
-class IntegracaoConfigError(WarelineConfigError):
-    """Re-export pra novos providers (mesma semântica do Wareline)."""
+class IntegracaoConfigError(Exception):
+    """Configuração de integração ausente ou inválida.
+
+    Era `WarelineConfigError`, de quem herdava; virou classe própria quando o
+    Wareline saiu.
+    """
 
 
 def _derive_fernet_key(secret: str) -> bytes:

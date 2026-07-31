@@ -1,4 +1,4 @@
-"""Agente Agendamentos — integração Wareline ConecteHub.
+"""Agente Agendamentos — triagem de pedido de consulta.
 
 Set enxuto de tools focado em marcar/remarcar/cancelar consultas.
 Espelha contrato de `vsa_tech`/`atendimento_completo` (mesma assinatura
@@ -18,9 +18,6 @@ from whatsapp_langchain.agents.tools import (
     read_memory,
     save_memory,
     transfer_to_human,
-    wareline_buscar_paciente,
-    wareline_consultar_agenda,
-    wareline_criar_agendamento,
 )
 from whatsapp_langchain.shared.llm import create_chat_model
 
@@ -33,7 +30,7 @@ def build_graph(
     chat_model: str | None = None,
     pool: AsyncConnectionPool | None = None,  # noqa: ARG001
     empresa_id: int | None = None,  # noqa: ARG001
-    calendar_enabled: bool = False,  # noqa: ARG001 — Wareline substitui Google Calendar
+    calendar_enabled: bool = False,  # noqa: ARG001 — este template não usa Calendar
     knowledge_enabled: bool = False,  # noqa: ARG001 — agente não usa KB
     system_prompt_override: str | None = None,
     temperatura: float | None = None,
@@ -46,7 +43,6 @@ def build_graph(
     """Constrói o agente Agendamentos.
 
     Tools (~8 total):
-    - Wareline (3): buscar_paciente, consultar_agenda, criar_agendamento
     - CRM contexto (2): get_cliente_profile, get_cliente_history
     - Memória (2, se store): save_memory, read_memory
     - Escalação (2): transfer_to_human, classificar_atendimento
@@ -61,15 +57,6 @@ def build_graph(
     middleware = get_context_middleware()
 
     tools: list = [save_memory, read_memory] if store else []
-
-    # Wareline tools — sempre habilitadas neste template
-    tools.extend(
-        [
-            wareline_buscar_paciente,
-            wareline_consultar_agenda,
-            wareline_criar_agendamento,
-        ]
-    )
 
     # Contexto CRM básico (saber quem é o cliente + histórico no Nexus)
     tools.extend(

@@ -46,10 +46,6 @@ from whatsapp_langchain.shared.conexao_quota import quota_status
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import Conexao, ConexaoInput, ConexaoPatchInput
-from whatsapp_langchain.shared.outbound import (
-    OutboundError,
-    send_outbound_template,
-)
 
 logger = structlog.get_logger()
 
@@ -1035,9 +1031,9 @@ async def test_conexao(
                 if state != conexao.connection_state:
                     await set_connection_state(pool, conexao_id, state=state)
 
-        else:  # twilio_*
-            ok = bool(settings.twilio_account_sid and settings.twilio_api_key_sid)
-            message = "Twilio config OK" if ok else "Twilio env vars ausentes."
+        else:
+            ok = False
+            message = f"Health check não suportado para provider {conexao.provider!r}."
 
     except Exception as exc:
         message = str(exc)[:200]
@@ -1119,78 +1115,4 @@ async def test_evolution_connection(
         ok=state in {"open", "connecting"},
         state=state,
         instance_name=body.instance_name,
-    )
-
-
-# ---------- Twilio: enviar template HSM (Content API) ----------
-
-
-class SendTemplateInput(BaseModel):
-    to: str = Field(
-        ...,
-        min_length=8,
-        max_length=20,
-        description="Destino em E.164, ex: +5511999999999",
-    )
-    content_sid: str = Field(
-        ...,
-        min_length=10,
-        max_length=40,
-        description="SID do template aprovado, ex: HXb5b62575e6e4ff6129ad7c8efe1f983e",
-    )
-    content_variables: dict[str, str] | None = Field(
-        default=None,
-        description='Vars do template, ex: {"1": "12/1", "2": "3pm"}',
-    )
-    atendimento_id: int | None = Field(
-        default=None,
-        description=(
-            "Quando setado, persiste row na timeline. Sem isso é envio "
-            "fora-de-atendimento (broadcast/CSAT proativo)."
-        ),
-    )
-
-
-class SendTemplateResponse(BaseModel):
-    provider_message_id: str
-    outbound_mode: str
-    message_row: dict[str, Any] | None = None
-
-
-@router.post("/{conexao_id}/send-template")
-async def send_template_endpoint(
-    conexao_id: int,
-    body: SendTemplateInput,
-    request: Request,
-    empresa_id: int = Depends(get_empresa_context),
-    _perm: None = Depends(require_permission("integracao.manage")),
-) -> SendTemplateResponse:
-    """Envia template HSM via Twilio Content API.
-
-    Único path pra mandar mensagem FORA da janela de 24h. Hoje só suporta
-    provider `twilio_sandbox` / `twilio_prod`. WABA tem fluxo próprio (Cloud
-    API) que vira em sprint futura; Evolution não suporta HSM.
-
-    Útil pra: CSAT proativo, lembrete de agendamento, alerta operacional,
-    broadcast pra base de clientes que opted-in.
-    """
-    pool = await get_pool()
-    try:
-        result = await send_outbound_template(
-            pool,
-            conexao_id=conexao_id,
-            empresa_id=empresa_id,
-            to=body.to,
-            content_sid=body.content_sid,
-            content_variables=body.content_variables,
-            atendimento_id=body.atendimento_id,
-            user_id=get_user_id_from_request(request),
-        )
-    except OutboundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return SendTemplateResponse(
-        provider_message_id=result["provider_message_id"],
-        outbound_mode=result["outbound_mode"],
-        message_row=result.get("message_row"),
     )

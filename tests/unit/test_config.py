@@ -22,10 +22,13 @@ def test_frontend_origins_parses_csv(monkeypatch):
     ]
 
 
-def test_frontend_origins_default_allows_localhost():
+def test_frontend_origins_default_allows_localhost(monkeypatch):
+    # Sem o monkeypatch, o `.env` do ambiente de desenvolvimento vence o default
+    # e o teste passa a afirmar a configuração da máquina, não a do código.
+    monkeypatch.delenv("FRONTEND_ORIGINS", raising=False)
     from whatsapp_langchain.shared.config import Settings
 
-    s = Settings()
+    s = Settings(_env_file=None)
     assert "http://localhost:3000" in s.frontend_origins_list
 
 
@@ -94,20 +97,6 @@ class TestRuntimeSettingsValidation:
         settings.validate_runtime_settings()
 
 
-def test_validate_runtime_fails_when_signature_disabled_in_prod(monkeypatch):
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
-    monkeypatch.setenv("DATABASE_URL_APP", "postgresql://chat_nexus_app:pw@db:5432/app")
-    monkeypatch.setenv("TWILIO_OUTBOUND_MODE", "real")
-    monkeypatch.setenv("EVOLUTION_OUTBOUND_MODE", "mock")
-    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "false")
-    from whatsapp_langchain.shared.config import Settings
-
-    s = Settings()
-    with pytest.raises(ValueError, match="VALIDATE_TWILIO_SIGNATURE"):
-        s.validate_runtime_settings()
-
-
 def test_validate_runtime_passes_when_signature_enabled_in_prod(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
@@ -149,12 +138,3 @@ def test_validate_runtime_passes_when_frontend_origins_set_in_prod(monkeypatch):
 
     s = Settings()
     s.validate_runtime_settings()  # não deve levantar
-
-
-def test_twilio_live_test_settings_default_off(monkeypatch):
-    monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
-    from whatsapp_langchain.shared.config import Settings
-
-    s = Settings()
-    assert s.twilio_live_tests is False
-    assert s.twilio_test_to_number == ""

@@ -54,10 +54,10 @@ def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
 # ---------- providers catalog ----------
 
 
-def test_catalogo_tem_3_providers():
-    # Asaas foi REMOVIDO do catálogo Wareline (2026-05-22): virou integração
-    # GLOBAL do SaaS (UI /billing + env vars), não mais por-empresa.
-    assert set(PROVIDERS.keys()) == {"wareline", "google_calendar", "custom"}
+def test_catalogo_tem_2_providers():
+    # Asaas saiu em 2026-05-22 (virou integração GLOBAL do SaaS, em /billing).
+    # O Wareline saiu em 2026-07-31, junto com o resto do produto.
+    assert set(PROVIDERS.keys()) == {"google_calendar", "custom"}
 
 
 def test_providers_validos_modelo_pydantic():
@@ -130,25 +130,6 @@ async def test_list_conexoes_enriquece_com_provider_info():
 
 
 # ---------- create_conexao ----------
-
-
-@pytest.mark.asyncio
-async def test_create_conexao_provider_legacy_rejeita():
-    pool, _ = _mock_pool()
-    with pytest.raises(IntegracaoConfigError) as exc_info:
-        await create_conexao(
-            pool,
-            empresa_id=1,
-            provider_slug="wareline",  # legacy
-            label="X",
-            credentials={
-                "username": "x",
-                "password": "y",
-                "client_id": "z",
-                "client_secret": "w",
-            },
-        )
-    assert "legacy" in str(exc_info.value).lower()
 
 
 @pytest.mark.asyncio

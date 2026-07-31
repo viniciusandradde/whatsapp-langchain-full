@@ -142,20 +142,20 @@ check: ## Verifica tudo (lint + format + types) — não altera arquivos
 	uv run ruff check . && uv run ruff format --check . && uv run pyright src/
 
 ci: ## CI/CD: verifica tudo + roda testes com gate de coverage 50%
-	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-fail-under=50
+	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo" --cov --cov-fail-under=50
 
 cov: ## Roda tests + relatório HTML de coverage (htmlcov/index.html)
-	uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-report=html --cov-report=term-missing
+	uv run pytest -m "not docker_demo" --cov --cov-report=html --cov-report=term-missing
 
 ##@ Testes
 test: ## Roda todos os testes
-	uv run pytest -m "not docker_demo and not twilio_real"
+	uv run pytest -m "not docker_demo"
 
 test-x: ## Roda testes, para no primeiro erro
-	uv run pytest -x -m "not docker_demo and not twilio_real"
+	uv run pytest -x -m "not docker_demo"
 
 test-v: ## Roda testes com output verboso
-	uv run pytest -v -m "not docker_demo and not twilio_real"
+	uv run pytest -v -m "not docker_demo"
 
 test-live: ## Roda integracoes live com OpenRouter real (requer OPENROUTER_API_KEY valida)
 	OPENROUTER_LIVE_TESTS=1 uv run pytest tests/integration/test_context_middleware.py tests/integration/test_memory.py tests/integration/test_media_real.py -v
@@ -189,9 +189,6 @@ report-e2e: test-e2e ## Gera HTML do Allure em tests/reports/allure
 	  -o tests/reports/allure --clean
 	@echo "✅ Relatório gerado em tests/reports/allure/index.html"
 	@echo "   Para servir: 'allure open tests/reports/allure'"
-
-test-twilio-smoke: ## Smoke test e2e com Twilio real (custos $$$). Requer TWILIO_LIVE_TESTS=1 e stack Docker.
-	uv run pytest tests/integration/test_twilio_smoke.py -v -s -m twilio_real
 
 ##@ RAG
 backfill-rag: ## Re-chunka docs sem chunks (pós migration 018). --doc-id N força um.

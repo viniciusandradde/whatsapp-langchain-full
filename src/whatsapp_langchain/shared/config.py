@@ -58,27 +58,6 @@ class Settings(BaseSettings):
     log_level: str = "info"
     log_json: bool = False  # True em prod para logs estruturados
 
-    # --- Twilio ---
-    # Inbound (validação de assinatura no webhook)
-    validate_twilio_signature: bool = False
-    twilio_auth_token: str = ""
-    twilio_webhook_url: str = ""
-
-    # Outbound (envio de mensagens pelo worker via API Key)
-    # Em dev local o fallback efetivo e "mock"; em production, "real".
-    # Conta Twilio (app-level, compartilhada por todas as conexões twilio_*).
-    # O NÚMERO de cada conexão vem de `conexao.from_number` (cadastro na UI),
-    # não de env — não há mais TWILIO_FROM_NUMBER "via código".
-    twilio_outbound_mode: str = ""
-    twilio_account_sid: str = ""
-    twilio_api_key_sid: str = ""
-    twilio_api_key_secret: str = ""
-
-    # --- Twilio Live Tests (smoke pré-deploy) ---
-    # CUIDADO: rodar só manualmente. Cada teste envia mensagem real e cobra crédito.
-    twilio_live_tests: bool = False
-    twilio_test_to_number: str = ""
-
     # --- Google Calendar (M5.a) ---
     # OAuth Web Application credentials (Google Cloud Console).
     # Vazio desativa a integração — endpoints respondem 503 e tools do
@@ -346,15 +325,6 @@ class Settings(BaseSettings):
         )
 
     @property
-    def resolved_twilio_outbound_mode(self) -> str:
-        """Resolve o modo outbound do Twilio com fallback seguro por ambiente."""
-        mode = self.twilio_outbound_mode.strip().lower()
-        if mode:
-            return mode
-
-        return "real" if self.environment == "production" else "mock"
-
-    @property
     def is_production(self) -> bool:
         """Indica se a aplicacao esta rodando em modo production."""
         return self.environment.strip().lower() == "production"
@@ -401,20 +371,6 @@ class Settings(BaseSettings):
                 "chat_nexus_app (NOBYPASSRLS). Sem ele o runtime conecta como "
                 "superuser e o RLS fica INERTE (risco de vazamento cross-tenant). "
                 "Ver docs/RLS_OPERATIONS.md."
-            )
-
-        # Sprint D hardening — webhook signature obrigatória se provider real
-        twilio_mode = self.resolved_twilio_outbound_mode
-        if (
-            self.is_production
-            and twilio_mode == "real"
-            and not self.validate_twilio_signature
-        ):
-            raise ValueError(
-                "Production com TWILIO_OUTBOUND_MODE=real exige "
-                "VALIDATE_TWILIO_SIGNATURE=true. Endpoint /webhook/twilio sem "
-                "HMAC aceita qualquer payload forjado — risco de account "
-                "takeover via mensagens falsas."
             )
 
         if (

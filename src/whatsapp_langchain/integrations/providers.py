@@ -7,7 +7,7 @@ Cada provider tem:
 - campos: lista de FieldSpec que a UI renderiza no form
 - base_url_default: pode ser substituído pelo user
 - legacy_storage: providers que JÁ existem com storage próprio
-  (`wareline_credentials`, `empresa_calendar_config`) — UI mostra como
+  (`empresa_calendar_config`) — UI mostra como
   read-only redirect pro card legacy
 
 Adicionar provider novo = entrada nova nesse dict. UI auto-atualiza.
@@ -58,38 +58,11 @@ class ProviderSpec(BaseModel):
     base_url_default: str | None = None
     docs_url: str | None = None
     # Quando preenchido, UI mostra link em vez de form (storage separado).
-    # Ex: "wareline" → wareline-card.tsx, "google_calendar" → google card.
+    # Ex: "google_calendar" → card próprio do Google.
     legacy_storage: str | None = None
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
-    "wareline": ProviderSpec(
-        slug="wareline",
-        nome="Wareline ConecteHub",
-        descricao="Sistema de agendamento médico (OAuth2 password grant).",
-        icone="CalendarCheck",
-        auth_type="oauth2_password",
-        campos=[
-            FieldSpec(name="username", label="Username", required=True),
-            FieldSpec(
-                name="password",
-                label="Senha",
-                type="password",
-                required=True,
-                sensitive=True,
-            ),
-            FieldSpec(name="client_id", label="Client ID", required=True),
-            FieldSpec(
-                name="client_secret",
-                label="Client Secret",
-                type="password",
-                required=True,
-                sensitive=True,
-            ),
-        ],
-        base_url_default="https://modulos.conectew.com.br",
-        legacy_storage="wareline_credentials",
-    ),
     "google_calendar": ProviderSpec(
         slug="google_calendar",
         nome="Google Calendar",

@@ -11,7 +11,6 @@ Auto-sync se ultimo_sync_at > 5min ao abrir detalhe.
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -19,7 +18,6 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from whatsapp_langchain.integrations.twilio import content as twilio_content
 from whatsapp_langchain.integrations.waba import templates as waba_templates
 from whatsapp_langchain.integrations.waba.models import WabaTemplateRecord
 from whatsapp_langchain.server.dependencies import (
@@ -31,7 +29,6 @@ from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     get_credentials_decrypted,
 )
-from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -44,23 +41,14 @@ router = APIRouter(
 
 
 def _extract_body_text(componentes_json: list[dict[str, Any]]) -> str:
-    """Extrai o texto do componente BODY (shape Meta) pra montar twilio/text.
+    """Extrai o texto do componente BODY (shape Meta).
 
-    A UI manda componentes no shape Meta pra ambos os providers; pro Twilio
-    convertemos o BODY em `twilio/text.body`. Header/footer/botões ficam pra
+    A UI manda componentes no shape Meta. Header/footer/botões ficam pra
     iteração futura (MVP foca em texto)."""
     for c in componentes_json:
         if (c.get("type") or "").upper() == "BODY":
             return str(c.get("text") or "")
     return ""
-
-
-def _infer_twilio_variables(body: str) -> dict[str, str]:
-    """Infere variáveis {{1}}, {{2}}... do corpo e gera exemplos placeholder.
-
-    Twilio exige `variables` com valores de exemplo pra aprovação Meta."""
-    nums = sorted({m for m in re.findall(r"\{\{(\d+)\}\}", body)}, key=int)
-    return {n: f"exemplo{n}" for n in nums}
 
 
 _TEMPLATE_COLS = (
@@ -93,21 +81,16 @@ def _row_to_template(row) -> WabaTemplateRecord:
     )
 
 
-# Providers que usam Twilio Content API (vs WABA Meta Cloud API direto)
-_TWILIO_PROVIDERS = ("twilio_sandbox", "twilio_prod")
-
-
 async def _validate_conexao(conexao_id: int, empresa_id: int):
     pool = await get_pool()
     conexao = await get_conexao_by_id(pool, conexao_id)
     if conexao is None or conexao.empresa_id != empresa_id:
         raise HTTPException(status_code=404, detail="Conexão não encontrada.")
-    # Aceita WABA (Meta direto) e Twilio (Content API). Evolution não tem
-    # template HSM — rejeita.
-    if conexao.provider not in ("waba", *_TWILIO_PROVIDERS):
+    # Só WABA (Meta Cloud API). Evolution não tem template HSM — rejeita.
+    if conexao.provider != "waba":
         raise HTTPException(
             status_code=400,
-            detail="Templates só aplicáveis a conexões WABA ou Twilio.",
+            detail="Templates só aplicáveis a conexões WABA.",
         )
     return conexao
 
@@ -156,47 +139,7 @@ async def create_template(
     initial_status = "draft"
     meta_id: str | None = None
     content_sid: str | None = None
-    is_twilio = conexao.provider in _TWILIO_PROVIDERS
-
-    if body.submit and is_twilio:
-        # --- Fluxo Twilio Content API (2 passos: create + approval) ---
-        if not (settings.twilio_account_sid and settings.twilio_auth_token):
-            raise HTTPException(
-                status_code=400,
-                detail="Credenciais Twilio ausentes (account_sid/auth_token).",
-            )
-        body_text = _extract_body_text(body.componentes_json)
-        if not body_text:
-            raise HTTPException(
-                status_code=422,
-                detail="Template Twilio exige um componente BODY com texto.",
-            )
-        try:
-            created = await twilio_content.create_content(
-                settings.twilio_account_sid,
-                settings.twilio_auth_token,
-                friendly_name=body.nome,
-                language=body.idioma,
-                types=twilio_content.build_text_types(body_text),
-                variables=_infer_twilio_variables(body_text) or None,
-            )
-            content_sid = str(created.get("sid") or "")
-            if not content_sid:
-                raise twilio_content.TwilioContentError(
-                    502, "Content API não retornou sid."
-                )
-            await twilio_content.submit_whatsapp_approval(
-                settings.twilio_account_sid,
-                settings.twilio_auth_token,
-                content_sid,
-                name=body.nome,
-                category=body.categoria,
-            )
-        except twilio_content.TwilioContentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc.detail)[:300])
-        initial_status = "pending"
-
-    elif body.submit:
+    if body.submit:
         # --- Fluxo WABA Meta Cloud API direto ---
         if not conexao.waba_account_id:
             raise HTTPException(
@@ -343,59 +286,38 @@ async def sync_template(
 async def _sync_template_internal(
     pool, template: WabaTemplateRecord
 ) -> WabaTemplateRecord | None:
-    """Refresh do status remoto → local. Roteia Twilio (Content API) vs WABA."""
+    """Refresh do status remoto → local (Meta Cloud API)."""
     new_status = template.status
     quality: str | None = template.meta_quality_score
     rejection: str | None = template.motivo_rejeicao
 
-    if template.provider in _TWILIO_PROVIDERS:
-        # --- Twilio: ApprovalRequests ---
-        if not template.content_sid:
-            return None
-        if not (settings.twilio_account_sid and settings.twilio_auth_token):
-            return None
-        try:
-            data = await twilio_content.fetch_approval_status(
-                settings.twilio_account_sid,
-                settings.twilio_auth_token,
-                template.content_sid,
-            )
-        except twilio_content.TwilioContentError as exc:
-            logger.warning(
-                "twilio_template_sync_failed",
-                template_id=template.id,
-                error=str(exc.detail)[:200],
-            )
-            return None
-        new_status, rejection = twilio_content.normalize_approval_status(data)
-    else:
-        # --- WABA: GET /{meta_template_id} ---
-        credentials = await get_credentials_decrypted(pool, template.conexao_id)
-        if not credentials or not template.meta_template_id:
-            return None
-        try:
-            data = await waba_templates.sync_template_status(
-                credentials["access_token"], template.meta_template_id
-            )
-        except waba_templates.WabaTemplateError as exc:
-            logger.warning(
-                "waba_template_sync_failed",
-                template_id=template.id,
-                error=str(exc.detail)[:200],
-            )
-            return None
-        meta_status = (data.get("status") or "").upper()
-        status_map = {
-            "PENDING": "pending",
-            "APPROVED": "approved",
-            "REJECTED": "rejected",
-            "PAUSED": "paused",
-            "DISABLED": "disabled",
-            "FLAGGED": "approved",
-        }
-        new_status = status_map.get(meta_status, template.status)
-        quality = data.get("quality_score")
-        rejection = data.get("rejected_reason")
+    # --- WABA: GET /{meta_template_id} ---
+    credentials = await get_credentials_decrypted(pool, template.conexao_id)
+    if not credentials or not template.meta_template_id:
+        return None
+    try:
+        data = await waba_templates.sync_template_status(
+            credentials["access_token"], template.meta_template_id
+        )
+    except waba_templates.WabaTemplateError as exc:
+        logger.warning(
+            "waba_template_sync_failed",
+            template_id=template.id,
+            error=str(exc.detail)[:200],
+        )
+        return None
+    meta_status = (data.get("status") or "").upper()
+    status_map = {
+        "PENDING": "pending",
+        "APPROVED": "approved",
+        "REJECTED": "rejected",
+        "PAUSED": "paused",
+        "DISABLED": "disabled",
+        "FLAGGED": "approved",
+    }
+    new_status = status_map.get(meta_status, template.status)
+    quality = data.get("quality_score")
+    rejection = data.get("rejected_reason")
 
     async with pool.connection() as conn:
         cur = await conn.execute(
@@ -508,99 +430,62 @@ async def import_templates(
 ) -> dict[str, int]:
     """Importa templates já existentes no provider que não estão no DB local.
 
-    Roteia Twilio (Content API, GET /v1/Content) vs WABA (Meta, GET
-    /{waba_account_id}/message_templates). Upsert idempotente por
+    Lê os templates da conta na Meta (GET /{waba_account_id}/message_templates).
+    Upsert idempotente por
     (conexao_id, nome, idioma) — ON CONFLICT DO NOTHING (não sobrescreve).
     """
     conexao = await _validate_conexao(conexao_id, empresa_id)
     pool = await get_pool()
-    is_twilio = conexao.provider in _TWILIO_PROVIDERS
 
-    # Normaliza cada item remoto pra tupla de INSERT, independente do provider.
+    # Normaliza cada item remoto pra tupla de INSERT.
     rows_to_insert: list[tuple] = []
 
-    if is_twilio:
-        if not (settings.twilio_account_sid and settings.twilio_auth_token):
-            raise HTTPException(status_code=400, detail="Credenciais Twilio ausentes.")
-        try:
-            remote = await twilio_content.list_remote_contents(
-                settings.twilio_account_sid, settings.twilio_auth_token
+    if not conexao.waba_account_id:
+        raise HTTPException(status_code=400, detail="Conexão sem waba_account_id.")
+    credentials = await get_credentials_decrypted(pool, conexao_id)
+    if not credentials:
+        raise HTTPException(status_code=400, detail="Credenciais ausentes.")
+    try:
+        remote = await waba_templates.list_remote_templates(
+            credentials["access_token"], conexao.waba_account_id
+        )
+    except waba_templates.WabaTemplateError as exc:
+        raise HTTPException(status_code=502, detail=str(exc.detail)[:300])
+    total_remote = len(remote)
+    status_map = {
+        "PENDING": "pending",
+        "APPROVED": "approved",
+        "REJECTED": "rejected",
+        "PAUSED": "paused",
+        "DISABLED": "disabled",
+    }
+    for t in remote:
+        local_status = status_map.get((t.get("status") or "").upper(), "approved")
+        quality = (
+            (t.get("quality_score") or {}).get("score")
+            if isinstance(t.get("quality_score"), dict)
+            else None
+        )
+        rows_to_insert.append(
+            (
+                empresa_id,
+                conexao_id,
+                t.get("name"),
+                t.get("category"),
+                t.get("language", "pt_BR"),
+                json.dumps(t.get("components", [])),
+                local_status,
+                str(t.get("id", "")),
+                None,  # content_sid
+                conexao.provider,
+                user_id,
+                quality,
             )
-        except twilio_content.TwilioContentError as exc:
-            raise HTTPException(status_code=502, detail=str(exc.detail)[:300])
-        total_remote = len(remote)
-        for c in remote:
-            content_sid = str(c.get("sid") or "")
-            types = c.get("types") or {}
-            # Extrai body do twilio/text (ou primeiro tipo com 'body')
-            body_text = ""
-            for tdef in types.values():
-                if isinstance(tdef, dict) and tdef.get("body"):
-                    body_text = str(tdef["body"])
-                    break
-            componentes = [{"type": "BODY", "text": body_text}] if body_text else []
-            rows_to_insert.append(
-                (
-                    empresa_id,
-                    conexao_id,
-                    c.get("friendly_name") or content_sid,
-                    "UTILITY",  # Content API não expõe categoria na listagem
-                    c.get("language") or "pt_BR",
-                    json.dumps(componentes),
-                    "approved",  # se está na conta, assume utilizável; sync ajusta
-                    None,  # meta_template_id
-                    content_sid,
-                    conexao.provider,
-                    user_id,
-                )
-            )
-    else:
-        if not conexao.waba_account_id:
-            raise HTTPException(status_code=400, detail="Conexão sem waba_account_id.")
-        credentials = await get_credentials_decrypted(pool, conexao_id)
-        if not credentials:
-            raise HTTPException(status_code=400, detail="Credenciais ausentes.")
-        try:
-            remote = await waba_templates.list_remote_templates(
-                credentials["access_token"], conexao.waba_account_id
-            )
-        except waba_templates.WabaTemplateError as exc:
-            raise HTTPException(status_code=502, detail=str(exc.detail)[:300])
-        total_remote = len(remote)
-        status_map = {
-            "PENDING": "pending",
-            "APPROVED": "approved",
-            "REJECTED": "rejected",
-            "PAUSED": "paused",
-            "DISABLED": "disabled",
-        }
-        for t in remote:
-            local_status = status_map.get((t.get("status") or "").upper(), "approved")
-            quality = (
-                (t.get("quality_score") or {}).get("score")
-                if isinstance(t.get("quality_score"), dict)
-                else None
-            )
-            rows_to_insert.append(
-                (
-                    empresa_id,
-                    conexao_id,
-                    t.get("name"),
-                    t.get("category"),
-                    t.get("language", "pt_BR"),
-                    json.dumps(t.get("components", [])),
-                    local_status,
-                    str(t.get("id", "")),
-                    None,  # content_sid
-                    conexao.provider,
-                    user_id,
-                    quality,
-                )
-            )
+        )
 
     imported = 0
     for vals in rows_to_insert:
-        # WABA tem coluna quality_score extra no fim; Twilio não. Detecta por len.
+        # Só WABA hoje: 12 valores, com quality_score no fim.
         if len(vals) == 12:  # WABA (com quality)
             sql = """
                 INSERT INTO waba_template (
@@ -611,7 +496,7 @@ async def import_templates(
                 ON CONFLICT (conexao_id, nome, idioma) DO NOTHING
                 RETURNING id
             """
-        else:  # Twilio (11 vals, sem quality)
+        else:  # sem quality_score
             sql = """
                 INSERT INTO waba_template (
                     empresa_id, conexao_id, nome, categoria, idioma,

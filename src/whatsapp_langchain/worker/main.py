@@ -89,37 +89,13 @@ async def main() -> None:
 
     # Outbound é montado POR-CONEXÃO dentro do processor
     # (`build_outbound_client` lê credenciais da conexão cadastrada na UI).
-    # Não há mais cliente/instance default "via código" no boot. Aqui só
-    # validamos as credenciais APP-LEVEL do Twilio (a CONTA, compartilhada por
-    # todas as conexões twilio_*) — o número (from_number) vem da conexão.
-    outbound_mode = settings.resolved_twilio_outbound_mode
-    if outbound_mode == "real":
-        missing = [
-            name
-            for name, val in (
-                ("TWILIO_ACCOUNT_SID", settings.twilio_account_sid),
-                ("TWILIO_API_KEY_SID", settings.twilio_api_key_sid),
-                ("TWILIO_API_KEY_SECRET", settings.twilio_api_key_secret),
-            )
-            if not val
-        ]
-        if missing:
-            logger.error(
-                "twilio_credentials_missing",
-                missing=missing,
-                outbound_mode=outbound_mode,
-            )
-            msg = (
-                "Twilio outbound em modo real requer credenciais de CONTA: "
-                f"{', '.join(missing)}"
-            )
-            raise SystemExit(msg)
+    # Não há cliente/instance default "via código" no boot: cada conexão traz
+    # as próprias credenciais, cadastradas pela UI.
 
     logger.info(
         "worker_ready",
         poll_interval=settings.poll_interval_seconds,
         memory_enabled=store is not None,
-        twilio_mode=outbound_mode,
         evolution_mode=settings.evolution_outbound_mode.strip().lower() or "mock",
     )
 
