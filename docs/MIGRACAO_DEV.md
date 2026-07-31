@@ -89,7 +89,7 @@ desenvolvimento no ar":
 ```
 API        http://localhost:8081
 Banco      postgresql://postgres:postgres@localhost:5434/whatsapp_langchain
-Frontend   cd frontend && npm run dev
+Frontend   cd frontend && npm run dev   → :3100
 ```
 
 ---
@@ -286,5 +286,15 @@ nomeado pelo caminho do projeto. Se você instalou fora de
 **build**, não só no runtime — `output: "standalone"` congela a destination do
 rewrite no route-manifest. Ver o aviso em [CLAUDE.md](../CLAUDE.md).
 
-**Porta 5434, 8081 ou 3081 ocupada.** Ajuste em `docker-compose.override.yml`
-e no `.env`.
+**Porta ocupada.** O stack usa 5434 (banco), 8081 (API) e 3100 (frontend).
+Confira antes de importar — numa máquina com outros projetos, 3000 e 8080
+costumam estar tomadas:
+
+```bash
+for p in 5434 8081 3100; do (echo >/dev/tcp/127.0.0.1/$p) 2>/dev/null \
+  && echo "$p OCUPADA" || echo "$p livre"; done
+```
+
+Ajuste em `docker-compose.override.yml` (banco e API) e em
+`frontend/.env.local` (`PORT`, `BETTER_AUTH_URL`) mais `FRONTEND_ORIGINS` no
+`.env`. `docker ps` não basta: serviço fora do Docker não aparece lá.

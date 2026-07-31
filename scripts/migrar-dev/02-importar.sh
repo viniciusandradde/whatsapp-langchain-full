@@ -139,8 +139,8 @@ TRAVAS = {
     "VALIDATE_TWILIO_SIGNATURE": "false",
     # Endereços locais.
     "INTERNAL_API_URL":         "http://localhost:8081",
-    "BETTER_AUTH_URL":          "http://localhost:3081",
-    "FRONTEND_ORIGINS":         "http://localhost:3081,http://localhost:3000",
+    "BETTER_AUTH_URL":          "http://localhost:3100",
+    "FRONTEND_ORIGINS":         "http://localhost:3100,http://localhost:3081",
     # Segredos próprios: os de produção não devem valer aqui.
     "INTERNAL_SERVICE_TOKEN":   "dev-token-change-in-production",
     "BETTER_AUTH_SECRET":       "dev-secret-change-in-production-min-32-chars!!",
@@ -175,11 +175,16 @@ PY
 # Front tem env próprio pro `npm run dev`.
 cat > "$DESTINO/frontend/.env.local" <<'EOF'
 # Desenvolvimento local. A API roda no compose, porta 8081.
+#
+# 3100, não a 3000 padrão do Next: numa máquina que já tem outros projetos,
+# 3000 costuma estar ocupada (no destino desta migração, pelo Dokploy).
+# `PORT` é lido pelo `next dev`.
+PORT=3100
 INTERNAL_API_URL=http://localhost:8081
 INTERNAL_SERVICE_TOKEN=dev-token-change-in-production
 DATABASE_URL=postgresql://postgres:postgres@localhost:5434/whatsapp_langchain
 BETTER_AUTH_SECRET=dev-secret-change-in-production-min-32-chars!!
-BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_URL=http://localhost:3100
 EOF
 verde "frontend/.env.local"
 
@@ -288,7 +293,7 @@ cat <<EOF
 
   API        http://localhost:8081
   Banco      postgresql://postgres:postgres@localhost:5434/whatsapp_langchain
-  Frontend   cd frontend && npm run dev     (http://localhost:3000)
+  Frontend   cd frontend && npm run dev     (http://localhost:3100)
 
   Logs       docker compose -p $PROJETO_DOCKER logs -f
   Parar      docker compose -p $PROJETO_DOCKER down
