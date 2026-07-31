@@ -37,11 +37,11 @@ export default async function IaBudgetPage() {
         </div>
         <div>
           <h1 className="text-2xl font-semibold">
-            Budget IA — {budget?.ano_mes}
+            Orçamento de IA — {budget?.ano_mes}
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Limite mensal de gastos com LLM. Worker bloqueia/alerta/redireciona
-            ao estourar.
+            Teto de gasto com IA no mês. Ao estourar, o sistema avisa, troca
+            para um modelo mais barato ou para de responder — você escolhe.
           </p>
         </div>
       </div>

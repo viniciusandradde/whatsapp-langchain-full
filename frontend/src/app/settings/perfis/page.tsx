@@ -1,5 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getPerfis, getPermissoesCatalogo } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -34,10 +36,10 @@ export default async function PerfisPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Perfis de acesso</h1>
-      </div>
+      <PageHeader
+        titulo="Perfis de acesso"
+        icon={ShieldCheck}
+      />
 
       {loadError ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

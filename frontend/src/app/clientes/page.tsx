@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { UsersRound } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -41,10 +43,10 @@ export default async function ClientesPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <UsersRound className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Clientes</h1>
-      </div>
+      <PageHeader
+        titulo="Clientes"
+        icon={UsersRound}
+      />
 
       <form className="flex max-w-md gap-2" action="/clientes" method="get">
         <input

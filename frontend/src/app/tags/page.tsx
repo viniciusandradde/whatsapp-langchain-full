@@ -1,5 +1,7 @@
 import { Tag as TagIcon } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getTags, type Tag } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -21,14 +23,11 @@ export default async function TagsAdminPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <TagIcon className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Tags</h1>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Tags da empresa pra classificar atendimentos. Aplicadas manualmente
-        no drawer ou automaticamente pela triagem IA.
-      </p>
+      <PageHeader
+        titulo="Tags"
+        descricao="Etiquetas para classificar atendimentos. O atendente aplica na conversa, e o agente também aplica sozinho quando reconhece o assunto."
+        icon={TagIcon}
+      />
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
           {error}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, Brain } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSession } from "@/lib/session";
@@ -32,17 +34,11 @@ export default async function NewModeloPage({ searchParams }: PageProps) {
         <ArrowLeft className="size-4" />
         Voltar
       </Link>
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Brain className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Novo modelo custom</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Custom da empresa — visível só pra agentes desta empresa.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Novo modelo"
+        descricao="Fica disponível só para os agentes desta empresa. Use para um modelo privado ou para corrigir o preço de um do catálogo."
+        icon={Brain}
+      />
 
       <Card>
         <CardHeader>

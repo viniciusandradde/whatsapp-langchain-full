@@ -1,5 +1,7 @@
 import { CalendarCog } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getCalendarRegras } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -28,10 +30,10 @@ export default async function CalendarRulesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <CalendarCog className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Regras de agendamento</h1>
-      </div>
+      <PageHeader
+        titulo="Regras de agendamento"
+        icon={CalendarCog}
+      />
 
       {loadError ? (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Bot, MessageSquare, Plus, SlidersHorizontal, Star } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -50,30 +51,22 @@ export default async function AgentsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Bot className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Agentes IA</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Agentes cadastráveis (DB) + templates do catálogo (código).
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <DeactivateAllAgentesButton
-            ativosCount={agentesDb.filter((a) => a.ativo).length}
-          />
-          <Link href="/agents/new">
-            <Button>
+      <PageHeader
+        titulo="Agentes"
+        descricao="Quem responde pelo WhatsApp no seu lugar. Cada agente tem instruções, base de conhecimento e modelo próprios."
+        icon={Bot}
+        acoes={
+          <>
+            <DeactivateAllAgentesButton
+              ativosCount={agentesDb.filter((a) => a.ativo).length}
+            />
+            <ButtonLink href="/agents/new">
               <Plus className="size-4" />
               Novo agente
-            </Button>
-          </Link>
-        </div>
-      </div>
+            </ButtonLink>
+          </>
+        }
+      />
 
       {/* ---- Agentes DB (cadastrados via UI) ---- */}
       <section className="space-y-3">
@@ -136,12 +129,18 @@ export default async function AgentsPage() {
                   </p>
                 </CardContent>
                 <CardFooter className="gap-2">
-                  <Link href={`/agents/db/${a.slug}`} className="flex-1">
-                    <Button variant="default" size="sm" className="w-full">
-                      <SlidersHorizontal className="size-3.5" />
-                      Editar
-                    </Button>
-                  </Link>
+                  {/* `outline`, não `default`: com 9 agentes a tela tinha 9
+                      botões na cor primária, e a ação primária de verdade
+                      ("Novo agente") sumia no meio. Uma por tela (ADR-014). */}
+                  <ButtonLink
+                    href={`/agents/db/${a.slug}`}
+                    variant="outline"
+                    size="sm"
+                    className="w-full flex-1"
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                    Editar
+                  </ButtonLink>
                 </CardFooter>
               </Card>
             ))}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, Bot } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgenteTemplates, type AgenteTemplate } from "@/lib/api";
@@ -41,18 +43,11 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
         Voltar
       </Link>
 
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Bot className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Novo agente</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Cria agente cadastrável (não exige código). Detalhes (prompt, tools,
-            modelo) editados depois.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Novo agente"
+        descricao="Comece pelo nome. Instruções, ferramentas e modelo você configura na tela seguinte."
+        icon={Bot}
+      />
 
       <Card>
         <CardHeader>

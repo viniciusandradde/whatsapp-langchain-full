@@ -1,5 +1,7 @@
 import { Plug } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import {
   type ApiConnection,
   type AsaasConfigStatus,
@@ -63,10 +65,10 @@ export default async function IntegracoesPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Plug className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Integrações</h1>
-      </div>
+      <PageHeader
+        titulo="Integrações externas"
+        icon={Plug}
+      />
 
       {sp.google_calendar === "ok" && (
         <div className="rounded-lg border border-success/40 bg-success/10 p-4 text-sm text-success">

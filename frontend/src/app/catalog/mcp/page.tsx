@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Plug, Plus, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -42,26 +43,17 @@ export default async function McpPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Plug className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">MCP Servers</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Servidores Model Context Protocol — disponibilizam tools
-              externas pros agentes IA.
-            </p>
-          </div>
-        </div>
-        <Link href="/catalog/mcp/new">
-          <Button>
+      <PageHeader
+        titulo="Servidores MCP"
+        descricao="Ferramentas externas que os agentes podem chamar durante a conversa — consultar um sistema, buscar um arquivo, abrir um chamado."
+        icon={Plug}
+        acoes={
+          <ButtonLink href="/catalog/mcp/new">
             <Plus className="size-4" />
-            Novo MCP
-          </Button>
-        </Link>
-      </div>
+            Novo servidor
+          </ButtonLink>
+        }
+      />
 
       {error && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

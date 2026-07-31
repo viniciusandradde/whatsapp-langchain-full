@@ -6,6 +6,8 @@
 
 import { ShieldAlert, FileBarChart } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getTestRuns, isMyAdmin, type TestRun } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -59,18 +61,11 @@ export default async function RelatoriosAlluraPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <FileBarChart className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Relatórios E2E</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Bateria de testes end-to-end multi-setor com mídia (32 cenários).
-            Allure HTML interativo após cada run.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Relatórios de teste"
+        descricao="Roda 32 conversas de ponta a ponta, com imagem e áudio, para conferir se o sistema responde certo antes de você descobrir pelo cliente."
+        icon={FileBarChart}
+      />
 
       {featureDisabled ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-6 dark:border-amber-700 dark:bg-amber-950/30">

@@ -75,9 +75,9 @@ export default async function DashboardQualidadePage({
           <Award className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1">
-          <h1 className="text-2xl font-semibold">NPS / Qualidade</h1>
+          <h1 className="text-2xl font-semibold">Satisfação e NPS</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Avaliações dos atendimentos nos últimos {periodo} dias
+            Como os clientes avaliaram o atendimento nos últimos {periodo} dias
           </p>
         </div>
         <div className="flex gap-1 text-xs">

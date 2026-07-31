@@ -1,5 +1,7 @@
 import { Webhook } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getHookEventos, getHooks } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -32,10 +34,11 @@ export default async function HooksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Webhook className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Webhooks</h1>
-      </div>
+      <PageHeader
+        titulo="Webhooks"
+        descricao="Avisos que o Chat Nexus manda pro seu sistema quando algo acontece — mensagem recebida, atendimento fechado, agendamento criado."
+        icon={Webhook}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

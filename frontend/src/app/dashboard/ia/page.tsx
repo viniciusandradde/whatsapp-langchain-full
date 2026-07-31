@@ -1,5 +1,7 @@
 import { Activity, AlertTriangle, Brain, Bot, DollarSign, Hash, Zap } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -35,17 +37,11 @@ export default async function DashboardIaPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Activity className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard IA</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Consumo + custo + top modelos/agentes nos últimos {data?.periodo_dias ?? days} dias
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Painel de IA"
+        descricao={`Quanto a IA custou e quais agentes e modelos mais trabalharam nos últimos ${data?.periodo_dias ?? days} dias.`}
+        icon={Activity}
+      />
 
       {error && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

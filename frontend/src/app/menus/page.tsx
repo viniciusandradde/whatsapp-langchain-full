@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ListTree, Plus, MessageSquare, Hash } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -36,25 +37,17 @@ export default async function MenusPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <ListTree className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Menu chatbot</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Árvore de opções automáticas pra triagem antes do agente IA.
-            </p>
-          </div>
-        </div>
-        <Link href="/menus/new">
-          <Button>
+      <PageHeader
+        titulo="Menu chatbot"
+        descricao="As opções numeradas que o cliente recebe ao chamar — servem pra descobrir o assunto antes de entregar a conversa ao agente ou a uma pessoa."
+        icon={ListTree}
+        acoes={
+          <ButtonLink href="/menus/new">
             <Plus className="size-4" />
             Novo menu
-          </Button>
-        </Link>
-      </div>
+          </ButtonLink>
+        }
+      />
 
       {error && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

@@ -43,7 +43,7 @@ export default async function HorariosPage() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold">
-              Horário de funcionamento
+              Horário de atendimento
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               Quando estamos abertos. Fora do expediente, o agente recebe{" "}

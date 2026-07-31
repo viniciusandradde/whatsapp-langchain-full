@@ -1,5 +1,7 @@
 import { Building2 } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getMyEmpresas } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -31,10 +33,10 @@ export default async function CompaniesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Building2 className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Empresas</h1>
-      </div>
+      <PageHeader
+        titulo="Empresas"
+        icon={Building2}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
