@@ -81,12 +81,21 @@ fi
 # --- uv --------------------------------------------------------------------
 
 azul "4/6  uv (gerenciador Python do projeto)"
-if command -v uv >/dev/null; then
+# Testa se ele RODA, não se o binário existe: a versão do snap fica no PATH e
+# morre com "timeout waiting for snap system profiles", então `command -v` diz
+# que está tudo bem enquanto nada funciona. O instalador oficial põe em
+# ~/.local/bin, que vem antes de /snap/bin no PATH.
+if uv --version >/dev/null 2>&1; then
   verde "já instalado ($(uv --version))"
 else
+  command -v uv >/dev/null && aviso "existe um uv quebrado em $(command -v uv) — instalando o oficial na frente dele"
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
-  verde "instalado — abra um shell novo ou rode: export PATH=\$HOME/.local/bin:\$PATH"
+  if uv --version >/dev/null 2>&1; then
+    verde "instalado ($(uv --version)) — abra um shell novo ou rode: export PATH=\$HOME/.local/bin:\$PATH"
+  else
+    erro "uv continua sem rodar depois da instalação"
+  fi
 fi
 
 # --- Node ------------------------------------------------------------------
