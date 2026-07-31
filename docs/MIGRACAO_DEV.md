@@ -256,8 +256,10 @@ Mudou código Python: `docker compose -p chatnexus-dev up -d --build api worker`
 recarga automática, `cd frontend && npm run dev` (porta 3100) em vez do
 container.
 
-Antes de abrir PR, os mesmos comandos que o CI roda: `make ci` e
-`make check-web`.
+Antes de abrir PR: `make check` (lint + tipos) e `make check-web`. **Não rode
+`make ci` aqui** — ele inclui a suíte, que trava para sempre nesta máquina;
+os testes rodam no GitHub Actions. O porquê está em "A suíte não termina
+localmente", mais abaixo.
 
 ### Levar uma mudança de `src/` até a produção
 
@@ -266,9 +268,9 @@ recriada pelo Dokploy a partir do registry, sem ninguém compilar no VPS.
 
 1. Trabalhe em branch. Nunca commite direto em `master` — é o gatilho do
    deploy.
-2. `make ci` (lint + tipos + testes) e `make check-web` passando **na sua
-   máquina**. Os dois têm par no GitHub Actions (`ci.yml` e `frontend.yml`),
-   que rodam no PR; rodar antes só evita a viagem de ida e volta.
+2. `make check` (lint + tipos) e `make check-web` passando **na sua máquina** —
+   não `make ci`, pela razão da seção "A suíte não termina localmente". Os
+   testes ficam com o `ci.yml` no PR.
 3. **Se a mudança tem migration**, ensaie a restauração antes:
    `scripts/backup_prod.sh --restaurar <backup> ensaio_migration`, aplique lá,
    confira. Migration que derruba coluna vai **depois** do deploy do código
@@ -366,6 +368,30 @@ base nova — nunca sobrescreve a produção.
 ---
 
 ## Problemas conhecidos
+
+**A suíte não termina localmente.** `make ci` e `make test` somem por 30+
+minutos. Não é lentidão: `tests/integration/test_conexoes_endpoints.py::TestSmokeWebhookWABA::test_post_webhook_aceita_payload_vazio_200`
+trava para sempre, e reproduz sozinho.
+
+A causa é a soma de duas coisas. O `_client()` do arquivo devolve
+`TestClient(app)` **sem `with`**, então cada request cria e destrói um portal
+do anyio, sem lifespan. E `waba_webhook_post` chama `get_pool()`
+(`server/routes/webhook_waba.py:142`) **antes de saber se há algo a
+processar** — o `{"object": "page"}` do teste chega lá. O pool nasce preso ao
+event loop efêmero daquele request, ninguém o fecha, e o `join` do portal
+espera tasks que nunca terminam.
+
+Só aparece **quando o Postgres está acessível**: com o banco de pé em
+`localhost:5434`, o pool abre e prende; sem banco, `get_pool()` estoura rápido
+e o teste passa. Por isso era um mistério enquanto o desenvolvimento não tinha
+banco local.
+
+**Decisão: não perseguir isso localmente.** Rode `make check` (lint + tipos),
+`make check-web` e arquivos dirigidos (`uv run pytest tests/unit/test_x.py`);
+a suíte inteira é responsabilidade do `ci.yml`, que roda sem Postgres e por
+isso não trava. O diagnóstico está registrado caso um dia valha corrigir —
+os caminhos seriam fechar o pool numa fixture `autouse`, ou mover o
+`get_pool()` do handler para depois da validação do payload.
 
 **`docker` pede sudo depois do passo 2.** Você entrou no grupo `docker` mas a
 sessão é antiga. Saia e entre.

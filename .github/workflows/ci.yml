@@ -9,9 +9,14 @@
 # Este é o `make ci` (ruff + format + pyright + pytest com gate de cobertura),
 # rodando em PR, que é onde dá pra agir antes do merge.
 #
-# Sem serviço de Postgres de propósito: o marcador `docker_demo` já separa o
-# que precisa de banco, e esses testes exigem o stack inteiro de pé — eles
-# rodam na máquina de desenvolvimento, não aqui.
+# Sem serviço de Postgres de propósito, e isso é load-bearing — não é só
+# economia. O marcador `docker_demo` já separa o que precisa de banco, mas
+# além disso a suíte **trava para sempre** quando há Postgres acessível:
+# `test_post_webhook_aceita_payload_vazio_200` abre um pool preso ao event
+# loop efêmero do TestClient e o portal do anyio nunca fecha. Sem banco,
+# `get_pool()` estoura rápido e o teste passa. Adicionar um `services:
+# postgres` aqui pendura o CI nos 20 minutos de timeout.
+# Ver "A suíte não termina localmente" em docs/MIGRACAO_DEV.md.
 
 name: ci
 
