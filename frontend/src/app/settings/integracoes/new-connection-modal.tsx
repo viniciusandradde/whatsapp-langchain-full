@@ -114,19 +114,13 @@ export function NewConnectionModal({
 
         {step === "pick" ? (
           <div className="max-h-[60vh] overflow-y-auto p-4">
-            {(() => {
-              // Wareline tem card próprio acima — esconde do picker
-              const visible = providers.filter((p) => p.slug !== "wareline");
-              if (visible.length === 0) {
-                return (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    Nenhum provider disponível.
-                  </p>
-                );
-              }
-              return (
-                <ul className="grid gap-2 sm:grid-cols-2">
-                  {visible.map((p) => (
+            {providers.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                Nenhum provider disponível.
+              </p>
+            ) : (
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {providers.map((p) => (
                   <li key={p.slug}>
                     <button
                       type="button"
@@ -152,9 +146,8 @@ export function NewConnectionModal({
                     </button>
                   </li>
                 ))}
-                </ul>
-              );
-            })()}
+              </ul>
+            )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="max-h-[70vh] overflow-y-auto">

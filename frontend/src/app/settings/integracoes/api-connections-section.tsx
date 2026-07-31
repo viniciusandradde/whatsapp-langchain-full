@@ -41,7 +41,6 @@ interface Props {
 /**
  * Section unificada "Integrações de API":
  * - Google Calendar (storage legacy, OAuth Web flow)
- * - Wareline (card próprio acima — storage legacy também)
  * - Conexões cadastradas via api_connection (Custom REST, ...)
  *
  * Tudo na mesma lista visual. Quando user clica "+ Nova conexão" e
@@ -164,8 +163,7 @@ export function ApiConnectionsSection({
               <h2 className="text-lg font-semibold">Integrações de API</h2>
               <p className="text-sm text-muted-foreground">
                 Conecte sua empresa com APIs externas. Suporta Google Calendar
-                (OAuth), Wareline e qualquer API REST customizada
-                (Bearer/Basic/API Key).
+                (OAuth) e qualquer API REST customizada (Bearer/Basic/API Key).
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 💳 Para cobrança da sua assinatura Chat Nexus, use{" "}
@@ -354,7 +352,7 @@ export function ApiConnectionsSection({
         {connections.length === 0 && (
           <li className="rounded-md border border-dashed bg-muted/30 p-4 text-center text-xs text-muted-foreground">
             Nenhuma outra conexão cadastrada. Use &ldquo;+ Nova conexão&rdquo;
-            pra integrar Google Calendar, Wareline, custom REST, etc.
+            pra integrar Google Calendar, custom REST, etc.
           </li>
         )}
       </ul>

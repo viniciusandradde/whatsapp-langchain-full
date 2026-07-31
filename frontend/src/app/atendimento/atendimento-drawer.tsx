@@ -1395,8 +1395,8 @@ function TemplateComposerModal({
   const [error, setError] = useState<string | null>(null);
   const [sending, startSend] = useTransition();
 
-  // Só WABA/Twilio têm template HSM (espelha _validate_conexao do backend).
-  const suporta = provider === "waba" || (provider?.startsWith("twilio") ?? false);
+  // Só WABA tem template HSM (espelha _validate_conexao do backend).
+  const suporta = provider === "waba";
 
   useEffect(() => {
     // Conexão sem suporte a HSM (ex: Evolution): nem chama o endpoint (daria
@@ -1440,8 +1440,8 @@ function TemplateComposerModal({
         <div className="space-y-3 px-4 py-4 text-sm">
           {!suporta ? (
             <p className="text-xs text-muted-foreground">
-              Templates disponíveis apenas para conexões WhatsApp Oficial (WABA)
-              ou Twilio. Esta conexão não suporta templates.
+              Templates disponíveis apenas para conexões WhatsApp Oficial
+              (WABA). Esta conexão não suporta templates.
             </p>
           ) : templates === null ? (
             <p className="text-xs text-muted-foreground">Carregando templates aprovados…</p>

@@ -1751,9 +1751,9 @@ function PreviewWhatsApp({
           {menu.menu_moderno && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
               <strong>Menu moderno ON:</strong> em conexões com suporte
-              (Twilio/Evolution), as opções viram botões interativos do WhatsApp
-              em vez de lista numerada. Fallback: lista quando &gt;10 opções ou
-              provider não suporta.
+              (Evolution), as opções viram botões interativos do WhatsApp em vez
+              de lista numerada. Fallback: lista quando &gt;10 opções ou provider
+              não suporta.
             </div>
           )}
         </CardContent>

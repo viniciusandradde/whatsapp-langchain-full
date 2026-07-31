@@ -425,8 +425,8 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
                   Identidade WhatsApp (auto-sync)
                 </h3>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  Preenchidos automaticamente pelo Evolution/Twilio/Meta. Não
-                  edite manualmente.
+                  Preenchidos automaticamente pelo Evolution/Meta. Não edite
+                  manualmente.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <FieldText
