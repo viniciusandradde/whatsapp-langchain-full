@@ -239,25 +239,15 @@ def list_agents() -> list[str]:
 # label = slug capitalizado e descrição genérica.
 _TEMPLATE_METADATA: dict[str, tuple[str, str]] = {
     "vsa_tech": (
-        "VSA Tech (genérico)",
-        "Assistente IA com 19 tools (Calendar 8 / CRM 8 / Memória 2 / RAG 1). "
-        "Modelo padrão `openai/gpt-4o-mini`. Bom pra agentes simples ou nichados "
-        "via prompt_override.",
-    ),
-    "atendimento_completo": (
-        "Atendimento Completo (multimodal)",
-        "Especializado em atendimento ao cliente brasileiro com 23 tools "
-        "(19 base + 4 multimodais: analyze_image / transcribe_audio / "
-        "extract_document / summarize_document). SYSTEM_PROMPT pt-BR com "
-        "política não-invente, escalonamento humano e fora-expediente.",
+        "Agente simples",
+        "Um agente que conversa e usa as ferramentas que você marcar. "
+        "Serve para a maioria dos casos: atendimento, triagem, agendamento.",
     ),
     "atendimento_router": (
-        "Atendimento Router (multi-agent paralelo)",
-        "Topologia Router + Parallel Agents: classifier decide quais "
-        "especialistas ativar (mídia / CRM / calendário / conhecimento) e "
-        "executa até 3 em paralelo via Send. Synthesizer agrega outputs em "
-        "resposta única pt-BR. Reduz alucinação isolando contexto por domínio. "
-        "Bom pra atendimento com mídia + CRM + KB no mesmo turno.",
+        "Agente com especialistas em paralelo",
+        "Divide a pergunta entre especialistas que respondem ao mesmo tempo "
+        "e junta tudo numa resposta só. Custa mais e erra menos quando a "
+        "mensagem mistura assuntos — foto, histórico e agenda de uma vez.",
     ),
 }
 

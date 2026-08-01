@@ -29,14 +29,14 @@ INSERT INTO agente_ia (
     empresa_id, slug, nome, template_catalog,
     estilo_resposta, ativo, is_default, departamento_default_id
 ) VALUES
-    (1, 'atendimento', 'Atendimento ao Cliente', 'atendimento_completo', 'equilibrado', TRUE, TRUE, 3),
-    (1, 'atendimento-cliente', 'Atendimento Cliente VSA', 'atendimento_completo', 'equilibrado', TRUE, FALSE, NULL),
-    (1, 'agendamentos', 'Agendamentos', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 5),
-    (1, 'exames', 'Exames', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 7),
-    (1, 'orcamento', 'Orçamento', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 6),
-    (1, 'ouvidoria', 'Ouvidoria', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 1),
-    (1, 'rh-recrutamento-selecao', 'Recrutamento e Seleção', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 4),
-    (1, 'tesouraria', 'Tesouraria', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 2)
+    (1, 'atendimento', 'Atendimento ao Cliente', 'vsa_tech', 'equilibrado', TRUE, TRUE, 3),
+    (1, 'atendimento-cliente', 'Atendimento Cliente VSA', 'vsa_tech', 'equilibrado', TRUE, FALSE, NULL),
+    (1, 'agendamentos', 'Agendamentos', 'vsa_tech', 'equilibrado', TRUE, FALSE, 5),
+    (1, 'exames', 'Exames', 'vsa_tech', 'equilibrado', TRUE, FALSE, 7),
+    (1, 'orcamento', 'Orçamento', 'vsa_tech', 'equilibrado', TRUE, FALSE, 6),
+    (1, 'ouvidoria', 'Ouvidoria', 'vsa_tech', 'equilibrado', TRUE, FALSE, 1),
+    (1, 'rh-recrutamento-selecao', 'Recrutamento e Seleção', 'vsa_tech', 'equilibrado', TRUE, FALSE, 4),
+    (1, 'tesouraria', 'Tesouraria', 'vsa_tech', 'equilibrado', TRUE, FALSE, 2)
 ON CONFLICT (empresa_id, slug) DO UPDATE SET
     departamento_default_id = EXCLUDED.departamento_default_id,
     template_catalog = EXCLUDED.template_catalog,

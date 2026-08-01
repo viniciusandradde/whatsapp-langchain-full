@@ -5,7 +5,6 @@ import {
   CircleCheck,
   CirclePause,
   CpuIcon,
-  MessageSquare,
   Plus,
   SlidersHorizontal,
   Star,
@@ -13,7 +12,7 @@ import {
 
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,7 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getAgentesIA, getAgents } from "@/lib/api";
+import { getAgentesIA } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { DeactivateAllAgentesButton } from "./deactivate-all-button";
@@ -75,32 +74,22 @@ function diagnosticar(a: {
 /**
  * Página /agents — lista híbrida pós Sub-fase A.
  *
- * - **Agentes DB** (agente_ia table): cadastráveis via UI em /agents/new,
- *   editáveis em /agents/db/[slug] com 5 tabs.
- * - **Templates do catálogo Python**: código fonte em agents/catalog/<id>,
- *   editáveis em /agents/[id]/edit (override de prompt do legacy).
- *
- * Ambos co-existem; agente DB usa template_catalog pra reusar graph Python.
+ * Lista os agentes da empresa. Até a mig 156 esta tela tinha uma segunda
+ * seção, "Templates do catálogo", que exibia o caminho do diretório Python
+ * de cada template — conceito interno numa tela de cliente. Os templates
+ * viraram topologia (dois valores) e deixaram de ser algo a escolher aqui.
  */
 export default async function AgentsPage() {
   await requireSession();
 
   let agentesDb: Awaited<ReturnType<typeof getAgentesIA>>["items"] = [];
-  let agentesCatalog: string[] = [];
   let dbError: string | null = null;
-  let catalogError: string | null = null;
 
   try {
     const r = await getAgentesIA();
     agentesDb = r.items;
   } catch (e) {
     dbError = e instanceof Error ? e.message : "Erro ao listar agentes DB.";
-  }
-  try {
-    const r = await getAgents();
-    agentesCatalog = r.agents;
-  } catch (e) {
-    catalogError = e instanceof Error ? e.message : "Erro catálogo.";
   }
 
   const respondendo = agentesDb.filter((a) => a.ativo).length;
@@ -241,42 +230,6 @@ export default async function AgentsPage() {
         )}
       </section>
 
-      {/* ---- Agentes catálogo (código Python) ---- */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Templates do catálogo ({agentesCatalog.length})
-        </h2>
-        {catalogError && (
-          <p className="text-xs text-muted-foreground">{catalogError}</p>
-        )}
-        {agentesCatalog.length > 0 && (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {agentesCatalog.map((id) => (
-              <Card key={id}>
-                <CardHeader>
-                  <CardTitle className="text-base">{id}</CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    Código em <code>agents/catalog/{id}/</code>
-                  </p>
-                </CardHeader>
-                <CardFooter className="gap-2">
-                  <Link href={`/agents/${id}/edit`} className="flex-1">
-                    <Button variant="ghost" size="sm" className="w-full">
-                      <SlidersHorizontal className="size-3.5" />
-                      Override prompt
-                    </Button>
-                  </Link>
-                  <Link href={`/chats?agent=${id}`}>
-                    <Button variant="ghost" size="sm">
-                      <MessageSquare className="size-3.5" />
-                    </Button>
-                  </Link>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }
