@@ -14,7 +14,7 @@
 | telas do painel tocadas | **44** |
 | primitivos de UI (`components/ui/`) | ~25 arquivos, quase todos novos |
 | alterações em `docker-compose*` / `Dockerfile*` | **nenhuma** |
-| variáveis de ambiente novas exigidas | **nenhuma** |
+| variáveis de ambiente | nenhuma **exigida**; uma **recomendada** — ver A4 abaixo |
 
 Não é uma entrega — são cinco, empilhadas: migração do ambiente de dev,
 remoção do Wareline, migração shadcn (Ondas 0–6), colapso/rename dos templates
@@ -55,14 +55,47 @@ Consequências:
 - Produção está com schema à frente do `origin/master` em duas migrations. O
   release recoloca as duas coisas em sincronia.
 
+### O release conserta um defeito que está vivo em produção agora
+
+O incidente I1 (`docs/benchmark/nosso-painel/defeitos.md`) deixou um resíduo em
+produção: a migration apagou a permissão `integracao.wareline.manage`, mas o
+código no ar ainda a exige — então `GET /api/integracoes/wareline` responde
+**403** e o card do Wareline em `/settings/integracoes` mostra erro desde 31/07.
+
+Este release deleta `routes/integracoes_wareline.py`. Deployar **encerra esse
+403**, e é argumento a favor de subir, não contra.
+
+### A4 — o que setar para o módulo Integrações voltar
+
+`/api/integracoes` responde **503 hoje** porque `_check_encryption_key()` exige
+uma chave que o container não tem. Com o Wareline saindo, a variável virou
+`INTEGRACOES_ENCRYPTION_KEY`, com `AliasChoices` ainda aceitando
+`WARELINE_ENCRYPTION_KEY` (`shared/config.py:177`).
+
+**Não é bloqueio** — sem ela o módulo continua 503, que é o estado atual, não
+uma regressão. Mas se ninguém setar no Dokploy, o release **não conserta** A4.
+Setar é o que transforma o deploy em correção.
+
 ### Correção ao que eu disse antes
 
-O bug que achei e corrigi hoje (`52ec8e2`, agente sem prompt ficando sem versão
-inicial na mig 158) **não teria disparado neste deploy**: os 8 agentes com
-prompt vazio são todos `atendimento_completo`, e a mig 155 roda antes e preenche
-todos. O conserto continua certo — é mina latente para qualquer agente criado
-com o campo vazio fora daquele template — mas eu apresentei como iminente e não
-era.
+Duas afirmações minhas estavam erradas:
+
+**1.** O bug que achei e corrigi hoje (`52ec8e2`, agente sem prompt ficando sem
+versão inicial na mig 158) **não teria disparado neste deploy**: os 8 agentes
+com prompt vazio são todos `atendimento_completo`, e a mig 155 roda antes e
+preenche todos. O conserto continua certo — é mina latente para qualquer agente
+criado com o campo vazio fora daquele template — mas eu apresentei como iminente
+e não era.
+
+**2.** Eu disse duas vezes que o material do benchmark "ficou no VPS, sem
+commit". **Está aqui e está commitado** (`0173526`): `docs/benchmark/` com a
+matriz de paridade, o backlog de gaps, a análise de UI/UX, os 11 defeitos e
+**262 imagens** em `nosso-painel/img/`. A busca que me levou ao erro rodou com o
+shell em `frontend/`, então `docs/benchmark` resolvia para um caminho
+inexistente — e eu li "não existe" como "não está na máquina".
+
+Consequência prática: **a revisão tela a tela do frontend é possível**, e ela
+era o único item sem caminho na recomendação.
 
 ---
 
@@ -215,9 +248,10 @@ Ordem sugerida:
    GROUP BY 1` deve devolver só `agente`; e `SELECT origem, count(*) FROM
    agente_prompt_versao GROUP BY 1` deve mostrar 19 `inicial` + até 13
    `backfill`.
-4. **Frontend depois**, tela a tela. As capturas de referência
-   (`docs/benchmark/nosso-painel/img/`) **ficaram no VPS, sem commit** — sem
-   elas a revisão é de memória.
+4. **Frontend depois**, tela a tela contra as 262 capturas de referência em
+   `docs/benchmark/nosso-painel/img/` e a lista de `matriz-telas.md`. O material
+   está no repositório — a revisão tem base, não é de memória.
+5. **Setar `INTEGRACOES_ENCRYPTION_KEY`** no Dokploy, senão A4 continua 503.
 
 Se for release único, o mínimo é backup + janela de baixo tráfego + alguém
 olhando as telas principais logo depois do deploy.
