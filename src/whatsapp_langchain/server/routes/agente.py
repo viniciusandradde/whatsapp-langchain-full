@@ -30,6 +30,7 @@ from whatsapp_langchain.shared.agente import (
     list_agentes,
     list_perfis_de_agente,
     list_versoes_prompt,
+    registrar_bateria_na_versao,
     replace_acl_agente,
     restaurar_versao_prompt,
     set_default_agente,
@@ -839,4 +840,27 @@ async def testar_bateria_endpoint(
             }
         )
 
-    return {"resultados": resultados, "placar": placar, "cenarios": cenarios}
+    # Anexa o placar à versão do prompt que está no ar (mig 159). Cinco dos
+    # doze cenários canônicos são ataque — injeção, exfiltração do prompt,
+    # jailbreak — e quem defende contra eles é o próprio prompt. Sem isto o
+    # resultado morre ao fechar a aba, e ninguém sabe se a versão promovida
+    # foi testada.
+    #
+    # Best-effort, e a razão é diferente da de `registrar_versao_prompt`: lá,
+    # perder a versão em silêncio era o defeito a corrigir. Aqui o usuário já
+    # pagou chamadas reais de LLM — falhar a gravação não pode custar a ele o
+    # placar que acabou de comprar.
+    versao_marcada: int | None = None
+    try:
+        versao_marcada = await registrar_bateria_na_versao(
+            pool, empresa_id, slug, placar=placar, cenarios=len(cenarios)
+        )
+    except Exception as e:  # noqa: BLE001 — placar do usuário vem primeiro
+        logger.warning("bateria_nao_gravada_na_versao", slug=slug, error=str(e))
+
+    return {
+        "resultados": resultados,
+        "placar": placar,
+        "cenarios": cenarios,
+        "versao_prompt": versao_marcada,
+    }

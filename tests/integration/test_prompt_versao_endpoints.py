@@ -71,6 +71,22 @@ class TestSmoke:
         assert any("require_permission" in n for n in nomes), nomes
         assert any("require_agente_access" in n for n in nomes), nomes
 
+    def test_bateria_grava_na_versao(self) -> None:
+        """O elo bateria → versão não pode sumir num refactor.
+
+        É estrutural porque o E2E não roda a bateria de verdade: são 12 × N
+        chamadas reais ao OpenRouter, caras e não determinísticas. Aqui basta
+        garantir que o endpoint continua chamando o gravador.
+        """
+        import inspect
+
+        from whatsapp_langchain.server.routes.agente import testar_bateria_endpoint
+
+        fonte = inspect.getsource(testar_bateria_endpoint)
+        assert "registrar_bateria_na_versao" in fonte, (
+            "testar_bateria_endpoint parou de gravar o placar na versão do prompt"
+        )
+
 
 # ============================================================================
 # E2E (stack real — precisa make up)
@@ -404,6 +420,101 @@ class TestE2E:
             timeout=20,
         )
         assert r.status_code == 404, r.text
+
+    async def test_09_placar_da_bateria_aparece_no_historico(
+        self, admin_user_id: str, empresa_id: int, db_url: str
+    ) -> None:
+        """Grava o placar pelo helper — não pela bateria real, que custa
+        chamadas de LLM — e confere que ele chega à UI resumido."""
+        from psycopg_pool import AsyncConnectionPool
+
+        from whatsapp_langchain.shared.agente import registrar_bateria_na_versao
+
+        placar = [
+            {
+                "modelo": "modelo-a",
+                "turnos": 12,
+                "erros": 0,
+                "tempo_medio_ms": 1100,
+                "custo_total_usd": 0.003,
+                "vazamentos": 0,
+                "linhas_media": 3.1,
+                "turnos_com_tools": 4,
+            },
+            {
+                "modelo": "modelo-b",
+                "turnos": 12,
+                "erros": 1,
+                "tempo_medio_ms": 2400,
+                "custo_total_usd": 0.009,
+                "vazamentos": 3,
+                "linhas_media": 6.8,
+                "turnos_com_tools": 2,
+            },
+        ]
+        pool = AsyncConnectionPool(db_url, min_size=1, open=False)
+        await pool.open()
+        try:
+            marcada = await registrar_bateria_na_versao(
+                pool, empresa_id, self.SLUG, placar=placar, cenarios=12
+            )
+        finally:
+            await pool.close()
+        assert marcada == 3, "deveria marcar a versão de topo (v3, a restaurada)"
+
+        h = _headers(admin_user_id, empresa_id)
+        r = httpx.get(
+            f"{API_BASE_URL}/api/v1/agentes/{self.SLUG}/prompt/versoes",
+            headers=h,
+            timeout=20,
+        )
+        itens = r.json()["items"]
+        topo = itens[0]
+        assert topo["versao"] == 3
+        # o resumo agrega os dois modelos
+        assert topo["bateria"]["vazamentos"] == 3
+        assert topo["bateria"]["erros"] == 1
+        assert topo["bateria"]["cenarios"] == 12
+        assert topo["bateria"]["modelos"] == ["modelo-a", "modelo-b"]
+        # a listagem NÃO carrega a matriz inteira
+        assert "bateria_placar" not in topo
+        # e as versões anteriores continuam sem bateria
+        assert itens[1]["bateria"] is None
+        assert itens[2]["bateria"] is None
+
+        # o placar completo sai no detalhe
+        r = httpx.get(
+            f"{API_BASE_URL}/api/v1/agentes/{self.SLUG}/prompt/versoes/3",
+            headers=h,
+            timeout=20,
+        )
+        assert len(r.json()["bateria_placar"]) == 2, r.text
+
+    def test_10_editar_prompt_cria_versao_sem_bateria(
+        self, admin_user_id: str, empresa_id: int
+    ) -> None:
+        """É o aviso que o recurso existe pra dar: mexeu no prompt, o teste
+        que validava as defesas contra injeção não vale mais."""
+        h = _headers(admin_user_id, empresa_id)
+        r = httpx.put(
+            f"{API_BASE_URL}/api/v1/agentes/{self.SLUG}",
+            headers=h,
+            json={"prompt_override": "Outro texto, defesas não testadas."},
+            timeout=20,
+        )
+        assert r.status_code == 200, r.text
+
+        r = httpx.get(
+            f"{API_BASE_URL}/api/v1/agentes/{self.SLUG}/prompt/versoes",
+            headers=h,
+            timeout=20,
+        )
+        itens = r.json()["items"]
+        assert itens[0]["versao"] == 4
+        assert itens[0]["bateria"] is None, "versão nova não pode herdar o placar"
+        # a v3 mantém o placar dela
+        assert itens[1]["versao"] == 3
+        assert itens[1]["bateria"]["vazamentos"] == 3
 
 
 @pytest.mark.docker_demo

@@ -15,6 +15,7 @@ Mapping `estilo_resposta` → (temperatura, top_p):
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -439,7 +440,29 @@ class PromptVersao:
     criado_por_nome: str | None
     criado_em: Any
     caracteres: int
+    # Bateria de regressão (mig 159). `bateria_at` None = versão nunca testada.
+    bateria_at: Any = None
+    bateria_cenarios: int | None = None
+    bateria_placar: list[dict] | None = None
     texto: str | None = None
+
+    def resumo_bateria(self) -> dict | None:
+        """Agrega o placar no que cabe num selo de lista.
+
+        `vazamentos` vem primeiro porque é o número que muda a decisão de
+        promover ou voltar: o prompt é o que defende contra os cenários de
+        injeção da bateria. Custo e tempo só interessam ao expandir.
+        """
+        if not self.bateria_at:
+            return None
+        linhas = self.bateria_placar or []
+        return {
+            "at": self.bateria_at.isoformat() if self.bateria_at else None,
+            "cenarios": self.bateria_cenarios,
+            "modelos": [linha.get("modelo") for linha in linhas],
+            "vazamentos": sum(int(linha.get("vazamentos") or 0) for linha in linhas),
+            "erros": sum(int(linha.get("erros") or 0) for linha in linhas),
+        }
 
     def to_dict(self) -> dict:
         out = {
@@ -451,9 +474,14 @@ class PromptVersao:
             "criado_por_nome": self.criado_por_nome,
             "criado_em": self.criado_em.isoformat() if self.criado_em else None,
             "caracteres": self.caracteres,
+            "bateria": self.resumo_bateria(),
         }
         if self.texto is not None:
             out["texto"] = self.texto
+        # Placar completo só no detalhe — na listagem seria uma matriz por
+        # versão sem ninguém olhando.
+        if self.texto is not None:
+            out["bateria_placar"] = self.bateria_placar
         return out
 
 
@@ -503,9 +531,11 @@ async def registrar_versao_prompt(
     return row[0]
 
 
+# A ordem casa posicionalmente com os campos de `PromptVersao` (`PromptVersao(*r)`).
 _VERSAO_COLS = (
     "v.versao, v.nota, v.origem, v.restaurada_de, v.criado_por_user_id, "
-    "u.name, v.criado_em, length(COALESCE(v.texto, ''))"
+    "u.name, v.criado_em, length(COALESCE(v.texto, '')), "
+    "v.bateria_at, v.bateria_cenarios, v.bateria_placar"
 )
 
 
@@ -553,6 +583,46 @@ async def get_versao_prompt(
         )
         row = await cur.fetchone()
     return PromptVersao(*row) if row else None
+
+
+async def registrar_bateria_na_versao(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    slug: str,
+    *,
+    placar: list[dict],
+    cenarios: int,
+) -> int | None:
+    """Anexa o placar da bateria à versão de topo do prompt (mig 159).
+
+    Topo e não uma versão escolhida: a bateria roda sempre contra o agente como
+    ele está agora, então o resultado pertence ao texto que está no ar. Rodar de
+    novo sobrescreve — o placar é o estado atual do teste, não um log.
+
+    Devolve o número da versão gravada, ou None se o agente não tem versão
+    (impossível pelo caminho normal, já que a mig 158 semeou todos e
+    `create_agente` grava a versão 1).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE agente_prompt_versao v
+               SET bateria_placar = %s::jsonb,
+                   bateria_cenarios = %s,
+                   bateria_at = NOW()
+              FROM agente_ia a
+             WHERE a.id = v.agente_id
+               AND a.empresa_id = %s
+               AND a.slug = %s
+               AND v.versao = (SELECT MAX(versao) FROM agente_prompt_versao
+                                WHERE agente_id = a.id)
+            RETURNING v.versao
+            """,
+            (json.dumps(placar), cenarios, empresa_id, slug),
+        )
+        row = await cur.fetchone()
+        await conn.commit()
+    return row[0] if row else None
 
 
 async def restaurar_versao_prompt(
