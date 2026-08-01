@@ -343,6 +343,28 @@ async def get_default_agente(
     return _row_to_agente(row) if row else None
 
 
+def prompt_do_template(template_catalog: str) -> str | None:
+    """Lê o `SYSTEM_PROMPT` do módulo da topologia.
+
+    Import tardio de propósito: `agents/` importa `shared/`, então trazer o
+    catálogo pro topo deste módulo fecharia um ciclo. Mesmo motivo do import
+    dentro de `_validar_template` na route.
+    """
+    try:
+        from importlib import import_module
+
+        mod = import_module(
+            f"whatsapp_langchain.agents.catalog.{template_catalog}.prompts"
+        )
+        texto = getattr(mod, "SYSTEM_PROMPT", None)
+        return texto if texto else None
+    except Exception as e:  # noqa: BLE001 — topologia sem prompts.py é válida
+        logger.warning(
+            "prompt_do_template_indisponivel", template=template_catalog, error=str(e)
+        )
+        return None
+
+
 async def create_agente(
     pool: AsyncConnectionPool,
     empresa_id: int,
@@ -353,20 +375,46 @@ async def create_agente(
     descricao: str | None = None,
     user_id: str | None = None,
 ) -> AgenteIA:
-    """Cria agente mínimo. Detalhes (prompt, tools, etc) editados depois via update."""
+    """Cria o agente já com o prompt da topologia escrito no campo.
+
+    Antes o agente nascia com `prompt_override` vazio e respondia usando o
+    `SYSTEM_PROMPT` do módulo Python — a tela mostrava um campo em branco
+    enquanto o backend usava outro texto, e ninguém conseguia ver nem editar
+    o que o agente de fato seguia. Materializar na criação faz o painel ser a
+    fonte de verdade e dá versão 1 no histórico desde o primeiro dia.
+    """
+    prompt = prompt_do_template(template_catalog)
     try:
         async with pool.connection() as conn:
-            cur = await conn.execute(
-                f"""
-                INSERT INTO agente_ia
-                    (empresa_id, slug, nome, descricao, template_catalog, created_by_user_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING {_COLS}
-                """,
-                (empresa_id, slug, nome, descricao, template_catalog, user_id),
-            )
-            row = await cur.fetchone()
-            await conn.commit()
+            async with conn.transaction():
+                cur = await conn.execute(
+                    f"""
+                    INSERT INTO agente_ia
+                        (empresa_id, slug, nome, descricao, template_catalog,
+                         prompt_override, created_by_user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING {_COLS}
+                    """,
+                    (
+                        empresa_id,
+                        slug,
+                        nome,
+                        descricao,
+                        template_catalog,
+                        prompt,
+                        user_id,
+                    ),
+                )
+                row = await cur.fetchone()
+                assert row is not None
+                await registrar_versao_prompt(
+                    conn,
+                    empresa_id=empresa_id,
+                    agente_id=row[0],
+                    texto=prompt,
+                    origem="inicial",
+                    user_id=user_id,
+                )
     except pg_errors.UniqueViolation as e:
         raise DuplicateAgenteError(
             f"Agente com slug '{slug}' já existe nessa empresa"
