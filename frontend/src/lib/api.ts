@@ -3554,7 +3554,56 @@ export type AgenteIAUpdateInput = Partial<
     | "temperatura_efetiva"
     | "top_p_efetivo"
   >
->;
+> & {
+  /**
+   * "Mensagem de commit" da versão do prompt (mig 158). Viaja no mesmo PATCH
+   * mas não é coluna de `agente_ia` — o backend a recebe por nome.
+   */
+  nota?: string | null;
+};
+
+/**
+ * Uma versão do prompt. `texto` só vem no detalhe — a listagem devolve
+ * `caracteres` porque o texto passa de 30 KB por versão.
+ */
+export interface PromptVersao {
+  versao: number;
+  nota: string | null;
+  origem: "edicao" | "restauracao" | "inicial" | "backfill";
+  restaurada_de: number | null;
+  criado_por_user_id: string | null;
+  criado_por_nome: string | null;
+  criado_em: string | null;
+  caracteres: number;
+  texto?: string;
+}
+
+export async function getPromptVersoes(
+  slug: string
+): Promise<{ items: PromptVersao[] }> {
+  return apiFetch<{ items: PromptVersao[] }>(
+    `/api/v1/agentes/${slug}/prompt/versoes`
+  );
+}
+
+export async function getPromptVersao(
+  slug: string,
+  versao: number
+): Promise<PromptVersao & { texto: string }> {
+  return apiFetch<PromptVersao & { texto: string }>(
+    `/api/v1/agentes/${slug}/prompt/versoes/${versao}`
+  );
+}
+
+export async function restaurarPromptVersao(
+  slug: string,
+  versao: number
+): Promise<AgenteIA> {
+  return apiFetch<AgenteIA>(
+    `/api/v1/agentes/${slug}/prompt/versoes/${versao}/restaurar`,
+    { method: "POST" }
+  );
+}
 
 export async function getAgentesIA(opts?: {
   onlyActive?: boolean;

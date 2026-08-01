@@ -4,10 +4,14 @@ import { revalidatePath } from "next/cache";
 
 import {
   deleteAgenteIA,
+  getPromptVersao,
+  getPromptVersoes,
+  restaurarPromptVersao,
   setDefaultAgenteIA,
   updateAgenteIA,
   type AgenteIA,
   type AgenteIAUpdateInput,
+  type PromptVersao,
 } from "@/lib/api";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -25,6 +29,43 @@ export async function updateAgenteAction(
     const out = await updateAgenteIA(slug, patch);
     revalidatePath(`/agents/db/${slug}`);
     revalidatePath(`/agents`);
+    return { ok: true, data: out };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// ---- Histórico do prompt (mig 158) ----
+
+export async function listarVersoesPromptAction(
+  slug: string
+): Promise<Result<PromptVersao[]>> {
+  try {
+    const out = await getPromptVersoes(slug);
+    return { ok: true, data: out.items };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function getVersaoPromptAction(
+  slug: string,
+  versao: number
+): Promise<Result<PromptVersao & { texto: string }>> {
+  try {
+    return { ok: true, data: await getPromptVersao(slug, versao) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function restaurarVersaoPromptAction(
+  slug: string,
+  versao: number
+): Promise<Result<AgenteIA>> {
+  try {
+    const out = await restaurarPromptVersao(slug, versao);
+    revalidatePath(`/agents/db/${slug}`);
     return { ok: true, data: out };
   } catch (e) {
     return { ok: false, error: toError(e) };

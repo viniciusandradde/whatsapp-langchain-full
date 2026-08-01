@@ -42,6 +42,7 @@ import {
   setDefaultAgenteAction,
   updateAgenteAction,
 } from "./actions";
+import { PromptHistorico } from "./prompt-historico";
 
 import type {
   AgenteTemplate,
@@ -196,6 +197,10 @@ export function AgenteEditor({
     }
     if (tab === "prompt") {
       patch.prompt_override = getStr("prompt_override");
+      // `nota` só faz sentido junto do prompt — o backend a usa como
+      // "mensagem de commit" da versão e a ignora quando o texto não muda.
+      const nota = getStr("nota");
+      if (nota) patch.nota = nota;
     }
     if (tab === "tools") {
       patch.tools_enabled = TOOLS_DISPONIVEIS.filter((t) =>
@@ -372,7 +377,15 @@ export function AgenteEditor({
               menusAtivos={menusAtivos}
             />
           )}
-          {tab === "prompt" && <TabPrompt a={a} />}
+          {tab === "prompt" && (
+            <TabPrompt
+              a={a}
+              onRestaurado={(agente) => {
+                setA(agente);
+                setSuccess("Versão restaurada.");
+              }}
+            />
+          )}
           {tab === "tools" && <TabTools a={a} />}
           {tab === "kb_mcp" && <TabKbMcp a={a} pastas={pastas} />}
 
@@ -688,14 +701,39 @@ function TabModelo({
   );
 }
 
-function TabPrompt({ a }: { a: AgenteIA }) {
+function TabPrompt({
+  a,
+  onRestaurado,
+}: {
+  a: AgenteIA;
+  onRestaurado: (agente: AgenteIA) => void;
+}) {
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">Instruções do agente</p>
+        <PromptHistorico
+          slug={a.slug}
+          atual={a.prompt_override ?? ""}
+          onRestaurado={onRestaurado}
+        />
+      </div>
+      {/* `key` amarra o textarea à versão em uso: sem ela, restaurar troca o
+          defaultValue mas o React mantém o texto antigo em tela, e o usuário
+          acha que a restauração não funcionou. */}
       <FieldTextarea
-        label="Instruções do agente"
+        key={a.updated_at ?? a.slug}
+        label=""
         name="prompt_override"
         defaultValue={a.prompt_override}
         rows={28}
+      />
+      <Field
+        label="Nota desta alteração (opcional)"
+        name="nota"
+        defaultValue={null}
+        placeholder="o que mudou — aparece no histórico"
+        maxLength={200}
       />
       <div className="space-y-1 text-[11px] text-muted-foreground">
         <p>
@@ -941,12 +979,14 @@ function Field({
   defaultValue,
   type = "text",
   placeholder,
+  maxLength,
 }: {
   label: string;
   name: string;
   defaultValue: string | null;
   type?: string;
   placeholder?: string;
+  maxLength?: number;
 }) {
   return (
     <div>
@@ -962,6 +1002,7 @@ function Field({
         type={type}
         defaultValue={defaultValue ?? ""}
         placeholder={placeholder}
+        maxLength={maxLength}
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
     </div>
@@ -981,12 +1022,17 @@ function FieldTextarea({
 }) {
   return (
     <div>
-      <label
-        htmlFor={name}
-        className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-      >
-        {label}
-      </label>
+      {/* label vazio = o título já está fora do componente (aba Prompt, que
+          põe o botão de histórico na mesma linha). Renderizar mesmo assim
+          deixaria uma faixa em branco acima do campo. */}
+      {label ? (
+        <label
+          htmlFor={name}
+          className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
+        >
+          {label}
+        </label>
+      ) : null}
       <textarea
         id={name}
         name={name}
