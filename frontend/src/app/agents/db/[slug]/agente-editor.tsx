@@ -690,17 +690,30 @@ function TabModelo({
 
 function TabPrompt({ a }: { a: AgenteIA }) {
   return (
-    <div>
+    <div className="space-y-2">
       <FieldTextarea
-        label="System prompt (override do template — Markdown OK)"
+        label="Instruções do agente"
         name="prompt_override"
         defaultValue={a.prompt_override}
-        rows={20}
+        rows={28}
       />
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        Quando vazio, usa o SYSTEM_PROMPT do <code>{a.template_catalog}</code>.
-        Suporta variáveis <code>{`{{$NOME_VAR}}`}</code> definidas em /settings/variaveis.
-      </p>
+      <div className="space-y-1 text-[11px] text-muted-foreground">
+        <p>
+          É o que define como o agente responde. Aceita Markdown e é o campo
+          mais importante desta tela — modelo e temperatura mudam o tom, isto
+          muda o comportamento.
+        </p>
+        {/* A sintaxe correta é `{{namespace.chave}}` (`render_template` em
+            shared/variavel.py). O texto anterior ensinava `{{$NOME_VAR}}`, que
+            não casa com o regex — e chave que não resolve fica LITERAL na
+            resposta ao cliente, então o erro ia parar na conversa. */}
+        <p>
+          Variáveis: <code>{`{{empresa.nome}}`}</code>,{" "}
+          <code>{`{{data.hoje}}`}</code>, e as suas em{" "}
+          <code>{`{{var.NOME}}`}</code> — cadastradas em Variáveis. O que não
+          existir fica escrito como está na resposta.
+        </p>
+      </div>
     </div>
   );
 }
