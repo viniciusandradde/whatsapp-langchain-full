@@ -1323,6 +1323,9 @@ function TabTestar({
   const [enviando, setEnviando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
   const [placar, setPlacar] = React.useState<BateriaPlacar[] | null>(null);
+  // Versão do prompt em que o placar ficou gravado (mig 159). null depois de
+  // uma bateria = a gravação falhou; o placar vale, só não ficou registrado.
+  const [versaoGravada, setVersaoGravada] = React.useState<number | null>(null);
   const [resultadosBat, setResultadosBat] =
     React.useState<TestarBateriaResult["resultados"] | null>(null);
   const [detalheModelo, setDetalheModelo] = React.useState<string | null>(null);
@@ -1527,6 +1530,7 @@ function TabTestar({
       setPlacar(r.data.placar);
       setResultadosBat(r.data.resultados);
       setDetalheModelo(null);
+      setVersaoGravada(r.data.versao_prompt);
     } else setErro(r.error);
   }
 
@@ -1607,6 +1611,14 @@ function TabTestar({
               : `Rodar bateria (${modelosSel.length} modelos × 12 cenários)`}
           </Button>
         </div>
+      )}
+
+      {placar && (
+        <p className="text-[11px] text-muted-foreground">
+          {versaoGravada
+            ? `Resultado gravado na versão v${versaoGravada} do prompt — aparece no Histórico da aba Prompt.`
+            : "O resultado não pôde ser gravado no histórico do prompt. O placar abaixo vale mesmo assim."}
+        </p>
       )}
 
       {placar && (

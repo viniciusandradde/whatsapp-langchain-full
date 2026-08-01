@@ -3575,6 +3575,16 @@ export interface PromptVersao {
   criado_por_nome: string | null;
   criado_em: string | null;
   caracteres: number;
+  /** Resumo da bateria de regressão (mig 159). null = versão nunca testada. */
+  bateria: {
+    at: string | null;
+    cenarios: number | null;
+    modelos: string[];
+    vazamentos: number;
+    erros: number;
+  } | null;
+  /** Placar por modelo — só vem no detalhe da versão. */
+  bateria_placar?: BateriaPlacar[] | null;
   texto?: string;
 }
 
@@ -3641,6 +3651,11 @@ export interface TestarBateriaResult {
   resultados: (TestarAgenteResult & { modelo: string; cenario: string })[];
   placar: BateriaPlacar[];
   cenarios: string[];
+  /**
+   * Versão do prompt em que o placar ficou gravado (mig 159). null quando a
+   * gravação falhou — o placar ainda vale, só não ficou registrado.
+   */
+  versao_prompt: number | null;
 }
 
 export async function testarAgente(

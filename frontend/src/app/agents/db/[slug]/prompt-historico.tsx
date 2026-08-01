@@ -5,6 +5,9 @@ import {
   History,
   Loader2,
   RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldQuestion,
   Sparkles,
   Undo2,
   UserRound,
@@ -21,7 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { AgenteIA, PromptVersao } from "@/lib/api";
+import type { AgenteIA, BateriaPlacar, PromptVersao } from "@/lib/api";
 
 import {
   getVersaoPromptAction,
@@ -109,6 +112,91 @@ function DiffPorLinha({ antigo, atual }: { antigo: string; atual: string }) {
   );
 }
 
+/**
+ * Selo da bateria de regressão. Destaca **vazamento** e não custo: cinco dos
+ * doze cenários canônicos são ataque (injeção, exfiltração do prompt,
+ * jailbreak), e quem defende contra eles é o próprio prompt — é esse número
+ * que muda a decisão de promover ou voltar.
+ */
+function SeloBateria({ b }: { b: PromptVersao["bateria"] }) {
+  if (!b) {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 px-1.5 py-0 text-[10px] text-muted-foreground"
+      >
+        <ShieldQuestion className="size-2.5" /> não testada
+      </Badge>
+    );
+  }
+  const limpo = b.vazamentos === 0 && b.erros === 0;
+  return (
+    <Badge
+      variant="outline"
+      className={
+        limpo
+          ? "gap-1 border-emerald-500/40 px-1.5 py-0 text-[10px] text-emerald-700 dark:text-emerald-400"
+          : "gap-1 border-amber-500/50 px-1.5 py-0 text-[10px] text-amber-700 dark:text-amber-400"
+      }
+    >
+      {limpo ? (
+        <ShieldCheck className="size-2.5" />
+      ) : (
+        <ShieldAlert className="size-2.5" />
+      )}
+      {limpo
+        ? `testada · ${b.cenarios ?? "?"} cenários`
+        : `${b.vazamentos} vazamento(s)${b.erros ? ` · ${b.erros} erro(s)` : ""}`}
+    </Badge>
+  );
+}
+
+function PlacarBateria({ placar }: { placar: BateriaPlacar[] }) {
+  return (
+    <div className="overflow-x-auto rounded-md border">
+      <table className="w-full text-[11px]">
+        <thead className="bg-muted/50 text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1 text-left font-medium">Modelo</th>
+            <th className="px-2 py-1 text-right font-medium">Vazam.</th>
+            <th className="px-2 py-1 text-right font-medium">Erros</th>
+            <th className="px-2 py-1 text-right font-medium">Tempo</th>
+            <th className="px-2 py-1 text-right font-medium">Custo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {placar.map((p) => (
+            <tr key={p.modelo} className="border-t">
+              {/* Trunca em vez de quebrar: nome de modelo em duas linhas
+                  empurrava a coluna de custo pra fora do painel. */}
+              <td
+                className="max-w-[9rem] truncate px-2 py-1 font-mono"
+                title={p.modelo}
+              >
+                {p.modelo}
+              </td>
+              <td
+                className={`px-2 py-1 text-right ${
+                  p.vazamentos > 0 ? "font-semibold text-amber-600" : ""
+                }`}
+              >
+                {p.vazamentos}
+              </td>
+              <td className="px-2 py-1 text-right">{p.erros}</td>
+              <td className="px-2 py-1 text-right">
+                {(p.tempo_medio_ms / 1000).toFixed(1)}s
+              </td>
+              <td className="px-2 py-1 text-right">
+                ${p.custo_total_usd.toFixed(4)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 interface Props {
   slug: string;
   /** Texto vivo — é contra ele que o diff compara. */
@@ -121,7 +209,11 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
   const [aberto, setAberto] = useState(false);
   const [versoes, setVersoes] = useState<PromptVersao[] | null>(null);
   const [selecionada, setSelecionada] = useState<number | null>(null);
-  const [texto, setTexto] = useState<string | null>(null);
+  // Guarda o detalhe inteiro (texto + placar completo), não só o texto: o
+  // placar por modelo só vem nesta chamada, nunca na listagem.
+  const [detalhe, setDetalhe] = useState<
+    (PromptVersao & { texto: string }) | null
+  >(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -149,11 +241,11 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
   function abrirVersao(versao: number) {
     if (selecionada === versao) {
       setSelecionada(null);
-      setTexto(null);
+      setDetalhe(null);
       return;
     }
     setSelecionada(versao);
-    setTexto(null);
+    setDetalhe(null);
     setErro(null);
     startTransition(async () => {
       const r = await getVersaoPromptAction(slug, versao);
@@ -161,15 +253,24 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
         setErro(r.error);
         return;
       }
-      setTexto(r.data.texto);
+      setDetalhe(r.data);
     });
   }
 
   function restaurar(versao: number) {
+    // Voltar pra uma versão que nunca passou pela bateria é decisão do
+    // usuário, mas tem de ser informada: são as defesas contra injeção e
+    // jailbreak que ficam sem aval.
+    const alvo = (versoes ?? []).find((v) => v.versao === versao);
+    const aviso = alvo?.bateria
+      ? ""
+      : `\n\nAtenção: esta versão nunca passou pela bateria de regressão — ` +
+        `as defesas contra injeção e jailbreak dela não foram testadas.`;
     if (
       !confirm(
         `Restaurar a versão ${versao}?\n\nO texto atual não é apagado — ele ` +
-          `continua no histórico, e a restauração entra como uma versão nova.`,
+          `continua no histórico, e a restauração entra como uma versão nova.` +
+          aviso,
       )
     )
       return;
@@ -182,7 +283,7 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
       }
       onRestaurado(r.data);
       setSelecionada(null);
-      setTexto(null);
+      setDetalhe(null);
       await carregar();
     });
   }
@@ -272,6 +373,7 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
                         >
                           {ORIGEM_LABEL[v.origem] ?? v.origem}
                         </Badge>
+                        <SeloBateria b={v.bateria} />
                         <span className="text-[11px] text-muted-foreground">
                           {formatarQuando(v.criado_em)}
                         </span>
@@ -303,13 +405,25 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
 
                     {aberta ? (
                       <div className="space-y-2 border-t p-3">
-                        {texto === null ? (
+                        {detalhe === null ? (
                           <p className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Loader2 className="size-3.5 animate-spin" />
                             Carregando o texto…
                           </p>
                         ) : (
                           <>
+                            {detalhe.bateria_placar?.length ? (
+                              <div className="space-y-1">
+                                <p className="text-[11px] text-muted-foreground">
+                                  Bateria de {detalhe.bateria?.cenarios ?? "?"}{" "}
+                                  cenários — 5 deles são ataque (injeção,
+                                  exfiltração do prompt, jailbreak).
+                                </p>
+                                <PlacarBateria
+                                  placar={detalhe.bateria_placar}
+                                />
+                              </div>
+                            ) : null}
                             <p className="text-[11px] text-muted-foreground">
                               Comparado com o texto atual:{" "}
                               <span className="text-red-600 dark:text-red-400">
@@ -321,7 +435,10 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
                               </span>
                               .
                             </p>
-                            <DiffPorLinha antigo={texto} atual={atual} />
+                            <DiffPorLinha
+                              antigo={detalhe.texto}
+                              atual={atual}
+                            />
                             {!ehTopo ? (
                               <Button
                                 type="button"
