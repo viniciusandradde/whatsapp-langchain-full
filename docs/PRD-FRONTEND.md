@@ -112,6 +112,24 @@ Medido no código da branch em 31/07, não copiado da auditoria.
 | U10 mobile de verdade | 13 tabelas sem scroll | não medido | ❌ |
 | U16 lista da base de conhecimento | 24 docs em página de 3.000px | não tocado | ❌ |
 
+### `/disparador/contatos` como referência
+
+O U18 é o único item entregue **completo nas três partes** que pedia, e a tela
+vale como modelo do que as outras devem virar:
+
+- **busca server-side** por nome/telefone (`685bd3a`), em vez de filtrar no
+  cliente o que já veio inteiro
+- **paginação por `offset`** — o "Carregar mais" anterior refazia a consulta com
+  `limit` crescente e mantinha todas as linhas renderizadas; paginar mantém o
+  DOM constante
+- **ação em massa com digitação do total** (`exigeDigitar` acima de 50
+  registros, contrato C4) — "Promover todos (8.596)" era irreversível e cabia
+  num clique
+
+É também a **única tela do painel que prova comportamento sob carga**: tem 19.647
+contatos reais no dump. As outras 52 rotas foram capturadas numa conta com 3
+conexões e 1 atendimento aberto — mostram bem estado vazio, mostram mal escala.
+
 ## 7. Dívida de aceite
 
 O contrato C7 exige que a matriz de telas seja preenchida antes de a onda
