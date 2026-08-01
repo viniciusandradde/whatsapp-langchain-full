@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import structlog
+from psycopg import AsyncConnection
 from psycopg import errors as pg_errors
 from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
@@ -374,10 +375,214 @@ async def create_agente(
     return _row_to_agente(row)
 
 
+# ---- Histórico de prompt (mig 158) ----
+
+
+@dataclass
+class PromptVersao:
+    """Uma versão do prompt. `texto` só vem preenchido no detalhe —
+    a listagem devolve `caracteres` porque o texto passa de 30 KB."""
+
+    versao: int
+    nota: str | None
+    origem: str
+    restaurada_de: int | None
+    criado_por_user_id: str | None
+    criado_por_nome: str | None
+    criado_em: Any
+    caracteres: int
+    texto: str | None = None
+
+    def to_dict(self) -> dict:
+        out = {
+            "versao": self.versao,
+            "nota": self.nota,
+            "origem": self.origem,
+            "restaurada_de": self.restaurada_de,
+            "criado_por_user_id": self.criado_por_user_id,
+            "criado_por_nome": self.criado_por_nome,
+            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
+            "caracteres": self.caracteres,
+        }
+        if self.texto is not None:
+            out["texto"] = self.texto
+        return out
+
+
+async def registrar_versao_prompt(
+    conn: AsyncConnection,
+    *,
+    empresa_id: int,
+    agente_id: int,
+    texto: str | None,
+    nota: str | None = None,
+    origem: str = "edicao",
+    restaurada_de: int | None = None,
+    user_id: str | None = None,
+) -> int:
+    """Grava a nova versão do prompt e devolve o número dela.
+
+    Recebe **conexão**, não pool, de propósito: roda na mesma transação do
+    UPDATE que mudou o prompt. Diferente de `record_audit`, a falha aqui NÃO
+    é engolida — perder histórico em silêncio é justamente o defeito que
+    esta tabela existe para corrigir.
+
+    O caller deve ter travado a linha do agente (`FOR UPDATE`) antes, o que
+    serializa duas edições simultâneas e mantém a numeração densa.
+    """
+    cur = await conn.execute(
+        """
+        INSERT INTO agente_prompt_versao
+            (empresa_id, agente_id, versao, texto, nota, origem,
+             restaurada_de, criado_por_user_id)
+        SELECT %s, %s, COALESCE(MAX(versao), 0) + 1, %s, %s, %s, %s, %s
+          FROM agente_prompt_versao WHERE agente_id = %s
+        RETURNING versao
+        """,
+        (
+            empresa_id,
+            agente_id,
+            texto,
+            nota,
+            origem,
+            restaurada_de,
+            user_id,
+            agente_id,
+        ),
+    )
+    row = await cur.fetchone()
+    assert row is not None
+    return row[0]
+
+
+_VERSAO_COLS = (
+    "v.versao, v.nota, v.origem, v.restaurada_de, v.criado_por_user_id, "
+    "u.name, v.criado_em, length(COALESCE(v.texto, ''))"
+)
+
+
+async def list_versoes_prompt(
+    pool: AsyncConnectionPool, empresa_id: int, slug: str, *, limit: int = 100
+) -> list[PromptVersao]:
+    """Histórico do mais recente pro mais antigo, sem o texto."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            cast(
+                Query,
+                f"""
+            SELECT {_VERSAO_COLS}
+              FROM agente_prompt_versao v
+              JOIN agente_ia a ON a.id = v.agente_id
+              LEFT JOIN auth."user" u ON u.id = v.criado_por_user_id
+             WHERE a.empresa_id = %s AND a.slug = %s
+             ORDER BY v.versao DESC
+             LIMIT %s
+            """,
+            ),
+            (empresa_id, slug, limit),
+        )
+        rows = await cur.fetchall()
+    return [PromptVersao(*r) for r in rows]
+
+
+async def get_versao_prompt(
+    pool: AsyncConnectionPool, empresa_id: int, slug: str, versao: int
+) -> PromptVersao | None:
+    """Uma versão específica, com o texto completo."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            cast(
+                Query,
+                f"""
+            SELECT {_VERSAO_COLS}, v.texto
+              FROM agente_prompt_versao v
+              JOIN agente_ia a ON a.id = v.agente_id
+              LEFT JOIN auth."user" u ON u.id = v.criado_por_user_id
+             WHERE a.empresa_id = %s AND a.slug = %s AND v.versao = %s
+            """,
+            ),
+            (empresa_id, slug, versao),
+        )
+        row = await cur.fetchone()
+    return PromptVersao(*row) if row else None
+
+
+async def restaurar_versao_prompt(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    slug: str,
+    versao: int,
+    *,
+    user_id: str | None = None,
+) -> AgenteIA | None:
+    """Grava o texto da versão pedida como uma versão NOVA (modelo
+    `git revert`). Nada é reescrito nem apagado, então restaurar por engano
+    também é reversível.
+
+    Devolve None quando o agente ou a versão não existem.
+    """
+    async with pool.connection() as conn:
+        async with conn.transaction():
+            cur = await conn.execute(
+                "SELECT id FROM agente_ia WHERE empresa_id = %s AND slug = %s "
+                "FOR UPDATE",
+                (empresa_id, slug),
+            )
+            alvo = await cur.fetchone()
+            if alvo is None:
+                return None
+            agente_id = alvo[0]
+
+            cur = await conn.execute(
+                "SELECT texto FROM agente_prompt_versao "
+                " WHERE agente_id = %s AND versao = %s",
+                (agente_id, versao),
+            )
+            origem_row = await cur.fetchone()
+            if origem_row is None:
+                return None
+            texto = origem_row[0]
+
+            cur = await conn.execute(
+                cast(
+                    Query,
+                    f"""
+                UPDATE agente_ia SET prompt_override = %s, updated_at = NOW()
+                 WHERE id = %s
+                RETURNING {_COLS}
+                """,
+                ),
+                (texto, agente_id),
+            )
+            row = await cur.fetchone()
+
+            nova = await registrar_versao_prompt(
+                conn,
+                empresa_id=empresa_id,
+                agente_id=agente_id,
+                texto=texto,
+                nota=f"Restaurada da versão {versao}",
+                origem="restauracao",
+                restaurada_de=versao,
+                user_id=user_id,
+            )
+    logger.info(
+        "prompt_restaurado",
+        empresa_id=empresa_id,
+        slug=slug,
+        de_versao=versao,
+        nova_versao=nova,
+    )
+    return _row_to_agente(row) if row else None
+
+
 async def update_agente(
     pool: AsyncConnectionPool,
     empresa_id: int,
     slug: str,
+    *,
+    user_id: str | None = None,
+    nota: str | None = None,
     **fields: Any,
 ) -> AgenteIA | None:
     """Atualiza qualquer subset de campos. Bloqueia colunas read-only
@@ -386,6 +591,11 @@ async def update_agente(
     Convenção PATCH (docs/dev/PATCH_PATTERN.md): None = "limpar" o
     campo (vira NULL no DB). Caller deve passar SÓ os campos explícitos
     (use `body.model_dump(exclude_unset=True)` na route).
+
+    Quando `prompt_override` vem no patch e o texto muda de verdade, grava
+    uma versão em `agente_prompt_versao` na MESMA transação (mig 158).
+    `nota` é a "mensagem de commit" opcional dessa versão e não é coluna de
+    `agente_ia` — chega por nome e nunca entra no SET.
     """
     READONLY = {
         "id",
@@ -426,22 +636,55 @@ async def update_agente(
         return await get_agente_by_slug(pool, empresa_id, slug)
     sets.append("updated_at = NOW()")
     params.extend([empresa_id, slug])
+
+    versionar = "prompt_override" in fields
     async with pool.connection() as conn:
-        cur = await conn.execute(
-            # query dinâmica (colunas do SET), valores parametrizados via %s
-            cast(
-                Query,
-                f"""
-            UPDATE agente_ia SET {", ".join(sets)}
-             WHERE empresa_id = %s AND slug = %s
-            RETURNING {_COLS}
-            """,
-            ),
-            tuple(params),
-        )
-        row = await cur.fetchone()
-        await conn.commit()
-    return _row_to_agente(row) if row else None
+        async with conn.transaction():
+            antes: str | None = None
+            agente_id: int | None = None
+            if versionar:
+                # Trava a linha antes de ler: serializa duas edições
+                # simultâneas do mesmo agente e mantém a numeração densa.
+                cur = await conn.execute(
+                    "SELECT id, prompt_override FROM agente_ia "
+                    " WHERE empresa_id = %s AND slug = %s FOR UPDATE",
+                    (empresa_id, slug),
+                )
+                alvo = await cur.fetchone()
+                if alvo is not None:
+                    agente_id, antes = alvo
+
+            cur = await conn.execute(
+                # query dinâmica (colunas do SET), valores parametrizados via %s
+                cast(
+                    Query,
+                    f"""
+                UPDATE agente_ia SET {", ".join(sets)}
+                 WHERE empresa_id = %s AND slug = %s
+                RETURNING {_COLS}
+                """,
+                ),
+                tuple(params),
+            )
+            row = await cur.fetchone()
+            atualizado = _row_to_agente(row) if row else None
+
+            # Só versiona quando o texto muda de verdade — salvar a aba sem
+            # tocar no prompt não deve poluir o histórico. NULL e "" são o
+            # mesmo estado ("sem prompt"), então não contam como mudança.
+            # Compara com o valor GRAVADO, não com o que veio no patch.
+            if versionar and agente_id is not None and atualizado is not None:
+                if (antes or "") != (atualizado.prompt_override or ""):
+                    await registrar_versao_prompt(
+                        conn,
+                        empresa_id=empresa_id,
+                        agente_id=agente_id,
+                        texto=atualizado.prompt_override,
+                        nota=nota,
+                        origem="edicao",
+                        user_id=user_id,
+                    )
+    return atualizado
 
 
 async def soft_delete_agente(

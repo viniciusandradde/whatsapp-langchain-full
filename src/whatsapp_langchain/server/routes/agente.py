@@ -10,7 +10,7 @@ import re
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from whatsapp_langchain.server.dependencies import (
@@ -26,9 +26,12 @@ from whatsapp_langchain.shared.agente import (
     DuplicateAgenteError,
     create_agente,
     get_agente_by_slug,
+    get_versao_prompt,
     list_agentes,
     list_perfis_de_agente,
+    list_versoes_prompt,
     replace_acl_agente,
+    restaurar_versao_prompt,
     set_default_agente,
     soft_delete_agente,
     update_agente,
@@ -135,6 +138,9 @@ class UpdateAgenteInput(BaseModel):
     acao_limite_menu_id: int | None = None
     # Triagem omnichannel (mig 061): depto destino ao chamar transfer_to_human
     departamento_default_id: int | None = None
+    # "Mensagem de commit" da versão do prompt (mig 158). Não é coluna de
+    # `agente_ia` — `update_agente` recebe por nome e nunca põe no SET.
+    nota: str | None = Field(default=None, max_length=200)
 
     @field_validator("estilo_resposta")
     @classmethod
@@ -260,7 +266,9 @@ async def update_endpoint(
     # PATCH parcial — exclude_unset envia só campos explicitamente setados
     # pelo user (permite enviar null pra limpar). Ver docs/dev/PATCH_PATTERN.md.
     fields: dict[str, Any] = body.model_dump(exclude_unset=True)
-    updated = await update_agente(pool, empresa_id, slug, **fields)
+    # `nota` viaja dentro de `fields` e casa com o parâmetro nomeado de
+    # `update_agente` — não vira coluna no SET.
+    updated = await update_agente(pool, empresa_id, slug, user_id=user_id, **fields)
     if updated is None:
         raise HTTPException(
             status_code=404, detail="Agente não encontrado após update."
@@ -328,6 +336,88 @@ async def set_default_endpoint(
         request=request,
     )
     return {"ok": True, "slug": slug}
+
+
+# ---- Histórico de prompt (mig 158) ----
+#
+# Mesma permissão de quem edita o prompt (`agente.config` + ACL do agente):
+# esconder do editor o histórico do próprio texto que ele acabou de escrever
+# não protege nada. A auditoria genérica em /api/v1/audit continua exigindo
+# `security.audit.read` — são públicos diferentes.
+
+
+@router.get("/{slug}/prompt/versoes")
+async def list_versoes_prompt_endpoint(
+    slug: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
+) -> dict:
+    """Histórico do prompt, do mais recente pro mais antigo. Sem o texto —
+    ele passa de 30 KB por versão; use o detalhe pra buscar um."""
+    pool = await get_pool()
+    if await get_agente_by_slug(pool, empresa_id, slug) is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+    itens = await list_versoes_prompt(pool, empresa_id, slug, limit=limit)
+    return {"items": [v.to_dict() for v in itens]}
+
+
+@router.get("/{slug}/prompt/versoes/{versao}")
+async def get_versao_prompt_endpoint(
+    slug: str,
+    versao: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
+) -> dict:
+    """Texto completo de uma versão — é o que alimenta o diff na UI."""
+    pool = await get_pool()
+    item = await get_versao_prompt(pool, empresa_id, slug, versao)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Versão não encontrada.")
+    # `texto` NULL significa "prompt vazio", e o to_dict omite a chave nesse
+    # caso — a UI precisa distinguir isso de "não veio no payload".
+    return {**item.to_dict(), "texto": item.texto or ""}
+
+
+@router.post("/{slug}/prompt/versoes/{versao}/restaurar")
+async def restaurar_versao_prompt_endpoint(
+    slug: str,
+    versao: int,
+    request: Request,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
+) -> dict:
+    """Volta o prompt para uma versão anterior.
+
+    Grava o texto antigo como versão NOVA em vez de reescrever a história —
+    então restaurar por engano também é reversível.
+    """
+    pool = await get_pool()
+    before = await get_agente_by_slug(pool, empresa_id, slug)
+    if before is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+
+    updated = await restaurar_versao_prompt(
+        pool, empresa_id, slug, versao, user_id=user_id
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Versão não encontrada.")
+
+    await record_audit(
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="agente.prompt.restaurar",
+        entity_type="agente_ia",
+        entity_id=slug,
+        payload_diff=diff_dicts(before.to_dict(), updated.to_dict()),
+        request=request,
+    )
+    return updated.to_dict()
 
 
 # ---- Sprint C — ACL por agente (agente_perfil) ----
