@@ -21,7 +21,7 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
   const params = await searchParams;
   const errorMsg = params.error ?? null;
 
-  // Lista templates disponíveis no catálogo Python (vsa_tech, atendimento_completo, ...)
+  // Topologias disponíveis: "agente" (simples) e "atendimento_router".
   let templates: AgenteTemplate[] = [];
   try {
     const r = await getAgenteTemplates();
@@ -29,7 +29,7 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
   } catch {
     // Fallback: hard-coded mínimo se API falhar
     templates = [
-      { slug: "vsa_tech", label: "VSA Tech (default)", descricao: "" },
+      { slug: "agente", label: "Agente simples", descricao: "" },
     ];
   }
 
@@ -127,7 +127,7 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
                 defaultValue={
                   templates.find((t) => t.slug === "atendimento_completo")
                     ? "atendimento_completo"
-                    : (templates[0]?.slug ?? "vsa_tech")
+                    : (templates[0]?.slug ?? "agente")
                 }
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >

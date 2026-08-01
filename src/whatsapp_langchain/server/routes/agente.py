@@ -54,7 +54,7 @@ class CreateAgenteInput(BaseModel):
     slug: str = Field(min_length=2, max_length=60)
     nome: str = Field(min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
-    template_catalog: str = Field(default="vsa_tech", max_length=60)
+    template_catalog: str = Field(default="agente", max_length=60)
 
     @field_validator("slug")
     @classmethod

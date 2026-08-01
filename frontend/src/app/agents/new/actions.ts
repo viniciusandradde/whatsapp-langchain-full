@@ -39,7 +39,7 @@ export async function createAgenteAction(formData: FormData): Promise<void> {
   const nome = String(formData.get("nome") || "").trim();
   const descricao = String(formData.get("descricao") || "").trim() || null;
   const template_catalog =
-    String(formData.get("template_catalog") || "").trim() || "vsa_tech";
+    String(formData.get("template_catalog") || "").trim() || "agente";
 
   if (!slug || !nome) {
     redirect("/agents/new?error=" + encodeURIComponent("Slug e nome são obrigatórios."));
