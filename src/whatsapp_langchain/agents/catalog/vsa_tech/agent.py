@@ -44,6 +44,9 @@ def build_graph(
     top_p: float | None = None,
     max_tokens: int | None = None,
     tools_enabled: list[str] | None = None,
+    aceita_imagem: bool = True,
+    aceita_audio: bool = True,
+    aceita_documento: bool = True,
 ):
     """Constrói o agente vsa_tech.
 
@@ -96,6 +99,9 @@ def build_graph(
             tools_enabled,
             calendar_enabled=calendar_enabled,
             knowledge_enabled=knowledge_enabled,
+            aceita_imagem=aceita_imagem,
+            aceita_audio=aceita_audio,
+            aceita_documento=aceita_documento,
         )
     )
 

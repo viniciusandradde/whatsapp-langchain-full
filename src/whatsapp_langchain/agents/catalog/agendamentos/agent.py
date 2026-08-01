@@ -13,22 +13,8 @@ from langgraph.store.base import BaseStore
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.middleware import get_context_middleware
-from whatsapp_langchain.agents.tools import (
-    calendar_cancel_event,
-    calendar_create_event,
-    calendar_find_free_slots,
-    calendar_get_current_time,
-    calendar_list_calendars,
-    calendar_list_events,
-    calendar_reschedule_event,
-    calendar_set_active_calendar,
-    classificar_atendimento,
-    get_cliente_history,
-    get_cliente_profile,
-    read_memory,
-    save_memory,
-    transfer_to_human,
-)
+from whatsapp_langchain.agents.tools import read_memory, save_memory
+from whatsapp_langchain.agents.tools.registry import resolve_tools
 from whatsapp_langchain.shared.llm import create_chat_model
 
 from .prompts import SYSTEM_PROMPT
@@ -48,7 +34,10 @@ def build_graph(
     max_tokens: int | None = None,
     # Aceito e ignorado: o loader passa pra TODO catalogo. Este agente
     # ainda monta as tools de forma fixa; sem o kwarg daria TypeError.
-    tools_enabled: list[str] | None = None,  # noqa: ARG001
+    tools_enabled: list[str] | None = None,
+    aceita_imagem: bool = True,
+    aceita_audio: bool = True,
+    aceita_documento: bool = True,
 ):
     """Constrói o agente Agendamentos.
 
@@ -71,36 +60,18 @@ def build_graph(
 
     tools: list = [save_memory, read_memory] if store else []
 
-    # Agenda: só entra quando a empresa conectou um Google Calendar. Sem
-    # conexão o agente ainda atende e escala pra humano — não finge que marca.
-    if calendar_enabled:
-        tools.extend(
-            [
-                calendar_get_current_time,
-                calendar_list_calendars,
-                calendar_set_active_calendar,
-                calendar_list_events,
-                calendar_find_free_slots,
-                calendar_create_event,
-                calendar_reschedule_event,
-                calendar_cancel_event,
-            ]
+    # Ver atendimento_completo: a lista era cravada aqui e `tools_enabled`
+    # descartado. Agora o painel manda. A migration 154 materializou o
+    # conjunto que este template dava, pra ninguém perder comportamento.
+    tools.extend(
+        resolve_tools(
+            tools_enabled,
+            calendar_enabled=calendar_enabled,
+            knowledge_enabled=knowledge_enabled,
+            aceita_imagem=aceita_imagem,
+            aceita_audio=aceita_audio,
+            aceita_documento=aceita_documento,
         )
-
-    # Contexto CRM básico (saber quem é o cliente + histórico no Nexus)
-    tools.extend(
-        [
-            get_cliente_profile,
-            get_cliente_history,
-        ]
-    )
-
-    # Escalação + classificação omnichannel
-    tools.extend(
-        [
-            classificar_atendimento,
-            transfer_to_human,
-        ]
     )
 
     effective_prompt = (

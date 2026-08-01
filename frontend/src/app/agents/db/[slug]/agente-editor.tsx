@@ -115,6 +115,12 @@ const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = 
   { slug: "cliente.read", label: "Ler ficha do cliente" },
   { slug: "cliente.write", label: "Atualizar ficha do cliente" },
   { slug: "cliente_anotacao.create", label: "Criar anotação no cliente" },
+  // Reanálise sob demanda. O worker já descreve a imagem e transcreve o áudio
+  // antes do agente rodar; estas deixam ele voltar ao arquivo com uma pergunta
+  // dirigida. Só valem se o agente aceitar aquela mídia (aba Mídia).
+  { slug: "midia.imagem", label: "Reanalisar imagem recebida" },
+  { slug: "midia.audio", label: "Retranscrever áudio recebido" },
+  { slug: "midia.documento", label: "Extrair e resumir documento" },
 ];
 
 export function AgenteEditor({

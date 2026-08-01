@@ -201,6 +201,11 @@ async def load_graph(
         # Checkboxes de ferramenta do painel. None em modo legacy (sem linha
         # em `agente_ia`) → o registry devolve o conjunto completo.
         tools_enabled=list(agente_runtime.tools_enabled) if agente_runtime else None,
+        # Portão das tools `midia.*`. Em modo legacy assume tudo aceito, que é
+        # como o pré-processamento do worker já se comporta.
+        aceita_imagem=agente_runtime.aceita_imagem if agente_runtime else True,
+        aceita_audio=agente_runtime.aceita_audio if agente_runtime else True,
+        aceita_documento=agente_runtime.aceita_documento if agente_runtime else True,
     )
 
 

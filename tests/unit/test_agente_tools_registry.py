@@ -176,3 +176,93 @@ class TestParidadeComOFrontend:
     def test_coletor_realmente_le_a_ui(self) -> None:
         """Guarda que para de enxergar aprova tudo em silêncio."""
         assert len(self._slugs_do_frontend()) > 10
+
+
+class TestGateDeMidia:
+    """As tools `midia.*` dependem do agente aceitar aquela mídia.
+
+    Elas eram cravadas em `atendimento_completo` e "SEMPRE habilitadas". Ao
+    virarem slug (mig 154) ganharam o mesmo portão de calendar/knowledge:
+    marcar é necessário, não suficiente. Reanalisar imagem num agente que
+    recusa imagem nunca teria arquivo pra abrir.
+    """
+
+    def test_marcado_e_aceito_entra(self) -> None:
+        tools = resolve_tools(["midia.imagem"], aceita_imagem=True)
+        assert [t.name for t in tools] == ["analyze_image"]
+
+    def test_marcado_mas_recusado_nao_entra(self) -> None:
+        tools = resolve_tools(["midia.imagem"], aceita_imagem=False)
+        assert tools == []
+
+    def test_documento_traz_as_duas(self) -> None:
+        nomes = {
+            t.name for t in resolve_tools(["midia.documento"], aceita_documento=True)
+        }
+        assert nomes == {"extract_document", "summarize_document"}
+
+    def test_conjunto_completo_respeita_o_portao(self) -> None:
+        """Lista vazia = tudo, mas 'tudo' não inclui mídia recusada."""
+        nomes = {t.name for t in resolve_tools(None, aceita_audio=True)}
+        assert "transcribe_audio" in nomes
+        assert "analyze_image" not in nomes
+
+
+class TestConjuntoDoAtendimentoCompleto:
+    """A migration 154 materializou o que o template dava cravado.
+
+    Se alguém mexer no registry e o conjunto encolher, o agente perde
+    ferramenta em produção sem ninguém perceber — este teste é o alarme.
+    """
+
+    SLUGS = [
+        "solicitar_humano",
+        "transferir_dep",
+        "encerrar_atendimento",
+        "tag_cliente",
+        "tag_atendimento",
+        "consultar_contexto",
+        "salvar_contexto",
+        "cliente.read",
+        "cliente.write",
+        "cliente_anotacao.create",
+        "search_knowledge_base",
+        "calendar.create",
+        "calendar.list",
+        "midia.imagem",
+        "midia.audio",
+        "midia.documento",
+    ]
+
+    def test_cobre_o_que_o_template_dava(self) -> None:
+        nomes = {
+            t.name
+            for t in resolve_tools(
+                self.SLUGS,
+                calendar_enabled=True,
+                knowledge_enabled=True,
+                aceita_imagem=True,
+                aceita_audio=True,
+                aceita_documento=True,
+            )
+        }
+        # Lista extraída do `build_graph` anterior à conversão.
+        antes = {
+            "analyze_image",
+            "transcribe_audio",
+            "extract_document",
+            "summarize_document",
+            "search_knowledge_base",
+            "get_cliente_profile",
+            "get_cliente_history",
+            "get_cliente_anotacoes",
+            "create_cliente_anotacao",
+            "add_cliente_tag",
+            "update_cliente",
+            "close_atendimento",
+            "classificar_atendimento",
+            "transfer_to_human",
+            "read_cliente_memoria",
+            "save_cliente_fato",
+        }
+        assert antes <= nomes, f"perdidas na conversão: {sorted(antes - nomes)}"

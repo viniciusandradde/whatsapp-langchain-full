@@ -498,6 +498,11 @@ class AgenteRuntime:
     max_tokens: int | None
     tools_enabled: list[str]
     base_conhecimento_ids: list[int]
+    # Portão das tools `midia.*` no registry: reanalisar imagem só faz sentido
+    # em agente que recebe imagem.
+    aceita_imagem: bool = True
+    aceita_audio: bool = True
+    aceita_documento: bool = True
     # Sprint 2 padrão profissional (mig 043)
     tipo_memoria: str = "window"
     janela_memoria: int | None = None
@@ -531,6 +536,9 @@ class AgenteRuntime:
             max_tokens=agente.max_tokens,
             tools_enabled=list(agente.tools_enabled or []),
             base_conhecimento_ids=list(agente.base_conhecimento_ids or []),
+            aceita_imagem=agente.aceita_imagem,
+            aceita_audio=agente.aceita_audio,
+            aceita_documento=agente.aceita_documento,
             tipo_memoria=agente.tipo_memoria,
             janela_memoria=agente.janela_memoria,
             timeout_minutos=agente.timeout_minutos,
