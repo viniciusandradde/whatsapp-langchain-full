@@ -6,17 +6,32 @@
 # está correto" — e como ele só dispara em push pra `master`, a informação
 # chegava depois de já estar em produção.
 #
-# Este é o `make ci` (ruff + format + pyright + pytest com gate de cobertura),
-# rodando em PR, que é onde dá pra agir antes do merge.
+# ---------------------------------------------------------------------------
+# POR QUE NÃO RODA A SUÍTE (ainda)
 #
-# Sem serviço de Postgres de propósito, e isso é load-bearing — não é só
-# economia. O marcador `docker_demo` já separa o que precisa de banco, mas
-# além disso a suíte **trava para sempre** quando há Postgres acessível:
-# `test_post_webhook_aceita_payload_vazio_200` abre um pool preso ao event
-# loop efêmero do TestClient e o portal do anyio nunca fecha. Sem banco,
-# `get_pool()` estoura rápido e o teste passa. Adicionar um `services:
-# postgres` aqui pendura o CI nos 20 minutos de timeout.
-# Ver "A suíte não termina localmente" em docs/MIGRACAO_DEV.md.
+# Este gate cobre estilo e tipos, e é honesto sobre isso: não finge testar.
+# Rodar `pytest` aqui foi tentado em 2026-07-31 e não se sustentou:
+#
+#   1ª execução, sem banco: 64 falhas. 48 eram a mesma linha —
+#      `INTERNAL_SERVICE_TOKEN` ausente, porque `validate_runtime_settings()`
+#      roda no import e o runner não tem `.env`.
+#   2ª execução, com as variáveis: 56 falhas em 13m53s. 24 morriam em
+#      `PoolTimeout` esperando 30 segundos cada, porque o middleware de rate
+#      limit consulta o banco antes de qualquer resposta em `/api/*`.
+#   Com Postgres, aí sim, a suíte PENDURA — não falha, trava. O `TestClient`
+#      roda sobre `anyio.start_blocking_portal()`, e a documentação do Starlette
+#      é explícita: o shutdown do lifespan só termina depois que todas as
+#      conexões fecharem e as tasks de background acabarem. Duas fontes já
+#      foram corrigidas (o pool que o webhook WABA abria sem precisar, e o
+#      `cancel()` sem `await` no poller de campanhas) e ainda sobra outra: cada
+#      `with TestClient(app)` executa o lifespan inteiro — migrations,
+#      bootstrap do LangGraph, sync de catálogo — contra o banco, por teste.
+#
+# Ligar `pytest` aqui antes de resolver isso significa pendurar todo PR nos 20
+# minutos de timeout. O passo volta quando a suíte terminar sozinha; o
+# diagnóstico está em docs/MIGRACAO_DEV.md, seção "A suíte não termina
+# localmente".
+# ---------------------------------------------------------------------------
 
 name: ci
 
@@ -44,7 +59,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v4
 
@@ -68,8 +84,3 @@ jobs:
 
       - name: Tipos
         run: uv run pyright src/
-
-      # Mesmos marcadores do Makefile: `docker_demo` precisa do stack de pé e
-      # `twilio_real` envia mensagem de verdade.
-      - name: Testes
-        run: uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-fail-under=50
