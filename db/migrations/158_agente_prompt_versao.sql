@@ -110,15 +110,22 @@ todos AS (
 -- quem o escreveu. Sem linha anterior, cai na criação do agente.
 ordenado AS (
     SELECT t.*,
+           ROW_NUMBER()   OVER w AS pos,
            LAG(t.texto)   OVER w AS texto_anterior,
            LAG(t.quando)  OVER w AS quando_autor,
            LAG(t.user_id) OVER w AS user_autor
       FROM todos t
     WINDOW w AS (PARTITION BY t.agente_id ORDER BY t.ordem, t.quando, t.fonte_id)
 ),
+-- `pos = 1` é o que impede o agente sem prompt de ficar sem versão nenhuma:
+-- na primeira linha o LAG devolve NULL, e `NULL IS DISTINCT FROM NULL` é
+-- FALSO — então um agente com `prompt_override` nulo e sem histórico seria
+-- descartado como se fosse repetição, o guard lá embaixo levantaria e a
+-- migration derrubaria o startup da API. A mig 155 só preenche os templates
+-- `atendimento_completo` e `agendamentos`, então esse agente existe.
 distintos AS (
     SELECT * FROM ordenado
-     WHERE texto_anterior IS DISTINCT FROM texto
+     WHERE pos = 1 OR texto_anterior IS DISTINCT FROM texto
 ),
 numerado AS (
     SELECT d.*,
