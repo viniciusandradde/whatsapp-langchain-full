@@ -317,7 +317,11 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
           if (!v) setVersoes(null);
         }}
       >
-        <SheetContent className="flex w-full flex-col gap-0 sm:max-w-2xl">
+        {/* O override da largura precisa do MESMO prefixo de variante que o
+            componente usa (`data-[side=right]:sm:max-w-sm`), senão o seletor
+            de atributo dele ganha e o painel fica em 24rem — sem erro nenhum,
+            só estreito demais pro diff e pro placar. */}
+        <SheetContent className="flex w-full flex-col gap-0 data-[side=right]:sm:max-w-2xl">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <History className="size-4" /> Histórico do prompt
