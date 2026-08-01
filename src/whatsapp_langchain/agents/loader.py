@@ -238,10 +238,16 @@ def list_agents() -> list[str]:
 # mostrar nome legível em vez do slug. Templates não listados ganham
 # label = slug capitalizado e descrição genérica.
 _TEMPLATE_METADATA: dict[str, tuple[str, str]] = {
-    "vsa_tech": (
+    "agente": (
         "Agente simples",
         "Um agente que conversa e usa as ferramentas que você marcar. "
         "Serve para a maioria dos casos: atendimento, triagem, agendamento.",
+    ),
+    # Enquanto o shim existir, o nome antigo precisa de rótulo — senão a UI
+    # cai no fallback e mostra "Vsa Tech" com "Template sem metadata".
+    "vsa_tech": (
+        "Agente simples",
+        "Nome antigo da topologia simples. Mantido durante a migração.",
     ),
     "atendimento_router": (
         "Agente com especialistas em paralelo",

@@ -1,16 +1,16 @@
-"""Agente vsa_tech - assistente da VSA Tech.
+"""Compatibilidade: `vsa_tech` foi renomeado para `agente`.
 
-Este é o agente padrão do projeto, usado como exemplo e template
-para criar novos agentes.
+Este diretório existe só para atravessar o deploy. `webhook.py` valida
+`runtime.template_catalog in list_agents()` a CADA requisição, e
+`list_agents()` lê o filesystem — então, entre o deploy do código novo e a
+conclusão da migration que reescreve a coluna, um dos dois nomes estaria
+inválido e todo o tráfego cairia em `AgentNotFoundError`.
 
-Uso:
-    from whatsapp_langchain.agents.catalog.vsa_tech import build_graph
-
-    agent = build_graph()
-    result = agent.invoke({"messages": [{"role": "user", "content": "Olá!"}]})
+Com o shim, os dois nomes resolvem durante a troca. Ele sai num deploy
+posterior, quando nenhuma linha de `agente_ia.template_catalog` disser mais
+`vsa_tech`.
 """
 
-from .agent import build_graph
-from .prompts import SYSTEM_PROMPT
+from whatsapp_langchain.agents.catalog.agente import build_graph
 
-__all__ = ["build_graph", "SYSTEM_PROMPT"]
+__all__ = ["build_graph"]
