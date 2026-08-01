@@ -24,11 +24,11 @@ INSERT INTO agente_ia (
     empresa_id, slug, nome, template_catalog,
     estilo_resposta, ativo, is_default, departamento_default_id
 ) VALUES
-    (999, 'radio-ti', 'Rádio TI', 'atendimento_completo', 'preciso', TRUE, FALSE, 9991),
-    (999, 'radio-hospitalar', 'Rádio Hospitalar', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 9992),
-    (999, 'radio-financeiro', 'Rádio Financeiro', 'atendimento_completo', 'preciso', TRUE, FALSE, 9993),
-    (999, 'radio-diretoria', 'Rádio Diretoria', 'atendimento_completo', 'preciso', TRUE, FALSE, 9994),
-    (999, 'radio-operacional', 'Rádio Operacional', 'atendimento_completo', 'equilibrado', TRUE, TRUE, 9995)
+    (999, 'radio-ti', 'Rádio TI', 'agente', 'preciso', TRUE, FALSE, 9991),
+    (999, 'radio-hospitalar', 'Rádio Hospitalar', 'agente', 'equilibrado', TRUE, FALSE, 9992),
+    (999, 'radio-financeiro', 'Rádio Financeiro', 'agente', 'preciso', TRUE, FALSE, 9993),
+    (999, 'radio-diretoria', 'Rádio Diretoria', 'agente', 'preciso', TRUE, FALSE, 9994),
+    (999, 'radio-operacional', 'Rádio Operacional', 'agente', 'equilibrado', TRUE, TRUE, 9995)
 ON CONFLICT (empresa_id, slug) DO UPDATE SET
     departamento_default_id = EXCLUDED.departamento_default_id,
     template_catalog = EXCLUDED.template_catalog,

@@ -50,6 +50,27 @@ ESTILOS = {"preciso", "equilibrado", "criativo", "muito_criativo"}
 LIMITE_ACOES = {"solicitar_humano", "encerrar", "continuar", "bloquear"}
 
 
+def _validar_template(v: str | None) -> str | None:
+    """Recusa topologia que não existe no catálogo.
+
+    Sem isto o campo é string livre: `POST /api/agentes` com
+    `template_catalog: "agendamentos"` devolvia 201, e a primeira mensagem do
+    cliente morria em `AgentNotFoundError` — agente mudo, sem pista na criação.
+    O risco subiu quando o conjunto válido caiu de quatro topologias pra duas
+    (migs 156 e 157).
+    """
+    if v is None:
+        return None
+    from whatsapp_langchain.agents.loader import list_agents
+
+    validos = list_agents()
+    if v not in validos:
+        raise ValueError(
+            f"template_catalog inválido: {v!r}. Disponíveis: {sorted(validos)}"
+        )
+    return v
+
+
 class CreateAgenteInput(BaseModel):
     slug: str = Field(min_length=2, max_length=60)
     nome: str = Field(min_length=1, max_length=120)
@@ -65,6 +86,11 @@ class CreateAgenteInput(BaseModel):
             )
         return v
 
+    @field_validator("template_catalog")
+    @classmethod
+    def _validate_template(cls, v: str) -> str:
+        return _validar_template(v) or v
+
 
 class UpdateAgenteInput(BaseModel):
     """Patch parcial — só campos não-None são tocados."""
@@ -72,6 +98,12 @@ class UpdateAgenteInput(BaseModel):
     nome: str | None = Field(default=None, min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
     template_catalog: str | None = Field(default=None, max_length=60)
+
+    @field_validator("template_catalog")
+    @classmethod
+    def _validate_template(cls, v: str | None) -> str | None:
+        return _validar_template(v)
+
     # Limite 50k pra acomodar prompts XML hospitalares com few-shots +
     # refusal templates + ReAct reasoning (atendimento-cliente.md v1.0
     # passa de 20k; exames.md passa de 25k). Claude/Gemini têm 200k+
