@@ -20,6 +20,52 @@ Não é uma entrega — são cinco, empilhadas: migração do ambiente de dev,
 remoção do Wareline, migração shadcn (Ondas 0–6), colapso/rename dos templates
 de agente, e versionamento de prompt com bateria.
 
+---
+
+## Resultado do pré-voo (medido em produção, 2026-08-01)
+
+Rodado com `scripts/prod_readonly.sh` — leitura imposta em duas camadas, ver o
+próprio script. Acesso por Tailscale (`opc@vps-docker03`).
+
+| # | pergunta | resposta | veredito |
+|---|---|---|---|
+| 1 | templates existentes | `atendimento_completo` (16), `vsa_tech` (3) | **desarmado** — os dois são tratados por 156/157; nenhum desconhecido |
+| 2 | agentes com prompt vazio | 8, **todos** `atendimento_completo` | **desarmado** — a mig 155 cobre exatamente esse template |
+| 3 | volume do backfill da 158 | 13 linhas; `audit_log` inteiro tem 329 linhas / 608 kB | **irrelevante** — sem custo de startup |
+| 4 | dados do Wareline | zero tabelas `wareline%` em qualquer schema | **no-op** — já foram removidas (ver abaixo) |
+| 5 | escopo da mig 154 | 16 agentes | conforme esperado |
+
+Confirmações extras, contra produção, das decisões que eu havia tomado com
+dados de dev: **0** MCP servers, **0** agentes com `mcp_server_ids`, **0**
+`api_connection`, **16 de 19** agentes com base de conhecimento, 9 empresas.
+Dev é cópia fiel — as decisões de priorização se sustentam.
+
+### Só 6 das 8 migrations vão rodar
+
+`151_drop_wareline.sql` e `152_perfis_descricao_pt.sql` **já estão aplicadas em
+produção** desde 31/07 — e não por deploy. Foram aplicadas por um uvicorn de
+desenvolvimento apontado para o banco de produção, incidente documentado em
+`ede70f0`, que introduziu `SKIP_MIGRATIONS` justamente para fechar essa porta.
+
+Consequências:
+
+- O `_migrations` vai pular as duas. Rodam **154, 155, 156, 157, 158, 159**.
+- O `DROP TABLE` do Wareline **já aconteceu**. O risco P1-4 não existe mais —
+  não porque foi avaliado, mas porque já foi consumado sem revisão.
+- Produção está com schema à frente do `origin/master` em duas migrations. O
+  release recoloca as duas coisas em sincronia.
+
+### Correção ao que eu disse antes
+
+O bug que achei e corrigi hoje (`52ec8e2`, agente sem prompt ficando sem versão
+inicial na mig 158) **não teria disparado neste deploy**: os 8 agentes com
+prompt vazio são todos `atendimento_completo`, e a mig 155 roda antes e preenche
+todos. O conserto continua certo — é mina latente para qualquer agente criado
+com o campo vazio fora daquele template — mas eu apresentei como iminente e não
+era.
+
+---
+
 ## O que dispara o quê
 
 - `.github/workflows/deploy.yml` roda **só em push para `master`**. Push de
@@ -146,21 +192,35 @@ O caminho de volta **não é simétrico**: as migrations não têm `down`.
 - **Consequência prática**: tirar backup do banco imediatamente antes, e tratar
   o release como ponto sem retorno para 151/156/157.
 
-## Recomendação
+## Recomendação (revisada após o pré-voo)
 
-**Não fazer um merge único dos 52 commits.** O risco não está distribuído por
-igual: o backend e as migrations têm teste automatizado e foram exercitados
-contra dados reais nesta sessão; as 44 telas não têm nem uma coisa nem outra.
+**O lado do banco está muito melhor do que eu temia.** Todos os P0 foram
+medidos e desarmados: nenhum template desconhecido, nenhum agente que chegue
+vazio na 158, backfill de 13 linhas, Wareline já removido. As 6 migrations que
+restam são previsíveis e o volume é pequeno.
+
+**O risco concentrou-se todo no frontend.** 44 telas e o conjunto de primitivos
+de UI trocado por inteiro, sem teste automatizado e com validação visual apenas
+parcial. `feedback_ui_global_precisa_validacao_visual` registra exatamente esta
+forma causando revert total.
 
 Ordem sugerida:
 
-1. **Rodar o pré-voo** contra produção. É barato e desarma o P0-2.
-2. **Backup do banco.**
-3. **Subir primeiro backend + migrations** (o que tem teste), em janela de baixo
-   tráfego, acompanhando o container novo ficar healthy.
-4. **Depois o frontend**, revisado tela a tela contra
-   `docs/benchmark/nosso-painel/img/` — que, atenção, **não está nesta máquina**
-   (ficou no VPS, sem commit).
+1. **Backup do banco** — 156 e 157 continuam sem caminho de volta sem restore.
+2. **Subir backend + migrations primeiro**, em janela de baixo tráfego,
+   esperando o container **novo** ficar healthy
+   (`gotcha_deploy_success_nao_e_migration_aplicada`). O shim de template cobre
+   a janela entre código novo e migration aplicada.
+3. **Conferir na hora**: `SELECT template_catalog, count(*) FROM agente_ia
+   GROUP BY 1` deve devolver só `agente`; e `SELECT origem, count(*) FROM
+   agente_prompt_versao GROUP BY 1` deve mostrar 19 `inicial` + até 13
+   `backfill`.
+4. **Frontend depois**, tela a tela. As capturas de referência
+   (`docs/benchmark/nosso-painel/img/`) **ficaram no VPS, sem commit** — sem
+   elas a revisão é de memória.
 
-Se a preferência for release único, então o mínimo é: pré-voo + backup + janela
-de baixo tráfego + alguém olhando as telas principais logo depois.
+Se for release único, o mínimo é backup + janela de baixo tráfego + alguém
+olhando as telas principais logo depois do deploy.
+
+**Não incluir neste release:** a etapa 4 do rename (remover o shim
+`catalog/vsa_tech/`). Só depois de um deploy estável com a coluna já migrada.
