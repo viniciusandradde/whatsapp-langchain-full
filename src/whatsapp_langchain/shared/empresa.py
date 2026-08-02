@@ -13,6 +13,8 @@ chamada é protegida por `INTERNAL_SERVICE_TOKEN` (rede interna).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
@@ -51,7 +53,7 @@ async def list_empresas_of_user(
                 SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
                        e.config, e.created_at, e.updated_at,
                        e.logo_path, e.nome_exibicao, e.cor_primaria,
-                       e.cor_secundaria, m.role
+                       e.cor_secundaria, m.role, e.onboarding_dispensado_at
                   FROM empresa e
                   JOIN empresa_membro m ON m.empresa_id = e.id
                  WHERE m.user_id = %s
@@ -78,6 +80,7 @@ async def list_empresas_of_user(
             cor_primaria=r[11],
             cor_secundaria=r[12],
             my_role=r[13],
+            onboarding_dispensado_at=r[14],
         )
         for r in rows
     ]
@@ -158,7 +161,7 @@ async def is_superadmin(pool: AsyncConnectionPool, user_id: str) -> bool:
 _EMPRESA_COLS = (
     "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
     "logo_path, nome_exibicao, cor_primaria, cor_secundaria, "
-    "anuncia_atendente_assumiu"
+    "anuncia_atendente_assumiu, onboarding_dispensado_at"
 )
 
 
@@ -178,6 +181,7 @@ def _row_to_empresa(row) -> Empresa:
         cor_primaria=row[11],
         cor_secundaria=row[12],
         anuncia_atendente_assumiu=bool(row[13]),
+        onboarding_dispensado_at=row[14],
     )
 
 
@@ -401,6 +405,29 @@ async def update_empresa(
     )
     async with pool.connection() as conn:
         cur = await conn.execute(query, tuple(params))  # type: ignore[arg-type]
+        row = await cur.fetchone()
+    return _row_to_empresa(row) if row else None
+
+
+async def set_onboarding_dispensado(
+    pool: AsyncConnectionPool, empresa_id: int, *, dispensado: bool
+) -> Empresa | None:
+    """Marca (ou desmarca) que o wizard de onboarding foi dispensado (mig 160).
+
+    `dispensado=True` grava NOW(); `False` volta pra NULL, que é o caminho de
+    "quero ser guiado de novo" — sem ele a dispensa seria de mão única, a
+    mesma armadilha que a empresa suspensa criou em 2026-07-22.
+
+    Não passa por `update_empresa` de propósito: aquela função ignora valores
+    None (é um PATCH parcial), então não teria como limpar a coluna.
+    """
+    quando = datetime.now(UTC) if dispensado else None
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"UPDATE empresa SET onboarding_dispensado_at = %s, updated_at = NOW() "
+            f"WHERE id = %s RETURNING {_EMPRESA_COLS}",  # type: ignore[arg-type]
+            (quando, empresa_id),
+        )
         row = await cur.fetchone()
     return _row_to_empresa(row) if row else None
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Bot,
@@ -20,7 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { fetchOnboardingStatusAction } from "./actions";
+import { dispensarOnboardingAction, fetchOnboardingStatusAction } from "./actions";
 
 interface Step {
   id: "empresa" | "conexao" | "agente" | "atendente";
@@ -83,6 +84,9 @@ const STEPS: Step[] = [
 export function OnboardingWizard() {
   const [status, setStatus] = useState<Awaited<ReturnType<typeof fetchOnboardingStatusAction>> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pulando, setPulando] = useState(false);
+  const [religando, setReligando] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     fetchOnboardingStatusAction().then((s) => {
@@ -90,6 +94,25 @@ export function OnboardingWizard() {
       setLoading(false);
     });
   }, []);
+
+  /**
+   * Grava a dispensa e sai. Navega mesmo se a escrita falhar — prender o
+   * usuário aqui por causa disso seria pior do que o wizard voltar depois.
+   */
+  async function pular() {
+    setPulando(true);
+    if (status?.empresa_id) await dispensarOnboardingAction(status.empresa_id);
+    router.push("/dashboard/atendimento");
+  }
+
+  /** Desfaz a dispensa — sem isso, "Pular" seria de mão única. */
+  async function religar() {
+    if (!status?.empresa_id) return;
+    setReligando(true);
+    const ok = await dispensarOnboardingAction(status.empresa_id, false);
+    if (ok) setStatus({ ...status, dispensado: false });
+    setReligando(false);
+  }
 
   if (loading || !status) {
     return (
@@ -148,6 +171,23 @@ export function OnboardingWizard() {
           Você pode pular e voltar aqui depois quando quiser.
         </p>
       </div>
+
+      {/* Já dispensado: chegou aqui pelo menu, então oferece o caminho de volta */}
+      {status.dispensado && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
+          <span>
+            Este guia está dispensado — ao entrar, você vai direto pro painel.
+          </span>
+          <button
+            type="button"
+            disabled={religando}
+            onClick={religar}
+            className="font-medium text-foreground underline underline-offset-2 hover:no-underline disabled:opacity-60"
+          >
+            {religando ? "Reativando…" : "Voltar a mostrar no login"}
+          </button>
+        </div>
+      )}
 
       {/* Progress */}
       <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4 space-y-2">
@@ -230,12 +270,24 @@ export function OnboardingWizard() {
           <Circle className="size-3" />
           Configurações podem ser feitas a qualquer momento
         </div>
-        <Link
-          href="/dashboard/atendimento"
-          className="inline-flex h-8 items-center justify-center gap-1 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={pulando}
+          onClick={pular}
+          className="h-8 gap-1 px-3 text-xs text-muted-foreground hover:text-foreground"
         >
-          Pular pra agora <ArrowRight className="size-3" />
-        </Link>
+          {pulando ? (
+            <>
+              <Loader2 className="size-3 animate-spin" /> Saindo…
+            </>
+          ) : (
+            <>
+              Pular e não mostrar mais <ArrowRight className="size-3" />
+            </>
+          )}
+        </Button>
       </div>
     </div>
   );

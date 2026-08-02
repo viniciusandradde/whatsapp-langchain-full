@@ -16,10 +16,17 @@ export const dynamic = "force-dynamic";
  * A checagem custa 4 chamadas de API, mas só acontece em "/" — que é onde o
  * login cai, uma vez por sessão. Empresa com os 4 passos feitos nunca mais vê
  * o wizard; quem quiser rever entra pelo menu (grupo "Visão Geral").
+ *
+ * Duas saídas, não uma (mig 160): completar os 4 passos **ou** ter clicado em
+ * "Pular". Antes só a primeira existia, e ela estava quebrada — a contagem de
+ * atendentes lia `.items` de um endpoint que devolve lista pura, então dava
+ * sempre 0 e `completo` nunca virava true. Resultado: o wizard reaparecia em
+ * todo login, e o botão "Pular", que não gravava nada, não adiantava.
  */
 export default async function RootPage() {
   await requireSession();
 
   const status = await fetchOnboardingStatusAction();
-  redirect(status.completo ? "/dashboard/atendimento" : "/onboarding");
+  const guiar = !status.completo && !status.dispensado;
+  redirect(guiar ? "/onboarding" : "/dashboard/atendimento");
 }
