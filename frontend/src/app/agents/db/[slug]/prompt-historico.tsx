@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useState, useTransition } from "react";
 
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -96,8 +97,8 @@ function DiffPorLinha({ antigo, atual }: { antigo: string; atual: string }) {
               key={`${i}-${j}`}
               className={
                 bloco.added
-                  ? "bg-emerald-500/10 px-2 text-emerald-700 dark:text-emerald-400"
-                  : "bg-red-500/10 px-2 text-red-700 dark:text-red-400"
+                  ? "bg-success/10 px-2 text-success"
+                  : "bg-destructive/10 px-2 text-destructive"
               }
             >
               <span className="select-none opacity-60">
@@ -135,8 +136,8 @@ function SeloBateria({ b }: { b: PromptVersao["bateria"] }) {
       variant="outline"
       className={
         limpo
-          ? "gap-1 border-emerald-500/40 px-1.5 py-0 text-[10px] text-emerald-700 dark:text-emerald-400"
-          : "gap-1 border-amber-500/50 px-1.5 py-0 text-[10px] text-amber-700 dark:text-amber-400"
+          ? "gap-1 border-success/40 px-1.5 py-0 text-[10px] text-success"
+          : "gap-1 border-warning/50 px-1.5 py-0 text-[10px] text-warning"
       }
     >
       {limpo ? (
@@ -177,7 +178,7 @@ function PlacarBateria({ placar }: { placar: BateriaPlacar[] }) {
               </td>
               <td
                 className={`px-2 py-1 text-right ${
-                  p.vazamentos > 0 ? "font-semibold text-amber-600" : ""
+                  p.vazamentos > 0 ? "font-semibold text-warning" : ""
                 }`}
               >
                 {p.vazamentos}
@@ -216,7 +217,13 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
   >(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // Versão aguardando confirmação. Diálogo em vez de `confirm()` do
+  // navegador: prende foco, fecha no Escape e cabe no tema — o `confirm()`
+  // nativo não faz nenhum dos três.
+  const [confirmando, setConfirmando] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const alvoConfirmacao = (versoes ?? []).find((v) => v.versao === confirmando);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -258,22 +265,6 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
   }
 
   function restaurar(versao: number) {
-    // Voltar pra uma versão que nunca passou pela bateria é decisão do
-    // usuário, mas tem de ser informada: são as defesas contra injeção e
-    // jailbreak que ficam sem aval.
-    const alvo = (versoes ?? []).find((v) => v.versao === versao);
-    const aviso = alvo?.bateria
-      ? ""
-      : `\n\nAtenção: esta versão nunca passou pela bateria de regressão — ` +
-        `as defesas contra injeção e jailbreak dela não foram testadas.`;
-    if (
-      !confirm(
-        `Restaurar a versão ${versao}?\n\nO texto atual não é apagado — ele ` +
-          `continua no histórico, e a restauração entra como uma versão nova.` +
-          aviso,
-      )
-    )
-      return;
     setErro(null);
     startTransition(async () => {
       const r = await restaurarVersaoPromptAction(slug, versao);
@@ -430,14 +421,11 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
                             ) : null}
                             <p className="text-[11px] text-muted-foreground">
                               Comparado com o texto atual:{" "}
-                              <span className="text-red-600 dark:text-red-400">
+                              <span className="text-destructive">
                                 vermelho sai
                               </span>
                               ,{" "}
-                              <span className="text-emerald-600 dark:text-emerald-400">
-                                verde entra
-                              </span>
-                              .
+                              <span className="text-success">verde entra</span>.
                             </p>
                             <DiffPorLinha
                               antigo={detalhe.texto}
@@ -450,7 +438,7 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
                                 variant="secondary"
                                 className="gap-1.5"
                                 disabled={isPending}
-                                onClick={() => restaurar(v.versao)}
+                                onClick={() => setConfirmando(v.versao)}
                               >
                                 {isPending ? (
                                   <Loader2 className="size-3.5 animate-spin" />
@@ -471,6 +459,34 @@ export function PromptHistorico({ slug, atual, onRestaurado }: Props) {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      <ConfirmDestrutivo
+        aberto={confirmando !== null}
+        onAbertoChange={(v) => setConfirmando(v ? confirmando : null)}
+        titulo={`Restaurar a versão ${confirmando ?? ""}?`}
+        tom="serio"
+        rotuloAcao="Restaurar"
+        descricao={
+          <>
+            O texto atual não é apagado — ele continua no histórico, e a
+            restauração entra como uma versão nova.
+            {alvoConfirmacao && !alvoConfirmacao.bateria ? (
+              <>
+                {" "}
+                <strong>
+                  Atenção: esta versão nunca passou pela bateria de regressão —
+                  as defesas dela contra injeção e jailbreak não foram testadas.
+                </strong>
+              </>
+            ) : null}
+          </>
+        }
+        onConfirmar={() => {
+          const v = confirmando;
+          setConfirmando(null);
+          if (v !== null) restaurar(v);
+        }}
+      />
     </>
   );
 }
