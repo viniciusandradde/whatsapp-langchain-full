@@ -2,7 +2,7 @@
 
 Quando `empresa.config.encrypt_pii = true`, campos sensíveis (`cpf`, `cnpj`,
 `rg`, `data_nascimento`) na tabela `cliente` são cifrados via Fernet usando
-`WARELINE_ENCRYPTION_KEY` (mesma chave do `integrations/crypto.py`).
+a chave de cifra das integrações (mesma de `integrations/crypto.py`).
 
 Por que opt-in?
 - Empresas sem requirements LGPD-grade preferem queries diretas (dedup por

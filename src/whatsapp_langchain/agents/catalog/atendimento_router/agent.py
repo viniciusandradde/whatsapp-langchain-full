@@ -51,6 +51,10 @@ def build_graph(
     # Aceito e ignorado: o loader passa pra TODO catalogo. O router
     # delega pros sub-agentes; sem o kwarg daria TypeError.
     tools_enabled: list[str] | None = None,  # noqa: ARG001
+    # Topologia própria: os especialistas trazem as tools deles.
+    aceita_imagem: bool = True,  # noqa: ARG001
+    aceita_audio: bool = True,  # noqa: ARG001
+    aceita_documento: bool = True,  # noqa: ARG001
 ):
     """Compila o StateGraph multi-agent paralelo.
 

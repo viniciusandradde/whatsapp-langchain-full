@@ -1,5 +1,7 @@
 import { MessagesSquare } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getModelosMensagem } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -35,10 +37,11 @@ export default async function ModelosPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <MessagesSquare className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Modelos de mensagem</h1>
-      </div>
+      <PageHeader
+        titulo="Respostas rápidas"
+        descricao="Textos prontos que o atendente insere na conversa com um atalho."
+        icon={MessagesSquare}
+      />
 
       <form className="flex max-w-md gap-2" action="/modelos" method="get">
         <input

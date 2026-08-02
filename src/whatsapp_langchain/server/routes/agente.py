@@ -10,7 +10,7 @@ import re
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from whatsapp_langchain.server.dependencies import (
@@ -26,9 +26,13 @@ from whatsapp_langchain.shared.agente import (
     DuplicateAgenteError,
     create_agente,
     get_agente_by_slug,
+    get_versao_prompt,
     list_agentes,
     list_perfis_de_agente,
+    list_versoes_prompt,
+    registrar_bateria_na_versao,
     replace_acl_agente,
+    restaurar_versao_prompt,
     set_default_agente,
     soft_delete_agente,
     update_agente,
@@ -50,11 +54,32 @@ ESTILOS = {"preciso", "equilibrado", "criativo", "muito_criativo"}
 LIMITE_ACOES = {"solicitar_humano", "encerrar", "continuar", "bloquear"}
 
 
+def _validar_template(v: str | None) -> str | None:
+    """Recusa topologia que não existe no catálogo.
+
+    Sem isto o campo é string livre: `POST /api/agentes` com
+    `template_catalog: "agendamentos"` devolvia 201, e a primeira mensagem do
+    cliente morria em `AgentNotFoundError` — agente mudo, sem pista na criação.
+    O risco subiu quando o conjunto válido caiu de quatro topologias pra duas
+    (migs 156 e 157).
+    """
+    if v is None:
+        return None
+    from whatsapp_langchain.agents.loader import list_agents
+
+    validos = list_agents()
+    if v not in validos:
+        raise ValueError(
+            f"template_catalog inválido: {v!r}. Disponíveis: {sorted(validos)}"
+        )
+    return v
+
+
 class CreateAgenteInput(BaseModel):
     slug: str = Field(min_length=2, max_length=60)
     nome: str = Field(min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
-    template_catalog: str = Field(default="vsa_tech", max_length=60)
+    template_catalog: str = Field(default="agente", max_length=60)
 
     @field_validator("slug")
     @classmethod
@@ -65,6 +90,11 @@ class CreateAgenteInput(BaseModel):
             )
         return v
 
+    @field_validator("template_catalog")
+    @classmethod
+    def _validate_template(cls, v: str) -> str:
+        return _validar_template(v) or v
+
 
 class UpdateAgenteInput(BaseModel):
     """Patch parcial — só campos não-None são tocados."""
@@ -72,6 +102,12 @@ class UpdateAgenteInput(BaseModel):
     nome: str | None = Field(default=None, min_length=1, max_length=120)
     descricao: str | None = Field(default=None, max_length=500)
     template_catalog: str | None = Field(default=None, max_length=60)
+
+    @field_validator("template_catalog")
+    @classmethod
+    def _validate_template(cls, v: str | None) -> str | None:
+        return _validar_template(v)
+
     # Limite 50k pra acomodar prompts XML hospitalares com few-shots +
     # refusal templates + ReAct reasoning (atendimento-cliente.md v1.0
     # passa de 20k; exames.md passa de 25k). Claude/Gemini têm 200k+
@@ -103,6 +139,9 @@ class UpdateAgenteInput(BaseModel):
     acao_limite_menu_id: int | None = None
     # Triagem omnichannel (mig 061): depto destino ao chamar transfer_to_human
     departamento_default_id: int | None = None
+    # "Mensagem de commit" da versão do prompt (mig 158). Não é coluna de
+    # `agente_ia` — `update_agente` recebe por nome e nunca põe no SET.
+    nota: str | None = Field(default=None, max_length=200)
 
     @field_validator("estilo_resposta")
     @classmethod
@@ -228,7 +267,9 @@ async def update_endpoint(
     # PATCH parcial — exclude_unset envia só campos explicitamente setados
     # pelo user (permite enviar null pra limpar). Ver docs/dev/PATCH_PATTERN.md.
     fields: dict[str, Any] = body.model_dump(exclude_unset=True)
-    updated = await update_agente(pool, empresa_id, slug, **fields)
+    # `nota` viaja dentro de `fields` e casa com o parâmetro nomeado de
+    # `update_agente` — não vira coluna no SET.
+    updated = await update_agente(pool, empresa_id, slug, user_id=user_id, **fields)
     if updated is None:
         raise HTTPException(
             status_code=404, detail="Agente não encontrado após update."
@@ -296,6 +337,88 @@ async def set_default_endpoint(
         request=request,
     )
     return {"ok": True, "slug": slug}
+
+
+# ---- Histórico de prompt (mig 158) ----
+#
+# Mesma permissão de quem edita o prompt (`agente.config` + ACL do agente):
+# esconder do editor o histórico do próprio texto que ele acabou de escrever
+# não protege nada. A auditoria genérica em /api/v1/audit continua exigindo
+# `security.audit.read` — são públicos diferentes.
+
+
+@router.get("/{slug}/prompt/versoes")
+async def list_versoes_prompt_endpoint(
+    slug: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
+) -> dict:
+    """Histórico do prompt, do mais recente pro mais antigo. Sem o texto —
+    ele passa de 30 KB por versão; use o detalhe pra buscar um."""
+    pool = await get_pool()
+    if await get_agente_by_slug(pool, empresa_id, slug) is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+    itens = await list_versoes_prompt(pool, empresa_id, slug, limit=limit)
+    return {"items": [v.to_dict() for v in itens]}
+
+
+@router.get("/{slug}/prompt/versoes/{versao}")
+async def get_versao_prompt_endpoint(
+    slug: str,
+    versao: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("read")),
+) -> dict:
+    """Texto completo de uma versão — é o que alimenta o diff na UI."""
+    pool = await get_pool()
+    item = await get_versao_prompt(pool, empresa_id, slug, versao)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Versão não encontrada.")
+    # `texto` NULL significa "prompt vazio", e o to_dict omite a chave nesse
+    # caso — a UI precisa distinguir isso de "não veio no payload".
+    return {**item.to_dict(), "texto": item.texto or ""}
+
+
+@router.post("/{slug}/prompt/versoes/{versao}/restaurar")
+async def restaurar_versao_prompt_endpoint(
+    slug: str,
+    versao: int,
+    request: Request,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
+) -> dict:
+    """Volta o prompt para uma versão anterior.
+
+    Grava o texto antigo como versão NOVA em vez de reescrever a história —
+    então restaurar por engano também é reversível.
+    """
+    pool = await get_pool()
+    before = await get_agente_by_slug(pool, empresa_id, slug)
+    if before is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+
+    updated = await restaurar_versao_prompt(
+        pool, empresa_id, slug, versao, user_id=user_id
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Versão não encontrada.")
+
+    await record_audit(
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="agente.prompt.restaurar",
+        entity_type="agente_ia",
+        entity_id=slug,
+        payload_diff=diff_dicts(before.to_dict(), updated.to_dict()),
+        request=request,
+    )
+    return updated.to_dict()
 
 
 # ---- Sprint C — ACL por agente (agente_perfil) ----
@@ -717,4 +840,27 @@ async def testar_bateria_endpoint(
             }
         )
 
-    return {"resultados": resultados, "placar": placar, "cenarios": cenarios}
+    # Anexa o placar à versão do prompt que está no ar (mig 159). Cinco dos
+    # doze cenários canônicos são ataque — injeção, exfiltração do prompt,
+    # jailbreak — e quem defende contra eles é o próprio prompt. Sem isto o
+    # resultado morre ao fechar a aba, e ninguém sabe se a versão promovida
+    # foi testada.
+    #
+    # Best-effort, e a razão é diferente da de `registrar_versao_prompt`: lá,
+    # perder a versão em silêncio era o defeito a corrigir. Aqui o usuário já
+    # pagou chamadas reais de LLM — falhar a gravação não pode custar a ele o
+    # placar que acabou de comprar.
+    versao_marcada: int | None = None
+    try:
+        versao_marcada = await registrar_bateria_na_versao(
+            pool, empresa_id, slug, placar=placar, cenarios=len(cenarios)
+        )
+    except Exception as e:  # noqa: BLE001 — placar do usuário vem primeiro
+        logger.warning("bateria_nao_gravada_na_versao", slug=slug, error=str(e))
+
+    return {
+        "resultados": resultados,
+        "placar": placar,
+        "cenarios": cenarios,
+        "versao_prompt": versao_marcada,
+    }

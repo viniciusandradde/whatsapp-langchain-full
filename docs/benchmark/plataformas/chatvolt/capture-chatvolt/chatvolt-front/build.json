@@ -1,0 +1,17 @@
+{
+  "buildId": "fclnaS2B_QQynYrcJqYl0",
+  "rotas": 72,
+  "chunks_js": 107,
+  "chunks_css": 0,
+  "js_analisados": 107,
+  "bibliotecas": [
+    "Crisp",
+    "MUI / Joy UI",
+    "Monaco / CodeMirror",
+    "PostHog / analytics",
+    "React Hook Form",
+    "Recharts / D3",
+    "SWR",
+    "Stripe"
+  ]
+}

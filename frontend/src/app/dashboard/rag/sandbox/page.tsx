@@ -12,6 +12,8 @@
 
 import { BarChart3, FlaskConical } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import {
   getRagSuggestions,
   getSandboxSummary,
@@ -53,18 +55,11 @@ export default async function SandboxPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-500">
-          <FlaskConical className="h-5 w-5" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">RAG Sandbox</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Análise de 3 meses do Mackenzie Hospital Evangélico de Dourados
-            (empresa 999, isolada do prod).
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Testar respostas"
+        descricao="Ambiente isolado para experimentar buscas e prompts sem afetar nenhum atendimento real."
+        icon={FlaskConical}
+      />
 
       {/* KPIs */}
       {summary && (

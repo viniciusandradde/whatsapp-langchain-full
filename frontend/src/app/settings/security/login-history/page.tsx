@@ -1,5 +1,7 @@
 import { Activity, AlertTriangle, CheckCircle2, ShieldOff } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getLoginEvents, type LoginEvent } from "@/lib/api";
@@ -52,10 +54,10 @@ export default async function LoginHistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Activity className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Histórico de acesso</h1>
-      </div>
+      <PageHeader
+        titulo="Histórico de acesso"
+        icon={Activity}
+      />
 
       <Card>
         <CardHeader>

@@ -1,0 +1,32 @@
+# Captura do painel Chatvolt — nada aqui deve ser versionado.
+#
+# O material é de uma conta real e sai do navegador logado. Screenshot mostra
+# e-mail e ID de organização no cabeçalho; os dumps de API trazem o prompt dos
+# agentes, contatos e, em conta com BYOK, chaves de LLM em texto puro.
+#
+# Regra prática: só os scripts .py e o .md de análise entram em repositório.
+# Se precisar publicar imagem, escolha arquivo por arquivo e force com -f.
+
+# --- credencial de sessão: equivale a senha ---------------------------------
+storage_state.json
+
+# --- capturas de imagem: e-mail e ID de org no cabeçalho de todas -----------
+chatvolt-img/
+
+# --- dumps de DOM e API: systemPrompt, contatos, sessão, chaves -------------
+chatvolt-dom/
+chatvolt-dom-*/
+
+# --- temporários da coleta --------------------------------------------------
+manifest.js
+varredura.json
+extracao.json
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# CLAUDE.md desatualizado da captura (descreve estado antigo do projeto)
+CLAUDE.md

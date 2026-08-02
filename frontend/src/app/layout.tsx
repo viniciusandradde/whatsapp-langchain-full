@@ -7,17 +7,10 @@ import { EmpresaSwitcher } from "@/components/empresa-switcher";
 import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { PermissionsProvider } from "@/components/permissions-context";
 import { ServiceWorkerRegister } from "@/components/sw-register";
-import {
-  SidebarProvider,
-  SIDEBAR_INIT_SCRIPT,
-} from "@/components/sidebar-context";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { getMyEmpresas, getMyPermissions } from "@/lib/api";
-import {
-  DEFAULT_THEME,
-  THEME_INIT_SCRIPT,
-  THEME_STORAGE_KEY,
-  type ThemeName,
-} from "@/lib/theme-constants";
 import "./globals.css";
 
 const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
@@ -58,6 +51,26 @@ async function resolveEmpresaUI(): Promise<{
   }
 }
 
+/**
+ * Cor de texto legível sobre a cor da marca, por luminância relativa (WCAG).
+ *
+ * `color-mix` não sabe calcular contraste, e `--primary-foreground` fixo em
+ * branco falha em marca clara (amarelo, lima, ciano): o rótulo do botão
+ * primário some. Como o hex vem do banco e o layout é server-side, a conta é
+ * feita aqui, onde dá pra fazer direito.
+ */
+function foregroundParaMarca(hex: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#ffffff";
+  const canal = (i: number) => {
+    const v = parseInt(m[1].slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const luminancia = 0.2126 * canal(0) + 0.7152 * canal(2) + 0.0722 * canal(4);
+  // Ponto de virada 0.45: acima disso o branco perde contraste 4.5:1.
+  return luminancia > 0.45 ? "#0a0a0a" : "#ffffff";
+}
+
 /** CSS vars de marca por empresa — sobrescreve --brand-* sem tocar nos temas. */
 function brandStyleVars(brand: EmpresaBrand | null): string | null {
   if (!brand?.cor_primaria && !brand?.cor_secundaria) return null;
@@ -69,6 +82,9 @@ function brandStyleVars(brand: EmpresaBrand | null): string | null {
     );
     lines.push(
       `--brand-primary-dark:color-mix(in srgb, ${brand.cor_primaria}, black 18%);`
+    );
+    lines.push(
+      `--brand-primary-foreground:${foregroundParaMarca(brand.cor_primaria)};`
     );
   }
   if (brand.cor_secundaria) {
@@ -143,25 +159,17 @@ export default async function RootLayout({
     resolveInitialPermissions(),
   ]);
   const brandCss = brandStyleVars(brand);
-
-  // Tema já no SSR (zero flash): cookie gravado pelo setTheme/init script.
-  // Sem cookie válido → DEFAULT_THEME. O THEME_INIT_SCRIPT continua no
-  // <head> só como migração (localStorage antigo sem cookie) e correção.
-  const themeCookie = (await cookies()).get(THEME_STORAGE_KEY)?.value;
-  const ssrTheme: ThemeName =
-    themeCookie === "light" || themeCookie === "obsidian" || themeCookie === "black"
-      ? themeCookie
-      : DEFAULT_THEME;
+  // O primitivo Sidebar grava `sidebar_state` a cada toggle; ler aqui faz o SSR
+  // já sair com a largura certa. Substitui o script anti-flash que existia.
+  const sidebarAberta =
+    (await cookies()).get("sidebar_state")?.value !== "false";
 
   return (
-    <html lang="pt-BR" data-theme={ssrTheme} suppressHydrationWarning>
+    // `suppressHydrationWarning` é exigência do next-themes: ele escreve a
+    // classe de tema no <html> antes da hidratação, então servidor e cliente
+    // divergem nesse atributo de propósito.
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
-        {/* Anti-FOUC: aplica data-theme do localStorage antes do React
-            montar. Sem isso há flash escuro→claro no carregamento. */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-        {/* Anti-flash sidebar: aplica data-sidebar-collapsed antes da
-            hidratação. Evita flicker w-64 → w-16 quando colapsada. */}
-        <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT_SCRIPT }} />
         {/* White-label: cores da marca da empresa ativa (sobrescreve --brand-*). */}
         {brandCss && (
           <style id="brand-vars" dangerouslySetInnerHTML={{ __html: brandCss }} />
@@ -171,30 +179,19 @@ export default async function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        {/* Ambient Light Orbs — suaves, mais difusos pra reduzir saturação visual */}
-        <div
-          aria-hidden
-          className="fixed top-[-150px] left-[-150px] w-[600px] h-[600px] bg-brand-primary/[0.08] blur-[120px] rounded-full pointer-events-none -z-10 animate-float"
-        />
-        <div
-          aria-hidden
-          className="fixed bottom-[-100px] right-[-100px] w-[500px] h-[500px] bg-brand-secondary/[0.08] blur-[120px] rounded-full pointer-events-none -z-10 animate-float"
-          style={{ animationDelay: "2s" }}
-        />
-        <div
-          aria-hidden
-          className="fixed top-[30%] right-[35%] w-[350px] h-[350px] bg-brand-primary/[0.05] blur-[110px] rounded-full pointer-events-none -z-10 animate-pulse-slow"
-        />
-        <PermissionsProvider
-          initialPerms={initialPerms.permissoes}
-          initialPerfis={initialPerms.perfis}
-        >
-          <SidebarProvider>
-            <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>
-              {children}
-            </AppShell>
-          </SidebarProvider>
-        </PermissionsProvider>
+        <ThemeProvider>
+          <PermissionsProvider
+            initialPerms={initialPerms.permissoes}
+            initialPerfis={initialPerms.perfis}
+          >
+            <SidebarProvider defaultOpen={sidebarAberta}>
+              <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>
+                {children}
+              </AppShell>
+            </SidebarProvider>
+          </PermissionsProvider>
+          <Toaster position="bottom-right" />
+        </ThemeProvider>
         <ServiceWorkerRegister />
         <InstallPwaPrompt />
       </body>

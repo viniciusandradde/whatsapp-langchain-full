@@ -42,6 +42,7 @@ import {
   setDefaultAgenteAction,
   updateAgenteAction,
 } from "./actions";
+import { PromptHistorico } from "./prompt-historico";
 
 import type {
   AgenteTemplate,
@@ -115,6 +116,12 @@ const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = 
   { slug: "cliente.read", label: "Ler ficha do cliente" },
   { slug: "cliente.write", label: "Atualizar ficha do cliente" },
   { slug: "cliente_anotacao.create", label: "Criar anotação no cliente" },
+  // Reanálise sob demanda. O worker já descreve a imagem e transcreve o áudio
+  // antes do agente rodar; estas deixam ele voltar ao arquivo com uma pergunta
+  // dirigida. Só valem se o agente aceitar aquela mídia (aba Mídia).
+  { slug: "midia.imagem", label: "Reanalisar imagem recebida" },
+  { slug: "midia.audio", label: "Retranscrever áudio recebido" },
+  { slug: "midia.documento", label: "Extrair e resumir documento" },
 ];
 
 export function AgenteEditor({
@@ -190,6 +197,10 @@ export function AgenteEditor({
     }
     if (tab === "prompt") {
       patch.prompt_override = getStr("prompt_override");
+      // `nota` só faz sentido junto do prompt — o backend a usa como
+      // "mensagem de commit" da versão e a ignora quando o texto não muda.
+      const nota = getStr("nota");
+      if (nota) patch.nota = nota;
     }
     if (tab === "tools") {
       patch.tools_enabled = TOOLS_DISPONIVEIS.filter((t) =>
@@ -366,7 +377,15 @@ export function AgenteEditor({
               menusAtivos={menusAtivos}
             />
           )}
-          {tab === "prompt" && <TabPrompt a={a} />}
+          {tab === "prompt" && (
+            <TabPrompt
+              a={a}
+              onRestaurado={(agente) => {
+                setA(agente);
+                setSuccess("Versão restaurada.");
+              }}
+            />
+          )}
           {tab === "tools" && <TabTools a={a} />}
           {tab === "kb_mcp" && <TabKbMcp a={a} pastas={pastas} />}
 
@@ -682,19 +701,57 @@ function TabModelo({
   );
 }
 
-function TabPrompt({ a }: { a: AgenteIA }) {
+function TabPrompt({
+  a,
+  onRestaurado,
+}: {
+  a: AgenteIA;
+  onRestaurado: (agente: AgenteIA) => void;
+}) {
   return (
-    <div>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">Instruções do agente</p>
+        <PromptHistorico
+          slug={a.slug}
+          atual={a.prompt_override ?? ""}
+          onRestaurado={onRestaurado}
+        />
+      </div>
+      {/* `key` amarra o textarea à versão em uso: sem ela, restaurar troca o
+          defaultValue mas o React mantém o texto antigo em tela, e o usuário
+          acha que a restauração não funcionou. */}
       <FieldTextarea
-        label="System prompt (override do template — Markdown OK)"
+        key={a.updated_at ?? a.slug}
+        label=""
         name="prompt_override"
         defaultValue={a.prompt_override}
-        rows={20}
+        rows={28}
       />
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        Quando vazio, usa o SYSTEM_PROMPT do <code>{a.template_catalog}</code>.
-        Suporta variáveis <code>{`{{$NOME_VAR}}`}</code> definidas em /settings/variaveis.
-      </p>
+      <Field
+        label="Nota desta alteração (opcional)"
+        name="nota"
+        defaultValue={null}
+        placeholder="o que mudou — aparece no histórico"
+        maxLength={200}
+      />
+      <div className="space-y-1 text-[11px] text-muted-foreground">
+        <p>
+          É o que define como o agente responde. Aceita Markdown e é o campo
+          mais importante desta tela — modelo e temperatura mudam o tom, isto
+          muda o comportamento.
+        </p>
+        {/* A sintaxe correta é `{{namespace.chave}}` (`render_template` em
+            shared/variavel.py). O texto anterior ensinava `{{$NOME_VAR}}`, que
+            não casa com o regex — e chave que não resolve fica LITERAL na
+            resposta ao cliente, então o erro ia parar na conversa. */}
+        <p>
+          Variáveis: <code>{`{{empresa.nome}}`}</code>,{" "}
+          <code>{`{{data.hoje}}`}</code>, e as suas em{" "}
+          <code>{`{{var.NOME}}`}</code> — cadastradas em Variáveis. O que não
+          existir fica escrito como está na resposta.
+        </p>
+      </div>
     </div>
   );
 }
@@ -922,12 +979,14 @@ function Field({
   defaultValue,
   type = "text",
   placeholder,
+  maxLength,
 }: {
   label: string;
   name: string;
   defaultValue: string | null;
   type?: string;
   placeholder?: string;
+  maxLength?: number;
 }) {
   return (
     <div>
@@ -943,6 +1002,7 @@ function Field({
         type={type}
         defaultValue={defaultValue ?? ""}
         placeholder={placeholder}
+        maxLength={maxLength}
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
     </div>
@@ -962,12 +1022,17 @@ function FieldTextarea({
 }) {
   return (
     <div>
-      <label
-        htmlFor={name}
-        className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-      >
-        {label}
-      </label>
+      {/* label vazio = o título já está fora do componente (aba Prompt, que
+          põe o botão de histórico na mesma linha). Renderizar mesmo assim
+          deixaria uma faixa em branco acima do campo. */}
+      {label ? (
+        <label
+          htmlFor={name}
+          className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
+        >
+          {label}
+        </label>
+      ) : null}
       <textarea
         id={name}
         name={name}
@@ -1258,6 +1323,9 @@ function TabTestar({
   const [enviando, setEnviando] = React.useState(false);
   const [erro, setErro] = React.useState<string | null>(null);
   const [placar, setPlacar] = React.useState<BateriaPlacar[] | null>(null);
+  // Versão do prompt em que o placar ficou gravado (mig 159). null depois de
+  // uma bateria = a gravação falhou; o placar vale, só não ficou registrado.
+  const [versaoGravada, setVersaoGravada] = React.useState<number | null>(null);
   const [resultadosBat, setResultadosBat] =
     React.useState<TestarBateriaResult["resultados"] | null>(null);
   const [detalheModelo, setDetalheModelo] = React.useState<string | null>(null);
@@ -1462,6 +1530,7 @@ function TabTestar({
       setPlacar(r.data.placar);
       setResultadosBat(r.data.resultados);
       setDetalheModelo(null);
+      setVersaoGravada(r.data.versao_prompt);
     } else setErro(r.error);
   }
 
@@ -1542,6 +1611,14 @@ function TabTestar({
               : `Rodar bateria (${modelosSel.length} modelos × 12 cenários)`}
           </Button>
         </div>
+      )}
+
+      {placar && (
+        <p className="text-[11px] text-muted-foreground">
+          {versaoGravada
+            ? `Resultado gravado na versão v${versaoGravada} do prompt — aparece no Histórico da aba Prompt.`
+            : "O resultado não pôde ser gravado no histórico do prompt. O placar abaixo vale mesmo assim."}
+        </p>
       )}
 
       {placar && (

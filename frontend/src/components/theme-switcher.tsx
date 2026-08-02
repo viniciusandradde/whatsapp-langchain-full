@@ -1,69 +1,41 @@
 "use client";
 
-import { useState } from "react";
-import { Palette, Check } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 
-import { useTheme, THEMES } from "@/lib/theme";
+import { Button } from "@/components/ui/button";
 
 /**
- * Botão "Tema" que abre dropdown com 3 paletas. Pequeno o suficiente
- * pra entrar no footer do sidebar; persiste via localStorage.
+ * Alterna claro/escuro. Antes eram três paletas (light/obsidian/black) num
+ * dropdown escrito à mão, com overlay `fixed inset-0` próprio; agora são duas,
+ * que é o par que o shadcn e os componentes instalados suportam.
+ *
+ * Quem decide o que aparece é o CSS, não o React: os dois ícones e os dois
+ * rótulos são renderizados, e a variante `dark:` esconde o par errado. Isso
+ * evita o mismatch de hidratação — o servidor não conhece o tema (mora no
+ * localStorage), então qualquer `theme === "dark" ? A : B` no render diverge do
+ * cliente. O padrão comum pra isso é um `useState`+`useEffect` de "mounted",
+ * que é justamente o antipadrão que esta migração está removendo.
  */
 export function ThemeSwitcher() {
-  const { theme, setTheme } = useTheme();
-  const [open, setOpen] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <Palette className="h-4 w-4" />
-        Tema
-        <span className="ml-auto text-xs text-sidebar-foreground/40">
-          {THEMES.find((t) => t.id === theme)?.emoji}
-        </span>
-      </button>
-
-      {open && (
-        <>
-          {/* overlay pra fechar ao clicar fora */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <ul
-            className="absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-lg border border-sidebar-border bg-popover shadow-lg"
-            role="listbox"
-          >
-            {THEMES.map((t) => (
-              <li key={t.id}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={theme === t.id}
-                  onClick={() => {
-                    setTheme(t.id);
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-sidebar-accent/40"
-                >
-                  <span>{t.emoji}</span>
-                  <span className="flex-1">{t.label}</span>
-                  {theme === t.id && (
-                    <Check className="h-3.5 w-3.5 text-brand-primary" />
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      className="w-full justify-start gap-3 px-3 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+      aria-label="Alternar entre tema claro e escuro"
+    >
+      <Sun className="h-4 w-4 dark:hidden" />
+      <Moon className="hidden h-4 w-4 dark:block" />
+      Tema
+      <span className="ml-auto text-xs text-sidebar-foreground/40">
+        <span className="dark:hidden">claro</span>
+        <span className="hidden dark:inline">escuro</span>
+      </span>
+    </Button>
   );
 }

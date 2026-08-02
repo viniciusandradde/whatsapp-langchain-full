@@ -157,12 +157,7 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "atendimento",
     ),
     ("tag.manage", "CRUD de tags da empresa (admin/gestor only)", "tag"),
-    # Integrações externas (Sprint Wareline)
-    (
-        "integracao.wareline.manage",
-        "Gerenciar credenciais da integração Wareline ConecteHub",
-        "integracao",
-    ),
+    # Integrações externas
     # Conector genérico de APIs (Sprint Conector API)
     (
         "integracao.manage",
@@ -214,12 +209,12 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
 PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
     (
         "Admin",
-        "Acesso total — equivalente ao role 'admin' legacy.",
+        "Acesso total à empresa, inclusive cobrança e perfis de acesso.",
         "all",  # explode pra todas as permissões do catálogo
     ),
     (
         "Gestor",
-        "Gerencia operação e equipe, sem acesso a config crítica de empresa/perfis.",
+        "Gerencia a operação e a equipe. Não mexe em cobrança nem em perfis de acesso.",
         [
             # cliente/atendimento: scope .all (vê tudo da empresa)
             "cliente.read.all",
@@ -255,7 +250,6 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "atendimento.tag.aplicar",
             "atendimento.nota_interna.criar",
             "tag.manage",
-            "integracao.wareline.manage",
             "integracao.manage",
             "security.audit.read",
             # Campanhas/Disparador + templates + whitelist — paridade exata
@@ -296,7 +290,7 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
     ),
     (
         "Leitura",
-        "Read-only — pra auditoria/visualização sem mutação. Vê tudo da empresa.",
+        "Só leitura. Vê tudo da empresa e não altera nada — para auditoria e acompanhamento.",
         [
             "cliente.read.all",
             "atendimento.read.all",

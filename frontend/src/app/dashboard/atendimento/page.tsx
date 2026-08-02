@@ -1,5 +1,7 @@
 import { Activity } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { requireSession } from "@/lib/session";
 
 import { fetchDashboardAtendimentoAction } from "./actions";
@@ -29,12 +31,11 @@ export default async function DashboardAtendimentoPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Activity className="h-6 w-6" />
-          <h1 className="text-2xl font-semibold">Atendimentos — Visão Geral</h1>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Visão geral"
+        descricao="O que está acontecendo no atendimento agora."
+        icon={Activity}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

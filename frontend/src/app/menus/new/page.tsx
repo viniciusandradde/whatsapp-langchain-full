@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, ListTree } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getConexoes } from "@/lib/api";
@@ -48,17 +50,11 @@ export default async function NewMenuPage({ searchParams }: PageProps) {
         Voltar
       </Link>
 
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <ListTree className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Novo menu chatbot</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Cria menu árvore. Items + ações configurados depois no editor.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Novo menu"
+        descricao="Comece pelo nome. As opções do menu e o que cada uma faz você monta na tela seguinte."
+        icon={ListTree}
+      />
 
       <Card>
         <CardHeader>

@@ -9,6 +9,8 @@
 
 import { Headphones } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import {
   getAtendentesRanking,
   getDepartamentos,
@@ -47,19 +49,11 @@ export default async function AtendentesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Headphones className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Atendentes</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Equipe da empresa — status, capacidade, departamentos e perfis.
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Atendentes"
+        descricao="Equipe da empresa — status, capacidade, departamentos e perfis."
+        icon={Headphones}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

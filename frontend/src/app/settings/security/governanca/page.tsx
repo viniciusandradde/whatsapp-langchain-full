@@ -1,5 +1,7 @@
 import { Shield } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getMyEmpresas, listAuditGovernanca } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -58,18 +60,11 @@ export default async function GovernancaAuditPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Shield className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Governança — Audit</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Registro imutável de mudanças de RBAC: atribuição de perfis,
-            departamentos, roles e status de membros. Compliance LGPD.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Governança de dados"
+        descricao="Quem ganhou ou perdeu acesso, entrou ou saiu de um departamento, e quando. Registro que não pode ser apagado."
+        icon={Shield}
+      />
 
       {error && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

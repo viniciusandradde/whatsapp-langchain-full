@@ -26,12 +26,24 @@ const RECURSO_LABEL: Record<string, string> = {
   documentos_kb: "Documentos KB",
 };
 
+/**
+ * Nome do recurso na tela. Sem isto, a chave crua do feature flag ia pro
+ * cliente — o dashboard exibia "disparador_media" e "disparador" como se
+ * fossem nome de produto.
+ */
+function rotuloDeFeature(chave: string): string {
+  const texto = chave.replace(/[_-]+/g, " ").trim();
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 const FEATURE_LABEL: Record<string, string> = {
   calendar: "Google Calendar",
   rbac: "Permissões granulares (RBAC)",
   menu_moderno: "Menu chatbot moderno",
   mcp: "MCP custom",
   white_label: "White label",
+  disparador: "Disparo em massa",
+  disparador_media: "Mídia no disparo",
 };
 
 export function QuotaCard({ empresaId }: Props) {
@@ -159,12 +171,12 @@ export function QuotaCard({ empresaId }: Props) {
                 className={
                   "inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs " +
                   (enabled
-                    ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                    : "bg-slate-500/10 text-slate-500 border border-slate-500/20")
+                    ? "border border-success/30 bg-success/10 text-success"
+                    : "border border-border bg-muted text-muted-foreground")
                 }
               >
                 {enabled && <CheckCircle2 className="h-3 w-3" />}
-                {FEATURE_LABEL[feat] || feat}
+                {FEATURE_LABEL[feat] ?? rotuloDeFeature(feat)}
               </span>
             ))}
           </div>
@@ -195,9 +207,9 @@ function QuotaRow({
             {usado.toLocaleString("pt-BR")} <span className="text-muted-foreground">/ ∞</span>
           </span>
         </div>
-        <div className="h-1.5 rounded-full bg-emerald-500/15">
-          <div className="h-1.5 w-full rounded-full bg-emerald-500/40" />
-        </div>
+        {/* Sem barra: preenchimento total lê como "no limite", que é o
+            oposto de ilimitado. Traço + ∞ no número já dizem o que é. */}
+        <div className="h-1.5 rounded-full border border-dashed border-muted-foreground/30" />
       </div>
     );
   }

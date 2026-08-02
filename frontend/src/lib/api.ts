@@ -1687,20 +1687,6 @@ export async function setTracesProvider(
   });
 }
 
-export interface AtendimentoTraceLink {
-  provider: "langfuse" | "langsmith" | null;
-  thread_id: string | null;
-  trace_url: string | null;
-}
-
-export async function getAtendimentoTraceLink(
-  atendimentoId: number
-): Promise<AtendimentoTraceLink> {
-  return apiFetch<AtendimentoTraceLink>(
-    `/api/traces/atendimento/${atendimentoId}`
-  );
-}
-
 // --- Clientes ---
 
 export async function getClientes(params: {
@@ -2265,68 +2251,11 @@ export async function marcarAtendimentoLido(
   });
 }
 
-// --- Sprint Wareline: integração ConecteHub ---
 
-export interface WarelineConfig {
-  empresa_id: number;
-  base_url: string;
-  pacientes_base_url: string;
-  username: string;
-  client_id: string;
-  ativo: boolean;
-  ultimo_teste_at: string | null;
-  ultimo_teste_ok: boolean | null;
-  ultimo_teste_erro: string | null;
-  updated_at: string | null;
-  password_set: boolean;
-  client_secret_set: boolean;
-}
 
-export async function getWarelineConfig(): Promise<WarelineConfig | null> {
-  try {
-    return await apiFetch<WarelineConfig>("/api/integracoes/wareline");
-  } catch (e) {
-    // 404 = não configurado ainda → não é erro real
-    if (
-      e instanceof Error &&
-      /404|n[aã]o configurada|n[aã]o encontrad/i.test(e.message)
-    ) {
-      return null;
-    }
-    throw e;
-  }
-}
 
-export async function saveWarelineConfig(payload: {
-  username?: string;
-  password?: string;
-  client_id?: string;
-  client_secret?: string;
-  base_url?: string;
-  pacientes_base_url?: string;
-  ativo?: boolean;
-}): Promise<WarelineConfig> {
-  return apiFetch<WarelineConfig>("/api/integracoes/wareline", {
-    method: "PUT",
-    body: payload,
-  });
-}
 
-export async function testWarelineConnection(): Promise<{
-  ok: boolean;
-  mensagem: string;
-}> {
-  return apiFetch<{ ok: boolean; mensagem: string }>(
-    "/api/integracoes/wareline/testar",
-    { method: "POST" }
-  );
-}
 
-export async function deleteWarelineConfig(): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>("/api/integracoes/wareline", {
-    method: "DELETE",
-  });
-}
 
 // --- Asaas (billing GLOBAL da plataforma — superadmin) ---
 export interface AsaasConfigStatus {
@@ -3072,6 +3001,8 @@ export async function revokeApiKey(id: number): Promise<{ ok: boolean }> {
 export async function getContatosCapturados(opts?: {
   limit?: number;
   offset?: number;
+  /** Filtra por nome ou telefone. O total devolvido acompanha o filtro. */
+  q?: string;
 }): Promise<{
   items: ContatoCapturado[];
   total: number;
@@ -3080,6 +3011,7 @@ export async function getContatosCapturados(opts?: {
   const p = new URLSearchParams();
   if (opts?.limit != null) p.set("limit", String(opts.limit));
   if (opts?.offset != null) p.set("offset", String(opts.offset));
+  if (opts?.q?.trim()) p.set("q", opts.q.trim());
   const qs = p.toString();
   return apiFetch<{ items: ContatoCapturado[]; total: number; promoviveis: number }>(
     `/api/captura/contatos${qs ? "?" + qs : ""}`
@@ -3622,7 +3554,66 @@ export type AgenteIAUpdateInput = Partial<
     | "temperatura_efetiva"
     | "top_p_efetivo"
   >
->;
+> & {
+  /**
+   * "Mensagem de commit" da versão do prompt (mig 158). Viaja no mesmo PATCH
+   * mas não é coluna de `agente_ia` — o backend a recebe por nome.
+   */
+  nota?: string | null;
+};
+
+/**
+ * Uma versão do prompt. `texto` só vem no detalhe — a listagem devolve
+ * `caracteres` porque o texto passa de 30 KB por versão.
+ */
+export interface PromptVersao {
+  versao: number;
+  nota: string | null;
+  origem: "edicao" | "restauracao" | "inicial" | "backfill";
+  restaurada_de: number | null;
+  criado_por_user_id: string | null;
+  criado_por_nome: string | null;
+  criado_em: string | null;
+  caracteres: number;
+  /** Resumo da bateria de regressão (mig 159). null = versão nunca testada. */
+  bateria: {
+    at: string | null;
+    cenarios: number | null;
+    modelos: string[];
+    vazamentos: number;
+    erros: number;
+  } | null;
+  /** Placar por modelo — só vem no detalhe da versão. */
+  bateria_placar?: BateriaPlacar[] | null;
+  texto?: string;
+}
+
+export async function getPromptVersoes(
+  slug: string
+): Promise<{ items: PromptVersao[] }> {
+  return apiFetch<{ items: PromptVersao[] }>(
+    `/api/v1/agentes/${slug}/prompt/versoes`
+  );
+}
+
+export async function getPromptVersao(
+  slug: string,
+  versao: number
+): Promise<PromptVersao & { texto: string }> {
+  return apiFetch<PromptVersao & { texto: string }>(
+    `/api/v1/agentes/${slug}/prompt/versoes/${versao}`
+  );
+}
+
+export async function restaurarPromptVersao(
+  slug: string,
+  versao: number
+): Promise<AgenteIA> {
+  return apiFetch<AgenteIA>(
+    `/api/v1/agentes/${slug}/prompt/versoes/${versao}/restaurar`,
+    { method: "POST" }
+  );
+}
 
 export async function getAgentesIA(opts?: {
   onlyActive?: boolean;
@@ -3660,6 +3651,11 @@ export interface TestarBateriaResult {
   resultados: (TestarAgenteResult & { modelo: string; cenario: string })[];
   placar: BateriaPlacar[];
   cenarios: string[];
+  /**
+   * Versão do prompt em que o placar ficou gravado (mig 159). null quando a
+   * gravação falhou — o placar ainda vale, só não ficou registrado.
+   */
+  versao_prompt: number | null;
 }
 
 export async function testarAgente(

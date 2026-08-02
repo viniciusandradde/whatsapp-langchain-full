@@ -13,6 +13,7 @@ import {
   MoreVertical,
   RefreshCw,
   Send,
+  TriangleAlert,
   UserPlus,
   X,
   XCircle,
@@ -55,6 +56,15 @@ import { TagPopover } from "./tag-popover";
 interface Props {
   atendimento: Atendimento;
   onClose: () => void;
+  /**
+   * `drawer` = overlay sobre a fila (comportamento antigo, mantido no mobile).
+   * `painel` = coluna fixa ao lado da lista, que é o layout de desktop.
+   *
+   * O drawer obrigava o operador a escolher entre VER a fila e LER a conversa:
+   * o backdrop escuro cobria a lista inteira. Toda inbox de helpdesk — e o
+   * Inbox do Chatvolt — resolve isso com duas colunas fixas.
+   */
+  modo?: "drawer" | "painel";
 }
 
 function formatTime(iso: string | null): string {
@@ -62,7 +72,11 @@ function formatTime(iso: string | null): string {
   return new Date(iso).toLocaleString("pt-BR");
 }
 
-export function AtendimentoDrawer({ atendimento, onClose }: Props) {
+export function AtendimentoDrawer({
+  atendimento,
+  onClose,
+  modo = "drawer",
+}: Props) {
   const [mensagens, setMensagens] = useState<AtendimentoMensagem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -277,7 +291,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
       return;
     }
     alert(
-      `✅ Conversa resetada (${r.rowsDeleted} rows removidas).\n` +
+      `Conversa resetada (${r.rowsDeleted} registros removidos).\n` +
         `Thread: ${r.threadId}\n\n` +
         "Próxima mensagem do cliente vai começar do zero."
     );
@@ -316,13 +330,13 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
     await reload();
   }
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
-    >
+  const conteudo = (
       <aside
-        className="flex h-full w-full max-w-3xl flex-col bg-card shadow-2xl"
+        className={
+          modo === "painel"
+            ? "flex h-full min-h-0 w-full flex-col bg-card"
+            : "flex h-full w-full max-w-3xl flex-col bg-card shadow-2xl"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-card p-3 md:px-5 md:py-3">
@@ -353,7 +367,8 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                   className="text-[10px]"
                   title={`Cliente errou ${atendimento.qtde_resposta_invalida}× no menu/CSAT`}
                 >
-                  ⚠ {atendimento.qtde_resposta_invalida}
+                  <TriangleAlert className="size-3" />
+                  {atendimento.qtde_resposta_invalida}
                 </Badge>
               )}
               {!atendimento.iniciado_cliente && (
@@ -520,7 +535,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                   className="h-3.5 w-3.5"
                 />
                 <span className={composerInterna ? "font-medium text-amber-600 dark:text-amber-400" : ""}>
-                  🔒 Nota interna (não envia pro cliente)
+                  Nota interna (não envia pro cliente)
                 </span>
               </label>
               <button
@@ -691,7 +706,7 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
                       </option>
                       {atendentesOnline.map((a) => (
                         <option key={a.user_id} value={a.user_id}>
-                          🟢 {a.nome || a.email || a.user_id}
+                          {a.nome || a.email || a.user_id}
                           {a.count_atendimentos_abertos > 0
                             ? ` (${a.count_atendimentos_abertos} abertos)`
                             : ""}
@@ -746,6 +761,18 @@ export function AtendimentoDrawer({ atendimento, onClose }: Props) {
           </footer>
         )}
       </aside>
+  );
+
+  // No desktop a conversa é coluna fixa; no mobile continua sendo overlay,
+  // porque 390px não comportam duas colunas.
+  if (modo === "painel") return conteudo;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {conteudo}
     </div>
   );
 }
@@ -849,7 +876,7 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
         aria-label={collapsed ? "Expandir triagem" : "Recolher triagem"}
       >
         <span className="flex items-center gap-2">
-          <span>🧠 Triagem IA</span>
+          <span>Triagem da IA</span>
           {atendimento.triagem_completa && (
             <Badge variant="outline" className="text-[10px]">
               completa
@@ -924,7 +951,7 @@ function ColetaPreviaCard({ atendimento }: { atendimento: Atendimento }) {
         aria-label={collapsed ? "Expandir coleta prévia" : "Recolher coleta prévia"}
       >
         <span className="flex items-center gap-2">
-          <span>🗂 Coleta prévia</span>
+          <span>Coleta prévia</span>
           {resumo.item_label && (
             <Badge variant="outline" className="text-[10px]">
               via &ldquo;{resumo.item_label}&rdquo;
@@ -1179,7 +1206,7 @@ function MessageBubbles({
     bubbles.push({
       side: "out",
       kind: "text",
-      text: "⚠ Falha ao processar essa mensagem. Tente reenviar ou entre em contato com suporte.",
+      text: "Falha ao processar essa mensagem. Tente reenviar ou entre em contato com o suporte.",
       meta: `erro · ${m.error.slice(0, 80)}`,
     });
   }
@@ -1191,7 +1218,7 @@ function MessageBubbles({
       <div className="flex justify-center">
         <div className="w-full max-w-[90%] rounded-lg border border-amber-400/40 bg-amber-50/70 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-950/30">
           <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-            🔒 Nota interna · {m.criado_por_user_id ?? "—"}
+            Nota interna · {m.criado_por_user_id ?? "—"}
           </p>
           <p className="whitespace-pre-wrap text-foreground">{m.response}</p>
           <p className="mt-1 font-mono text-[10px] text-muted-foreground">
@@ -1251,10 +1278,10 @@ function MessageBubbles({
               no handoff. Em modo manual/whitelist NINGUÉM respondeu, e essa
               é exatamente a situação que deixou uma cliente sem resposta. */}
           {m.response?.startsWith("[handoff humano")
-            ? "⏸ agente pausado — operador respondendo"
+            ? "agente pausado — operador respondendo"
             : m.response?.startsWith("[modo manual")
-              ? "⏸ IA desligada nesta conexão — ninguém respondeu"
-              : "⏸ número na lista de bloqueio da IA — ninguém respondeu"}
+              ? "IA desligada nesta conexão — ninguém respondeu"
+              : "número na lista de bloqueio da IA — ninguém respondeu"}
         </p>
       )}
       {podeReprocessar && (

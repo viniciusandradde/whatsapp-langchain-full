@@ -49,12 +49,12 @@ router = APIRouter(
 
 
 def _check_encryption_key() -> None:
-    if settings.wareline_encryption_key is None:
+    if settings.integracoes_encryption_key is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
                 "Módulo Integrações desabilitado — "
-                "WARELINE_ENCRYPTION_KEY não configurada no servidor."
+                "INTEGRACOES_ENCRYPTION_KEY não configurada no servidor."
             ),
         )
 

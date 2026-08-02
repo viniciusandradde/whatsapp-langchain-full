@@ -1,9 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { Camera, History, Save, Star, User, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { Camera, Loader2, Save, Star, User } from "lucide-react";
+import { toast } from "sonner";
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { dataHora } from "@/lib/formato";
 import type { AtividadeEvento, Usuario } from "@/lib/api";
 
 import {
@@ -21,15 +55,21 @@ import {
 } from "./actions";
 
 const ACAO_LABEL: Record<string, string> = {
-  "member.add": "Adicionado à empresa",
-  "member.remove": "Removido da empresa",
-  "member.disable": "Desativado",
-  "member.enable": "Reativado",
+  "member.add": "Entrou na empresa",
+  "member.remove": "Saiu da empresa",
+  "member.disable": "Perdeu o acesso",
+  "member.enable": "Recuperou o acesso",
   "role.change": "Cargo alterado",
   "perfil.sync": "Perfis atualizados",
   "depto.sync": "Departamentos atualizados",
-  "superadmin.grant": "Superadmin concedido",
-  "superadmin.revoke": "Superadmin revogado",
+  "superadmin.grant": "Virou superadmin",
+  "superadmin.revoke": "Deixou de ser superadmin",
+};
+
+const CARGO_LABEL: Record<string, string> = {
+  admin: "Administrador",
+  operator: "Operador",
+  viewer: "Visualizador",
 };
 
 interface Props {
@@ -46,22 +86,19 @@ interface ConexaoSel {
   is_default: boolean;
 }
 
-function _fmtData(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("pt-BR");
-}
-
-const INPUT_CLASS =
-  "w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-2 text-sm " +
-  "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/30";
-
-export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Props) {
+export function UsuarioFormModal({
+  usuario,
+  onClose,
+  onCreated,
+  onUpdated,
+}: Props) {
   const isEdit = usuario !== null;
+  const id = useId();
   const [tab, setTab] = useState<TabId>("dados");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [erroNome, setErroNome] = useState<string | null>(null);
 
-  // Estados controlados
   const [nome, setNome] = useState(usuario?.nome ?? "");
   const [email, setEmail] = useState(
     usuario?.email && !usuario.email.endsWith("@no-email.local")
@@ -85,18 +122,19 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
     usuario?.atendente_max_paralelos ?? 5
   );
 
-  // Opções (lazy load via apiFetch — direto no client via Server Action seria
-  // possível, mas /api/perfis e /api/departamentos podem precisar wrapping)
   const [perfisDisponiveis, setPerfisDisponiveis] = useState<PerfilOption[]>([]);
-  const [deptsDisponiveis, setDeptsDisponiveis] = useState<DepartamentoOption[]>([]);
-  const [conexoesDisponiveis, setConexoesDisponiveis] = useState<ConexaoOption[]>([]);
+  const [deptsDisponiveis, setDeptsDisponiveis] = useState<DepartamentoOption[]>(
+    []
+  );
+  const [conexoesDisponiveis, setConexoesDisponiveis] = useState<
+    ConexaoOption[]
+  >([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
 
-  // Atividade (auditoria) — carregada sob demanda, só no modo edição
+  // Auditoria — carregada só ao abrir a aba, e só no modo edição.
   const [atividade, setAtividade] = useState<AtividadeEvento[] | null>(null);
   const [atividadeLoading, setAtividadeLoading] = useState(false);
 
-  // Avatar
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(
     usuario?.avatar_path ?? usuario?.image_url ?? null
@@ -104,7 +142,6 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
 
   useEffect(() => {
-    // Carrega perfis + deptos disponíveis na empresa atual via Server Actions
     let cancelled = false;
     Promise.all([
       loadPerfisOptionsAction(),
@@ -125,34 +162,31 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
     };
   }, []);
 
-  function togglePerfil(id: number) {
+  function togglePerfil(pid: number) {
     setPerfisIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      prev.includes(pid) ? prev.filter((x) => x !== pid) : [...prev, pid]
     );
   }
-  function toggleDepto(id: number) {
+  function toggleDepto(did: number) {
     setDepartamentosIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+      prev.includes(did) ? prev.filter((x) => x !== did) : [...prev, did]
     );
   }
-  function toggleConexao(id: number) {
+  function toggleConexao(cid: number) {
     setConexoesSel((prev) =>
-      prev.some((c) => c.id === id)
-        ? prev.filter((c) => c.id !== id)
-        : [...prev, { id, is_default: prev.length === 0 }]
+      prev.some((c) => c.id === cid)
+        ? prev.filter((c) => c.id !== cid)
+        : [...prev, { id: cid, is_default: prev.length === 0 }]
     );
   }
-  function setDefaultConexao(id: number) {
-    setConexoesSel((prev) =>
-      prev.map((c) => ({ ...c, is_default: c.id === id }))
-    );
+  function setDefaultConexao(cid: number) {
+    setConexoesSel((prev) => prev.map((c) => ({ ...c, is_default: c.id === cid })));
   }
 
-  function selectTab(id: TabId) {
-    setTab(id);
-    // Lazy-load da auditoria ao abrir a aba (só edição).
+  function selectTab(next: TabId) {
+    setTab(next);
     if (
-      id === "atividade" &&
+      next === "atividade" &&
       isEdit &&
       usuario &&
       atividade === null &&
@@ -169,30 +203,34 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
     const f = e.target.files?.[0];
     if (!f) return;
     if (f.size > 2 * 1024 * 1024) {
-      setError("Imagem maior que 2MB");
+      toast.error("Imagem grande demais", {
+        description: "O limite é 2MB. Reduza a foto e tente de novo.",
+      });
       return;
     }
     setPendingAvatar(f);
     setAvatarPreview(URL.createObjectURL(f));
   }
 
-  async function uploadPendingAvatar(userId: string): Promise<boolean> {
-    if (!pendingAvatar) return true;
+  async function uploadPendingAvatar(userId: string) {
+    if (!pendingAvatar) return;
     const fd = new FormData();
     fd.set("file", pendingAvatar);
     const r = await uploadAvatarAction(userId, fd);
     if (!r.ok) {
-      // Não engole o erro — avisa o admin (user já foi salvo, é não-fatal).
-      alert("Usuário salvo, mas falha no upload do avatar: " + r.error);
-      return false;
+      // O usuário já foi salvo; só a foto falhou. Falha não-fatal, mas o admin
+      // precisa saber — senão fica achando que subiu.
+      toast.error("Usuário salvo, mas a foto não subiu", {
+        description: r.error,
+      });
     }
-    return true;
   }
 
   function handleSave() {
     setError(null);
+    setErroNome(null);
     if (!nome.trim()) {
-      setError("Nome é obrigatório.");
+      setErroNome("Informe o nome de quem vai usar esta conta.");
       setTab("dados");
       return;
     }
@@ -218,7 +256,8 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
         if (maxParalelos !== usuario.atendente_max_paralelos) {
           await setMaxParalelosAction(usuario.id, maxParalelos);
         }
-        if (pendingAvatar) await uploadPendingAvatar(usuario.id);
+        await uploadPendingAvatar(usuario.id);
+        toast.success(`${r.data.nome || "Usuário"} atualizado.`);
         onUpdated(r.data);
       } else {
         const r = await criarUsuarioAction({
@@ -229,362 +268,404 @@ export function UsuarioFormModal({ usuario, onClose, onCreated, onUpdated }: Pro
           setError(r.error);
           return;
         }
-        if (pendingAvatar) await uploadPendingAvatar(r.usuario.id);
+        await uploadPendingAvatar(r.usuario.id);
         onCreated(r.usuario, r.password);
       }
     });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-foreground/10 bg-obsidian-900 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-foreground/10 p-4">
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <User className="size-4 text-brand-primary" />
-            {isEdit ? `Editar — ${usuario.nome || usuario.email}` : "Novo usuário"}
-          </h2>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="size-4" />
-          </Button>
-        </div>
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <User className="size-4 text-primary" />
+            {isEdit
+              ? `Editar ${usuario.nome || usuario.email}`
+              : "Novo usuário"}
+          </DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? "Alterações valem no próximo carregamento de página da pessoa."
+              : "A senha é gerada automaticamente e aparece uma única vez ao salvar."}
+          </DialogDescription>
+        </DialogHeader>
 
-        {/* Tabs */}
-        <div className="flex gap-1 border-b border-foreground/10 px-4">
-          {(
-            [
-              { id: "dados" as const, label: "Dados básicos" },
-              { id: "acessos" as const, label: "Acessos" },
-              { id: "atendimento" as const, label: "Atendimento" },
-              ...(isEdit
-                ? [{ id: "atividade" as const, label: "Atividade" }]
-                : []),
-            ]
-          ).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => selectTab(t.id)}
-              className={
-                "px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px " +
-                (tab === t.id
-                  ? "border-brand-primary text-brand-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground")
-              }
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <Tabs value={tab} onValueChange={(v) => selectTab(v as TabId)}>
+          <TabsList>
+            <TabsTrigger value="dados">Dados</TabsTrigger>
+            <TabsTrigger value="acessos">Acessos</TabsTrigger>
+            <TabsTrigger value="atendimento">Atendimento</TabsTrigger>
+            {isEdit && <TabsTrigger value="atividade">Atividade</TabsTrigger>}
+          </TabsList>
 
-        {/* Body */}
-        <div className="p-4 space-y-4">
-          {tab === "dados" && (
-            <div className="space-y-4">
-              {/* Avatar */}
-              <div className="flex items-start gap-4">
-                <div className="space-y-2">
-                  <div className="relative">
+          <TabsContent value="dados" className="space-y-4 pt-2">
+            <div className="flex items-start gap-4">
+              <div className="space-y-1">
+                <div className="relative">
+                  <Avatar className="size-20">
                     {avatarPreview ? (
-                      <img
-                        src={avatarPreview}
-                        alt="Avatar"
-                        className="size-20 rounded-full object-cover border border-foreground/15"
-                      />
-                    ) : (
-                      <div className="size-20 rounded-full bg-brand-primary/15 border border-brand-primary/30 flex items-center justify-center text-2xl font-medium text-brand-primary">
-                        {(nome || email || "?").slice(0, 1).toUpperCase()}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="absolute -bottom-1 -right-1 flex size-7 items-center justify-center rounded-full border border-white/15 bg-brand-primary text-white hover:bg-brand-primary/90"
-                      title="Alterar foto"
-                    >
-                      <Camera className="size-3.5" />
-                    </button>
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    onChange={handleFilePick}
-                    className="hidden"
-                  />
-                  <p className="text-[10px] text-muted-foreground text-center">
-                    Max 2MB
-                  </p>
+                      <AvatarImage src={avatarPreview} alt="" />
+                    ) : null}
+                    <AvatarFallback className="bg-primary/10 text-2xl font-medium text-primary">
+                      {(nome || email || "?").slice(0, 1).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    className="absolute -bottom-1 -right-1 rounded-full"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Escolher foto"
+                  >
+                    <Camera className="size-3.5" />
+                  </Button>
                 </div>
-                <div className="flex-1 space-y-3">
-                  <Field label="Nome completo" required>
-                    <input
-                      type="text"
-                      value={nome}
-                      onChange={(e) => setNome(e.target.value)}
-                      placeholder="Maria Silva"
-                      className={INPUT_CLASS}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={handleFilePick}
+                  className="hidden"
+                />
+                <p className="text-center text-xs text-muted-foreground">
+                  até 2MB
+                </p>
+              </div>
+
+              <div className="flex-1 space-y-3">
+                <Field>
+                  <FieldLabel htmlFor={`${id}-nome`}>Nome completo</FieldLabel>
+                  <Input
+                    id={`${id}-nome`}
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Maria Silva"
+                    aria-invalid={!!erroNome}
+                    disabled={pending}
+                  />
+                  {erroNome ? <FieldError>{erroNome}</FieldError> : null}
+                </Field>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor={`${id}-email`}>
+                      Email (opcional)
+                    </FieldLabel>
+                    <Input
+                      id={`${id}-email`}
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="maria@empresa.com.br"
                       disabled={pending}
                     />
                   </Field>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <Field label="Email">
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="opcional"
-                        className={INPUT_CLASS}
-                        disabled={pending}
-                      />
-                    </Field>
-                    <Field label="Telefone">
-                      <input
-                        type="tel"
-                        value={telefone}
-                        onChange={(e) => setTelefone(e.target.value)}
-                        placeholder="+55 11 99999-9999"
-                        className={INPUT_CLASS}
-                        disabled={pending}
-                      />
-                    </Field>
-                  </div>
+                  <Field>
+                    <FieldLabel htmlFor={`${id}-telefone`}>
+                      Telefone (opcional)
+                    </FieldLabel>
+                    <Input
+                      id={`${id}-telefone`}
+                      type="tel"
+                      value={telefone}
+                      onChange={(e) => setTelefone(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      disabled={pending}
+                    />
+                  </Field>
                 </div>
               </div>
             </div>
-          )}
+          </TabsContent>
 
-          {tab === "acessos" && (
-            <div className="space-y-4">
-              <Field label="Tipo de acesso (legado)" hint="admin = total | operator = padrão | viewer = só leitura">
-                <select
-                  value={roleLegacy}
-                  onChange={(e) => setRoleLegacy(e.target.value as typeof roleLegacy)}
-                  className={INPUT_CLASS}
+          <TabsContent value="acessos" className="space-y-4 pt-2">
+            <Field>
+              <FieldLabel htmlFor={`${id}-cargo`}>Cargo na empresa</FieldLabel>
+              <Select
+                value={roleLegacy}
+                onValueChange={(v) => setRoleLegacy(v as typeof roleLegacy)}
+              >
+                <SelectTrigger
+                  id={`${id}-cargo`}
+                  className="w-full"
                   disabled={pending}
                 >
-                  <option value="admin">Administrador</option>
-                  <option value="operator">Operador</option>
-                  <option value="viewer">Visualizador</option>
-                </select>
-              </Field>
+                  {/* Sem a função o Base UI imprime o valor cru ("operator"). */}
+                  <SelectValue>
+                    {(v: string | null) => CARGO_LABEL[v ?? "operator"]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(CARGO_LABEL).map(([v, label]) => (
+                    <SelectItem key={v} value={v}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                Define o piso de acesso. Quem precisa de permissão fina recebe
+                por perfil, abaixo.
+              </FieldDescription>
+            </Field>
 
-              {loadingOptions ? (
-                <p className="text-xs text-muted-foreground italic">Carregando perfis e departamentos…</p>
-              ) : (
-                <>
-                  <Field label={`Perfis de acesso (${perfisIds.length} selecionados)`}>
-                    {perfisDisponiveis.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic">Nenhum perfil cadastrado.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 max-h-48 overflow-y-auto rounded-md border border-foreground/10 p-2">
-                        {perfisDisponiveis.map((p) => (
-                          <label
-                            key={p.id}
-                            className="flex items-center gap-2 rounded p-1.5 text-sm cursor-pointer hover:bg-foreground/[0.04]"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={perfisIds.includes(p.id)}
-                              onChange={() => togglePerfil(p.id)}
-                              disabled={pending}
-                              className="size-3.5"
-                            />
-                            <span>{p.nome}</span>
-                            {p.is_system && (
-                              <span className="text-[10px] text-muted-foreground">(sistema)</span>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </Field>
-
-                  <Field label={`Departamentos (${departamentosIds.length} selecionados)`}>
-                    {deptsDisponiveis.length === 0 ? (
-                      <p className="text-xs text-muted-foreground italic">Nenhum departamento cadastrado.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 max-h-48 overflow-y-auto rounded-md border border-foreground/10 p-2">
-                        {deptsDisponiveis.map((d) => (
-                          <label
-                            key={d.id}
-                            className="flex items-center gap-2 rounded p-1.5 text-sm cursor-pointer hover:bg-foreground/[0.04]"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={departamentosIds.includes(d.id)}
-                              onChange={() => toggleDepto(d.id)}
-                              disabled={pending}
-                              className="size-3.5"
-                            />
-                            <span>{d.nome}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </Field>
-                </>
-              )}
-            </div>
-          )}
-
-          {tab === "atendimento" && (
-            <div className="space-y-4">
-              <Field
-                label="Capacidade (atendimentos simultâneos)"
-                hint="Máximo de atendimentos paralelos na distribuição (1–50)."
-              >
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={maxParalelos}
-                  onChange={(e) =>
-                    setMaxParalelos(
-                      Math.max(1, Math.min(50, Number(e.target.value) || 1))
-                    )
-                  }
-                  className={INPUT_CLASS + " w-28"}
+            {loadingOptions ? (
+              <ListaEsqueleto />
+            ) : (
+              <>
+                <CaixaDeSelecao
+                  titulo="Perfis de acesso"
+                  selecionados={perfisIds.length}
+                  vazio="Nenhum perfil cadastrado nesta empresa."
+                  itens={perfisDisponiveis.map((p) => ({
+                    chave: p.id,
+                    rotulo: p.nome,
+                    sufixo: p.is_system ? "do sistema" : undefined,
+                    marcado: perfisIds.includes(p.id),
+                    alternar: () => togglePerfil(p.id),
+                  }))}
                   disabled={pending}
+                  idPrefixo={`${id}-perfil`}
                 />
-              </Field>
 
-              <Field
-                label={`Conexões (${conexoesSel.length} atribuídas)`}
-                hint="Conexões WhatsApp que o atendente pode usar. A estrela marca a conexão padrão."
-              >
-                {loadingOptions ? (
-                  <p className="text-xs text-muted-foreground italic">Carregando conexões…</p>
-                ) : conexoesDisponiveis.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">Nenhuma conexão cadastrada.</p>
-                ) : (
-                  <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border border-foreground/10 p-2">
-                    {conexoesDisponiveis.map((c) => {
-                      const sel = conexoesSel.find((x) => x.id === c.id);
-                      return (
-                        <div
-                          key={c.id}
-                          className="flex items-center gap-2 rounded p-1.5 text-sm hover:bg-foreground/[0.04]"
+                <CaixaDeSelecao
+                  titulo="Departamentos"
+                  selecionados={departamentosIds.length}
+                  vazio="Nenhum departamento cadastrado nesta empresa."
+                  itens={deptsDisponiveis.map((d) => ({
+                    chave: d.id,
+                    rotulo: d.nome,
+                    marcado: departamentosIds.includes(d.id),
+                    alternar: () => toggleDepto(d.id),
+                  }))}
+                  disabled={pending}
+                  idPrefixo={`${id}-depto`}
+                />
+              </>
+            )}
+          </TabsContent>
+
+          <TabsContent value="atendimento" className="space-y-4 pt-2">
+            <Field>
+              <FieldLabel htmlFor={`${id}-cap`}>
+                Conversas ao mesmo tempo
+              </FieldLabel>
+              <Input
+                id={`${id}-cap`}
+                type="number"
+                min={1}
+                max={50}
+                value={maxParalelos}
+                onChange={(e) =>
+                  setMaxParalelos(
+                    Math.max(1, Math.min(50, Number(e.target.value) || 1))
+                  )
+                }
+                className="w-28"
+                disabled={pending}
+              />
+              <FieldDescription>
+                Teto que a distribuição automática respeita ao escolher para
+                quem mandar a próxima conversa. De 1 a 50.
+              </FieldDescription>
+            </Field>
+
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <Label>Conexões que pode usar</Label>
+                <span className="text-xs text-muted-foreground">
+                  {conexoesSel.length} de {conexoesDisponiveis.length}
+                </span>
+              </div>
+              {loadingOptions ? (
+                <ListaEsqueleto />
+              ) : conexoesDisponiveis.length === 0 ? (
+                <p className="text-xs italic text-muted-foreground">
+                  Nenhuma conexão cadastrada nesta empresa.
+                </p>
+              ) : (
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
+                  {conexoesDisponiveis.map((c) => {
+                    const sel = conexoesSel.find((x) => x.id === c.id);
+                    return (
+                      <div
+                        key={c.id}
+                        className="flex items-center gap-2 rounded p-1.5 text-sm hover:bg-accent"
+                      >
+                        <Checkbox
+                          id={`${id}-conexao-${c.id}`}
+                          checked={!!sel}
+                          onCheckedChange={() => toggleConexao(c.id)}
+                          disabled={pending}
+                        />
+                        <Label
+                          htmlFor={`${id}-conexao-${c.id}`}
+                          className="flex-1 truncate font-normal"
                         >
-                          <input
-                            type="checkbox"
-                            checked={!!sel}
-                            onChange={() => toggleConexao(c.id)}
-                            disabled={pending}
-                            className="size-3.5"
-                          />
-                          <span className="flex-1 truncate">
-                            {c.nome}
-                            <span className="ml-1 text-[10px] text-muted-foreground">
-                              {c.provider}
-                            </span>
+                          {c.nome}
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {c.provider}
                           </span>
-                          {sel && (
-                            <button
-                              type="button"
-                              onClick={() => setDefaultConexao(c.id)}
-                              title={sel.is_default ? "Conexão padrão" : "Definir como padrão"}
-                              className="shrink-0"
+                        </Label>
+                        {sel && (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <button
+                                  type="button"
+                                  className="shrink-0"
+                                  aria-label={
+                                    sel.is_default
+                                      ? "É a conexão padrão"
+                                      : "Tornar a conexão padrão"
+                                  }
+                                  onClick={() => setDefaultConexao(c.id)}
+                                />
+                              }
                             >
                               <Star
                                 className={
-                                  "size-4 " +
-                                  (sel.is_default
-                                    ? "fill-amber-400 text-amber-400"
-                                    : "text-muted-foreground hover:text-amber-400")
+                                  sel.is_default
+                                    ? "size-4 fill-warning text-warning"
+                                    : "size-4 text-muted-foreground hover:text-warning"
                                 }
                               />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Field>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {sel.is_default
+                                ? "Conexão padrão — é por ela que sai o envio quando o atendente não escolhe"
+                                : "Tornar esta a conexão padrão"}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
+          </TabsContent>
 
-          {tab === "atividade" && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <History className="size-3.5" />
-                Histórico de auditoria deste usuário (quem criou / alterou /
-                ativou / desativou).
-              </div>
+          {isEdit && (
+            <TabsContent value="atividade" className="space-y-2 pt-2">
+              <p className="text-xs text-muted-foreground">
+                Quem mexeu nesta conta, o que mudou e quando.
+              </p>
               {atividadeLoading ? (
-                <p className="text-xs italic text-muted-foreground">
-                  Carregando atividade…
-                </p>
+                <ListaEsqueleto />
               ) : !atividade || atividade.length === 0 ? (
                 <p className="text-xs italic text-muted-foreground">
-                  Nenhum evento de auditoria registrado.
+                  Nada registrado ainda.
                 </p>
               ) : (
                 <ul className="max-h-80 space-y-2 overflow-y-auto">
                   {atividade.map((ev) => (
-                    <li
-                      key={ev.id}
-                      className="border-l-2 border-brand-primary/30 pl-3"
-                    >
+                    <li key={ev.id} className="border-l-2 border-primary/30 pl-3">
                       <p className="text-sm">
                         {ACAO_LABEL[ev.action] ?? ev.action}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         por {ev.actor_nome ?? ev.actor_user_id} ·{" "}
-                        {_fmtData(ev.created_at)}
+                        {dataHora(ev.created_at)}
                       </p>
                     </li>
                   ))}
                 </ul>
               )}
-            </div>
+            </TabsContent>
           )}
-        </div>
+        </Tabs>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-foreground/10 p-4">
-          <div className="text-sm">
-            {error && <span className="text-destructive">{error}</span>}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={onClose} disabled={pending}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSave} disabled={pending}>
-              {pending ? "Salvando…" : (
-                <>
-                  <Save className="mr-1 size-4" />
-                  {isEdit ? "Atualizar" : "Criar usuário"}
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Save className="size-4" />
+            )}
+            {isEdit ? "Salvar" : "Criar usuário"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Lista de checkbox com contador — perfis e departamentos usam a mesma. */
+function CaixaDeSelecao({
+  titulo,
+  selecionados,
+  vazio,
+  itens,
+  disabled,
+  idPrefixo,
+}: {
+  titulo: string;
+  selecionados: number;
+  vazio: string;
+  itens: {
+    chave: number;
+    rotulo: string;
+    sufixo?: string;
+    marcado: boolean;
+    alternar: () => void;
+  }[];
+  disabled?: boolean;
+  idPrefixo: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <Label>{titulo}</Label>
+        <span className="text-xs text-muted-foreground">
+          {selecionados} de {itens.length}
+        </span>
       </div>
+      {itens.length === 0 ? (
+        <p className="text-xs italic text-muted-foreground">{vazio}</p>
+      ) : (
+        <div className="grid max-h-48 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border p-2 md:grid-cols-2">
+          {itens.map((it) => (
+            <div
+              key={it.chave}
+              className="flex items-center gap-2 rounded p-1.5 text-sm hover:bg-accent"
+            >
+              <Checkbox
+                id={`${idPrefixo}-${it.chave}`}
+                checked={it.marcado}
+                onCheckedChange={it.alternar}
+                disabled={disabled}
+              />
+              <Label
+                htmlFor={`${idPrefixo}-${it.chave}`}
+                className="flex-1 font-normal"
+              >
+                {it.rotulo}
+                {it.sufixo && (
+                  <span className="ml-1.5 text-xs text-muted-foreground">
+                    {it.sufixo}
+                  </span>
+                )}
+              </Label>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function Field({
-  label,
-  required,
-  hint,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function ListaEsqueleto() {
   return (
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium">
-        {label}
-        {required && <span className="ml-1 text-destructive">*</span>}
-      </label>
-      {children}
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+    <div className="space-y-2 rounded-md border p-2">
+      {Array.from({ length: 3 }, (_, i) => (
+        <Skeleton key={i} className="h-6 w-full" />
+      ))}
     </div>
   );
 }

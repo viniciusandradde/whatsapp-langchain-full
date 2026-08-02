@@ -277,3 +277,71 @@ class TestContarPromoverTodos:
         assert await cap.promover_todos_contatos(pool, empresa) == 0
         depois = await cap.contar_contatos(pool, empresa)
         assert depois["promoviveis"] == 0  # nada mais a promover (só o @lid)
+
+
+@pytest.mark.docker_demo
+class TestBuscaContatos:
+    """Filtro `q` de `listar_contatos`/`contar_contatos`.
+
+    Existe porque a base real tem ~20 mil contatos e a única forma de achar
+    alguém era paginar: a UI não tinha como oferecer busca honesta sem isto.
+    O total precisa acompanhar o filtro — senão a paginação promete páginas
+    que não existem.
+    """
+
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"capt-busca-{_RUN}", f"capt-busca-{_RUN}"),
+            ).fetchone()
+            assert row is not None
+            eid = row[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_busca_por_nome_e_por_telefone(self, empresa) -> None:
+        from whatsapp_langchain.shared import captura as cap
+        from whatsapp_langchain.shared.db import get_pool
+
+        pool = await get_pool()
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            conn.execute(
+                "INSERT INTO contato_capturado "
+                "(empresa_id, wa_jid, telefone, push_name) VALUES (%s, %s, %s, %s)",
+                (
+                    empresa,
+                    f"a{_RUN}@s.whatsapp.net",
+                    "5562985923866",
+                    "Fernando Warline",
+                ),
+            )
+            conn.execute(
+                "INSERT INTO contato_capturado "
+                "(empresa_id, wa_jid, telefone, push_name) VALUES (%s, %s, %s, %s)",
+                (empresa, f"b{_RUN}@s.whatsapp.net", "5519983278871", "Marcia Souza"),
+            )
+
+        # sem filtro, vêm os dois
+        assert len(await cap.listar_contatos(pool, empresa)) == 2
+
+        # por nome, parcial e sem diferenciar maiúscula
+        achados = await cap.listar_contatos(pool, empresa, q="fernan")
+        assert [c["push_name"] for c in achados] == ["Fernando Warline"]
+
+        # por telefone digitado como o operador cola, com máscara
+        achados = await cap.listar_contatos(pool, empresa, q="+55 62 98592-3866")
+        assert [c["telefone"] for c in achados] == ["5562985923866"]
+
+        # o total acompanha o filtro
+        totais = await cap.contar_contatos(pool, empresa, q="fernan")
+        assert totais["total"] == 1
+
+        # termo que não casa devolve lista vazia, não a base inteira
+        assert await cap.listar_contatos(pool, empresa, q="zzz-nao-existe") == []
+        assert (await cap.contar_contatos(pool, empresa, q="zzz-nao-existe"))[
+            "total"
+        ] == 0

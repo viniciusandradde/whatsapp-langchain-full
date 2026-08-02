@@ -13,7 +13,7 @@ A maior parte das configurações tem defaults sensatos para desenvolvimento loc
 Segredos compartilhados do painel/admin devem ser preenchidos explicitamente.
 """
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_PRODUCTION_SECRET_LENGTH = 32
@@ -52,6 +52,22 @@ class Settings(BaseSettings):
     # "development" (default) ou "production" — controla comportamentos como
     # exposicao do webhook sincrono (desabilitado em production)
     environment: str = "development"
+
+    # Trava de segurança pra processo local ligado a um banco compartilhado.
+    #
+    # A API roda o migrator no startup (`run_migrations`). Isso é correto no
+    # container de deploy e é uma armadilha fora dele: subir um uvicorn local
+    # apontando `DATABASE_URL` pra um banco que não é seu **aplica todas as
+    # migrations pendentes daquele checkout** — inclusive DDL destrutivo que
+    # ainda não foi revisado, contra um schema cujo código em execução é outro.
+    #
+    # Aconteceu em 2026-07-31: dois restarts de um uvicorn de desenvolvimento
+    # aplicaram `151_drop_wareline.sql` e `152_perfis_descricao_pt.sql` num
+    # banco de produção. Ver `docs/benchmark/nosso-painel/defeitos.md`.
+    #
+    # Ligue (`SKIP_MIGRATIONS=true`) em qualquer processo local que fale com
+    # banco que você não pode alterar. O deploy nunca liga.
+    skip_migrations: bool = False
 
     # --- Server ---
     port: int = 8000
@@ -151,14 +167,20 @@ class Settings(BaseSettings):
             return "https://api.asaas.com/v3"
         return "https://api-sandbox.asaas.com/v3"
 
-    # --- Sprint Wareline ConecteHub (integrações externas multi-tenant) ---
-    # Chave Fernet (base64 urlsafe 32 bytes) usada pra cifrar credenciais
-    # Wareline (password + client_secret) na tabela `wareline_credentials`.
-    # Gerar: python -c "from cryptography.fernet import Fernet;
-    #         print(Fernet.generate_key().decode())"
-    # Sem essa chave, integração Wareline (e qualquer outra integração que use
-    # `integrations.crypto`) fica desabilitada (rotas retornam 503).
-    wareline_encryption_key: SecretStr | None = None
+    # --- Cifra das credenciais de integração externa -----------------------
+    # Fernet key que protege `api_connection.credentials_encrypted` (token,
+    # senha, client secret de qualquer provider).
+    #
+    # O nome antigo era WARELINE_ENCRYPTION_KEY, de quando a única integração
+    # era o Wareline. Ele continua aceito porque está setado nos deploys —
+    # renomear sem alias derrubaria a decifragem de tudo que já foi salvo.
+    integracoes_encryption_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "INTEGRACOES_ENCRYPTION_KEY",
+            "WARELINE_ENCRYPTION_KEY",
+        ),
+    )
 
     # --- Sprint Conexões — WhatsApp Cloud API (Meta WABA Embedded Signup) ---
     # App registrado em developers.facebook.com com produto "WhatsApp Business Platform"

@@ -201,6 +201,11 @@ async def load_graph(
         # Checkboxes de ferramenta do painel. None em modo legacy (sem linha
         # em `agente_ia`) → o registry devolve o conjunto completo.
         tools_enabled=list(agente_runtime.tools_enabled) if agente_runtime else None,
+        # Portão das tools `midia.*`. Em modo legacy assume tudo aceito, que é
+        # como o pré-processamento do worker já se comporta.
+        aceita_imagem=agente_runtime.aceita_imagem if agente_runtime else True,
+        aceita_audio=agente_runtime.aceita_audio if agente_runtime else True,
+        aceita_documento=agente_runtime.aceita_documento if agente_runtime else True,
     )
 
 
@@ -233,26 +238,22 @@ def list_agents() -> list[str]:
 # mostrar nome legível em vez do slug. Templates não listados ganham
 # label = slug capitalizado e descrição genérica.
 _TEMPLATE_METADATA: dict[str, tuple[str, str]] = {
-    "vsa_tech": (
-        "VSA Tech (genérico)",
-        "Assistente IA com 19 tools (Calendar 8 / CRM 8 / Memória 2 / RAG 1). "
-        "Modelo padrão `openai/gpt-4o-mini`. Bom pra agentes simples ou nichados "
-        "via prompt_override.",
+    "agente": (
+        "Agente simples",
+        "Um agente que conversa e usa as ferramentas que você marcar. "
+        "Serve para a maioria dos casos: atendimento, triagem, agendamento.",
     ),
-    "atendimento_completo": (
-        "Atendimento Completo (multimodal)",
-        "Especializado em atendimento ao cliente brasileiro com 23 tools "
-        "(19 base + 4 multimodais: analyze_image / transcribe_audio / "
-        "extract_document / summarize_document). SYSTEM_PROMPT pt-BR com "
-        "política não-invente, escalonamento humano e fora-expediente.",
+    # Enquanto o shim existir, o nome antigo precisa de rótulo — senão a UI
+    # cai no fallback e mostra "Vsa Tech" com "Template sem metadata".
+    "vsa_tech": (
+        "Agente simples",
+        "Nome antigo da topologia simples. Mantido durante a migração.",
     ),
     "atendimento_router": (
-        "Atendimento Router (multi-agent paralelo)",
-        "Topologia Router + Parallel Agents: classifier decide quais "
-        "especialistas ativar (mídia / CRM / calendário / conhecimento) e "
-        "executa até 3 em paralelo via Send. Synthesizer agrega outputs em "
-        "resposta única pt-BR. Reduz alucinação isolando contexto por domínio. "
-        "Bom pra atendimento com mídia + CRM + KB no mesmo turno.",
+        "Agente com especialistas em paralelo",
+        "Divide a pergunta entre especialistas que respondem ao mesmo tempo "
+        "e junta tudo numa resposta só. Custa mais e erra menos quando a "
+        "mensagem mistura assuntos — foto, histórico e agenda de uma vez.",
     ),
 }
 

@@ -56,7 +56,7 @@ export function CleanupZumbisCard() {
       try {
         const r = await cleanupZumbisAction(false);
         setLastResult(
-          `✅ ${r.total} fechados (${r.aguardando_fechados} aguardando + ${r.em_andamento_fechados} em andamento)`
+          `${r.total} fechados (${r.aguardando_fechados} aguardando + ${r.em_andamento_fechados} em andamento)`
         );
         await loadPreview();
       } catch (e) {
@@ -68,7 +68,7 @@ export function CleanupZumbisCard() {
   if (error) {
     return (
       <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-xs text-rose-300">
-        Cleanup indisponível: {error}
+        Limpeza indisponível: {error}
       </div>
     );
   }
@@ -80,7 +80,7 @@ export function CleanupZumbisCard() {
       <div className="rounded-lg border border-border/40 bg-card/40 p-3 text-xs">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">
-            🧹 Cleanup: fila limpa ({preview.config.dias_max_aguardando}d / {preview.config.dias_max_sem_resposta}d)
+            Limpeza de fila: {preview.config.dias_max_aguardando}d aguardando / {preview.config.dias_max_sem_resposta}d sem resposta
           </span>
           {lastResult && (
             <span className="text-emerald-400">{lastResult}</span>

@@ -55,6 +55,12 @@ from whatsapp_langchain.agents.tools.cliente_memoria import (
     save_cliente_fato,
 )
 from whatsapp_langchain.agents.tools.knowledge import search_knowledge_base
+from whatsapp_langchain.agents.tools.midia import (
+    analyze_image,
+    extract_document,
+    summarize_document,
+    transcribe_audio,
+)
 
 logger = structlog.get_logger()
 
@@ -95,6 +101,14 @@ TOOL_SLUGS: dict[str, tuple[Any, ...]] = {
         calendar_set_active_calendar,
         calendar_list_events,
     ),
+    # Multimodais: re-análise sob demanda. O worker já transcreve o áudio e
+    # descreve a imagem ANTES do agente rodar; estas tools servem pra ele
+    # voltar ao arquivo com uma pergunta dirigida ("que valor está na nota?").
+    # Estavam cravadas em `atendimento_completo` e por isso eram inalcançáveis
+    # pelos outros agentes — entram aqui pra virar escolha.
+    "midia.imagem": (analyze_image,),
+    "midia.audio": (transcribe_audio,),
+    "midia.documento": (extract_document, summarize_document),
 }
 
 # Vocabulário antigo. O agente 1 (`atendimento`) foi gravado com estes nomes,
@@ -125,6 +139,14 @@ BACKLOG_SLUGS: frozenset[str] = frozenset(
 # Slugs que só valem com a integração ligada no banco. Marcar não basta.
 _GATED_BY_CALENDAR = frozenset({"calendar.create", "calendar.list"})
 _GATED_BY_KNOWLEDGE = frozenset({"search_knowledge_base"})
+# Multimodal segue a mesma regra, mas o portão é o próprio agente: não faz
+# sentido oferecer "reanalise a imagem" a um agente que recusa imagem
+# (`agente_ia.aceita_imagem`). Marcar o slug não contorna isso.
+_GATED_BY_MIDIA: dict[str, str] = {
+    "midia.imagem": "imagem",
+    "midia.audio": "audio",
+    "midia.documento": "documento",
+}
 
 
 def normalizar_slug(slug: str) -> str:
@@ -133,13 +155,23 @@ def normalizar_slug(slug: str) -> str:
     return SLUG_ALIASES.get(limpo, limpo)
 
 
-def _todas_as_tools(*, calendar_enabled: bool, knowledge_enabled: bool) -> list[Any]:
+def _todas_as_tools(
+    *,
+    calendar_enabled: bool,
+    knowledge_enabled: bool,
+    midias_aceitas: frozenset[str],
+) -> list[Any]:
     """Conjunto completo, respeitando os gates de integração."""
-    return _montar(TOOL_SLUGS.keys(), calendar_enabled, knowledge_enabled)
+    return _montar(
+        TOOL_SLUGS.keys(), calendar_enabled, knowledge_enabled, midias_aceitas
+    )
 
 
 def _montar(
-    slugs: Iterable[str], calendar_enabled: bool, knowledge_enabled: bool
+    slugs: Iterable[str],
+    calendar_enabled: bool,
+    knowledge_enabled: bool,
+    midias_aceitas: frozenset[str],
 ) -> list[Any]:
     """Resolve slugs em tools, sem duplicar e mantendo ordem estável."""
     saida: list[Any] = []
@@ -148,6 +180,9 @@ def _montar(
         if slug in _GATED_BY_CALENDAR and not calendar_enabled:
             continue
         if slug in _GATED_BY_KNOWLEDGE and not knowledge_enabled:
+            continue
+        midia = _GATED_BY_MIDIA.get(slug)
+        if midia is not None and midia not in midias_aceitas:
             continue
         for tool in TOOL_SLUGS.get(slug, ()):
             if id(tool) not in vistos:
@@ -161,6 +196,9 @@ def resolve_tools(
     *,
     calendar_enabled: bool = False,
     knowledge_enabled: bool = False,
+    aceita_imagem: bool = False,
+    aceita_audio: bool = False,
+    aceita_documento: bool = False,
 ) -> list[Any]:
     """Traduz `agente_ia.tools_enabled` na lista de tools do agente.
 
@@ -168,15 +206,29 @@ def resolve_tools(
         tools_enabled: slugs marcados no painel. None/vazio = tudo.
         calendar_enabled: empresa tem Google Calendar ativo.
         knowledge_enabled: empresa tem ≥1 documento na base.
+        aceita_imagem/audio/documento: o agente recebe aquela mídia. Portão
+            das tools `midia.*` — reanalisar imagem num agente que recusa
+            imagem nunca teria arquivo pra abrir.
 
     Returns:
         Tools na ordem do registry, sem duplicata.
     """
+    midias = frozenset(
+        m
+        for m, ok in (
+            ("imagem", aceita_imagem),
+            ("audio", aceita_audio),
+            ("documento", aceita_documento),
+        )
+        if ok
+    )
     if not tools_enabled:
         # Caminho normal pro modo legacy (sem linha em `agente_ia`) e pra
         # agente recém-criado: recebe tudo até alguém restringir.
         return _todas_as_tools(
-            calendar_enabled=calendar_enabled, knowledge_enabled=knowledge_enabled
+            calendar_enabled=calendar_enabled,
+            knowledge_enabled=knowledge_enabled,
+            midias_aceitas=midias,
         )
 
     normalizados = [normalizar_slug(s) for s in tools_enabled]
@@ -202,10 +254,12 @@ def resolve_tools(
             motivo="nenhum slug reconhecido; usando conjunto completo",
         )
         return _todas_as_tools(
-            calendar_enabled=calendar_enabled, knowledge_enabled=knowledge_enabled
+            calendar_enabled=calendar_enabled,
+            knowledge_enabled=knowledge_enabled,
+            midias_aceitas=midias,
         )
 
     # Itera TOOL_SLUGS (não `conhecidos`) pra ordem não depender de como o
     # admin marcou os checkboxes — diff de log fica estável.
     selecionados = [s for s in TOOL_SLUGS if s in set(conhecidos)]
-    return _montar(selecionados, calendar_enabled, knowledge_enabled)
+    return _montar(selecionados, calendar_enabled, knowledge_enabled, midias)

@@ -1,6 +1,6 @@
-"""Integrações externas com sistemas terceiros (Sprint Wareline).
+"""Integrações externas com sistemas terceiros.
 
-Cada subpacote nesta pasta cobre 1 provider (Wareline, etc.) com:
+Cada subpacote nesta pasta cobre 1 provider com:
 - `credentials.py` — CRUD em tabela específica + cripto
 - `token.py` — OAuth/auth token cache
 - `client.py` — async HTTP client

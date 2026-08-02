@@ -41,14 +41,14 @@ INSERT INTO agente_ia (
     empresa_id, slug, nome, template_catalog,
     estilo_resposta, ativo, is_default, departamento_default_id
 ) VALUES
-    (999, 'atendimento', 'Atendimento ao Cliente', 'atendimento_completo', 'equilibrado', TRUE, TRUE, 999003),
-    (999, 'atendimento-cliente', 'Atendimento Cliente VSA', 'atendimento_completo', 'equilibrado', TRUE, FALSE, NULL),
-    (999, 'agendamentos', 'Agendamentos', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 999005),
-    (999, 'exames', 'Exames', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 999007),
-    (999, 'orcamento', 'Orçamento', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 999006),
-    (999, 'ouvidoria', 'Ouvidoria', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 999001),
-    (999, 'rh-recrutamento-selecao', 'Recrutamento e Seleção', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 999004),
-    (999, 'tesouraria', 'Tesouraria', 'atendimento_completo', 'equilibrado', TRUE, FALSE, 999002)
+    (999, 'atendimento', 'Atendimento ao Cliente', 'agente', 'equilibrado', TRUE, TRUE, 999003),
+    (999, 'atendimento-cliente', 'Atendimento Cliente VSA', 'agente', 'equilibrado', TRUE, FALSE, NULL),
+    (999, 'agendamentos', 'Agendamentos', 'agente', 'equilibrado', TRUE, FALSE, 999005),
+    (999, 'exames', 'Exames', 'agente', 'equilibrado', TRUE, FALSE, 999007),
+    (999, 'orcamento', 'Orçamento', 'agente', 'equilibrado', TRUE, FALSE, 999006),
+    (999, 'ouvidoria', 'Ouvidoria', 'agente', 'equilibrado', TRUE, FALSE, 999001),
+    (999, 'rh-recrutamento-selecao', 'Recrutamento e Seleção', 'agente', 'equilibrado', TRUE, FALSE, 999004),
+    (999, 'tesouraria', 'Tesouraria', 'agente', 'equilibrado', TRUE, FALSE, 999002)
 ON CONFLICT (empresa_id, slug) DO UPDATE SET
     departamento_default_id = EXCLUDED.departamento_default_id,
     template_catalog = EXCLUDED.template_catalog,

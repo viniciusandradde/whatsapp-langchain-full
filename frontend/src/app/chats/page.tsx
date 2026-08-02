@@ -90,7 +90,7 @@ export default async function ConversasPage({
       <header className="flex flex-wrap items-center gap-3">
         <History className="h-6 w-6 text-muted-foreground" />
         <div className="flex-1">
-          <h1 className="text-xl font-semibold">Histórico de Atendimentos</h1>
+          <h1 className="text-xl font-semibold">Histórico de conversas</h1>
           <p className="text-sm text-muted-foreground">
             Consulte, filtre e exporte todas as conversas — abertas e
             finalizadas.

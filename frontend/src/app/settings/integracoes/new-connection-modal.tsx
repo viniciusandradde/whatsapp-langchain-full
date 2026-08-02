@@ -115,8 +115,7 @@ export function NewConnectionModal({
         {step === "pick" ? (
           <div className="max-h-[60vh] overflow-y-auto p-4">
             {(() => {
-              // Wareline tem card próprio acima — esconde do picker
-              const visible = providers.filter((p) => p.slug !== "wareline");
+              const visible = providers;
               if (visible.length === 0) {
                 return (
                   <p className="py-8 text-center text-sm text-muted-foreground">

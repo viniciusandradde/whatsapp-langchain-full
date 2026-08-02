@@ -126,7 +126,7 @@ export function FlagsList({ initialFlags }: Props) {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Ex: <code>true</code> · <code>"variant_A"</code> ·{" "}
+                  Ex: <code>true</code> · <code>&quot;variant_A&quot;</code> ·{" "}
                   <code>{`{"limit":100}`}</code>
                 </p>
               </div>
@@ -174,7 +174,7 @@ export function FlagsList({ initialFlags }: Props) {
         <CardContent className="p-0">
           {flags.length === 0 ? (
             <p className="p-4 text-sm text-muted-foreground">
-              Nenhuma flag. Use "Nova flag" pra ativar feature opt-in numa empresa.
+              Nenhuma flag. Use &quot;Nova flag&quot; pra ativar feature opt-in numa empresa.
             </p>
           ) : (
             <ul className="divide-y">

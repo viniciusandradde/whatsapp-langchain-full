@@ -349,19 +349,42 @@ async def get_lote(
 
 
 async def listar_contatos(
-    pool: AsyncConnectionPool, empresa_id: int, *, limit: int = 200, offset: int = 0
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    limit: int = 200,
+    offset: int = 0,
+    q: str | None = None,
 ) -> list[dict]:
-    """Lista contatos capturados da empresa (browser do painel)."""
+    """Lista contatos capturados da empresa (browser do painel).
+
+    `q` filtra por nome ou telefone. Sem ele, achar um contato específico numa
+    base de ~20 mil significava paginar até topar com ele — o painel não tinha
+    como oferecer busca honesta, porque filtrar só a página carregada acharia
+    1 em cada 99.
+
+    O termo é normalizado pra dígitos quando o operador digita telefone: ele
+    cola "+55 62 98592-3866" e a coluna guarda "5562985923866".
+    """
+    filtro = ""
+    params: list[object] = [empresa_id]
+    if q and q.strip():
+        termo = q.strip()
+        digitos = "".join(c for c in termo if c.isdigit())
+        filtro = " AND (push_name ILIKE %s OR telefone ILIKE %s)"
+        params.extend([f"%{termo}%", f"%{digitos or termo}%"])
+    params.extend([limit, offset])
+
     with empresa_scope(empresa_id):
         async with pool.connection() as conn:
             cur = await conn.execute(
-                """
+                f"""
                 SELECT id, wa_jid, telefone, push_name, is_business, origem,
                        cliente_id, promovido_at, created_at
-                  FROM contato_capturado WHERE empresa_id = %s
+                  FROM contato_capturado WHERE empresa_id = %s{filtro}
                  ORDER BY created_at DESC LIMIT %s OFFSET %s
                 """,
-                (empresa_id, limit, offset),
+                tuple(params),
             )
             rows = await cur.fetchall()
     keys = [
@@ -445,23 +468,36 @@ async def promover_contatos(
     return promovidos
 
 
-async def contar_contatos(pool: AsyncConnectionPool, empresa_id: int) -> dict:
+async def contar_contatos(
+    pool: AsyncConnectionPool, empresa_id: int, *, q: str | None = None
+) -> dict:
     """Totais de contatos capturados da empresa (pra UI mostrar 'X de N').
 
     Returns: {total, promoviveis} — promoviveis = com telefone e ainda não
     promovidos ao CRM (alvo do 'Promover todos').
+
+    `q` usa o MESMO filtro de `listar_contatos`: com busca ativa, o total tem
+    que ser o do resultado, senão a paginação promete páginas que não existem.
     """
+    filtro = ""
+    params: list[object] = [empresa_id]
+    if q and q.strip():
+        termo = q.strip()
+        digitos = "".join(c for c in termo if c.isdigit())
+        filtro = " AND (push_name ILIKE %s OR telefone ILIKE %s)"
+        params.extend([f"%{termo}%", f"%{digitos or termo}%"])
+
     with empresa_scope(empresa_id):
         async with pool.connection() as conn:
             cur = await conn.execute(
-                """
+                f"""
                 SELECT COUNT(*) AS total,
                        COUNT(*) FILTER (
                          WHERE telefone IS NOT NULL AND cliente_id IS NULL
                        ) AS promoviveis
-                  FROM contato_capturado WHERE empresa_id = %s
+                  FROM contato_capturado WHERE empresa_id = %s{filtro}
                 """,
-                (empresa_id,),
+                tuple(params),
             )
             row = await cur.fetchone() or (0, 0)
     return {"total": int(row[0]), "promoviveis": int(row[1])}

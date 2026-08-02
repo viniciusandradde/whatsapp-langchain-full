@@ -38,9 +38,19 @@ export function ChartPorDepartamento({
   const cx = 80;
   const cy = 80;
   const r = 70;
+  // Laço em vez de `.map`: o ângulo acumulado avança de fatia em fatia, e
+  // mutar uma variável capturada dentro do callback é o que o
+  // `react-hooks/immutability` (com razão) proíbe durante o render.
+  const arcs: {
+    path: string;
+    color: string;
+    label: string;
+    total: number;
+    pct: number;
+  }[] = [];
   let cumAngle = -Math.PI / 2; // começa no topo
 
-  const arcs = data.map((d, i) => {
+  for (const [i, d] of data.entries()) {
     const pct = d.total / total;
     const angle = pct * 2 * Math.PI;
     const x1 = cx + r * Math.cos(cumAngle);
@@ -49,15 +59,21 @@ export function ChartPorDepartamento({
     const x2 = cx + r * Math.cos(cumAngle);
     const y2 = cy + r * Math.sin(cumAngle);
     const largeArc = angle > Math.PI ? 1 : 0;
-    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-    return {
+    // Fatia única de 100%: o arco começa e termina no MESMO ponto, e o SVG
+    // simplesmente não desenha nada — o gráfico sumia sempre que um
+    // departamento concentrava tudo. Círculo cheio precisa de dois semiarcos.
+    const path =
+      pct >= 0.999
+        ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx} ${cy + r} A ${r} ${r} 0 1 1 ${cx} ${cy - r} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    arcs.push({
       path,
       color: COLORS[i % COLORS.length],
       label: d.departamento,
       total: d.total,
       pct: pct * 100,
-    };
-  });
+    });
+  }
 
   return (
     <div className="rounded-lg border border-border/40 bg-card/40 p-4">

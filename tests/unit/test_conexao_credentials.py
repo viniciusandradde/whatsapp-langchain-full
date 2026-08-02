@@ -15,7 +15,7 @@ from whatsapp_langchain.shared.config import settings
 @pytest.fixture(autouse=True)
 def _patch_fernet(monkeypatch):
     key = Fernet.generate_key().decode()
-    monkeypatch.setattr(settings, "wareline_encryption_key", SecretStr(key))
+    monkeypatch.setattr(settings, "integracoes_encryption_key", SecretStr(key))
 
 
 def test_roundtrip_waba_credentials():
@@ -45,7 +45,7 @@ def test_roundtrip_evolution_credentials():
 
 def test_decrypt_falha_sem_nenhuma_key(monkeypatch):
     # Sem WARELINE_ENCRYPTION_KEY E sem INTERNAL_SERVICE_TOKEN → erro claro.
-    monkeypatch.setattr(settings, "wareline_encryption_key", None)
+    monkeypatch.setattr(settings, "integracoes_encryption_key", None)
     monkeypatch.setattr(settings, "internal_service_token", "")
     with pytest.raises(IntegracaoConfigError):
         encrypt_dict({"x": "y"})
@@ -54,7 +54,7 @@ def test_decrypt_falha_sem_nenhuma_key(monkeypatch):
 def test_deriva_key_do_internal_service_token(monkeypatch):
     # Sem WARELINE_ENCRYPTION_KEY mas COM INTERNAL_SERVICE_TOKEN → deriva a key
     # e o round-trip funciona (não exige env nova).
-    monkeypatch.setattr(settings, "wareline_encryption_key", None)
+    monkeypatch.setattr(settings, "integracoes_encryption_key", None)
     monkeypatch.setattr(
         settings, "internal_service_token", "dev-token-change-in-production"
     )
@@ -65,7 +65,7 @@ def test_deriva_key_do_internal_service_token(monkeypatch):
 
 def test_derivacao_deterministica(monkeypatch):
     # Mesmo token → mesma key (decifra entre "restarts").
-    monkeypatch.setattr(settings, "wareline_encryption_key", None)
+    monkeypatch.setattr(settings, "integracoes_encryption_key", None)
     monkeypatch.setattr(settings, "internal_service_token", "tok-estavel-123456")
     cipher = encrypt_dict({"a": "b"})
     monkeypatch.setattr(settings, "internal_service_token", "tok-estavel-123456")

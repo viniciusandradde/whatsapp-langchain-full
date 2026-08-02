@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, Plug } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireSession } from "@/lib/session";
@@ -31,17 +33,11 @@ export default async function NewMcpPage({ searchParams }: PageProps) {
         <ArrowLeft className="size-4" />
         Voltar
       </Link>
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Plug className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Novo MCP server</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Servidor Model Context Protocol (stdio/sse/http/websocket).
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Novo servidor MCP"
+        descricao="Conecta uma ferramenta externa que os agentes podem chamar durante a conversa."
+        icon={Plug}
+      />
 
       <Card>
         <CardHeader>

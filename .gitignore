@@ -85,3 +85,6 @@ docs/Baileys/
 docs/extenção/
 disparador-*.zip
 *.mp4
+
+# Artefatos do navegador MCP (snapshots, console logs, capturas)
+.playwright-mcp/

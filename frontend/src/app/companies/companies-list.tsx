@@ -8,6 +8,14 @@ import { Loader2, Plus, Pencil, RotateCcw, Users } from "lucide-react";
 import { reativarEmpresaAction } from "./actions";
 
 import { Badge } from "@/components/ui/badge";
+
+/** Plano com cor: numa carteira de 8 empresas, tudo cinza não diz quem paga. */
+const PLANO_VARIANTE: Record<string, "default" | "secondary" | "outline" | "success"> = {
+  free: "outline",
+  pessoal: "secondary",
+  pro: "default",
+  enterprise: "success",
+};
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatCPFOrCNPJ } from "@/lib/br-validators";
 import type { Empresa } from "@/lib/api";
 
 import {
@@ -77,7 +86,9 @@ export function CompaniesList({ empresas }: Props) {
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge variant="secondary">{e.plano}</Badge>
+                      <Badge variant={PLANO_VARIANTE[e.plano] ?? "secondary"}>
+                        {e.plano}
+                      </Badge>
                       {e.my_role && (
                         <Badge
                           variant={
@@ -101,7 +112,9 @@ export function CompaniesList({ empresas }: Props) {
                       {isAdmin && " Use Reativar pra voltar."}
                     </p>
                   )}
-                  {e.doc && <Row label="Documento" value={e.doc} mono />}
+                  {e.doc && (
+                    <Row label="Documento" value={formatCPFOrCNPJ(e.doc)} mono />
+                  )}
                 </CardContent>
                 <div className="flex items-center justify-end gap-2 px-4 pb-4">
                   <Link

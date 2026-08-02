@@ -312,9 +312,20 @@ async def run_migrations(db_pool: AsyncConnectionPool) -> None:
     Lê arquivos de db/migrations/ e aplica os que ainda não foram
     registrados na tabela _migrations.
 
+    Não faz nada quando `SKIP_MIGRATIONS=true` — trava pra processo local
+    ligado a banco compartilhado, ver `Settings.skip_migrations`.
+
     Args:
         db_pool: Pool de conexões do psycopg.
     """
+    if settings.skip_migrations:
+        logger.warning(
+            "migrations_skipped",
+            motivo="SKIP_MIGRATIONS=true",
+            aviso="schema NÃO será atualizado por este processo",
+        )
+        return
+
     async with db_pool.connection() as conn:
         conn: AsyncConnection
         await _acquire_advisory_lock(conn, MIGRATIONS_LOCK_ID)

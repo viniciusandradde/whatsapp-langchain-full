@@ -5,6 +5,8 @@
 
 import { BarChart3 } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import {
   getPastas,
   getRagByAgente,
@@ -66,18 +68,13 @@ export default async function DashboardRAGPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <BarChart3 className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Qualidade do RAG</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Métricas de uso da base de conhecimento, queries top, miss rate e
-            playground pra testar buscas.
-          </p>
-        </div>
-      </div>
+      {/* "RAG", "queries top" e "miss rate" são vocabulário de quem construiu.
+          Quem opera quer saber se o agente está achando a resposta. */}
+      <PageHeader
+        titulo="Qualidade das respostas"
+        descricao="O que os clientes mais perguntam, com que frequência o agente não acha a resposta na base de conhecimento, e o teste de busca."
+        icon={BarChart3}
+      />
 
       {error && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

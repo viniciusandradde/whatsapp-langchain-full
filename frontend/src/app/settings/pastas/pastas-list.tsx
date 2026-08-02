@@ -8,7 +8,6 @@ import {
   Folder,
   FolderTree,
   Loader2,
-  MoveRight,
   Pencil,
   Plus,
   Trash2,
@@ -16,6 +15,10 @@ import {
   X,
 } from "lucide-react";
 
+import { toast } from "sonner";
+
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
+import { plural } from "@/lib/formato";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +44,12 @@ interface Props {
   initialDocumentos: DocumentoConhecimento[];
   loadError?: string | null;
 }
+
+/** O que está prestes a ser apagado — `null` = diálogo fechado. */
+type AlvoExclusao =
+  | { tipo: "pasta"; pasta: Pasta }
+  | { tipo: "doc"; doc: DocumentoConhecimento }
+  | null;
 
 type PastaEditState =
   | { mode: "closed" }
@@ -91,8 +100,7 @@ export function PastasList({
   const [expanded, setExpanded] = useState<Set<number | null>>(
     () => new Set([null]) // raiz expandida por default
   );
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [alvoExclusao, setAlvoExclusao] = useState<AlvoExclusao>(null);
   const [isPending, startTransition] = useTransition();
   const [uploadPastaId, setUploadPastaId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -113,11 +121,6 @@ export function PastasList({
     return m;
   }, [documentos]);
 
-  function clearMessages() {
-    setError(null);
-    setSuccess(null);
-  }
-
   function toggleExpand(id: number | null) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -133,12 +136,11 @@ export function PastasList({
 
   function handleSubmitPasta(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    clearMessages();
     const form = new FormData(e.currentTarget);
     startTransition(async () => {
       const r = await savePastaAction(form);
       if (!r.ok) {
-        setError(r.error);
+        toast.error(r.error);
         return;
       }
       const next = [...pastas];
@@ -147,39 +149,32 @@ export function PastasList({
       else next.push(r.pasta);
       setPastas(next);
       setPastaEdit({ mode: "closed" });
-      setSuccess("Pasta salva.");
+      toast.success("Pasta salva.");
     });
   }
 
-  function handleDeletePasta(p: Pasta) {
-    const docsLine =
-      p.docs_count && p.docs_count > 0
-        ? `\n${p.docs_count} documento(s) volta(m) pra raiz.`
-        : "";
-    if (!confirm(`Excluir a pasta "${p.nome}"?${docsLine}`)) return;
-    clearMessages();
+  function confirmarExclusaoPasta(p: Pasta) {
     startTransition(async () => {
       const r = await deletePastaAction(p.id);
       if (!r.ok) {
-        setError(r.error);
+        toast.error(r.error);
         return;
       }
       setPastas((prev) => prev.filter((x) => x.id !== p.id));
       setDocumentos((prev) =>
         prev.map((d) => (d.pasta_id === p.id ? { ...d, pasta_id: null } : d))
       );
-      setSuccess("Pasta removida.");
+      toast.success("Pasta removida.");
     });
   }
 
   function handleSubmitDoc(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    clearMessages();
     const form = new FormData(e.currentTarget);
     startTransition(async () => {
       const r = await saveDocumentoAction(form);
       if (!r.ok) {
-        setError(r.error);
+        toast.error(r.error);
         return;
       }
       const next = [...documentos];
@@ -190,22 +185,20 @@ export function PastasList({
       // Atualiza docs_count da pasta destino
       setPastas((prev) =>
         prev.map((p) => {
-          let count = next.filter((d) => d.pasta_id === p.id).length;
+          const count = next.filter((d) => d.pasta_id === p.id).length;
           return { ...p, docs_count: count };
         })
       );
       setDocEdit({ mode: "closed" });
-      setSuccess("Documento salvo.");
+      toast.success("Documento salvo.");
     });
   }
 
-  function handleDeleteDoc(d: DocumentoConhecimento) {
-    if (!confirm(`Excluir o documento "${d.titulo}"?`)) return;
-    clearMessages();
+  function confirmarExclusaoDoc(d: DocumentoConhecimento) {
     startTransition(async () => {
       const r = await deleteDocumentoAction(d.id);
       if (!r.ok) {
-        setError(r.error);
+        toast.error(r.error);
         return;
       }
       setDocumentos((prev) => prev.filter((x) => x.id !== d.id));
@@ -216,28 +209,26 @@ export function PastasList({
             : p
         )
       );
-      setSuccess("Documento removido.");
+      toast.success("Documento removido.");
     });
   }
 
   async function handleAnalyzeSandbox() {
-    clearMessages();
     setAnalyzing(true);
     const r = await triggerLearnerAction();
     setAnalyzing(false);
     if (!r.ok) {
-      setError(`Falha analyze: ${r.error}`);
+      toast.error(`Falha analyze: ${r.error}`);
       return;
     }
-    setSuccess(
-      `🧪 Analisado: ${r.misses} misses → ${r.clusters} clusters → ${r.suggestions_created} sugestões. Veja em /dashboard/rag/sandbox`
+    toast.success(
+      `Analisado: ${r.misses} misses → ${r.clusters} clusters → ${r.suggestions_created} sugestões. Veja em /dashboard/rag/sandbox`
     );
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    clearMessages();
     setUploading(true);
     let totalDocs = 0;
     let totalFiles = 0;
@@ -256,22 +247,21 @@ export function PastasList({
     setUploading(false);
     e.target.value = "";  // reset input
     if (errors.length === 0) {
-      setSuccess(
-        `${totalFiles} arquivo(s) → ${totalDocs} doc(s) criado(s)` +
+      toast.success(
+        `${plural(totalFiles, "arquivo")} → ${plural(totalDocs, "documento")} criado${totalDocs === 1 ? "" : "s"}` +
           (uploadPastaId ? ` na pasta selecionada` : ` na raiz`)
       );
     } else {
-      setError(`${totalDocs} OK / ${errors.length} falhas:\n${errors.slice(0, 3).join("\n")}`);
+      toast.error(`${totalDocs} OK / ${errors.length} falhas:\n${errors.slice(0, 3).join("\n")}`);
     }
   }
 
   function handleMoveDoc(d: DocumentoConhecimento, newPastaId: number | null) {
     if (newPastaId === d.pasta_id) return;
-    clearMessages();
     startTransition(async () => {
       const r = await moveDocumentoAction(d.id, newPastaId);
       if (!r.ok) {
-        setError(r.error);
+        toast.error(r.error);
         return;
       }
       setDocumentos((prev) =>
@@ -286,7 +276,7 @@ export function PastasList({
           return { ...p, docs_count: count };
         })
       );
-      setSuccess("Documento movido.");
+      toast.success("Documento movido.");
     });
   }
 
@@ -336,10 +326,11 @@ export function PastasList({
           size="sm"
           variant="ghost"
           onClick={() => {
-            clearMessages();
             setDocEdit({ mode: "edit", doc: d });
           }}
           disabled={isPending}
+          title="Editar documento"
+          aria-label={`Editar o documento ${d.titulo}`}
         >
           <Pencil className="size-3.5" />
         </Button>
@@ -347,8 +338,10 @@ export function PastasList({
           type="button"
           size="sm"
           variant="ghost"
-          onClick={() => handleDeleteDoc(d)}
+          onClick={() => setAlvoExclusao({ tipo: "doc", doc: d })}
           disabled={isPending}
+          title="Excluir documento"
+          aria-label={`Excluir o documento ${d.titulo}`}
         >
           <Trash2 className="size-3.5" />
         </Button>
@@ -363,7 +356,7 @@ export function PastasList({
           <div>
             <CardTitle>Pastas + Documentos</CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {pastas.length} pasta(s) — {documentos.length} doc(s) total
+              {plural(pastas.length, "pasta")} · {plural(documentos.length, "documento")}
             </p>
           </div>
           <div className="flex gap-2">
@@ -372,8 +365,7 @@ export function PastasList({
               size="sm"
               variant="outline"
               onClick={() => {
-                clearMessages();
-                setDocEdit({ mode: "create", pastaId: null });
+                            setDocEdit({ mode: "create", pastaId: null });
               }}
               disabled={isPending || docEdit.mode !== "closed"}
             >
@@ -384,8 +376,7 @@ export function PastasList({
               type="button"
               size="sm"
               onClick={() => {
-                clearMessages();
-                setPastaEdit({ mode: "create" });
+                            setPastaEdit({ mode: "create" });
               }}
               disabled={isPending || pastaEdit.mode !== "closed"}
             >
@@ -403,9 +394,9 @@ export function PastasList({
         )}
 
         {/* Sprint S.2 — Upload arquivo (.md splita por H1/H2 automático) */}
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-950/10 p-3">
+        <div className="rounded-md border bg-accent/60 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Upload className="size-4 text-emerald-400" />
+            <Upload className="size-4 text-muted-foreground" />
             <span className="text-sm font-medium">Upload arquivo</span>
             <select
               value={String(uploadPastaId ?? "")}
@@ -456,14 +447,12 @@ export function PastasList({
               {analyzing ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : null}
-              {analyzing ? "Analisando…" : "🧪 Analisar via sandbox"}
+              {analyzing ? "Analisando…" : "Analisar no sandbox"}
             </Button>
           </div>
         </div>
 
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {success && <p className="text-sm text-emerald-300">{success}</p>}
 
         {/* === FORM PASTA === */}
         {pastaEdit.mode !== "closed" && (
@@ -548,7 +537,7 @@ export function PastasList({
         {docEdit.mode !== "closed" && (
           <form
             onSubmit={handleSubmitDoc}
-            className="space-y-3 rounded-md border bg-emerald-950/10 p-4"
+            className="space-y-3 rounded-md border bg-accent/60 p-4"
           >
             {docEdit.mode === "edit" && (
               <input type="hidden" name="id" value={docEdit.doc.id} />
@@ -686,8 +675,7 @@ export function PastasList({
                     size="sm"
                     variant="ghost"
                     onClick={() => {
-                      clearMessages();
-                      setDocEdit({ mode: "create", pastaId: null });
+                                        setDocEdit({ mode: "create", pastaId: null });
                     }}
                     disabled={isPending}
                   >
@@ -756,10 +744,10 @@ export function PastasList({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      title="Adicionar doc nesta pasta"
+                      title="Adicionar documento nesta pasta"
+                      aria-label="Adicionar documento nesta pasta"
                       onClick={() => {
-                        clearMessages();
-                        setDocEdit({ mode: "create", pastaId: p.id });
+                                            setDocEdit({ mode: "create", pastaId: p.id });
                       }}
                       disabled={isPending}
                     >
@@ -770,10 +758,11 @@ export function PastasList({
                       size="sm"
                       variant="ghost"
                       onClick={() => {
-                        clearMessages();
                         setPastaEdit({ mode: "edit", pasta: p });
                       }}
                       disabled={isPending}
+                      title="Renomear pasta"
+                      aria-label={`Renomear a pasta ${p.nome}`}
                     >
                       <Pencil className="size-3.5" />
                     </Button>
@@ -781,8 +770,10 @@ export function PastasList({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleDeletePasta(p)}
+                      onClick={() => setAlvoExclusao({ tipo: "pasta", pasta: p })}
                       disabled={isPending}
+                      title="Excluir pasta"
+                      aria-label={`Excluir a pasta ${p.nome}`}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -805,8 +796,7 @@ export function PastasList({
                       type="button"
                       className="underline hover:text-foreground"
                       onClick={() => {
-                        clearMessages();
-                        setDocEdit({ mode: "create", pastaId: p.id });
+                                            setDocEdit({ mode: "create", pastaId: p.id });
                       }}
                     >
                       Adicionar doc
@@ -818,14 +808,30 @@ export function PastasList({
           })}
         </div>
 
-        <p className="rounded-md border border-dashed p-3 text-[11px] text-muted-foreground">
-          <strong>Sprint M:</strong> agentes IA com{" "}
-          <code className="font-mono">base_conhecimento_ids</code> configurado
-          (em <code className="font-mono">/agents/db/&lt;slug&gt;</code> aba KB)
-          buscam apenas nas pastas vinculadas. Sem vínculo = busca em toda a
-          empresa.
-        </p>
       </CardContent>
+
+      <ConfirmDestrutivo
+        aberto={alvoExclusao !== null}
+        onAbertoChange={(v) => !v && setAlvoExclusao(null)}
+        titulo={
+          alvoExclusao?.tipo === "pasta" ? "Excluir pasta" : "Excluir documento"
+        }
+        objeto={
+          alvoExclusao?.tipo === "pasta"
+            ? alvoExclusao.pasta.nome
+            : alvoExclusao?.doc.titulo
+        }
+        descricao={
+          alvoExclusao?.tipo === "pasta" && (alvoExclusao.pasta.docs_count ?? 0) > 0
+            ? `${plural(alvoExclusao.pasta.docs_count ?? 0, "documento")} volta para a raiz — o conteúdo não é apagado.`
+            : undefined
+        }
+        onConfirmar={() => {
+          if (!alvoExclusao) return;
+          if (alvoExclusao.tipo === "pasta") confirmarExclusaoPasta(alvoExclusao.pasta);
+          else confirmarExclusaoDoc(alvoExclusao.doc);
+        }}
+      />
     </Card>
   );
 }

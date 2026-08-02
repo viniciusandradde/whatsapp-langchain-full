@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft, Bot } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgenteTemplates, type AgenteTemplate } from "@/lib/api";
@@ -19,7 +21,7 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
   const params = await searchParams;
   const errorMsg = params.error ?? null;
 
-  // Lista templates disponíveis no catálogo Python (vsa_tech, atendimento_completo, ...)
+  // Topologias disponíveis: "agente" (simples) e "atendimento_router".
   let templates: AgenteTemplate[] = [];
   try {
     const r = await getAgenteTemplates();
@@ -27,7 +29,7 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
   } catch {
     // Fallback: hard-coded mínimo se API falhar
     templates = [
-      { slug: "vsa_tech", label: "VSA Tech (default)", descricao: "" },
+      { slug: "agente", label: "Agente simples", descricao: "" },
     ];
   }
 
@@ -41,18 +43,11 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
         Voltar
       </Link>
 
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <Bot className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-semibold">Novo agente</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Cria agente cadastrável (não exige código). Detalhes (prompt, tools,
-            modelo) editados depois.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Novo agente"
+        descricao="Comece pelo nome. Instruções, ferramentas e modelo você configura na tela seguinte."
+        icon={Bot}
+      />
 
       <Card>
         <CardHeader>
@@ -132,7 +127,7 @@ export default async function NewAgentePage({ searchParams }: PageProps) {
                 defaultValue={
                   templates.find((t) => t.slug === "atendimento_completo")
                     ? "atendimento_completo"
-                    : (templates[0]?.slug ?? "vsa_tech")
+                    : (templates[0]?.slug ?? "agente")
                 }
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >

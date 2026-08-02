@@ -141,6 +141,16 @@ typecheck: ## Verifica tipos estáticos (pyright) — não altera arquivos
 check: ## Verifica tudo (lint + format + types) — não altera arquivos
 	uv run ruff check . && uv run ruff format --check . && uv run pyright src/
 
+check-web: ## Verifica o frontend (eslint + tsc + build + métricas de UI)
+#  Até 2026-07-30 NADA validava o frontend: `make check` roda só Python, e a
+#  única checagem real era o `next build` dentro do docker build do deploy —
+#  em arm64 emulado, depois do push. Este alvo é o gate que faltava (ADR-013).
+#  O INTERNAL_API_URL é obrigatório no build porque o rewrite de /uploads
+#  congela a destination no route-manifest em build time.
+	cd frontend && npm run lint && npm run typecheck
+	cd frontend && INTERNAL_API_URL=$${INTERNAL_API_URL:-http://api:8000} npm run build
+	bash scripts/ui_metrics.sh --check
+
 ci: ## CI/CD: verifica tudo + roda testes com gate de coverage 50%
 	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-fail-under=50
 

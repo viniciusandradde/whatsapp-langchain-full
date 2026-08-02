@@ -37,11 +37,6 @@ from whatsapp_langchain.agents.tools.midia import (
     summarize_document,
     transcribe_audio,
 )
-from whatsapp_langchain.agents.tools.wareline import (
-    wareline_buscar_paciente,
-    wareline_consultar_agenda,
-    wareline_criar_agendamento,
-)
 
 __all__ = [
     "add_cliente_tag",
@@ -72,7 +67,4 @@ __all__ = [
     "transfer_to_human",
     "update_cliente",
     "verify_patient_identity",
-    "wareline_buscar_paciente",
-    "wareline_consultar_agenda",
-    "wareline_criar_agendamento",
 ]

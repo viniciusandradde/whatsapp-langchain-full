@@ -137,7 +137,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
         initialAbas={abas}
         initialContadores={contadores}
       />
-      <main className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
         <div className="mb-4 flex items-center gap-2 md:mb-6">
           <ShellToggleButton className="shrink-0" />
           <Headphones className="hidden h-6 w-6 md:block" />
@@ -163,7 +163,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
         )}
 
         {!error && (
-          <div className="mt-4">
+          <div className="mt-4 flex min-h-0 flex-1 flex-col">
             <AtendimentoList atendimentos={atendimentos} tipo={tipo} />
           </div>
         )}

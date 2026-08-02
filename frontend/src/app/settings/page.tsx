@@ -1,4 +1,6 @@
 import { ShieldCheck } from "lucide-react";
+
+import { PageHeader } from "@/components/page-header";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { requireSession } from "@/lib/session";
 
@@ -9,10 +11,10 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Segurança</h1>
-      </div>
+      <PageHeader
+        titulo="Segurança"
+        icon={ShieldCheck}
+      />
 
       <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-950">
         No primeiro acesso, o painel pode criar o admin a partir de

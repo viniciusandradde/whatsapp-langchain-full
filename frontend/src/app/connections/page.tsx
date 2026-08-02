@@ -1,5 +1,7 @@
 import { Smartphone } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getConexoes } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -30,15 +32,11 @@ export default async function ConnectionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Smartphone className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Conexões WhatsApp</h1>
-      </div>
-
-      <p className="text-sm text-muted-foreground -mt-3">
-        Gerencie os canais WhatsApp da empresa: WhatsApp Oficial (Meta),
-        Evolution API e Twilio.
-      </p>
+      <PageHeader
+        titulo="Conexões"
+        descricao="Os números de WhatsApp por onde a empresa fala com o cliente."
+        icon={Smartphone}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">

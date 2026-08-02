@@ -1,16 +1,28 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Copy, Loader2, X } from "lucide-react";
+import { useId, useState, useTransition } from "react";
+import { Copy, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { plural } from "@/lib/formato";
 import type { Usuario } from "@/lib/api";
 
 import { clonarUsuarioAction } from "./actions";
 
 /**
- * Clona um usuário existente (paridade ZigChat `replicarUsuario`): copia
- * perfis, departamentos, conexões, role e capacidade. Onboarding rápido.
+ * Cria um usuário novo com o mesmo acesso de um existente: perfis,
+ * departamentos, conexões, cargo e capacidade. Serve pra contratar a quarta
+ * pessoa do mesmo time sem reconfigurar tudo de novo.
  */
 export function CloneUsuarioModal({
   origem,
@@ -21,16 +33,19 @@ export function CloneUsuarioModal({
   onClose: () => void;
   onCloned: (usuario: Usuario, password: string) => void;
 }) {
+  const id = useId();
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [erroNome, setErroNome] = useState<string | null>(null);
+  const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   function confirmar() {
-    setError(null);
+    setErroNome(null);
+    setErroGeral(null);
     if (!nome.trim()) {
-      setError("Informe o nome do novo usuário.");
+      setErroNome("Informe o nome de quem vai usar esta conta.");
       return;
     }
     start(async () => {
@@ -40,70 +55,79 @@ export function CloneUsuarioModal({
         telefone: telefone.trim() || null,
       });
       if (r.ok) onCloned(r.usuario, r.password);
-      else setError(r.error);
+      else setErroGeral(r.error);
     });
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-xl border border-foreground/10 bg-obsidian-900 shadow-vsa-xl">
-        <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-3">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <Copy className="size-4 text-brand-primary" />
-            Clonar {origem.nome || origem.email}
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="size-4" />
-          </button>
-        </div>
+  const herda = [
+    plural(origem.perfis.length, "perfil", "perfis"),
+    plural(origem.departamentos.length, "departamento", "departamentos"),
+    plural(origem.conexoes.length, "conexão", "conexões"),
+  ].join(", ");
 
-        <div className="space-y-3 px-4 py-4 text-sm">
-          <p className="text-xs text-muted-foreground">
-            Copia perfis ({origem.perfis.length}), departamentos (
-            {origem.departamentos.length}), conexões ({origem.conexoes.length}),
-            cargo e capacidade. Uma senha nova será gerada.
-          </p>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Nome *</label>
-            <input
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Copy className="size-4 text-primary" />
+            Copiar o acesso de {origem.nome || origem.email}
+          </DialogTitle>
+          <DialogDescription>
+            A conta nova nasce com {herda}, além do cargo e da capacidade de
+            atendimento. A senha é gerada na hora e aparece a seguir.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Field>
+            <FieldLabel htmlFor={`${id}-nome`}>Nome</FieldLabel>
+            <Input
+              id={`${id}-nome`}
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              className="w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-sm"
-              placeholder="Nome do novo usuário"
+              placeholder="Quem vai usar esta conta"
+              aria-invalid={!!erroNome}
               autoFocus
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Email</label>
-            <input
+            {erroNome ? <FieldError>{erroNome}</FieldError> : null}
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${id}-email`}>Email (opcional)</FieldLabel>
+            <Input
+              id={`${id}-email`}
+              type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-sm"
-              placeholder="opcional"
+              placeholder="nome@empresa.com.br"
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Telefone</label>
-            <input
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${id}-telefone`}>
+              Telefone (opcional)
+            </FieldLabel>
+            <Input
+              id={`${id}-telefone`}
               value={telefone}
               onChange={(e) => setTelefone(e.target.value)}
-              className="w-full rounded-md border border-foreground/10 bg-obsidian-800 px-3 py-1.5 text-sm"
-              placeholder="opcional"
+              placeholder="(62) 99999-9999"
             />
-          </div>
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          </Field>
+          {erroGeral ? (
+            <p className="text-xs text-destructive">{erroGeral}</p>
+          ) : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-foreground/10 px-4 py-3">
+        <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancelar
           </Button>
           <Button onClick={confirmar} disabled={pending}>
-            {pending && <Loader2 className="mr-1 size-4 animate-spin" />}
-            Clonar
+            {pending && <Loader2 className="size-4 animate-spin" />}
+            Criar conta
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,5 +1,7 @@
 import { CalendarDays } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAgendamentos, type Agendamento } from "@/lib/api";
@@ -43,10 +45,10 @@ export default async function AgendamentosPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <CalendarDays className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Agendamentos</h1>
-      </div>
+      <PageHeader
+        titulo="Agendamentos"
+        icon={CalendarDays}
+      />
 
       <Card>
         <CardHeader>

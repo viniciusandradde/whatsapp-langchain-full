@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Workflow as WorkflowIcon, Edit3 } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,20 +38,11 @@ export default async function WorkflowsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <WorkflowIcon className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Workflows</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Máquinas de estado LangGraph para fluxos guiados (LGPD,
-              triagem multi-step, handover com resumo).
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        titulo="Workflows"
+        descricao="Conversas guiadas passo a passo — coleta de dados, triagem em etapas, e passagem para uma pessoa com o resumo do que já foi dito."
+        icon={WorkflowIcon}
+      />
 
       {error && (
         <p className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

@@ -9,22 +9,20 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        // Obsidian — pílulas com tinta translúcida da paleta brand.
-        default:
-          "bg-brand-primary/15 text-brand-primary-light [a]:hover:bg-brand-primary/25",
+        // Pílula de tinta translúcida sobre o token — legível nos dois temas
+        // sem precisar de par `text-x-700 dark:text-x-300` (que, aliás, nunca
+        // funcionou: a classe `dark` não existia. Ver ADR-010).
+        default: "bg-primary/15 text-primary [a]:hover:bg-primary/25",
         secondary:
-          "bg-brand-secondary/15 text-brand-secondary-light [a]:hover:bg-brand-secondary/25",
+          "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
         destructive:
           "bg-destructive/15 text-destructive [a]:hover:bg-destructive/25 focus-visible:ring-destructive/30",
         outline:
-          "border-foreground/10 text-foreground/80 [a]:hover:bg-foreground/[0.06] [a]:hover:text-foreground",
-        ghost:
-          "text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground",
-        success:
-          "bg-vsa-success/15 text-emerald-300 [a]:hover:bg-vsa-success/25",
-        gradient:
-          "bg-vsa-brand text-white shadow-vsa-orange [a]:hover:shadow-glow-orange-lg",
-        link: "text-brand-primary underline-offset-4 hover:underline",
+          "border-border text-foreground/80 [a]:hover:bg-accent [a]:hover:text-accent-foreground",
+        ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
+        success: "bg-success/15 text-success [a]:hover:bg-success/25",
+        warning: "bg-warning/15 text-warning [a]:hover:bg-warning/25",
+        link: "text-primary underline-offset-4 hover:underline",
       },
     },
     defaultVariants: {

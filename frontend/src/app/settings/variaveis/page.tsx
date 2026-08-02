@@ -35,9 +35,9 @@ export default async function VariaveisPage() {
           <Braces className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold">Variáveis de Ambiente</h1>
+          <h1 className="text-2xl font-semibold">Variáveis</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            KVs referenciados em prompts e modelos como{" "}
+            Valores reaproveitados em prompts e mensagens, escritos como{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">
               {"{{var.NOME}}"}
             </code>

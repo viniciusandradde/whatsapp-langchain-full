@@ -61,6 +61,7 @@ export async function revokeApiKeyAction(id: number): Promise<Result<true>> {
 export async function listContatosAction(opts?: {
   limit?: number;
   offset?: number;
+  q?: string;
 }): Promise<
   Result<{ items: ContatoCapturado[]; total: number; promoviveis: number }>
 > {

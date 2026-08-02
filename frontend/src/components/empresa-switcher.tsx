@@ -90,7 +90,7 @@ export function EmpresaSwitcher({
 
       {open && (
         <div
-          className="absolute left-0 right-0 top-full mt-1 z-50 overflow-hidden rounded-lg border border-foreground/10 bg-obsidian-800 shadow-vsa-xl"
+          className="absolute left-0 right-0 top-full mt-1 z-50 overflow-hidden rounded-lg border border-border bg-popover shadow-xl"
           onMouseLeave={() => setOpen(false)}
         >
           <ul className="py-1 max-h-64 overflow-auto">

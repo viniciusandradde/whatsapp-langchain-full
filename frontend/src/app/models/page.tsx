@@ -1,5 +1,7 @@
 import { Brain } from "lucide-react";
 
+import { PageHeader } from "@/components/page-header";
+
 import { getAgentConfig, getAgents, getModels } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -38,17 +40,11 @@ export default async function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Brain className="h-6 w-6" />
-        <h1 className="text-2xl font-semibold">Modelos LLM por agente</h1>
-      </div>
-
-      <p className="text-sm text-muted-foreground">
-        Cada agente pode ter um modelo principal (chat) e um multimodal
-        (imagem/áudio) próprios. Selecionar &quot;Padrão (.env)&quot; remove o
-        override e volta pra OPENROUTER_MODEL / OPENROUTER_MIDIA_MODEL do
-        ambiente.
-      </p>
+      <PageHeader
+        titulo="Modelo por agente"
+        descricao="Escolha qual modelo cada agente usa para conversar e qual usa para entender imagem e áudio."
+        icon={Brain}
+      />
 
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
