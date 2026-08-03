@@ -10,6 +10,7 @@
 
 import { useState, useTransition } from "react";
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -65,30 +66,40 @@ export function SandboxClient({ initialSuggestions }: Props) {
   const [evalPlacar, setEvalPlacar] = useState<
     { agente: string; score: number }[] | null
   >(null);
+  const [avisos, setAvisos] = useState<string[]>([]);
 
-  async function handleIngestLangfuse(dryRun: boolean) {
+  async function handleIngestGold(dryRun: boolean) {
     setIngestMsg(null);
+    setAvisos([]);
     setIngesting(true);
-    const { ingestFromLangfuseAction } = await import("./actions");
-    const r = await ingestFromLangfuseAction({
+    const { ingestGoldAction } = await import("./actions");
+    const r = await ingestGoldAction({
       min_score: minScore,
       days: dias,
       dry_run: dryRun,
     });
     setIngesting(false);
-    if (r.ok) {
-      const d = r.data as {
-        scores_lidos: number;
-        cruzados: number;
-        novos: number;
-        skipped: number;
-      };
-      setIngestMsg(
-        `${dryRun ? "Prévia" : "Feito"}: ${d.scores_lidos} scores lidos, ${d.cruzados} com conversa no banco, ${d.novos} ${dryRun ? "seriam adicionados" : "adicionados"}, ${d.skipped} já existiam.`
-      );
-    } else {
+    if (!r.ok) {
       setIngestMsg("Erro: " + r.error);
+      return;
     }
+    const d = r.data as {
+      novos: number;
+      skipped: number;
+      avisos?: string[];
+      por_fonte?: Record<string, { candidatos?: number; cruzados?: number }>;
+    };
+    const csat = d.por_fonte?.csat;
+    const candidatos = csat?.candidatos ?? 0;
+    setIngestMsg(
+      `${dryRun ? "Prévia" : "Feito"}: ${candidatos} conversas bem avaliadas, ` +
+        `${d.novos} ${dryRun ? "seriam adicionadas" : "adicionadas"}, ` +
+        `${d.skipped} já estavam no dataset.`
+    );
+    // Os avisos são o ponto: até aqui, "provedor fora do ar" e "nada
+    // qualificou" viravam o mesmo zero, e a tela mostrava esse zero como se
+    // fosse resposta.
+    setAvisos(d.avisos ?? []);
   }
 
   async function handleRunEval() {
@@ -296,9 +307,11 @@ export function SandboxClient({ initialSuggestions }: Props) {
       <CardHeader>
         <CardTitle className="text-base">Dataset & Eval (empresa ativa)</CardTitle>
         <p className="text-xs text-muted-foreground">
-          Gera golden examples das conversas melhor avaliadas (score de
-          satisfação no Langfuse) e roda avaliação automática. Usa a empresa
-          selecionada no topo — não a sandbox.
+          Gera exemplos de referência a partir das conversas que o cliente
+          melhor avaliou (nota do CSAT), somando o provedor de observabilidade
+          ativo quando ele tiver o que contribuir. Depois roda a avaliação
+          automática dos agentes. Usa a empresa selecionada no topo — não a
+          sandbox.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -329,7 +342,7 @@ export function SandboxClient({ initialSuggestions }: Props) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => handleIngestLangfuse(true)}
+            onClick={() => handleIngestGold(true)}
             disabled={ingesting}
           >
             {ingesting ? <Loader2 className="size-3.5 animate-spin" /> : null}
@@ -338,11 +351,11 @@ export function SandboxClient({ initialSuggestions }: Props) {
           <Button
             type="button"
             size="sm"
-            onClick={() => handleIngestLangfuse(false)}
+            onClick={() => handleIngestGold(false)}
             disabled={ingesting}
           >
             {ingesting ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-            Gerar dataset do Langfuse
+            Gerar dataset
           </Button>
           <div className="ml-auto">
             <Button
@@ -359,6 +372,16 @@ export function SandboxClient({ initialSuggestions }: Props) {
         </div>
         {ingestMsg && (
           <p className="text-sm text-muted-foreground">{ingestMsg}</p>
+        )}
+        {avisos.length > 0 && (
+          <ul className="space-y-1.5 rounded-lg border border-warning/50 bg-warning/5 p-3">
+            {avisos.map((a) => (
+              <li key={a} className="flex gap-2 text-xs text-warning">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>{a}</span>
+              </li>
+            ))}
+          </ul>
         )}
         {evalPlacar && (
           <div className="overflow-hidden rounded-lg border">

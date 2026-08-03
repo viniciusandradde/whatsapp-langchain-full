@@ -428,6 +428,46 @@ async def ingest_langfuse_endpoint(
     return {"ok": True, **resultado}
 
 
+class IngestGoldInput(BaseModel):
+    min_score: float = 8.0
+    days: int = 30
+    dry_run: bool = False
+
+
+@router.post("/dataset/gold")
+async def ingest_gold_endpoint(
+    body: IngestGoldInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Golden examples somando as fontes disponíveis (CSAT local + provedor
+    ativo de observabilidade).
+
+    Substitui `/dataset/from-langfuse`, que falava com o Langfuse hardcoded e
+    devolvia `0 novos` em silêncio quando ele estava fora. Aqui, o que não pôde
+    ser feito volta em `avisos`.
+    """
+    from whatsapp_langchain.shared.fewshot import backfill_embeddings
+    from whatsapp_langchain.shared.langfuse_dataset import ingest_gold
+
+    pool = await get_pool()
+    resultado = await ingest_gold(
+        pool,
+        empresa_id,
+        min_score=body.min_score,
+        days=body.days,
+        dry_run=body.dry_run,
+    )
+    if not body.dry_run and resultado.get("novos", 0) > 0:
+        # `empresa_id` obrigatório aqui: sem ele o backfill varre global e o
+        # request de quem gerou 1 golden paga os embeddings pendentes de outros
+        # tenants (havia 6.599 acumulados numa empresa de captura).
+        resultado["embeddings_gerados"] = await backfill_embeddings(
+            pool, batch=200, empresa_id=empresa_id
+        )
+    return {"ok": True, **resultado}
+
+
 class RunEvalInput(BaseModel):
     agente_slug: str | None = None
     per_agent: int = 5
@@ -440,8 +480,12 @@ async def run_eval_endpoint(
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
     """Roda eval sob demanda sobre o dataset local de few-shots (source
-    'fewshot'). LLM-as-judge (2 juízes) via evaluate_agentes; retorna a média
-    por agente."""
+    'fewshot'), com LLM-as-judge do **openevals** (correctness contínuo).
+
+    O `judge` é explícito de propósito: sem ele o default é `continuous`, o juiz
+    de rubrica próprio do repo — foi por isso que a tela nunca chegou a usar o
+    openevals, mesmo com ele instalado.
+    """
     from scripts.eval_agentes_menu import evaluate_agentes
 
     resultado = await evaluate_agentes(
@@ -449,6 +493,8 @@ async def run_eval_endpoint(
         per_agent=body.per_agent,
         filter_agente=body.agente_slug,
         empresa_id=empresa_id,
+        judge="openevals",
+        verbose=False,
     )
     return {"ok": True, **resultado}
 

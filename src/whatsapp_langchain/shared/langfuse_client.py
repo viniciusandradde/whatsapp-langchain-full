@@ -256,6 +256,31 @@ def list_scores(
         return []
 
 
+def ping(timeout: float = 5.0) -> bool:
+    """O host do Langfuse responde?
+
+    Existe pra separar duas coisas que `list_scores` confunde: ele devolve `[]`
+    tanto quando não há score no período quanto quando o servidor está fora — e
+    quem chama não tem como saber a diferença. Foi assim que o auto-dataset
+    passou semanas dizendo "0 novos" com o Langfuse desligado.
+
+    Ter credencial (`settings.langfuse_enabled`) **não** implica estar no ar: as
+    chaves seguem no `.env` mesmo com os containers parados.
+    """
+    if not settings.langfuse_enabled:
+        return False
+    try:
+        import httpx
+
+        host = settings.langfuse_host.rstrip("/")
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(f"{host}/api/public/health")
+        return resp.status_code < 500
+    except Exception as exc:
+        logger.warning("langfuse_ping_failed", error=str(exc))
+        return False
+
+
 def trace_url(trace_id: str) -> str:
     """Short-link pra UI do trace (redireciona pro projeto certo, sem precisar
     do project_id)."""
