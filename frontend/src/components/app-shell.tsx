@@ -32,7 +32,13 @@ export function AppShell({
   const pathname = usePathname();
 
   if (pathname === "/login") {
-    return <>{children}</>;
+    // O `w-full` não é decorativo. O SidebarProvider fica no layout raiz e
+    // envolve **até** o login com um wrapper `display:flex`. Sem esticar
+    // aqui, o conteúdo vira um flex item, encolhe até o `max-w-sm` do
+    // formulário e cola na borda esquerda — o `justify-center` de dentro
+    // passa a centralizar numa faixa de 24rem, não na tela. Gritante em
+    // monitor largo e quase invisível no celular, que é por que passou.
+    return <div className="w-full">{children}</div>;
   }
 
   // `delay=300` vale pro painel inteiro: o default do Base UI é 600ms, que é
