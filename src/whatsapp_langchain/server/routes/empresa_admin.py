@@ -28,6 +28,7 @@ from whatsapp_langchain.shared.empresa import (
     is_superadmin,
     list_members,
     remove_member,
+    set_onboarding_dispensado,
     set_user_status,
     update_empresa,
     update_empresa_csat,
@@ -431,6 +432,111 @@ async def update_empresa_csat_endpoint(
         actor=user_id,
     )
     return body
+
+
+class OnboardingDispensaInput(BaseModel):
+    dispensado: bool = True
+
+
+class OnboardingStatus(BaseModel):
+    empresa_id: int
+    empresa_nome: str
+    empresa_doc_ok: bool
+    conexoes_count: int
+    agentes_count: int
+    atendentes_count: int
+    completo: bool
+    dispensado: bool
+
+
+@router.get("/{empresa_id}/onboarding", response_model=OnboardingStatus)
+async def get_onboarding_status_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Os 4 checks do wizard, numa query só.
+
+    Antes o frontend montava isso chamando 4 endpoints e contando o que vinha.
+    Duas fragilidades, ambas com o mesmo sintoma — o wizard reaparecendo em
+    todo login:
+
+    1. **Formato.** `/empresas/{id}/membros` devolve lista pura, mas o front
+       lia `.items` dela. `undefined?.length ?? 0` = 0 sem erro nenhum, então
+       o passo 4 ficava eternamente pendente com 10 atendentes cadastrados.
+    2. **Permissão.** `/v1/agentes` exige `agente.config`. Operador sem essa
+       permissão tomava 403, o `.catch` virava lista vazia, e o passo 3 nunca
+       completava — pra ele o onboarding era um beco sem saída.
+
+    O estado do onboarding é da **empresa**, não de quem pergunta. Por isso
+    aqui basta ser membro: a resposta é a mesma para todo mundo da empresa.
+    """
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT e.nome,
+                   e.doc IS NOT NULL AND e.doc <> '' AS doc_ok,
+                   e.onboarding_dispensado_at IS NOT NULL AS dispensado,
+                   (SELECT count(*) FROM conexao c WHERE c.empresa_id = e.id),
+                   (SELECT count(*) FROM agente_ia a WHERE a.empresa_id = e.id),
+                   (SELECT count(*) FROM empresa_membro m WHERE m.empresa_id = e.id)
+              FROM empresa e
+             WHERE e.id = %s
+            """,
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    nome, doc_ok, dispensado, conexoes, agentes, atendentes = row
+    return OnboardingStatus(
+        empresa_id=empresa_id,
+        empresa_nome=nome,
+        empresa_doc_ok=bool(doc_ok),
+        conexoes_count=int(conexoes),
+        agentes_count=int(agentes),
+        atendentes_count=int(atendentes),
+        completo=bool(doc_ok) and conexoes > 0 and agentes > 0 and atendentes > 0,
+        dispensado=bool(dispensado),
+    )
+
+
+@router.put("/{empresa_id}/onboarding-dispensado", response_model=Empresa)
+async def set_onboarding_dispensado_endpoint(
+    empresa_id: int,
+    body: OnboardingDispensaInput,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Lembra que o wizard de onboarding foi dispensado (mig 160).
+
+    Qualquer membro pode dispensar — quem está vendo a tela é quem quer sair
+    dela, e exigir admin faria o botão "Pular" falhar calado justo pro
+    operador, que é quem mais topa com o wizard. Escrever é inofensivo:
+    mexe só em qual tela a raiz "/" abre.
+    """
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    empresa = await set_onboarding_dispensado(
+        pool, empresa_id, dispensado=body.dispensado
+    )
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    logger.info(
+        "empresa_onboarding_dispensado",
+        empresa_id=empresa_id,
+        dispensado=body.dispensado,
+        actor=user_id,
+    )
+    return empresa
 
 
 @router.get("/{empresa_id}/membros", response_model=list[EmpresaMembro])

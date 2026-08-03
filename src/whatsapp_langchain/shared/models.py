@@ -225,6 +225,9 @@ class Empresa(BaseModel):
     nome_exibicao: str | None = None
     cor_primaria: str | None = None
     cor_secundaria: str | None = None
+    # Mig 160: quando alguém clicou em "Pular" no wizard de onboarding.
+    # Preenchido faz a raiz "/" ir direto pro painel; None mantém o guiado.
+    onboarding_dispensado_at: datetime | None = None
 
 
 class EmpresaMembro(BaseModel):
