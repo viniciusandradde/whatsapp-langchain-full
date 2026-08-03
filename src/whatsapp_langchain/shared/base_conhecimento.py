@@ -214,14 +214,26 @@ async def list_documentos(
         else:
             where += " AND pasta_id = %s"
             params.append(pasta_id)
+    # Coluna extra no fim: quantos chunks COM vetor o doc tem. Vai no fim de
+    # propósito — `_row_to_documento` lê só os índices 0..9, então os outros
+    # seis chamadores não enxergam a diferença.
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT {_SELECT_COLS} FROM documento_conhecimento "
+            f"SELECT {_SELECT_COLS}, "
+            "(SELECT count(*) FROM documento_conhecimento_chunk c "
+            "  WHERE c.documento_id = documento_conhecimento.id "
+            "    AND c.embedding IS NOT NULL) AS chunks_count "
+            "FROM documento_conhecimento "
             f"WHERE {where} ORDER BY updated_at DESC",
             params,
         )
         rows = await cur.fetchall()
-    return [_row_to_documento(r) for r in rows]
+    docs: list[DocumentoConhecimento] = []
+    for r in rows:
+        doc = _row_to_documento(r)
+        doc.chunks_count = int(r[10] or 0)
+        docs.append(doc)
+    return docs
 
 
 async def get_documento(
