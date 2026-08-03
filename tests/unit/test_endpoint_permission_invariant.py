@@ -67,6 +67,9 @@ ALLOWLIST: list[tuple[str, str]] = [
     # require_permission checaria a empresa ATIVA do header, que pode ser
     # outra — mesmo racional do CSAT).
     ("PUT", "/api/empresas/{empresa_id}/resumo-diario"),
+    # Envio manual do resumo (mig 162) — mesmo router, mesmo `is_admin_of` da
+    # empresa-ALVO. Prefixo cobre `/resumo-diario/testar`.
+    ("POST", "/api/empresas/{empresa_id}/resumo-diario"),
     # Captura da extensão Chrome — autenticada por API key da empresa
     # (require_scope("capture")), não RBAC de user. Mesmo padrão do ext/.
     ("POST", "/api/captura/"),

@@ -836,7 +836,11 @@ export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
     useState<import("@/lib/api").EmpresaResumoDiarioConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, startSaving] = useTransition();
+  const [testando, startTeste] = useTransition();
   const [feedback, setFeedback] = useState<
+    { kind: "ok" } | { kind: "err"; message: string } | null
+  >(null);
+  const [teste, setTeste] = useState<
     { kind: "ok" } | { kind: "err"; message: string } | null
   >(null);
 
@@ -891,6 +895,24 @@ export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
       } else {
         setFeedback({ kind: "err", message: r.error });
       }
+    });
+  }
+
+  function handleTeste() {
+    setTeste(null);
+    startTeste(async () => {
+      const { testarResumoDiarioAction, loadResumoDiarioAction } = await import(
+        "./actions"
+      );
+      const r = await testarResumoDiarioAction(empresaId);
+      setTeste(
+        r.ok
+          ? { kind: "ok" }
+          : { kind: "err", message: r.error ?? "Não foi possível enviar." }
+      );
+      // Recarrega pra trazer o resultado gravado (status/erro/horário).
+      const atual = await loadResumoDiarioAction(empresaId);
+      if (atual.ok) setConfig(atual.config);
     });
   }
 
@@ -965,16 +987,50 @@ export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
             </button>
           ))}
         </div>
+        {config.ultima_tentativa_em && (
+          <div className="rounded-md border bg-muted/40 p-3 text-sm">
+            <p className="text-muted-foreground">
+              Última tentativa:{" "}
+              {new Date(config.ultima_tentativa_em).toLocaleString("pt-BR")} —{" "}
+              {config.ultimo_status === "ok" ? "enviado" : "falhou"}
+            </p>
+            {config.ultimo_status !== "ok" && config.ultimo_erro && (
+              <p className="mt-1 text-destructive">{config.ultimo_erro}</p>
+            )}
+          </div>
+        )}
         {feedback?.kind === "ok" && (
-          <p className="text-sm text-emerald-500">Configuração salva.</p>
+          <p className="text-sm text-muted-foreground">Configuração salva.</p>
         )}
         {feedback?.kind === "err" && (
           <p className="text-sm text-destructive">{feedback.message}</p>
         )}
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Salvar resumo diário
-        </Button>
+        {teste?.kind === "ok" && (
+          <p className="text-sm text-muted-foreground">
+            Resumo enviado. Confira o WhatsApp do número de destino.
+          </p>
+        )}
+        {teste?.kind === "err" && (
+          <p className="text-sm text-destructive">{teste.message}</p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleSave} disabled={saving || testando}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Salvar resumo diário
+          </Button>
+          {/* Sem este botão, conferir a configuração custa um dia por
+              tentativa: o agendamento tem uma chance por dia local, e trocar
+              o horário não devolve essa chance. O envio manual não consome
+              o dia do agendamento. */}
+          <Button
+            variant="outline"
+            onClick={handleTeste}
+            disabled={saving || testando || !config.resumo_diario_telefone}
+          >
+            {testando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Enviar agora
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

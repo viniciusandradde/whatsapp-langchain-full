@@ -55,6 +55,18 @@ export async function saveResumoDiarioAction(
   }
 }
 
+export async function testarResumoDiarioAction(
+  empresaId: number
+): Promise<{ ok: boolean; error: string | null }> {
+  try {
+    const { testarEmpresaResumoDiario } = await import("@/lib/api");
+    const r = await testarEmpresaResumoDiario(empresaId);
+    return { ok: r.ok, error: r.erro };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
 export async function loadPlanosCatalogoAction(): Promise<
   | { ok: true; data: import("@/lib/api").PlanoCatalogo[] }
   | { ok: false; error: string }
