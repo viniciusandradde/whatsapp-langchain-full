@@ -19,6 +19,15 @@ COPY pyproject.toml uv.lock ./
 # Copia código fonte e migrações
 COPY src/ src/
 COPY db/ db/
+# `scripts/` entra porque `POST /api/admin/rag/eval/run` importa
+# `scripts.eval_agentes_menu`. Sem isto o endpoint devolve 500
+# (`ModuleNotFoundError: No module named 'scripts'`) — o botão "Rodar eval" do
+# sandbox nunca funcionou dentro de container, só com o repo completo em mão.
+# Dívida assumida: código que um endpoint de produção importa devia morar em
+# `src/`, não em `scripts/`. Mover as 707 linhas de `eval_agentes_menu` é
+# refactor à parte; este COPY faz o botão funcionar sem arriscar a CLI e os
+# testes que já dependem do caminho atual.
+COPY scripts/ scripts/
 
 # Instala dependências travadas no uv.lock e depois o pacote local sem re-resolver transitivos
 RUN uv export --frozen --no-dev --no-emit-project -o requirements.txt \

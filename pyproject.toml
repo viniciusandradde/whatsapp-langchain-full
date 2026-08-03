@@ -41,6 +41,12 @@ dependencies = [
     # Opcional em runtime: settings.langfuse_enabled = (public_key + secret_key
     # ambas setadas). Sem keys, todo código é no-op.
     "langfuse>=3.0,<4.0",
+    # openevals — LLM-as-judge do `POST /api/admin/rag/eval/run`. Estava só em
+    # `dev`, e como o Dockerfile exporta com `--no-dev` ele nunca entrou na
+    # imagem: o `except ImportError` do eval engolia a ausência e devolvia
+    # `score: None` em todo exemplo, sem erro nenhum na tela. É dependência de
+    # runtime porque um endpoint da API depende dela.
+    "openevals>=0.2,<0.3",
 ]
 
 [project.optional-dependencies]
@@ -61,8 +67,6 @@ dev = [
     # Sprint R — streaming JSON parser pra dump de 178MB+
     "ijson>=3.3,<4.0",
     "PyYAML>=6.0,<7.0",
-    # Sprint T — LangSmith built-in evaluators (LLM-as-judge correctness)
-    "openevals>=0.0.1",
     # Sprint Wareline — mock httpx pra E2E sem rede
     "respx>=0.21,<0.23",
 ]

@@ -38,6 +38,8 @@ from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+from whatsapp_langchain.shared.config import settings
+
 # Regex pra descartar exemplos onde o "expected" é apenas ruído operacional —
 # resíduo do importer Sprint R/S: 1º turno do atendente é menu, transferência ou NPS.
 SAUDACAO_RE = re.compile(
@@ -110,6 +112,53 @@ RUBRIC = [
         "Correta, completa, clara e acionável; equivalente ou melhor que a REFERENCIA.",
     ),
 ]
+
+
+def build_openevals_prompt() -> str:
+    """Prompt pt-BR de atendimento no formato que o `openevals` espera.
+
+    O `CORRECTNESS_PROMPT` que vem no pacote avalia **correção factual e
+    coerência de raciocínio**, em inglês e sem contexto de atendimento. Medido
+    em 2026-08-03, no mesmo exemplo: ele deu **1.0** ("the agent correctly
+    identified it as a technical placeholder") enquanto a rubrica daqui deu
+    **0.0** ("trata a mensagem do cliente como placeholder técnico, ignorando o
+    conteúdo"). A rubrica estava certa: pra um sistema de atendimento, a
+    pergunta é se o cliente foi atendido, não se o modelo raciocinou bem.
+
+    Fica a maquinaria do openevals (padrão, contínuo, com reasoning) e entra o
+    critério do domínio. Reusa `EVALUATION_STEPS` e `RUBRIC`, então mudar a
+    régua num lugar vale pros dois juízes.
+
+    Os placeholders `{inputs}`, `{outputs}` e `{reference_outputs}` são o
+    contrato do openevals — sem eles a formatação estoura.
+    """
+    passos = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(EVALUATION_STEPS))
+    # A rubrica do repo é 0-10; `continuous=True` pede 0-1. Converte a escala
+    # aqui pra não ter dois números diferentes circulando.
+    faixas = "\n".join(
+        f"  - {lo / 10:.1f} a {hi / 10:.1f}: {desc}" for lo, hi, desc in RUBRIC
+    )
+    return (
+        "Você avalia respostas de atendimento ao cliente em português "
+        "brasileiro.\n\n"
+        "<Rubric>\n"
+        "  Atribua uma nota de 0.0 a 1.0:\n"
+        f"{faixas}\n"
+        "</Rubric>\n\n"
+        "<Instructions>\n"
+        f"{passos}\n"
+        "</Instructions>\n\n"
+        "<Reminder>\n"
+        "  O que importa é se o CLIENTE foi bem atendido — não se o modelo\n"
+        "  raciocinou de forma coerente. Uma resposta que ignora a pergunta e\n"
+        "  explica por que a ignorou é uma resposta ruim, por mais lúcida que\n"
+        "  seja a explicação. Responda em português.\n"
+        "</Reminder>\n\n"
+        "<input>\n{inputs}\n</input>\n\n"
+        "<output>\n{outputs}\n</output>\n\n"
+        "Use a referência abaixo como parâmetro do que seria uma boa resposta:\n\n"
+        "<reference_outputs>\n{reference_outputs}\n</reference_outputs>"
+    )
 
 
 def build_continuous_prompt(cliente_msg: str, referencia: str, resposta: str) -> str:
@@ -340,7 +389,8 @@ async def evaluate_agentes(
         source: "local" (lê goldens.json) ou "langsmith" (lê dataset via API)
         per_agent: quantos exemplos amostrar por agente_slug
         filter_agente: se preenchido, filtra `samples` pra só esse slug
-        judge: "binary" | "continuous" | "both"
+        judge: "openevals" (=="binary", correctness contínuo do openevals) |
+            "continuous" (rubrica pt-BR própria) | "both"
     """
     random.seed(seed)
     if goldens_file is None:
@@ -393,29 +443,52 @@ async def evaluate_agentes(
     pool_db = await get_pool()
 
     # 3. Judges
+    #
+    # Os dois passam pelo `create_chat_model` (OpenRouter, com rate limit). Até
+    # 2026-08-03 ambos apontavam pra OpenAI direto — `model="openai:gpt-4o-mini"`
+    # aqui e `ChatOpenAI(...)` abaixo — e como `OPENAI_API_KEY` não existe nem em
+    # dev nem em produção, TODO exemplo voltava `score: None` com `judge_error`,
+    # depois de já ter invocado os agentes e gasto OpenRouter. O CLAUDE.md é
+    # explícito: todo LLM passa por uma chave OpenRouter.
+    from whatsapp_langchain.shared.llm import create_chat_model
+
+    # "openevals" é o nome novo; "binary" continua aceito porque a CLI e evals
+    # antigos usam. O rótulo "binary" ficou impreciso quando o juiz passou a dar
+    # nota contínua (`continuous=True`) em vez de aprovado/reprovado.
+    if judge == "openevals":
+        judge = "binary"
+
     judge_binary = None
     if judge in ("binary", "both"):
         try:
             from openevals.llm import create_llm_as_judge
-            from openevals.prompts import CORRECTNESS_PROMPT
 
             judge_binary = create_llm_as_judge(
-                prompt=CORRECTNESS_PROMPT,
-                model="openai:gpt-4o-mini",
+                # Prompt do domínio, não o CORRECTNESS_PROMPT do pacote — ver
+                # `build_openevals_prompt` pro porquê (ele dava nota máxima a
+                # resposta que ignorava o cliente).
+                prompt=build_openevals_prompt(),
+                # `judge=` (modelo pronto) em vez de `model=` (string): é o que
+                # permite usar o OpenRouter. `continuous` dá nota 0-1 em vez de
+                # booleano, na mesma escala do juiz de rubrica — então os dois
+                # números continuam comparáveis entre si e com o histórico.
+                judge=create_chat_model(
+                    model=settings.eval_judge_model, temperature=0.0
+                ),
                 feedback_key="correctness",
+                continuous=True,
+                use_reasoning=True,
             )
             if verbose:
-                print("Judge binary: openevals correctness gpt-4o-mini")
+                print(f"Judge openevals: correctness {settings.eval_judge_model}")
         except ImportError:
             if verbose:
                 print("WARN: openevals não instalado")
 
     judge_continuous = None
     if judge in ("continuous", "both"):
-        from langchain_openai import ChatOpenAI
-
-        _judge_llm = ChatOpenAI(
-            model="gpt-4o-mini",
+        _judge_llm = create_chat_model(
+            model=settings.eval_judge_model,
             temperature=0.0,
             max_tokens=320,
         )

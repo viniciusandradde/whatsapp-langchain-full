@@ -267,6 +267,13 @@ class Settings(BaseSettings):
     langchain_api_key: SecretStr | None = None
     langchain_project: str = ""
 
+    # Modelo do LLM-as-judge do eval de agentes. Vai por `create_chat_model`,
+    # ou seja, OpenRouter — até 2026-08-03 o juiz apontava pra OpenAI direto e
+    # devolvia `score: None` em todo exemplo, porque OPENAI_API_KEY não existe
+    # aqui. Trocar de modelo muda a escala das notas: avaliações feitas com
+    # modelos diferentes não são comparáveis entre si.
+    eval_judge_model: str = "google/gemini-2.5-flash-lite"
+
     # --- Langfuse (opcional — observabilidade LLM self-hosted) ---
     # Quando public_key + secret_key estão setadas, o worker injeta
     # LangfuseCallbackHandler em invoke_config["callbacks"] e o loader
