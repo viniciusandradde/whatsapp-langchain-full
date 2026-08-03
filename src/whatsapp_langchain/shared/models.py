@@ -704,6 +704,11 @@ class DocumentoConhecimento(BaseModel):
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Quantos chunks COM vetor o documento tem. É o que decide se ele existe
+    # pro agente: a busca é `documento_conhecimento_chunk` com
+    # `d.ativo AND c.embedding IS NOT NULL`. Zero = cadastrado e invisível.
+    # Só a listagem preenche; os outros caminhos deixam no default.
+    chunks_count: int = 0
 
 
 class DocumentoConhecimentoInput(BaseModel):

@@ -791,6 +791,12 @@ export interface DocumentoConhecimento {
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Chunks COM vetor. É o que decide se o documento existe pro agente — a
+   * busca é feita nos chunks, com `ativo AND embedding IS NOT NULL`. Zero
+   * significa cadastrado e invisível. Só a listagem preenche.
+   */
+  chunks_count?: number;
 }
 
 export interface DocumentoConhecimentoInput {

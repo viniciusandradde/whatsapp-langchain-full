@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -10,6 +11,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Search,
   Trash2,
   Upload,
   X,
@@ -21,6 +23,7 @@ import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
 import { plural } from "@/lib/formato";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -66,6 +69,9 @@ interface TreeNode {
   depth: number;
 }
 
+/** Quantos resultados de busca mostrar antes do "mostrar os outros". */
+const LIMITE = 20;
+
 function flattenTree(pastas: Pasta[]): TreeNode[] {
   const byParent = new Map<number | null, Pasta[]>();
   for (const p of pastas) {
@@ -102,11 +108,45 @@ export function PastasList({
   );
   const [alvoExclusao, setAlvoExclusao] = useState<AlvoExclusao>(null);
   const [isPending, startTransition] = useTransition();
+  const [filtro, setFiltro] = useState("");
+  const [verTudo, setVerTudo] = useState(false);
   const [uploadPastaId, setUploadPastaId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
   const tree = useMemo(() => flattenTree(pastas), [pastas]);
+
+  const nomePorPasta = useMemo(() => {
+    const m = new Map<number | null, string>([[null, "Raiz (sem pasta)"]]);
+    for (const p of pastas) m.set(p.id, p.nome);
+    return m;
+  }, [pastas]);
+
+  /**
+   * Resultado da busca — achatado, atravessando as pastas.
+   *
+   * Buscar dentro da árvore não resolveria o problema real: pra achar um
+   * documento era preciso abrir pasta por pasta, porque o título só aparece
+   * depois de expandir. Com busca ativa a árvore sai de cena e cada resultado
+   * diz de que pasta veio.
+   */
+  const busca = filtro.trim().toLowerCase();
+  const resultados = useMemo(() => {
+    if (!busca) return null;
+    return documentos
+      .filter(
+        (d) =>
+          d.titulo.toLowerCase().includes(busca) ||
+          d.conteudo.toLowerCase().includes(busca) ||
+          d.tags.some((t) => t.toLowerCase().includes(busca))
+      )
+      .sort((a, b) => a.titulo.localeCompare(b.titulo));
+  }, [busca, documentos]);
+
+  const semVetor = useMemo(
+    () => documentos.filter((d) => d.chunks_count === 0).length,
+    [documentos]
+  );
 
   const docsByPasta = useMemo(() => {
     const m = new Map<number | null, DocumentoConhecimento[]>();
@@ -300,6 +340,18 @@ export function PastasList({
             Inativo
           </Badge>
         )}
+        {/* Sem chunk com vetor o agente NÃO encontra o documento, por mais
+            que ele apareça aqui. Antes isso era invisível na tela. */}
+        {d.chunks_count === 0 && (
+          <Badge
+            variant="outline"
+            className="shrink-0 border-warning/50 text-[9px] text-warning"
+            title="Cadastrado, mas ainda não indexado — o agente não encontra este documento nas buscas."
+          >
+            <AlertTriangle className="size-2.5" />
+            Fora do RAG
+          </Badge>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <select
@@ -357,6 +409,14 @@ export function PastasList({
             <CardTitle>Pastas + Documentos</CardTitle>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {plural(pastas.length, "pasta")} · {plural(documentos.length, "documento")}
+              {semVetor > 0 && (
+                <span className="text-warning">
+                  {" · "}
+                  {semVetor === 1
+                    ? "1 fora do RAG"
+                    : `${semVetor} fora do RAG`}
+                </span>
+              )}
             </p>
           </div>
           <div className="flex gap-2">
@@ -452,7 +512,22 @@ export function PastasList({
           </div>
         </div>
 
-
+        {/* Busca — atravessa as pastas, porque o problema era justamente ter
+            que abrir uma por uma pra achar um documento pelo nome. */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={filtro}
+            onChange={(e) => {
+              setFiltro(e.target.value);
+              setVerTudo(false);
+            }}
+            placeholder="Buscar por título, conteúdo ou tag…"
+            aria-label="Buscar documento na base de conhecimento"
+            className="h-10 pl-9"
+          />
+        </div>
 
         {/* === FORM PASTA === */}
         {pastaEdit.mode !== "closed" && (
@@ -643,8 +718,47 @@ export function PastasList({
           </form>
         )}
 
+        {/* === RESULTADO DA BUSCA (substitui a árvore) === */}
+        {resultados !== null && (
+          <div className="rounded-md border">
+            <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+              <p className="text-xs text-muted-foreground">
+                {resultados.length === 0
+                  ? "Nenhum documento encontrado."
+                  : `${plural(resultados.length, "resultado")} para “${filtro.trim()}”`}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => setFiltro("")}
+              >
+                Limpar
+              </Button>
+            </div>
+            {(verTudo ? resultados : resultados.slice(0, LIMITE)).map((d) => (
+              <div key={d.id}>
+                <p className="px-3 pt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {nomePorPasta.get(d.pasta_id) ?? "Pasta removida"}
+                </p>
+                {renderDocItem(d, 0.75)}
+              </div>
+            ))}
+            {!verTudo && resultados.length > LIMITE && (
+              <button
+                type="button"
+                onClick={() => setVerTudo(true)}
+                className="w-full border-t p-2 text-xs font-medium text-muted-foreground hover:bg-muted/30 hover:text-foreground"
+              >
+                Mostrar os outros {resultados.length - LIMITE}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* === ÁRVORE DE PASTAS COM DOCS === */}
-        <div className="rounded-md border">
+        <div className={resultados !== null ? "hidden" : "rounded-md border"}>
           {/* Raiz: docs sem pasta */}
           {(() => {
             const rootDocs = docsByPasta.get(null) ?? [];
