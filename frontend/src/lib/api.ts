@@ -3611,6 +3611,23 @@ export async function getPromptVersao(
   );
 }
 
+/**
+ * Redige o prompt do agente a partir de uma descrição curta.
+ *
+ * Não salva — devolve o texto pra revisão. Quem grava é o PUT do agente, que
+ * é o que versiona (mig 158). `avisos` conta o que o redator não pôde fazer:
+ * agente sem ferramenta habilitada, transferência sem departamento destino.
+ */
+export async function redigirPromptAgente(
+  slug: string,
+  descricao: string
+): Promise<{ prompt: string; avisos: string[] }> {
+  return apiFetch<{ prompt: string; avisos: string[] }>(
+    `/api/v1/agentes/${slug}/prompt/redigir`,
+    { method: "POST", body: { descricao } }
+  );
+}
+
 export async function restaurarPromptVersao(
   slug: string,
   versao: number

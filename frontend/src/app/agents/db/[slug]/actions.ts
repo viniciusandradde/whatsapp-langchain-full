@@ -48,6 +48,18 @@ export async function listarVersoesPromptAction(
   }
 }
 
+export async function redigirPromptAction(
+  slug: string,
+  descricao: string
+): Promise<Result<{ prompt: string; avisos: string[] }>> {
+  try {
+    const { redigirPromptAgente } = await import("@/lib/api");
+    return { ok: true, data: await redigirPromptAgente(slug, descricao) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
 export async function getVersaoPromptAction(
   slug: string,
   versao: number

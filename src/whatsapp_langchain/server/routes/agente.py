@@ -347,6 +347,46 @@ async def set_default_endpoint(
 # `security.audit.read` — são públicos diferentes.
 
 
+class RedigirPromptInput(BaseModel):
+    descricao: str = Field(min_length=10, max_length=2000)
+
+
+@router.post("/{slug}/prompt/redigir")
+async def redigir_prompt_endpoint(
+    slug: str,
+    body: RedigirPromptInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+    _acl: None = Depends(require_agente_access("write")),
+) -> dict:
+    """Redige o prompt do agente a partir de uma descrição curta.
+
+    **Não salva.** Devolve o texto pra quem pediu revisar e aplicar; quem grava
+    é o `PUT /{slug}`, e é ele que versiona pela mig 158 — assim o gerado entra
+    no histórico com nota e volta atrás num clique.
+
+    Os `avisos` contam o que o redator NÃO pôde fazer (agente sem ferramenta
+    habilitada, transferência sem departamento de destino). Sem eles o prompt
+    sairia incompleto sem ninguém saber por quê.
+    """
+    pool = await get_pool()
+    agente = await get_agente_by_slug(pool, empresa_id, slug)
+    if agente is None:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.")
+
+    from whatsapp_langchain.shared.prompt_writer import redigir_prompt
+
+    try:
+        texto, avisos = await redigir_prompt(pool, empresa_id, agente, body.descricao)
+    except Exception as exc:
+        logger.warning("prompt_redigir_falhou", slug=slug, error=str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível redigir o prompt agora. Tente novamente.",
+        ) from exc
+    return {"prompt": texto, "avisos": avisos}
+
+
 @router.get("/{slug}/prompt/versoes")
 async def list_versoes_prompt_endpoint(
     slug: str,

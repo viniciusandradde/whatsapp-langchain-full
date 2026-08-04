@@ -253,6 +253,14 @@ class Settings(BaseSettings):
     summarize_keep_messages: int = 10
     summarize_model: str = "x-ai/grok-4.1-fast"
 
+    # --- Assistente de redação de prompt ---
+    # Modelo que redige o prompt do agente a partir de uma descrição curta.
+    # Não é tarefa de modelo barato: sai um texto estruturado de milhares de
+    # caracteres que define o comportamento do agente em produção. O id tem que
+    # existir no catálogo curado (`CURATED_MODELS` em shared/llm.py) — modelo
+    # aposentado cadastrado aqui já quebrou em runtime antes.
+    prompt_writer_model: str = "anthropic/claude-sonnet-4.6"
+
     # --- Internal Service Token ---
     # Token compartilhado entre frontend e API para proteger rotas administrativas.
     # Preencha também em desenvolvimento; em produção, use um token forte.
