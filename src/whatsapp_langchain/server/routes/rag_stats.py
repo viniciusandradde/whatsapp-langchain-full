@@ -383,7 +383,7 @@ async def fewshot_listar(
     async with pool.connection() as conn:
         cur = await conn.execute(
             cast(_Query, f"SELECT count(*) FROM fewshot_example WHERE {clausula}"),
-            params
+            params,
         )
         row = await cur.fetchone()
         total = int(row[0]) if row else 0
