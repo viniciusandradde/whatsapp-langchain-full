@@ -701,6 +701,108 @@ function TabModelo({
   );
 }
 
+function AssistenteRedacao({
+  slug,
+  onAplicar,
+  onFechar,
+}: {
+  slug: string;
+  onAplicar: (prompt: string) => void;
+  onFechar: () => void;
+}) {
+  const [descricao, setDescricao] = useState("");
+  const [gerando, startGerar] = useTransition();
+  const [erro, setErro] = useState<string | null>(null);
+  const [gerado, setGerado] = useState<{
+    prompt: string;
+    avisos: string[];
+  } | null>(null);
+
+  function handleGerar() {
+    setErro(null);
+    startGerar(async () => {
+      const { redigirPromptAction } = await import("./actions");
+      const r = await redigirPromptAction(slug, descricao);
+      if (r.ok) setGerado(r.data);
+      else setErro(r.error);
+    });
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+      <p className="text-xs text-muted-foreground">
+        Descreva o agente em duas linhas. O texto é redigido no padrão da casa
+        e usa <strong>só</strong> as ferramentas marcadas na aba Ferramentas e
+        as variáveis cadastradas — é o que impede o prompt de prometer o que o
+        agente não faz.
+      </p>
+      <FieldTextarea
+        label="O que este agente deve fazer"
+        name="__descricao_assistente"
+        defaultValue=""
+        rows={3}
+        placeholder="assistente de matrículas da faculdade, atende aluno no WhatsApp, transfere pra secretaria quando for financeiro"
+        onChange={setDescricao}
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleGerar}
+          disabled={gerando || descricao.trim().length < 10}
+        >
+          {gerando && <Loader2 className="mr-2 size-4 animate-spin" />}
+          Gerar
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onFechar}>
+          Fechar
+        </Button>
+      </div>
+
+      {erro && <p className="text-sm text-destructive">{erro}</p>}
+
+      {gerado && (
+        <div className="space-y-2">
+          {gerado.avisos.length > 0 && (
+            <ul className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning-foreground">
+              {gerado.avisos.map((av) => (
+                <li key={av}>{av}</li>
+              ))}
+            </ul>
+          )}
+          {/* Painel de leitura: o campo só é sobrescrito quando o usuário
+              manda. Prompt de produção passa de 15 mil caracteres — trocar
+              às cegas é caro, e o histórico só protege o que já foi salvo. */}
+          <pre className="max-h-80 overflow-auto rounded-md border bg-background p-3 font-mono text-xs whitespace-pre-wrap">
+            {gerado.prompt}
+          </pre>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                onAplicar(gerado.prompt);
+                setGerado(null);
+                onFechar();
+              }}
+            >
+              Usar este
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setGerado(null)}
+            >
+              Descartar
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabPrompt({
   a,
   onRestaurado,
@@ -708,24 +810,60 @@ function TabPrompt({
   a: AgenteIA;
   onRestaurado: (agente: AgenteIA) => void;
 }) {
+  // Texto vindo do assistente, ainda NÃO salvo. Entra no `key` junto com o
+  // `updated_at` pelo mesmo motivo que a restauração: o textarea é não
+  // controlado, então só remontando o conteúdo novo aparece em tela.
+  const [gerado, setGerado] = useState<string | null>(null);
+  // O `aberto` mora aqui, não no assistente: o painel ocupa a largura toda e
+  // precisa ficar ABAIXO do cabeçalho. Dentro da linha do flex ele empurrava o
+  // botão de histórico pro lado do campo de descrição.
+  const [assistenteAberto, setAssistenteAberto] = useState(false);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">Instruções do agente</p>
-        <PromptHistorico
-          slug={a.slug}
-          atual={a.prompt_override ?? ""}
-          onRestaurado={onRestaurado}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setAssistenteAberto((v) => !v)}
+          >
+            <Sparkles className="mr-2 size-4" />
+            Assistente de redação
+          </Button>
+          <PromptHistorico
+            slug={a.slug}
+            atual={a.prompt_override ?? ""}
+            onRestaurado={(ag) => {
+              setGerado(null);
+              onRestaurado(ag);
+            }}
+          />
+        </div>
       </div>
+      {assistenteAberto && (
+        <AssistenteRedacao
+          slug={a.slug}
+          onAplicar={setGerado}
+          onFechar={() => setAssistenteAberto(false)}
+        />
+      )}
+      {gerado !== null && (
+        <p className="text-xs text-muted-foreground">
+          Texto do assistente aplicado no campo — <strong>ainda não salvo</strong>.
+          Revise e salve; a versão anterior fica no histórico.
+        </p>
+      )}
       {/* `key` amarra o textarea à versão em uso: sem ela, restaurar troca o
           defaultValue mas o React mantém o texto antigo em tela, e o usuário
-          acha que a restauração não funcionou. */}
+          acha que a restauração não funcionou. O mesmo vale pro texto gerado. */}
       <FieldTextarea
-        key={a.updated_at ?? a.slug}
+        key={`${a.updated_at ?? a.slug}:${gerado ? gerado.length : 0}`}
         label=""
         name="prompt_override"
-        defaultValue={a.prompt_override}
+        defaultValue={gerado ?? a.prompt_override}
         rows={28}
       />
       <Field
@@ -1014,11 +1152,19 @@ function FieldTextarea({
   name,
   defaultValue,
   rows = 4,
+  placeholder,
+  // O campo segue NÃO controlado (o form lê pelo `name`); `onChange` existe só
+  // pra quem precisa do texto antes do submit — caso do assistente de redação,
+  // que manda a descrição pra API. Controlar o valor aqui quebraria o truque
+  // do `key` que faz restaurar versão aparecer em tela.
+  onChange,
 }: {
   label: string;
   name: string;
   defaultValue: string | null;
   rows?: number;
+  placeholder?: string;
+  onChange?: (valor: string) => void;
 }) {
   return (
     <div>
@@ -1038,6 +1184,8 @@ function FieldTextarea({
         name={name}
         defaultValue={defaultValue ?? ""}
         rows={rows}
+        placeholder={placeholder}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
     </div>
