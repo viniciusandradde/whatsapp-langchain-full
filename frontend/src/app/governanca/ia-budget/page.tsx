@@ -10,6 +10,16 @@ import { BudgetForm } from "./form";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Duas casas decimais transformariam um consumo real em "$0.00" — uma chamada
+ * de LLM custa da ordem de $0.0014, e é justamente esse arredondamento que
+ * mantinha o teto cego no banco (migração 161). Mesma regra do /dashboard/ia.
+ */
+function fmtConsumo(n: number | undefined): string {
+  if (n === undefined) return "$0.00";
+  return n > 0 && n < 0.01 ? `$${n.toFixed(6)}` : `$${n.toFixed(2)}`;
+}
+
 export default async function IaBudgetPage() {
   await requireSession();
 
@@ -63,7 +73,7 @@ export default async function IaBudgetPage() {
                 <AlertTriangle className="size-4 text-yellow-500" />
               )}
               <span className="font-mono">
-                ${budget.consumo_usd?.toFixed(2)} / ${budget.limite_usd?.toFixed(2)}
+                {fmtConsumo(budget.consumo_usd)} / ${budget.limite_usd?.toFixed(2)}
               </span>
               <span className="text-muted-foreground">
                 ({budget.pct_consumo}%)

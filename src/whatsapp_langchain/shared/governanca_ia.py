@@ -180,7 +180,21 @@ async def registrar_execucao(
 async def acrescentar_consumo(
     pool: AsyncConnectionPool, empresa_id: int, valor_usd: float
 ) -> None:
-    """Soma valor ao consumo_usd do mês atual (UPSERT). Best-effort."""
+    """Soma valor ao consumo_usd do mês atual (UPSERT). Best-effort.
+
+    Este INSERT é quem cria a linha do mês — o débito chega antes de qualquer
+    tela. Por isso ele herda `limite_usd`/`acao_estouro`/`alerta_pct` do mês
+    configurado mais recente: sem isso o teto voltava a zero todo dia primeiro
+    e só reaparecia se alguém abrisse a tela de novo. E como `get_budget_atual`
+    lê limite zero como "sem teto", o mês órfão ficava indistinguível de uma
+    empresa que nunca configurou nada — nenhum alerta, nenhum bloqueio.
+
+    `ano_mes` é CHAR(7) no formato YYYY-MM, então ordem alfabética é ordem
+    cronológica e `ORDER BY ano_mes DESC` acha mesmo o mês anterior (pode ser
+    mais de um mês atrás, se a empresa ficou parada).
+
+    O consumo NÃO é herdado: começa do zero no mês novo.
+    """
     if valor_usd <= 0:
         return
     ano_mes = datetime.now().strftime("%Y-%m")
@@ -188,13 +202,32 @@ async def acrescentar_consumo(
         async with pool.connection() as conn:
             await conn.execute(
                 """
-                INSERT INTO ia_budget (empresa_id, ano_mes, limite_usd, consumo_usd)
-                VALUES (%s, %s, 0, %s)
+                INSERT INTO ia_budget
+                    (empresa_id, ano_mes, limite_usd, consumo_usd,
+                     acao_estouro, alerta_pct)
+                SELECT %s, %s,
+                       COALESCE(p.limite_usd, 0), %s,
+                       COALESCE(p.acao_estouro, 'alertar'),
+                       COALESCE(p.alerta_pct, 80)
+                  FROM (SELECT 1) AS _
+                  LEFT JOIN LATERAL (
+                      SELECT limite_usd, acao_estouro, alerta_pct
+                        FROM ia_budget
+                       WHERE empresa_id = %s AND ano_mes < %s
+                       ORDER BY ano_mes DESC
+                       LIMIT 1
+                  ) p ON TRUE
                 ON CONFLICT (empresa_id, ano_mes) DO UPDATE SET
                     consumo_usd = ia_budget.consumo_usd + EXCLUDED.consumo_usd,
                     updated_at = NOW()
                 """,
-                (empresa_id, ano_mes, Decimal(str(valor_usd))),
+                (
+                    empresa_id,
+                    ano_mes,
+                    Decimal(str(valor_usd)),
+                    empresa_id,
+                    ano_mes,
+                ),
             )
             await conn.commit()
     except Exception as exc:
