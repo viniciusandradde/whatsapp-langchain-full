@@ -10,9 +10,11 @@ Endpoints admin pra monitorar uso da knowledge base:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import cast
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from psycopg.abc import QueryNoTemplate as _Query
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
@@ -380,17 +382,21 @@ async def fewshot_listar(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"SELECT count(*) FROM fewshot_example WHERE {clausula}", params
+            cast(_Query, f"SELECT count(*) FROM fewshot_example WHERE {clausula}"),
+            params
         )
         row = await cur.fetchone()
         total = int(row[0]) if row else 0
         cur = await conn.execute(
-            f"""
+            cast(
+                _Query,
+                f"""
             SELECT id, agente_slug, fonte, status, cliente_msg, agente_resposta,
                    embedding IS NOT NULL AS tem_embedding, created_at
               FROM fewshot_example WHERE {clausula}
              ORDER BY created_at DESC LIMIT %s OFFSET %s
             """,
+            ),
             [*params, limit, offset],
         )
         rows = await cur.fetchall()
@@ -490,8 +496,11 @@ async def fewshot_atualizar(
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
-            f"UPDATE fewshot_example SET {', '.join(sets)} "
-            "WHERE id = %s AND empresa_id = %s",
+            cast(
+                _Query,
+                f"UPDATE fewshot_example SET {', '.join(sets)} "
+                "WHERE id = %s AND empresa_id = %s",
+            ),
             [*params, fewshot_id, empresa_id],
         )
         await conn.commit()
