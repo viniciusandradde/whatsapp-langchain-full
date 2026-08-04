@@ -4629,6 +4629,10 @@ export interface EmpresaResumoDiarioConfig {
   resumo_diario_horario: string;
   resumo_diario_dias: number[];
   resumo_diario_tz: string;
+  // Somente leitura (mig 162): resultado da última tentativa de envio.
+  ultimo_status?: string | null;
+  ultimo_erro?: string | null;
+  ultima_tentativa_em?: string | null;
 }
 
 export async function getEmpresaResumoDiario(
@@ -4646,6 +4650,16 @@ export async function updateEmpresaResumoDiario(
   return apiFetch<EmpresaResumoDiarioConfig>(
     `/api/empresas/${empresaId}/resumo-diario`,
     { method: "PUT", body }
+  );
+}
+
+/** Dispara o resumo agora, sem consumir o envio agendado do dia. */
+export async function testarEmpresaResumoDiario(
+  empresaId: number
+): Promise<{ ok: boolean; erro: string | null }> {
+  return apiFetch<{ ok: boolean; erro: string | null }>(
+    `/api/empresas/${empresaId}/resumo-diario/testar`,
+    { method: "POST" }
   );
 }
 

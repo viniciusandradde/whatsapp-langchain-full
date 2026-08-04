@@ -283,6 +283,13 @@ class ResumoDiarioConfig(BaseModel):
     resumo_diario_dias: list[int] = Field(default=[1, 2, 3, 4, 5])
     resumo_diario_tz: str = Field(default="America/Campo_Grande", max_length=64)
 
+    # Somente leitura (mig 162) — o PUT aceita e ignora. Existem porque, sem
+    # eles, "não chegou nada" e "falhou às 17:00 por X" eram o mesmo silêncio
+    # na tela: o único registro do envio era log de worker, que some no deploy.
+    ultimo_status: str | None = None
+    ultimo_erro: str | None = None
+    ultima_tentativa_em: str | None = None
+
 
 @router.get("/{empresa_id}/resumo-diario", response_model=ResumoDiarioConfig)
 async def get_resumo_diario_endpoint(
@@ -300,7 +307,9 @@ async def get_resumo_diario_endpoint(
         cur = await conn.execute(
             """SELECT resumo_diario_ativo, resumo_diario_telefone,
                       resumo_diario_horario, resumo_diario_dias,
-                      resumo_diario_tz FROM empresa WHERE id = %s""",
+                      resumo_diario_tz, resumo_diario_last_status,
+                      resumo_diario_last_error, resumo_diario_last_attempt_at
+                 FROM empresa WHERE id = %s""",
             (empresa_id,),
         )
         row = await cur.fetchone()
@@ -312,6 +321,9 @@ async def get_resumo_diario_endpoint(
         resumo_diario_horario=row[2].strftime("%H:%M") if row[2] else "22:30",
         resumo_diario_dias=list(row[3] or [1, 2, 3, 4, 5]),
         resumo_diario_tz=row[4] or "America/Campo_Grande",
+        ultimo_status=row[5],
+        ultimo_erro=row[6],
+        ultima_tentativa_em=row[7].isoformat() if row[7] else None,
     )
 
 
@@ -373,6 +385,31 @@ async def update_resumo_diario_endpoint(
         resumo_diario_dias=dias or [1, 2, 3, 4, 5],
         resumo_diario_tz=body.resumo_diario_tz,
     )
+
+
+@router.post("/{empresa_id}/resumo-diario/testar")
+async def testar_resumo_diario_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Envia o resumo AGORA, pra validar a configuração.
+
+    Sem isto, conferir se o resumo funciona custa um dia por tentativa: o
+    agendamento tem uma chance por dia local, e trocar o horário não devolve
+    essa chance. O envio manual não consome o dia do agendamento.
+    """
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Só admin pode testar.")
+
+    from whatsapp_langchain.shared.resumo_diario import enviar_resumo_agora
+
+    ok, erro = await enviar_resumo_agora(pool, empresa_id)
+    if not ok:
+        # 200 com ok=false: a falha do provedor é o RESULTADO do teste, não um
+        # erro da requisição — a tela mostra o motivo em vez de "algo deu errado".
+        return {"ok": False, "erro": erro}
+    return {"ok": True, "erro": None}
 
 
 @router.get("/{empresa_id}/csat", response_model=CsatConfig)
