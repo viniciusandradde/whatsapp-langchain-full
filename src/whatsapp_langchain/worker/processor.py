@@ -34,6 +34,7 @@ Uso:
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -392,6 +393,67 @@ FILA_DEPARTAMENTO_MARKER = "[fila do departamento — aguardando atendente]"
 # NÃO entra em `MARKERS_REPROCESSAVEIS`: engolir foi a decisão certa, e
 # reprocessar mandaria pro cliente a resposta que se decidiu não mandar.
 RESPOSTA_SUPERADA_MARKER = "[resposta superada — cliente escreveu de novo]"
+
+# Marcador quando o agente rodou mas não produziu NENHUM texto no turno. Antes
+# disso a string vazia ia direto pro provedor, que devolvia 400 "Text is
+# required" — o log enchia de erro, a linha ganhava uma retentativa inútil e
+# ficava gravada como `processing_failed` mesmo tendo sido processada.
+#
+# NÃO entra em `MARKERS_REPROCESSAVEIS`: quando isso acontece as tools do turno
+# (tipicamente a transferência) JÁ rodaram, então reenfileirar cairia no gate da
+# fila do departamento sem produzir nada — diferente de `[modo manual` e
+# `[whitelist`, onde a IA nunca chegou a rodar.
+RESPOSTA_VAZIA_MARKER = "[resposta vazia — agente não gerou texto]"
+
+
+def _texto_do_conteudo(content: Any) -> str:
+    """Texto de um `content` de mensagem, que pode ser string ou blocos.
+
+    Conteúdo multimodal chega como lista de dicts; só os blocos de texto
+    interessam pro que vai pro WhatsApp.
+    """
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        partes: list[str] = []
+        for bloco in content:
+            if isinstance(bloco, str):
+                partes.append(bloco)
+            elif isinstance(bloco, dict) and bloco.get("type") == "text":
+                partes.append(str(bloco.get("text") or ""))
+        return "\n".join(p for p in partes if p.strip()).strip()
+    return ""
+
+
+def extrair_resposta_do_turno(messages: Sequence[Any]) -> str:
+    """Último texto que o agente escreveu NESTE turno. Vazio se não escreveu.
+
+    Ler só `messages[-1]` perdia a frase de despedida: o modelo a escreve na
+    MESMA mensagem em que chama a tool, e depois das tools ele costuma não ter
+    mais nada a dizer — então a última mensagem vem vazia e o texto real fica
+    duas posições atrás. Foi assim que clientes que pediram transferência
+    ficaram sem receber absolutamente nada.
+
+    A varredura **para na última mensagem do cliente**, e isso é obrigatório:
+    `result["messages"]` traz o histórico inteiro do checkpointer, então sem a
+    barreira um turno mudo reenviaria a resposta do turno anterior.
+
+    A regra é por EXCLUSÃO, não por reconhecimento: pula o que sabidamente não
+    pode ir pro cliente (`tool`, que é conversa interna do agente, e `system`) e
+    aceita o resto. Exigir `type == "ai"` deixaria de fora qualquer mensagem
+    fora do padrão e mudaria o comportamento de quem antes lia `[-1].content`
+    sem perguntar nada.
+    """
+    for msg in reversed(list(messages)):
+        tipo = getattr(msg, "type", None)
+        if tipo == "human":
+            break
+        if tipo in ("tool", "system"):
+            continue
+        texto = _texto_do_conteudo(getattr(msg, "content", ""))
+        if texto:
+            return texto
+    return ""
 
 
 async def _resolve_outbound_client(
@@ -2691,7 +2753,11 @@ async def process_message(
                 )
 
         # 4. Extrair resposta
-        response_text = result["messages"][-1].content
+        #
+        # Não é `messages[-1].content`: quando o agente se despede na MESMA
+        # mensagem em que chama uma tool, a última mensagem do turno vem vazia
+        # e a despedida fica pra trás. Ver `extrair_resposta_do_turno`.
+        response_text: Any = extrair_resposta_do_turno(result["messages"])
         # Defesa da plataforma: modelos fracos vazam blocos de raciocínio
         # (<raciocinio_interno>...) na resposta — remove antes de qualquer
         # coisa chegar perto do cliente (incidente Luis Fernando 2026-07-23).
@@ -2838,6 +2904,34 @@ async def process_message(
                 message_id=message.id,
                 empresa_id=message.empresa_id,
                 atendimento_id=message.atendimento_id,
+            )
+            return
+
+        # 4.95 Nada pra enviar? Então não envie.
+        #
+        # String vazia é 400 garantido no provedor ("Text is required"), e o
+        # erro caía em `mark_failed` → retentativa → a linha ficava marcada
+        # como falha tendo sido processada. Marca e sai, no mesmo padrão dos
+        # outros caminhos silenciosos deste arquivo.
+        #
+        # O log é o termômetro da correção na descrição da `transfer_to_human`:
+        # se este evento continuar aparecendo, o modelo segue sem se despedir e
+        # o caminho é revisar o prompt dos agentes.
+        if not isinstance(response_text, str) or not response_text.strip():
+            await mark_done(
+                pool,
+                message.id,
+                RESPOSTA_VAZIA_MARKER,
+                normalized_input=pre.normalized_text,
+                media_processing_status=pre.media_processing_status,
+                media_processing_error=pre.media_processing_error,
+            )
+            logger.warning(
+                "resposta_vazia_do_agente",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+                atendimento_id=message.atendimento_id,
+                agent_id=message.agent_id,
             )
             return
 

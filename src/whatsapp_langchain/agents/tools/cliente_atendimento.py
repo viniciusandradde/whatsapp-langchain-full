@@ -416,9 +416,12 @@ async def transfer_to_human(
             já coletados (CPF/protocolo se houver), próximos passos.
         prioridade: opcional — sobrescreve a prioridade já classificada.
 
-    Sistema envia mensagem oficial ao cliente automaticamente após
-    transferência. Você pode avisar em UMA frase ("vou passar pra equipe
-    especializada"), mas não detalhe — sistema cuida do anúncio formal.
+    SEMPRE escreva UMA frase de transição ao cliente ("vou passar pra equipe
+    especializada", "vou encaminhar agora") na MESMA mensagem em que chamar
+    esta tool — não depois. Depois da tool você normalmente não tem mais turno
+    de fala, e essa frase pode ser a ÚLTIMA coisa que o cliente recebe:
+    dependendo da configuração da empresa, nenhum anúncio de sistema é enviado.
+    Uma frase basta; não detalhe departamento nem protocolo.
     """
     empresa_id, atendimento_id = _extract_ids(runtime)
     if empresa_id is None or atendimento_id is None:
