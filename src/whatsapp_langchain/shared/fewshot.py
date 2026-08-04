@@ -175,18 +175,28 @@ async def capture_examples_from_atendimento(
     return inserted
 
 
-async def backfill_embeddings(pool: AsyncConnectionPool, batch: int = 50) -> int:
-    """Gera embeddings dos few-shots com status='pending'. Idempotente."""
+async def backfill_embeddings(
+    pool: AsyncConnectionPool, batch: int = 50, empresa_id: int | None = None
+) -> int:
+    """Gera embeddings dos few-shots com status='pending'. Idempotente.
+
+    `empresa_id` limita o lote a um tenant. Sem ele a varredura é global, e aí
+    gerar **um** exemplo novo numa empresa dispara até `batch` embeddings de
+    outras — cada um uma chamada de rede paga, no meio do request de quem
+    clicou. Com 6.599 pendentes acumulados de uma empresa de captura, isso
+    estourava o timeout de quem só queria gerar um golden.
+    """
+    where = "status = 'pending' AND embedding IS NULL"
+    params: list = []
+    if empresa_id is not None:
+        where += " AND empresa_id = %s"
+        params.append(empresa_id)
+    params.append(batch)
     async with pool.connection() as conn:
         cur = await conn.execute(
-            """
-            SELECT id, cliente_msg
-              FROM fewshot_example
-             WHERE status = 'pending' AND embedding IS NULL
-             ORDER BY id
-             LIMIT %s
-            """,
-            (batch,),
+            f"SELECT id, cliente_msg FROM fewshot_example "  # noqa: S608 — where é montado acima, sem input do usuário
+            f"WHERE {where} ORDER BY id LIMIT %s",
+            params,
         )
         rows = await cur.fetchall()
 

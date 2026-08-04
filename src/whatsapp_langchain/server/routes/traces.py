@@ -32,6 +32,12 @@ from whatsapp_langchain.shared.app_setting import (
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import TraceInfo
+from whatsapp_langchain.shared.obs_provider import (
+    active_provider,
+    langfuse_configurado,
+    langsmith_configurado,
+    provider_efetivo,
+)
 
 logger = structlog.get_logger()
 
@@ -46,49 +52,15 @@ router = APIRouter(
 )
 
 
-def _langfuse_configurado() -> bool:
-    return settings.langfuse_enabled
-
-
-def _langsmith_configurado() -> bool:
-    return bool(settings.langchain_api_key and settings.langchain_project)
-
-
-def _active_provider() -> str | None:
-    """Resolução automática: langfuse > langsmith > None."""
-    if _langfuse_configurado():
-        return "langfuse"
-    if _langsmith_configurado():
-        return "langsmith"
-    return None
-
-
-async def _provider_efetivo() -> str | None:
-    """Provider a usar, considerando a preferência gravada na UI (mig 141).
-
-    Existe porque a resolução por env é uma armadilha operacional: desligar os
-    containers do Langfuse NÃO muda `settings.langfuse_enabled` (as chaves
-    seguem no .env), então `/traces` continuaria apontando pro host morto.
-
-    `auto` mantém o comportamento antigo. Escolha explícita que aponta pra
-    provider sem credencial cai no automático em vez de devolver nada — o
-    admin vê a lista do outro provider, não uma tela vazia sem explicação.
-    """
-    pool = await get_pool()
-    preferido = await get_obs_provider_preferido(pool)
-
-    if preferido == "langfuse" and _langfuse_configurado():
-        return "langfuse"
-    if preferido == "langsmith" and _langsmith_configurado():
-        return "langsmith"
-
-    if preferido != "auto":
-        logger.warning(
-            "obs_provider_preferido_sem_credencial",
-            preferido=preferido,
-            acao="caindo pra resolucao automatica",
-        )
-    return _active_provider()
+# Estas quatro moraram aqui até 2026-08-03. Saíram pra `shared/obs_provider.py`
+# porque ficar dentro de uma rota impedia qualquer outro módulo de reusar — e foi
+# exatamente por isso que o auto-dataset do sandbox nasceu falando com o Langfuse
+# hardcoded, ignorando a escolha feita nesta tela. Os aliases abaixo mantêm o
+# nome antigo válido dentro do arquivo.
+_langfuse_configurado = langfuse_configurado
+_langsmith_configurado = langsmith_configurado
+_active_provider = active_provider
+_provider_efetivo = provider_efetivo
 
 
 # ----------------------------- Langfuse ------------------------------

@@ -289,6 +289,24 @@ export async function ingestFromLangfuseAction(input: {
   return _postAtivaEmpresa("/api/admin/rag/dataset/from-langfuse", input);
 }
 
+/**
+ * Gera golden examples somando as fontes disponíveis.
+ *
+ * Substitui `ingestFromLangfuseAction` na tela. A anterior falava só com o
+ * Langfuse: com ele desligado, `list_scores` devolvia `[]` best-effort e a
+ * tela dizia "0 novos" — indistinguível de "nenhuma conversa qualificou".
+ * Esta usa a avaliação do próprio cliente (CSAT) como fonte garantida, soma o
+ * provedor ativo de /traces quando ele contribui, e devolve `avisos` com o que
+ * não pôde ser feito.
+ */
+export async function ingestGoldAction(input: {
+  min_score: number;
+  days: number;
+  dry_run: boolean;
+}) {
+  return _postAtivaEmpresa("/api/admin/rag/dataset/gold", input);
+}
+
 export async function runEvalAction(input: {
   agente_slug?: string | null;
   per_agent: number;

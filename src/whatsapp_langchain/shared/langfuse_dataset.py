@@ -126,3 +126,176 @@ async def ingest_from_langfuse(
 
     logger.info("langfuse_dataset_ingest", empresa_id=empresa_id, **resultado)
     return resultado
+
+
+# Prefixo do `source_trace_id` sintético da fonte CSAT. Reusa o índice único
+# `ux_fewshot_source_trace (empresa_id, source_trace_id)` da mig 137 — a
+# idempotência sai de graça e sem migration nova.
+_CSAT_PREFIX = "csat:"
+
+
+async def ingest_from_csat(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    min_score: float = 8.0,
+    days: int = 30,
+    dry_run: bool = False,
+) -> dict:
+    """Golden examples a partir da avaliação que o próprio cliente deu.
+
+    A nota do CSAT/NPS já é nossa (`atendimento_avaliacao`, mig 073) e liga ao
+    diálogo por `atendimento_id` — não depende de provedor de trace nenhum. Em
+    produção rende ~120 candidatos, contra 6 que o caminho Langfuse rendeu antes
+    de ser desligado.
+
+    Idempotente pelo mesmo índice único do caminho Langfuse, com
+    `source_trace_id = 'csat:<message_queue.id>'`.
+    """
+    resultado = {
+        "candidatos": 0,
+        "novos": 0,
+        "skipped": 0,
+        "dry_run": dry_run,
+    }
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT mq.id, mq.incoming_message, mq.response,
+                       mq.agent_id, mq.atendimento_id, av.nota
+                  FROM atendimento_avaliacao av
+                  JOIN message_queue mq ON mq.atendimento_id = av.atendimento_id
+                 WHERE av.empresa_id = %s
+                   AND av.nota >= %s
+                   AND av.created_at > NOW() - make_interval(days => %s)
+                   AND mq.response IS NOT NULL
+                   AND mq.incoming_message IS NOT NULL
+                """,
+                (empresa_id, min_score, days),
+            )
+            linhas = await cur.fetchall()
+            resultado["candidatos"] = len(linhas)
+
+            for mq_id, cliente_msg, resposta, agent_id, atendimento_id, nota in linhas:
+                cliente_norm = redact_pii(cliente_msg or "", mode="mask").text.strip()
+                resp_norm = redact_pii(resposta or "", mode="mask").text.strip()
+                if not cliente_norm or not resp_norm:
+                    continue
+                if dry_run:
+                    resultado["novos"] += 1
+                    continue
+                ins = await conn.execute(
+                    """
+                    INSERT INTO fewshot_example
+                        (empresa_id, agente_slug, cliente_msg, agente_resposta,
+                         outcome, csat_nota, atendimento_id, status,
+                         source_trace_id, fonte)
+                    VALUES (%s, %s, %s, %s, 'success', %s, %s, 'pending',
+                            %s, 'csat')
+                    ON CONFLICT (empresa_id, source_trace_id)
+                        WHERE source_trace_id IS NOT NULL
+                    DO NOTHING
+                    """,
+                    (
+                        empresa_id,
+                        agent_id or "atendimento",
+                        cliente_norm,
+                        resp_norm,
+                        int(round(float(nota))),
+                        atendimento_id,
+                        f"{_CSAT_PREFIX}{mq_id}",
+                    ),
+                )
+                if ins.rowcount and ins.rowcount > 0:
+                    resultado["novos"] += 1
+                else:
+                    resultado["skipped"] += 1
+            if not dry_run:
+                await conn.commit()
+
+    logger.info("csat_dataset_ingest", empresa_id=empresa_id, **resultado)
+    return resultado
+
+
+async def ingest_gold(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    min_score: float = 8.0,
+    days: int = 30,
+    dry_run: bool = False,
+) -> dict:
+    """Gera golden examples somando as fontes disponíveis.
+
+    **Fonte sempre presente:** o CSAT local. **Fonte adicional:** o provedor de
+    observabilidade ativo, o mesmo que a tela `/traces` mostra — antes daqui o
+    auto-dataset falava com o Langfuse hardcoded, então continuava batendo num
+    host desligado mesmo depois de o admin escolher LangSmith.
+
+    Devolve `avisos` com o que **não** pôde ser feito. Isso é o ponto: até aqui,
+    "provedor fora do ar" e "nenhuma conversa qualificou" produziam o mesmo `0`,
+    e a tela mostrava esse zero como se fosse resposta.
+    """
+    from whatsapp_langchain.shared import langfuse_client
+    from whatsapp_langchain.shared.obs_provider import (
+        langfuse_configurado,
+        provider_efetivo,
+    )
+
+    avisos: list[str] = []
+    por_fonte: dict[str, dict] = {}
+
+    por_fonte["csat"] = await ingest_from_csat(
+        pool, empresa_id, min_score=min_score, days=days, dry_run=dry_run
+    )
+
+    provider = await provider_efetivo()
+    if provider == "langfuse":
+        if langfuse_client.ping():
+            por_fonte["langfuse"] = await ingest_from_langfuse(
+                pool, empresa_id, min_score=min_score, days=days, dry_run=dry_run
+            )
+        else:
+            avisos.append(
+                "Langfuse está configurado mas não respondeu — nenhuma conversa "
+                "veio dele nesta rodada. As chaves seguem no ambiente mesmo com "
+                "os containers desligados, por isso ele aparece como ativo."
+            )
+    elif provider == "langsmith":
+        avisos.append(
+            "LangSmith é o provedor ativo, mas ainda não dá pra ligar as "
+            "conversas dele ao histórico local (só guardamos o id de trace do "
+            "Langfuse). Esta rodada usou apenas a avaliação dos clientes."
+        )
+    else:
+        avisos.append(
+            "Nenhum provedor de observabilidade ativo. Esta rodada usou apenas "
+            "a avaliação dos clientes."
+        )
+    if langfuse_configurado() and provider != "langfuse":
+        avisos.append(
+            "Dica: o Langfuse tem credencial configurada. Ao religá-lo, "
+            "selecione-o em Observabilidade → Traces pra somar os traces "
+            "avaliados ao dataset."
+        )
+
+    novos = sum(f.get("novos", 0) for f in por_fonte.values())
+    skipped = sum(f.get("skipped", 0) for f in por_fonte.values())
+    resultado = {
+        "novos": novos,
+        "skipped": skipped,
+        "dry_run": dry_run,
+        "provider": provider,
+        "por_fonte": por_fonte,
+        "avisos": avisos,
+    }
+    logger.info(
+        "dataset_gold_ingest",
+        empresa_id=empresa_id,
+        novos=novos,
+        skipped=skipped,
+        provider=provider,
+        avisos=len(avisos),
+    )
+    return resultado
