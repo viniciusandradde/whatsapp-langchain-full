@@ -2710,6 +2710,50 @@ async def process_message(
         # pré-processamento de mídia precisa dele). runtime=None mantém o path
         # legacy do catálogo.
 
+        # Few-shot (mig 163) — antepõe à mensagem exemplos de respostas que os
+        # clientes avaliaram bem. Opt-in por agente: custa uma chamada de
+        # embedding e alguns milhares de tokens POR MENSAGEM.
+        #
+        # Vai na mensagem do cliente, não no system prompt: o grafo é montado
+        # uma vez e reusado, e `create_agent(system_prompt=…)` é estático — não
+        # dá pra variar por turno sem reconstruir o grafo a cada mensagem.
+        #
+        # Best-effort de propósito: exemplo é melhoria, não requisito. Embedding
+        # fora do ar não pode deixar o cliente sem resposta.
+        if agente_runtime is not None and getattr(
+            agente_runtime, "fewshot_enabled", False
+        ):
+            try:
+                from whatsapp_langchain.shared.fewshot import (
+                    find_similar_examples,
+                    format_fewshot_block,
+                )
+
+                exemplos = await find_similar_examples(
+                    pool,
+                    empresa_id=message.empresa_id,
+                    agente_slug=agente_runtime.slug,
+                    query=normalized_text,
+                )
+                bloco = format_fewshot_block(exemplos)
+                if bloco:
+                    human_message = HumanMessage(
+                        content=f"{bloco}\n\n{normalized_text}"
+                    )
+                # O log é o que permite saber depois se ajudou e quanto custou —
+                # sem ele, ligar isso é apostar no escuro.
+                logger.info(
+                    "fewshot_injetado",
+                    message_id=message.id,
+                    empresa_id=message.empresa_id,
+                    agente_slug=agente_runtime.slug,
+                    n=len(exemplos),
+                    similaridade_max=round(exemplos[0][2], 4) if exemplos else None,
+                    chars_bloco=len(bloco),
+                )
+            except Exception as exc:  # noqa: BLE001 — melhoria não derruba turno
+                logger.warning("fewshot_falhou", message_id=message.id, error=str(exc))
+
         # Lookup agente_ia.id pra telemetria ia_execucao (best-effort)
         agente_ia_id: int | None = None
         if agente_runtime is not None:

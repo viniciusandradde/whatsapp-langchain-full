@@ -13,7 +13,7 @@ from datetime import datetime
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
@@ -342,6 +342,205 @@ class FewshotStats(BaseModel):
     ready: int
     pending: int
     by_agente: dict[str, int]
+
+
+class FewshotPatchInput(BaseModel):
+    status: str | None = None
+    agente_slug: str | None = Field(default=None, max_length=100)
+
+
+@router.get("/fewshot")
+async def fewshot_listar(
+    agente_slug: str | None = None,
+    fonte: str | None = None,
+    status: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Lista os exemplos pra curadoria.
+
+    Sem isto, olhar o dataset exigia consultar o banco por SSH — foi como
+    descobrimos que 60 dos 113 exemplos gerados estavam presos em slugs de
+    agente que não existem mais.
+    """
+    pool = await get_pool()
+    where = ["empresa_id = %s"]
+    params: list = [empresa_id]
+    for campo, valor in (
+        ("agente_slug", agente_slug),
+        ("fonte", fonte),
+        ("status", status),
+    ):
+        if valor:
+            where.append(f"{campo} = %s")
+            params.append(valor)
+    clausula = " AND ".join(where)
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"SELECT count(*) FROM fewshot_example WHERE {clausula}", params
+        )
+        row = await cur.fetchone()
+        total = int(row[0]) if row else 0
+        cur = await conn.execute(
+            f"""
+            SELECT id, agente_slug, fonte, status, cliente_msg, agente_resposta,
+                   embedding IS NOT NULL AS tem_embedding, created_at
+              FROM fewshot_example WHERE {clausula}
+             ORDER BY created_at DESC LIMIT %s OFFSET %s
+            """,
+            [*params, limit, offset],
+        )
+        rows = await cur.fetchall()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [
+            {
+                "id": int(r[0]),
+                "agente_slug": r[1],
+                "fonte": r[2],
+                "status": r[3],
+                "cliente_msg": r[4],
+                "agente_resposta": r[5],
+                "tem_embedding": bool(r[6]),
+                "created_at": r[7].isoformat() if r[7] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/fewshot/orfaos")
+async def fewshot_orfaos(
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Exemplos por slug, marcando os que nenhum agente ATIVO usa.
+
+    `find_similar_examples` filtra por `agente_slug`. Exemplo cujo slug não
+    corresponde a agente ativo é invisível pro agente — é o número que explica
+    por que gerar 113 não significa 113 utilizáveis. Os slugs ficaram para trás
+    quando os templates colapsaram e o `vsa_tech` virou `agente`.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.agente_slug,
+                   count(*) AS total,
+                   count(*) FILTER (WHERE f.status = 'ready'
+                                    AND f.embedding IS NOT NULL) AS utilizaveis,
+                   EXISTS (SELECT 1 FROM agente_ia a
+                            WHERE a.empresa_id = f.empresa_id
+                              AND a.slug = f.agente_slug AND a.ativo) AS tem_agente
+              FROM fewshot_example f
+             WHERE f.empresa_id = %s
+             GROUP BY f.agente_slug, f.empresa_id
+             ORDER BY 2 DESC
+            """,
+            (empresa_id,),
+        )
+        rows = await cur.fetchall()
+
+    itens = [
+        {
+            "agente_slug": r[0],
+            "total": int(r[1]),
+            "utilizaveis": int(r[2]),
+            "tem_agente_ativo": bool(r[3]),
+        }
+        for r in rows
+    ]
+    return {
+        "items": itens,
+        "orfaos": sum(i["total"] for i in itens if not i["tem_agente_ativo"]),
+        "alcancaveis": sum(i["utilizaveis"] for i in itens if i["tem_agente_ativo"]),
+    }
+
+
+@router.patch("/fewshot/{fewshot_id}")
+async def fewshot_atualizar(
+    fewshot_id: int,
+    body: FewshotPatchInput,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Muda status e/ou reatribui o agente.
+
+    Reatribuir slug é o ato de curadoria que resgata os órfãos, e **não exige
+    re-embeddar**: o vetor é do texto da conversa, não do agente.
+    """
+    if body.status and body.status not in ("ready", "pending", "rejected"):
+        raise HTTPException(status_code=400, detail="Status inválido.")
+    sets, params = [], []
+    if body.status:
+        sets.append("status = %s")
+        params.append(body.status)
+    if body.agente_slug:
+        sets.append("agente_slug = %s")
+        params.append(body.agente_slug)
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nada para atualizar.")
+
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"UPDATE fewshot_example SET {', '.join(sets)} "
+            "WHERE id = %s AND empresa_id = %s",
+            [*params, fewshot_id, empresa_id],
+        )
+        await conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Exemplo não encontrado.")
+    return {"ok": True}
+
+
+@router.patch("/fewshot/mover-slug/{de}")
+async def fewshot_mover_slug(
+    de: str,
+    para: str = Query(min_length=1, max_length=100),
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> dict:
+    """Move todos os exemplos de um slug pra outro — o caso real da curadoria.
+
+    Corrigir 60 exemplos um a um não é curadoria, é digitação.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "UPDATE fewshot_example SET agente_slug = %s "
+            "WHERE empresa_id = %s AND agente_slug = %s",
+            (para, empresa_id, de),
+        )
+        await conn.commit()
+        movidos = cur.rowcount
+    logger.info(
+        "fewshot_slug_movido", empresa_id=empresa_id, de=de, para=para, n=movidos
+    )
+    return {"ok": True, "movidos": movidos}
+
+
+@router.delete("/fewshot/{fewshot_id}", status_code=204)
+async def fewshot_apagar(
+    fewshot_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("agente.config")),
+) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "DELETE FROM fewshot_example WHERE id = %s AND empresa_id = %s",
+            (fewshot_id, empresa_id),
+        )
+        await conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Exemplo não encontrado.")
 
 
 @router.get("/fewshot/stats", response_model=FewshotStats)
