@@ -70,6 +70,21 @@ ALLOWLIST: list[tuple[str, str]] = [
     # Envio manual do resumo (mig 162) — mesmo router, mesmo `is_admin_of` da
     # empresa-ALVO. Prefixo cobre `/resumo-diario/testar`.
     ("POST", "/api/empresas/{empresa_id}/resumo-diario"),
+    # Dispensar o onboarding (mig 160) — valida `get_empresa_membership` da
+    # empresa-ALVO do path, ou superadmin. NÃO é endpoint aberto.
+    #
+    # `require_permission` seria errado aqui por dois motivos: checaria a
+    # empresa ATIVA do header, que pode ser outra (mesmo racional do
+    # `/resumo-diario` acima), e exigiria uma permissão específica — o que
+    # desfaz a decisão deliberada de qualquer MEMBRO poder dispensar. Exigir
+    # admin faria o botão "Pular" falhar calado justo pro operador, que é quem
+    # mais topa com o wizard. A escrita mexe só em qual tela a raiz "/" abre.
+    #
+    # O isolamento é coberto por
+    # `test_onboarding_endpoints.py::TestE2EIsolamento::test_estranho_nao_dispensa`
+    # (membro de outra empresa recebe 403) — a allowlist tira o endpoint desta
+    # invariante, não da cobertura.
+    ("PUT", "/api/empresas/{empresa_id}/onboarding-dispensado"),
     # Captura da extensão Chrome — autenticada por API key da empresa
     # (require_scope("capture")), não RBAC de user. Mesmo padrão do ext/.
     ("POST", "/api/captura/"),
