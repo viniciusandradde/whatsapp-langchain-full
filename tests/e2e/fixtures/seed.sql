@@ -32,15 +32,20 @@ ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, status = 'active';
 --     O envio segue sem sair: `EVOLUTION_OUTBOUND_MODE=mock` no ambiente de
 --     desenvolvimento. É o que impede a bateria de mandar WhatsApp de verdade
 --     para os números inventados dos testes.
+--     `tipo_atendimento='ia'` é obrigatório: desde a mig 132 conexão nova
+--     nasce em modo MANUAL, e nesse modo o worker responde
+--     "[modo manual — IA desligada nesta conexão]" sem chamar o agente. A
+--     bateria inteira passaria a medir o gate, não a jornada.
 INSERT INTO conexao (id, empresa_id, provider, from_number, status,
-                     default_agent_id, display_name, payload_json)
+                     default_agent_id, display_name, payload_json, tipo_atendimento)
 VALUES (900, 900, 'evolution', '+14155238886', 'active', 'atendimento',
-        'Sandbox E2E', '{"instance_name": "e2e-sandbox"}'::jsonb)
+        'Sandbox E2E', '{"instance_name": "e2e-sandbox"}'::jsonb, 'ia')
 ON CONFLICT (id) DO UPDATE SET
     status = 'active',
     provider = EXCLUDED.provider,
     empresa_id = EXCLUDED.empresa_id,
-    payload_json = EXCLUDED.payload_json;
+    payload_json = EXCLUDED.payload_json,
+    tipo_atendimento = 'ia';
 
 -- 2b. Conexão das jornadas de DOCUMENTO.
 --     Precisa ser `evolution` porque `get_conexao_by_evolution_instance` filtra
