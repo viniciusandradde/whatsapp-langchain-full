@@ -7,10 +7,7 @@ from pydantic import SecretStr
 
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.worker.media import (
-    AUTO_RESPONSE_AUDIO_DISABLED,
-    AUTO_RESPONSE_IMAGE_DISABLED,
     AUTO_RESPONSE_MEDIA_FAILURE,
-    AUTO_RESPONSE_UNSUPPORTED_MEDIA,
     preprocess_incoming_message,
 )
 
@@ -28,49 +25,84 @@ class TestMediaPreprocess:
         assert result.normalized_text == "Olá"
         assert result.media_processing_status == "none"
 
-    async def test_image_disabled_short_circuits(self):
+    async def test_image_disabled_ainda_invoca_agente(self):
+        """Desligado não é erro: o agente responde citando o que chegou.
+
+        Até 2026-08-05 este caminho devolvia `should_invoke_agent=False` com uma
+        frase fixa que o worker mandava direto ao cliente — por fora dos portões
+        de fila do departamento, modo manual e whitelist.
+        """
         with patch.object(settings, "media_image_enabled", False):
             result = await preprocess_incoming_message(
                 body="Veja",
                 media_url="https://example.com/i.png",
                 media_type="image/png",
             )
-        assert result.should_invoke_agent is False
-        assert result.auto_response == AUTO_RESPONSE_IMAGE_DISABLED
+        assert result.should_invoke_agent is True
+        assert result.auto_response is None
         assert result.media_processing_status == "disabled"
+        assert "uma imagem" in (result.normalized_text or "")
+        assert "Veja" in (result.normalized_text or "")
 
-    async def test_audio_disabled_short_circuits(self):
+    async def test_audio_disabled_ainda_invoca_agente(self):
         with patch.object(settings, "media_audio_enabled", False):
             result = await preprocess_incoming_message(
                 body="Ouça",
                 media_url="https://example.com/a.ogg",
                 media_type="audio/ogg",
             )
-        assert result.should_invoke_agent is False
-        assert result.auto_response == AUTO_RESPONSE_AUDIO_DISABLED
+        assert result.should_invoke_agent is True
         assert result.media_processing_status == "disabled"
+        assert "um áudio" in (result.normalized_text or "")
 
-    async def test_unsupported_media_short_circuits(self):
+    async def test_tipo_sem_parser_ainda_invoca_agente(self):
         # video/* não é imagem/áudio/documento → kind "unsupported".
-        # (PDF/DOCX agora são "document" suportado, não caem mais aqui.)
         result = await preprocess_incoming_message(
             body="arquivo",
             media_url="https://example.com/clip.mp4",
             media_type="video/mp4",
         )
-        assert result.should_invoke_agent is False
-        assert result.auto_response == AUTO_RESPONSE_UNSUPPORTED_MEDIA
+        assert result.should_invoke_agent is True
         assert result.media_processing_status == "unsupported"
+        assert "Arquivo recebido" in (result.normalized_text or "")
 
-    async def test_incomplete_media_payload_short_circuits(self):
+    async def test_payload_incompleto_ainda_invoca_agente(self):
         result = await preprocess_incoming_message(
             body="arquivo",
             media_url="https://example.com/file.ogg",
             media_type=None,
         )
-        assert result.should_invoke_agent is False
-        assert result.auto_response == AUTO_RESPONSE_UNSUPPORTED_MEDIA
+        assert result.should_invoke_agent is True
         assert result.media_processing_status == "unsupported"
+
+    async def test_nome_do_arquivo_aparece_no_texto(self):
+        """O nome real é o que o cliente reconhece na resposta."""
+        with patch.object(settings, "media_document_enabled", False):
+            result = await preprocess_incoming_message(
+                body="",
+                media_url="https://example.com/x",
+                media_type="application/pdf",
+                filename="orcamento-julho.pdf",
+            )
+        assert result.should_invoke_agent is True
+        assert "orcamento-julho.pdf" in (result.normalized_text or "")
+        # O agente não pode supor o conteúdo que não leu.
+        assert "NÃO invente" in (result.normalized_text or "")
+
+    async def test_agente_sem_permissao_nao_baixa_o_arquivo(self):
+        """Custo zero quando o agente não lê: nem download acontece."""
+        baixou = AsyncMock(return_value=b"x")
+        with patch("whatsapp_langchain.worker.media.download_media", new=baixou):
+            result = await preprocess_incoming_message(
+                body="",
+                media_url="https://example.com/x.pdf",
+                media_type="application/pdf",
+                filename="contrato.pdf",
+                aceita_documento=False,
+            )
+        assert result.should_invoke_agent is True
+        assert result.media_processing_status == "disabled"
+        baixou.assert_not_awaited()
 
     async def test_image_processed_to_text(self):
         with (
@@ -97,6 +129,10 @@ class TestMediaPreprocess:
         )
 
     async def test_audio_preprocess_failure_returns_auto_response(self):
+        """Falha TRANSITÓRIA continua saindo pela retentativa — não regride.
+
+        É o caminho que recupera áudio quando o provedor tropeça por segundos.
+        """
         with (
             patch.object(settings, "media_audio_enabled", True),
             patch(
@@ -114,6 +150,37 @@ class TestMediaPreprocess:
         assert result.media_processing_status == "failed"
         assert result.auto_response == AUTO_RESPONSE_MEDIA_FAILURE
         assert "network error" in (result.media_processing_error or "")
+
+    async def test_extensao_sem_parser_nao_vira_failed(self):
+        """O defeito do atendimento 1018-000664, em forma de teste.
+
+        `.doc` sem antiword (e qualquer extensão sem parser) é recusa
+        PERMANENTE. Enquanto isso caía no `failed` genérico, a mensagem era
+        retentada 5 vezes — 59 segundos para chegar à mesma desculpa.
+        """
+        from whatsapp_langchain.shared.file_extractor import UnsupportedFileTypeError
+
+        with (
+            patch.object(settings, "media_document_enabled", True),
+            patch(
+                "whatsapp_langchain.worker.media.download_media",
+                new=AsyncMock(return_value=b"conteudo"),
+            ),
+            patch(
+                "whatsapp_langchain.shared.file_extractor.extract_text",
+                new=AsyncMock(side_effect=UnsupportedFileTypeError("extensão .doc")),
+            ),
+        ):
+            result = await preprocess_incoming_message(
+                body="",
+                media_url="https://example.com/x",
+                media_type="application/msword",
+                filename="proposta.doc",
+            )
+
+        assert result.media_processing_status != "failed"
+        assert result.should_invoke_agent is True
+        assert "proposta.doc" in (result.normalized_text or "")
 
 
 class TestEnvelopeDeErroDoOpenRouter:

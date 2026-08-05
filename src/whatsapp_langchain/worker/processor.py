@@ -2370,12 +2370,31 @@ async def process_message(
             pool, message.agent_id, message.empresa_id
         )
 
+        # 0.b Config do agente, resolvida AQUI porque o pré-processamento de
+        # mídia precisa dela — `agente_ia.aceita_*` decide se o arquivo é lido.
+        # Até 2026-08-05 esses três campos apareciam no editor e não governavam
+        # nada na ingestão: só filtravam as tools `midia.*`.
+        #
+        # Uma resolução só, reusada no resto do turno: `message.agent_id` não
+        # muda durante o processamento.
+        agente_runtime = await resolve_agente_runtime(
+            pool, message.empresa_id, message.agent_id
+        )
+
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(
             body=message.incoming_message,
             media_url=message.media_url,
             media_type=message.media_type,
             midia_model=midia_model,
+            filename=message.media_filename,
+            # Sem row em `agente_ia` (caminho legado do catálogo) o default é
+            # aceitar tudo — que é o comportamento anterior a esta mudança.
+            aceita_imagem=agente_runtime.aceita_imagem if agente_runtime else True,
+            aceita_audio=agente_runtime.aceita_audio if agente_runtime else True,
+            aceita_documento=(
+                agente_runtime.aceita_documento if agente_runtime else True
+            ),
         )
 
         # Falha TRANSITÓRIA de mídia volta pra fila em vez de virar desculpa.
@@ -2616,10 +2635,9 @@ async def process_message(
 
         human_message = HumanMessage(content=normalized_text)
 
-        # A.6 — resolve agente_ia DB; runtime=None mantém path legacy (catálogo).
-        agente_runtime = await resolve_agente_runtime(
-            pool, message.empresa_id, message.agent_id
-        )
+        # A.6 — `agente_runtime` já foi resolvido no passo 0.b (o
+        # pré-processamento de mídia precisa dele). runtime=None mantém o path
+        # legacy do catálogo.
 
         # Lookup agente_ia.id pra telemetria ia_execucao (best-effort)
         agente_ia_id: int | None = None

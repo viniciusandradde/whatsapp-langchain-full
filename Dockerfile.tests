@@ -8,11 +8,14 @@ WORKDIR /app
 # Java JRE: requerido pelo allure CLI (gera HTML report)
 # nodejs/npm: instalar allure-commandline (CLI Java tools)
 # poppler-utils: pdf2image (mídia PDF dos testes)
+# antiword: .doc — o teste do caminho feliz depende do binário; sem ele o
+#   extrator degrada e o teste que cobre a degradação é o que passa
 # curl: healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
     default-jre-headless \
     nodejs npm \
     poppler-utils \
+    antiword \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g allure-commandline --silent

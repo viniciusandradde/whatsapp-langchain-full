@@ -201,6 +201,7 @@ async def enqueue_or_buffer(
     body: str,
     media_url: str | None = None,
     media_type: str | None = None,
+    media_filename: str | None = None,
     to_number: str | None = None,
     message_id: str | None = None,
     buffer_seconds: float = 2.0,
@@ -243,6 +244,9 @@ async def enqueue_or_buffer(
         body: Texto da mensagem.
         media_url: URL de mídia anexada (opcional).
         media_type: MIME type da mídia (opcional).
+        media_filename: Nome do arquivo informado pelo provedor (mig 164). É o
+            que escolhe o parser no worker e o que a resposta cita quando o
+            conteúdo não pôde ser lido.
         to_number: Número destinatário (opcional).
         message_id: ID externo da mensagem, ex: Twilio MessageSid (opcional).
         buffer_seconds: Janela curta — vale só com agrupamento desligado ou em
@@ -362,8 +366,9 @@ async def enqueue_or_buffer(
                 INSERT INTO message_queue
                     (empresa_id, conexao_id, atendimento_id, message_id,
                      phone_number, to_number, agent_id, thread_id,
-                     incoming_message, media_url, media_type, process_after)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     incoming_message, media_url, media_type, media_filename,
+                     process_after)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -378,6 +383,7 @@ async def enqueue_or_buffer(
                     body,
                     media_url,
                     media_type,
+                    media_filename,
                     process_after_midia,
                 ),
             )
@@ -567,7 +573,10 @@ async def claim_next(
                       (
                           SELECT provider FROM conexao
                           WHERE id = message_queue.conexao_id
-                      ) AS conexao_provider
+                      ) AS conexao_provider,
+                      -- Fora de ordem de propósito: o mapeamento abaixo é por
+                      -- índice, e inserir no meio renumeraria 15 campos.
+                      media_filename
             """,
             (lease_until,),
         )
@@ -604,6 +613,7 @@ async def claim_next(
             processed_at=row[23],
             conexao_id=row[24],
             conexao_provider=row[25],
+            media_filename=row[26],
         )
 
         logger.info(

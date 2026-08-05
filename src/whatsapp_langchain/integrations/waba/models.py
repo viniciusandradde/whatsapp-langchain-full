@@ -59,6 +59,9 @@ class WabaInboundMessage(BaseModel):
     media_id: str | None = None  # pra download via /media/{id}
     media_mime_type: str | None = None
     media_caption: str | None = None
+    # Só documento traz nome (`document.filename`). É o que escolhe o parser e
+    # o que a resposta cita quando o conteúdo não pôde ser lido (mig 164).
+    media_filename: str | None = None
     raw: dict[str, Any]  # payload completo pra fallback
 
 

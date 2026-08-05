@@ -199,6 +199,7 @@ async def waba_webhook_post(
                 conexao_id=conexao.id,
                 media_url=media_url,
                 media_type=msg.media_mime_type,
+                media_filename=msg.media_filename,
                 grouping_seconds=grouping_seconds,
                 grouping_max_seconds=settings.message_grouping_max_seconds,
                 is_guided_flow=is_guided_flow,

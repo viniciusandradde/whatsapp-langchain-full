@@ -102,27 +102,32 @@ def _extract_text(message: dict) -> str:
 
 def _extract_message_payload(
     message: dict,
-) -> tuple[str, str | None, str | None]:
-    """Extrai (text, media_url, media_type) de payload Evolution.
+) -> tuple[str, str | None, str | None, str | None]:
+    """Extrai (text, media_url, media_type, filename) de payload Evolution.
 
     Suporta:
     - conversation / extendedTextMessage.text → texto puro
     - imageMessage → media_url + caption (texto opcional)
     - audioMessage → media_url + mime audio/ogg
-    - documentMessage → media_url + caption + mime
+    - documentMessage → media_url + caption + mime + fileName
     - videoMessage → media_url + caption (worker descarta video — fallback)
 
-    Retorna ("", None, None) quando não é tipo suportado (sticker, location, etc).
+    O `fileName` só existe em documento, e vinha sendo descartado: sem ele o
+    worker adivinhava a extensão pelo mime e mandava planilha pra `doc.bin`,
+    que o extrator recusa (atendimento 1018-000664).
+
+    Retorna ("", None, None, None) quando não é tipo suportado (sticker,
+    location, etc).
     """
     if not isinstance(message, dict):
-        return ("", None, None)
+        return ("", None, None, None)
 
     # Texto puro (sem mídia)
     text = _extract_text(message)
     if text and not any(
         k.endswith("Message") and k != "extendedTextMessage" for k in message
     ):
-        return (text, None, None)
+        return (text, None, None, None)
 
     # Mapeia tipos de mídia → (key_no_payload, mime_default)
     midia_keys = [
@@ -137,10 +142,11 @@ def _extract_message_payload(
             url = msg_obj.get("url") or msg_obj.get("directPath") or None
             mime = msg_obj.get("mimetype") or default_mime
             caption = msg_obj.get("caption") or ""
+            nome = str(msg_obj.get("fileName") or "").strip() or None
             # Caption pode acompanhar mídia; texto puro vem no extendedTextMessage
-            return (str(caption), str(url) if url else None, mime)
+            return (str(caption), str(url) if url else None, mime, nome)
 
-    return ("", None, None)
+    return ("", None, None, None)
 
 
 @router.post("/webhook/evolution")
@@ -264,7 +270,9 @@ async def webhook_evolution(
         )
         return Response(status_code=200)
 
-    text, media_url, media_type = _extract_message_payload(data.get("message") or {})
+    text, media_url, media_type, media_filename = _extract_message_payload(
+        data.get("message") or {}
+    )
     if not text and not media_url:
         # Sticker / location / contato / poll / etc — não suportado.
         # Responde 200 silently pra Evolution não retransmitir.
@@ -380,6 +388,7 @@ async def webhook_evolution(
         body=text,
         media_url=media_url,
         media_type=media_type,
+        media_filename=media_filename,
         to_number=conexao.from_number,
         message_id=msg_id,
         buffer_seconds=settings.message_buffer_seconds,
