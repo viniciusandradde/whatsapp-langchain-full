@@ -229,3 +229,62 @@ class TestEnvelopeDeErroDoOpenRouter:
         # A mensagem tem que carregar a razão, não a chave que faltou.
         assert "Provider returned error" in str(exc.value)
         assert "choices" not in str(exc.value)
+
+
+class TestMotivoEspecifico:
+    """Motivo vago faz o agente inventar limitação e dizê-la ao cliente.
+
+    Num teste real com celular, um PDF de 13 MB (acima do teto de 10) produziu
+    a resposta "não consigo ler o conteúdo de documentos em PDF" — e o agente
+    lê PDF. O motivo genérico virou uma limitação de formato que não existe.
+    """
+
+    async def test_arquivo_grande_diz_que_e_tamanho(self):
+        from whatsapp_langchain.shared.file_extractor import FileTooLargeError
+
+        with (
+            patch.object(settings, "media_document_enabled", True),
+            patch(
+                "whatsapp_langchain.worker.media.download_media",
+                new=AsyncMock(return_value=b"x"),
+            ),
+            patch(
+                "whatsapp_langchain.shared.file_extractor.extract_text",
+                new=AsyncMock(side_effect=FileTooLargeError("13 MB")),
+            ),
+        ):
+            r = await preprocess_incoming_message(
+                body="",
+                media_url="https://example.com/x",
+                media_type="application/pdf",
+                filename="livro.pdf",
+            )
+
+        texto = r.normalized_text or ""
+        assert "tamanho" in texto
+        assert "10 MB" in texto
+        # E o agente é instruído a não transformar isso em "não leio PDF".
+        assert "não generalize" in texto.lower()
+
+    async def test_formato_desconhecido_diz_que_e_formato(self):
+        from whatsapp_langchain.shared.file_extractor import UnsupportedFileTypeError
+
+        with (
+            patch.object(settings, "media_document_enabled", True),
+            patch(
+                "whatsapp_langchain.worker.media.download_media",
+                new=AsyncMock(return_value=b"x"),
+            ),
+            patch(
+                "whatsapp_langchain.shared.file_extractor.extract_text",
+                new=AsyncMock(side_effect=UnsupportedFileTypeError(".xyz")),
+            ),
+        ):
+            r = await preprocess_incoming_message(
+                body="",
+                media_url="https://example.com/x",
+                media_type="application/msword",
+                filename="arquivo.xyz",
+            )
+
+        assert "formato" in (r.normalized_text or "")

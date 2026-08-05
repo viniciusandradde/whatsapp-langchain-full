@@ -20,6 +20,7 @@ from langchain_core.messages import HumanMessage
 
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.file_extractor import (
+    MAX_FILE_SIZE_BYTES,
     FileExtractionError,
     FileTooLargeError,
     UnsupportedFileTypeError,
@@ -89,6 +90,25 @@ def _descricao_arquivo(filename: str | None, kind: str) -> str:
     return _ROTULO_POR_KIND.get(kind, "um arquivo")
 
 
+def _motivo_de(erro: Exception) -> str:
+    """Por que este arquivo não foi lido, em uma frase que o agente possa usar.
+
+    O motivo precisa ser ESPECÍFICO. Com um genérico "não foi possível ler o
+    conteúdo", o modelo preenche a lacuna sozinho: num teste real, com um PDF de
+    13 MB, o agente respondeu "não consigo ler o conteúdo de documentos em PDF"
+    — e ele lê PDF; o que não cabia era o tamanho. Motivo vago vira limitação
+    inventada, dita ao cliente com toda a confiança.
+    """
+    if isinstance(erro, FileTooLargeError):
+        return (
+            f"o arquivo passou do limite de tamanho que consigo abrir "
+            f"({MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB)"
+        )
+    if isinstance(erro, UnsupportedFileTypeError):
+        return "não sei abrir arquivos deste formato"
+    return "o arquivo veio vazio ou danificado"
+
+
 def bloco_arquivo_recebido(nome: str, motivo: str) -> str:
     """Texto que substitui o conteúdo quando o arquivo não foi lido.
 
@@ -103,8 +123,9 @@ def bloco_arquivo_recebido(nome: str, motivo: str) -> str:
     """
     return (
         f"[Arquivo recebido: {nome} — {motivo}. "
-        "Confirme ao cliente que o arquivo chegou, citando o nome. "
-        "NÃO invente nem suponha o conteúdo: você não o leu.]"
+        "Confirme ao cliente que o arquivo chegou, citando o nome, e diga esse "
+        "motivo. NÃO invente nem suponha o conteúdo: você não o leu. E não "
+        "generalize o motivo para todo o formato — a limitação é deste arquivo.]"
     )
 
 
@@ -286,7 +307,7 @@ async def preprocess_incoming_message(
             filename=filename,
             error=str(e),
         )
-        return _recebido_sem_ler("não foi possível ler o conteúdo", "unsupported")
+        return _recebido_sem_ler(_motivo_de(e), "unsupported")
 
     except Exception as e:
         # Transitório: download, provedor de transcrição/visão, rede. Aqui a
