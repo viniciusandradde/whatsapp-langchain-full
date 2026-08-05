@@ -84,6 +84,53 @@ def test_sql_sem_placeholder_incompleto(arquivo: Path, linha: int, sql: str) -> 
         )
 
 
+@pytest.mark.parametrize(
+    "arquivo,linha,sql",
+    _sql_literals(),
+    ids=lambda v: f"{Path(v).name}" if isinstance(v, Path) else "",
+)
+def test_sql_sem_marcador_em_comentario(arquivo: Path, linha: int, sql: str) -> None:
+    """Marcador de parâmetro dentro de comentário SQL é parâmetro fantasma.
+
+    O teste acima não pega este caso: ele conta os marcadores do texto e passa
+    exatamente essa quantidade, então um marcador a mais no comentário fica
+    consistente consigo mesmo. Em produção, quem conta do outro lado é a tupla
+    escrita à mão — e ela não sabe do comentário.
+
+    Foi assim que `upsert_conexao` quebrou em 2026-07-22: um comentário
+    explicando o COALESCE citou o marcador, virando 12 marcadores para 11
+    parâmetros. Toda criação e edição de conexão passou a morrer em
+    `ProgrammingError`, e nada acusou — nem ruff, nem pyright, nem esta suíte.
+    """
+    ofensores = [
+        ln.strip()
+        for ln in sql.splitlines()
+        if ln.strip().startswith("--") and PLACEHOLDER.search(ln)
+    ]
+    if ofensores:
+        rel = arquivo.relative_to(SRC.parents[1])
+        pytest.fail(
+            f"{rel}:{linha} cita marcador de parâmetro em comentário SQL:\n"
+            + "\n".join(f"  {o}" for o in ofensores)
+            + "\n  O psycopg conta esse marcador e a tupla de parâmetros não."
+            "\n  Reescreva o comentário sem o marcador."
+        )
+
+
+def test_guarda_de_comentario_pega_o_caso_real() -> None:
+    """A regra acima só vale se reprovar o texto que quebrou de verdade."""
+    sql = (
+        "INSERT INTO conexao (a, b) VALUES (%s, COALESCE(%s, 'manual'))\n"
+        "ON CONFLICT DO UPDATE SET\n"
+        "  -- o VALUES aplica COALESCE(%s,'manual'), então EXCLUDED nunca é NULL\n"
+        "  a = EXCLUDED.a"
+    )
+    ofensores = [
+        ln for ln in sql.splitlines() if ln.strip().startswith("--") and "%s" in ln
+    ]
+    assert ofensores, "a regra deixaria passar o comentário que derrubou o upsert"
+
+
 def test_parser_realmente_pega_o_bug_original() -> None:
     """Sem isto, um parser quebrado faria o teste acima aprovar tudo."""
     query = PostgresQuery(Transformer())

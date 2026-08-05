@@ -282,9 +282,15 @@ async def upsert_conexao(
                 status = EXCLUDED.status,
                 is_default = EXCLUDED.is_default,
                 payload_json = EXCLUDED.payload_json,
-                -- NÃO usar EXCLUDED aqui: o VALUES aplica COALESCE(%s,'manual'),
-                -- então EXCLUDED nunca é NULL e resetaria conexões existentes
-                -- pro default a cada reconexão (Evolution/WABA re-upsertam).
+                -- NÃO usar EXCLUDED aqui: o VALUES já aplica o COALESCE com
+                -- 'manual', então EXCLUDED nunca é NULL e resetaria conexões
+                -- existentes pro default a cada reconexão (Evolution/WABA
+                -- re-upsertam).
+                --
+                -- E o comentário não pode citar o marcador de parâmetro: o
+                -- psycopg varre o texto INTEIRO da query, comentário incluso.
+                -- Com ele aqui eram 12 marcadores para 11 parâmetros, e todo
+                -- upsert de conexão morria em ProgrammingError.
                 tipo_atendimento = COALESCE(%s, conexao.tipo_atendimento),
                 updated_at = NOW()
             RETURNING {_SELECT_COLS}
