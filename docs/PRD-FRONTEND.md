@@ -169,6 +169,8 @@ captura nos dois temas, (c) `ui_metrics.sh` da pasta zerado.
 
 ## 10. Documentos relacionados
 
+- [Playbook da migração](frontend/PLAYBOOK-MIGRACAO-SHADCN.md) — o método
+  destilado, replicável em outro projeto
 - [Contratos de UI C1–C7](frontend/CONTRATOS-UI.md) — a régua de aceite
 - [Comparação produção × local](frontend/COMPARACAO-PROD-LOCAL.md) — o método
 - [Auditoria de UI/UX](benchmark/nosso-painel/analise-ui-ux.md) — S1–S13, U0–U18
