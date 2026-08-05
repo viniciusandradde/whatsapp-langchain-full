@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 import httpx
 import psycopg
 
+from tests.e2e.constantes import EMPRESA_E2E
 from tests.integration.helpers import (
     API_BASE_URL,
     unique_phone,
@@ -153,8 +154,14 @@ def _post_webhook(
     return httpx.post(url, data=data, headers=headers, timeout=timeout)
 
 
-def _query_atendimento(db_url: str, phone: str) -> dict | None:
-    """Busca último atendimento aberto/fechado do telefone (após menu)."""
+def _query_atendimento(
+    db_url: str, phone: str, empresa_id: int = EMPRESA_E2E
+) -> dict | None:
+    """Busca último atendimento aberto/fechado do telefone (após menu).
+
+    O filtro por empresa é parâmetro, não constante: a bateria vive na
+    empresa própria do seed, não mais na 1 do painel de desenvolvimento.
+    """
     with psycopg.connect(db_url) as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -163,10 +170,10 @@ def _query_atendimento(db_url: str, phone: str) -> dict | None:
               FROM atendimento a
               JOIN cliente c ON c.id = a.cliente_id
              WHERE c.telefone = %s
-               AND a.empresa_id = 1
+               AND a.empresa_id = %s
              ORDER BY a.id DESC LIMIT 1
             """,
-            (phone,),
+            (phone, empresa_id),
         )
         row = cur.fetchone()
     if not row:

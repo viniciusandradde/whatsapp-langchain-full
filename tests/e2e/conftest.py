@@ -15,34 +15,41 @@ import httpx
 import psycopg
 import pytest
 
+from tests.e2e.constantes import (  # noqa: F401 — reexport pros testes
+    AGENTE_DOCUMENTOS,
+    CONEXAO_EVOLUTION,
+    CONEXAO_SANDBOX,
+    EMPRESA_E2E,
+    INSTANCIA_EVOLUTION,
+)
 from tests.integration.helpers import API_BASE_URL, get_db_url
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 
 # Lista de setores cobertos pela bateria. Mantém em sync com:
-# - menu_chatbot items (id 4-11 na empresa 1)
+# - menu_chatbot items (id 900-907 na empresa E2E)
 # - agente_ia.slug (8 ativos)
 # - agente_ia.departamento_default_id (mig 061)
 SETORES: list[dict] = [
-    {"slug": "atendimento", "opcao": 1, "agente": "atendimento", "depto": 3},
+    {"slug": "atendimento", "opcao": 1, "agente": "atendimento", "depto": 902},
     {
         "slug": "atendimento-cliente",
         "opcao": 2,
         "agente": "atendimento-cliente",
         "depto": None,  # admin não setou — testa fluxo de fallback
     },
-    {"slug": "agendamentos", "opcao": 3, "agente": "agendamentos", "depto": 5},
-    {"slug": "exames", "opcao": 4, "agente": "exames", "depto": 7},
-    {"slug": "orcamento", "opcao": 5, "agente": "orcamento", "depto": 6},
-    {"slug": "ouvidoria", "opcao": 6, "agente": "ouvidoria", "depto": 1},
+    {"slug": "agendamentos", "opcao": 3, "agente": "agendamentos", "depto": 904},
+    {"slug": "exames", "opcao": 4, "agente": "exames", "depto": 906},
+    {"slug": "orcamento", "opcao": 5, "agente": "orcamento", "depto": 905},
+    {"slug": "ouvidoria", "opcao": 6, "agente": "ouvidoria", "depto": 900},
     {
         "slug": "rh-recrutamento-selecao",
         "opcao": 7,
         "agente": "rh-recrutamento-selecao",
-        "depto": 4,
+        "depto": 903,
     },
-    {"slug": "tesouraria", "opcao": 8, "agente": "tesouraria", "depto": 2},
+    {"slug": "tesouraria", "opcao": 8, "agente": "tesouraria", "depto": 901},
 ]
 
 MODALIDADES = ["texto", "imagem", "audio", "pdf"]
