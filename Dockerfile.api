@@ -5,9 +5,13 @@ WORKDIR /app
 
 # curl: healthcheck do Docker Compose
 # poppler-utils: pdf2image precisa pra rasterizar páginas PDF (M5.c.3 OCR)
+# antiword: Word 97-2003 (.doc). Formato binário OLE, sem parser puro-Python
+#   confiável. Ausente, `file_extractor` degrada para "recebi seu arquivo" em
+#   vez de erro — nada quebra, só deixa de ler .doc.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     poppler-utils \
+    antiword \
     && rm -rf /var/lib/apt/lists/*
 
 # Instala uv para gerenciar dependências

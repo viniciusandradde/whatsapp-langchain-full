@@ -3,6 +3,8 @@
 M5.c.2: PDF, DOCX, MD, TXT.
 M5.c.3: imagens diretas (PNG/JPG/JPEG/WebP) via OCR + fallback OCR
 quando PDF retorna texto vazio (provavelmente escaneado).
+2026-08-05: XLSX (openpyxl) e DOC legado (antiword), para o agente ler o que o
+cliente manda pelo WhatsApp — ver `worker/media.py`.
 
 Detecção é por extensão do nome (mais robusto que content-type que
 browsers reportam de forma inconsistente).
@@ -17,7 +19,10 @@ parser conhecido, `FileExtractionError` quando o conteúdo não parseou,
 
 from __future__ import annotations
 
+import asyncio
 import io
+import shutil
+import tempfile
 from pathlib import Path
 
 import structlog
@@ -42,6 +47,14 @@ OCR_FALLBACK_MIN_CHARS = 50
 SUPPORTED_EXTENSIONS = (
     ".pdf",
     ".docx",
+    # Word 97–2003. Depende do binário `antiword` (apt) — quando ele falta, a
+    # extração levanta UnsupportedFileTypeError e o chamador degrada para
+    # "recebi seu arquivo" em vez de erro. Ver `_extract_doc`.
+    ".doc",
+    # Planilha. `_media_kind` já classificava xlsx como documento, mas o nome
+    # inferido caía em `doc.bin` e era recusado aqui — foi o defeito do
+    # atendimento 1018-000664.
+    ".xlsx",
     ".md",
     ".markdown",
     ".txt",
@@ -51,6 +64,10 @@ SUPPORTED_EXTENSIONS = (
     ".jpeg",
     ".webp",
 )
+
+# Teto de linhas por aba na planilha. Sem isto uma base de 50 mil linhas
+# estoura MAX_TEXT_CHARS no meio da primeira aba e as outras somem sem aviso.
+MAX_XLSX_ROWS_POR_ABA = 500
 
 
 _IMAGE_MIME_BY_EXT = {
@@ -74,12 +91,19 @@ class FileTooLargeError(ValueError):
 
 
 def detect_kind(filename: str) -> str:
-    """Retorna `pdf` | `docx` | `md` | `txt` | `image`. Levanta se não suportado."""
+    """Retorna `pdf` | `docx` | `doc` | `xlsx` | `md` | `txt` | `image`.
+
+    Levanta `UnsupportedFileTypeError` se a extensão não tem parser.
+    """
     ext = Path(filename).suffix.lower()
     if ext == ".pdf":
         return "pdf"
     if ext == ".docx":
         return "docx"
+    if ext == ".doc":
+        return "doc"
+    if ext == ".xlsx":
+        return "xlsx"
     if ext in (".md", ".markdown"):
         return "md"
     if ext == ".txt":
@@ -90,6 +114,45 @@ def detect_kind(filename: str) -> str:
         f"extensão {ext or '<sem extensão>'} não suportada — "
         f"aceitos: {', '.join(SUPPORTED_EXTENSIONS)}"
     )
+
+
+# mime → nome de arquivo plausível, para quando o remetente não mandou o nome.
+#
+# Fonte única de propósito: até 2026-08-05 esta tabela existia copiada em
+# `worker/media.py` e em `agents/tools/midia.py`, e as duas cópias mandavam
+# planilha para `doc.bin` — que `detect_kind` recusa. O cliente recebia "estamos
+# com dificuldades em processar imagens/audio" por causa de um `.bin` inventado
+# aqui dentro. Ordem importa: `wordprocessingml` antes de `openxmlformats`.
+_NOME_POR_MIME: tuple[tuple[str, str], ...] = (
+    ("pdf", "doc.pdf"),
+    ("wordprocessingml", "doc.docx"),
+    ("docx", "doc.docx"),
+    ("spreadsheetml", "doc.xlsx"),
+    ("ms-excel", "doc.xls"),
+    ("msword", "doc.doc"),
+)
+
+
+def filename_for_media_type(media_type: str | None, fallback: str = "doc.bin") -> str:
+    """Nome de arquivo inferido do mime, para payload que não traz o nome.
+
+    Só serve de rede de segurança: quando o provedor manda o nome real
+    (`documentMessage.fileName` no Evolution, `document.filename` no WABA), é o
+    nome real que deve chegar aqui — ele é mais confiável que o mime e é o que
+    o cliente vê.
+    """
+    mt = (media_type or "").lower()
+    if not mt:
+        return fallback
+    for chave, nome in _NOME_POR_MIME:
+        if chave in mt:
+            return nome
+    if mt.startswith("text/"):
+        return "doc.txt"
+    if mt.startswith("image/"):
+        ext = mt.split("/", 1)[1].split(";")[0].strip() or "jpg"
+        return f"doc.{ext}"
+    return fallback
 
 
 async def extract_text(filename: str, raw_bytes: bytes) -> str:
@@ -119,6 +182,10 @@ async def extract_text(filename: str, raw_bytes: bytes) -> str:
             used_ocr = True
     elif kind == "docx":
         text = _extract_docx(raw_bytes)
+    elif kind == "doc":
+        text = await _extract_doc(raw_bytes)
+    elif kind == "xlsx":
+        text = _extract_xlsx(raw_bytes)
     elif kind in ("md", "txt"):
         text = _extract_text_plain(raw_bytes)
     elif kind == "image":
@@ -201,6 +268,95 @@ def _extract_docx(raw: bytes) -> str:
 
     paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     return "\n\n".join(paragraphs)
+
+
+async def _extract_doc(raw: bytes) -> str:
+    """Word 97–2003 (`.doc`) via `antiword`, instalado por apt na imagem.
+
+    Formato binário OLE — não há parser puro-Python confiável, e o `.docx` do
+    `python-docx` não serve. Quando o binário não está na imagem, levanta
+    `UnsupportedFileTypeError` de propósito: o chamador trata isso como "não sei
+    ler este arquivo" e confirma o recebimento pelo nome, que é melhor para o
+    cliente do que um erro.
+
+    Subprocesso assíncrono para não travar o loop do worker enquanto o antiword
+    roda.
+    """
+    exe = shutil.which("antiword")
+    if exe is None:
+        raise UnsupportedFileTypeError(
+            "leitura de .doc indisponível nesta instalação (antiword ausente)"
+        )
+
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = tmp.name
+
+        proc = await asyncio.create_subprocess_exec(
+            exe,
+            "-w",
+            "0",  # sem quebra de linha artificial: o texto vem em parágrafos
+            tmp_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except TimeoutError as e:
+            proc.kill()
+            raise FileExtractionError("antiword excedeu 30s") from e
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    if proc.returncode != 0:
+        detalhe = stderr.decode("utf-8", errors="replace").strip()[:200]
+        raise FileExtractionError(f"antiword falhou ({proc.returncode}): {detalhe}")
+
+    try:
+        return stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        # antiword sem `-m` usa o mapeamento padrão (latin-1 em pt-BR).
+        return stdout.decode("latin-1", errors="replace")
+
+
+def _extract_xlsx(raw: bytes) -> str:
+    """Planilha como texto: uma seção por aba, células separadas por tabulação.
+
+    `data_only=True` entrega o valor calculado em vez da fórmula — é o que o
+    agente precisa ler. `read_only=True` evita carregar a planilha inteira em
+    memória.
+    """
+    from openpyxl import load_workbook  # lazy import
+
+    try:
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception as e:
+        raise FileExtractionError(f"XLSX inválido: {e}") from e
+
+    partes: list[str] = []
+    try:
+        for ws in wb.worksheets:
+            linhas: list[str] = []
+            truncou = False
+            for i, row in enumerate(ws.iter_rows(values_only=True)):
+                if i >= MAX_XLSX_ROWS_POR_ABA:
+                    truncou = True
+                    break
+                celulas = ["" if c is None else str(c).strip() for c in row]
+                if not any(celulas):
+                    continue
+                linhas.append("\t".join(celulas).rstrip("\t"))
+            if truncou:
+                linhas.append(f"[... aba truncada em {MAX_XLSX_ROWS_POR_ABA} linhas]")
+            if linhas:
+                partes.append(f"[Aba: {ws.title}]\n" + "\n".join(linhas))
+    finally:
+        wb.close()
+
+    return "\n\n".join(partes)
 
 
 def _extract_text_plain(raw: bytes) -> str:

@@ -115,6 +115,9 @@ def parse_inbound(payload: dict[str, Any]) -> list[WabaInboundMessage]:
                     inbound.media_id = media.get("id")
                     inbound.media_mime_type = media.get("mime_type")
                     inbound.media_caption = media.get("caption")
+                    inbound.media_filename = (
+                        str(media.get("filename") or "").strip() or None
+                    )
                 elif msg_type == "interactive":
                     interactive = msg.get("interactive", {})
                     # Botão clicado vira texto da label pro pipeline

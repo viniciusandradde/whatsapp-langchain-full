@@ -27,7 +27,10 @@ import structlog
 from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import InjectedToolArg, tool
 
-from whatsapp_langchain.shared.file_extractor import extract_text
+from whatsapp_langchain.shared.file_extractor import (
+    extract_text,
+    filename_for_media_type,
+)
 from whatsapp_langchain.shared.llm import create_chat_model
 from whatsapp_langchain.shared.midia_processing import (
     chat_completion_media,
@@ -121,22 +124,13 @@ async def transcribe_audio(
 
 
 def _filename_from_ctype(content_type: str | None, fallback: str = "doc.pdf") -> str:
-    """Infere filename a partir do content-type pra `extract_text` decidir parser."""
-    if not content_type:
-        return fallback
-    ct = content_type.lower()
-    if "pdf" in ct:
-        return "doc.pdf"
-    if "wordprocessingml" in ct or "docx" in ct:
-        return "doc.docx"
-    if "msword" in ct:
-        return "doc.doc"
-    if ct.startswith("text/"):
-        return "doc.txt"
-    if "image/" in ct:
-        ext = ct.split("/")[1].split(";")[0] or "jpg"
-        return f"doc.{ext}"
-    return fallback
+    """Infere filename a partir do content-type pra `extract_text` decidir parser.
+
+    Delega pra fonte única em `shared/file_extractor` — esta função existia com
+    a tabela própria e as duas cópias divergiram: planilha caía em `doc.bin`,
+    que o extrator recusa.
+    """
+    return filename_for_media_type(content_type, fallback=fallback)
 
 
 @tool

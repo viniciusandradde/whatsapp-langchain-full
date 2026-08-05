@@ -57,6 +57,9 @@ class MessageQueue(BaseModel):
     conexao_provider: str | None = None
     media_url: str | None = None
     media_type: str | None = None
+    # Nome do arquivo informado pelo provedor (mig 164). None em row antiga e no
+    # Twilio, que não manda nome — aí a extensão é inferida do mime.
+    media_filename: str | None = None
     normalized_input: str | None = None
     media_processing_status: str | None = None
     media_processing_error: str | None = None

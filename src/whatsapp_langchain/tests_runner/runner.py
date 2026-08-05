@@ -245,7 +245,13 @@ async def _spawn_pytest_async(
         if ts is not None:
             total = int(ts.get("tests") or 0)
             failed = int(ts.get("failures") or 0) + int(ts.get("errors") or 0)
-            passed = total - failed
+            # Pulado NÃO é aprovado. Sem descontar, uma bateria em que TODOS os
+            # testes pularam aparecia como "Passou 6/6" no painel — foi o que
+            # aconteceu no primeiro run pela tela, com a API inalcançável de
+            # dentro do container. Verde sem ter verificado nada é pior que
+            # vermelho: ninguém vai investigar.
+            pulados = int(ts.get("skipped") or 0)
+            passed = total - failed - pulados
     except Exception as e:
         logger.warning("test_runner_junit_parse_failed", run_id=run_id, error=str(e))
 

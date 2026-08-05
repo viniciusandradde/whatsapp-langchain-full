@@ -30,6 +30,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import type {
   AgenteIA,
   AgenteIAUpdateInput,
@@ -43,6 +45,31 @@ import {
   updateAgenteAction,
 } from "./actions";
 import { PromptHistorico } from "./prompt-historico";
+
+/** Um tipo de mídia que o agente lê, com o que ele faz com ela. */
+function MidiaAceita({
+  name,
+  defaultChecked,
+  label,
+  ajuda,
+}: {
+  name: string;
+  defaultChecked: boolean;
+  label: string;
+  ajuda: string;
+}) {
+  return (
+    <li className="flex items-start gap-2 rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-2.5">
+      <Checkbox id={name} name={name} defaultChecked={defaultChecked} className="mt-0.5" />
+      <div className="min-w-0">
+        <Label htmlFor={name} className="text-sm font-medium">
+          {label}
+        </Label>
+        <p className="text-[11px] leading-snug text-muted-foreground">{ajuda}</p>
+      </div>
+    </li>
+  );
+}
 
 import type {
   AgenteTemplate,
@@ -162,7 +189,11 @@ export function AgenteEditor({
       return Number.isFinite(n) ? n : null;
     }
     function getBool(name: string): boolean {
-      return fd.get(name) === "on";
+      // "on" é o que o checkbox nativo submete; "true" cobre o primitivo do
+      // Base UI. Aceitar os dois evita que trocar o componente desligue a
+      // opção em silêncio — que é o tipo de falha que não dá erro nenhum.
+      const v = fd.get(name);
+      return v === "on" || v === "true";
     }
 
     if (tab === "identidade") {
@@ -951,43 +982,32 @@ function TabTools({ a }: { a: AgenteIA }) {
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Tipos de mídia aceita
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          O que este agente lê
         </p>
-        <ul className="grid grid-cols-3 gap-2">
-          <li>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="aceita_imagem"
-                defaultChecked={a.aceita_imagem}
-                className="size-4"
-              />
-              Imagens
-            </label>
-          </li>
-          <li>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="aceita_audio"
-                defaultChecked={a.aceita_audio}
-                className="size-4"
-              />
-              Áudios
-            </label>
-          </li>
-          <li>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="aceita_documento"
-                defaultChecked={a.aceita_documento}
-                className="size-4"
-              />
-              Documentos
-            </label>
-          </li>
+        <p className="mb-3 text-[11px] text-muted-foreground">
+          Desmarcado, o arquivo continua chegando e aparecendo no painel — o
+          agente só confirma o recebimento pelo nome, sem ler o conteúdo.
+        </p>
+        <ul className="grid gap-3 sm:grid-cols-3">
+          <MidiaAceita
+            name="aceita_imagem"
+            defaultChecked={a.aceita_imagem}
+            label="Imagens"
+            ajuda="Descrição da foto por modelo de visão"
+          />
+          <MidiaAceita
+            name="aceita_audio"
+            defaultChecked={a.aceita_audio}
+            label="Áudios"
+            ajuda="Transcrição da nota de voz"
+          />
+          <MidiaAceita
+            name="aceita_documento"
+            defaultChecked={a.aceita_documento}
+            label="Documentos"
+            ajuda="Lê PDF, DOCX, XLSX e DOC"
+          />
         </ul>
       </div>
 
