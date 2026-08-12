@@ -70,6 +70,16 @@ ALLOWLIST: list[tuple[str, str]] = [
     # Envio manual do resumo (mig 162) — mesmo router, mesmo `is_admin_of` da
     # empresa-ALVO. Prefixo cobre `/resumo-diario/testar`.
     ("POST", "/api/empresas/{empresa_id}/resumo-diario"),
+    # Módulo de Uso (mig 165) — relatório mensal que a VSA envia aos clientes.
+    # É ferramenta de PLATAFORMA: o guarda é `is_superadmin`, checado em toda
+    # rota do arquivo. `require_permission` seria errado aqui pelo mesmo motivo
+    # do `/resumo-diario` acima — ele resolve a permissão contra a empresa
+    # ATIVA do header, e aqui a empresa-alvo é a do path, de outro tenant. Não
+    # existe permissão de superadmin no catálogo, e criar uma seria pior:
+    # `shared/perfil.py` concede o catálogo inteiro ao superadmin, então
+    # qualquer Admin de tenant também a teria.
+    ("POST", "/api/relatorios/uso/"),
+    ("PUT", "/api/relatorios/uso/"),
     # Dispensar o onboarding (mig 160) — valida `get_empresa_membership` da
     # empresa-ALVO do path, ou superadmin. NÃO é endpoint aberto.
     #

@@ -4119,6 +4119,164 @@ export async function isMyAdmin(): Promise<{ is_superadmin: boolean }> {
   return apiFetch<{ is_superadmin: boolean }>(`/api/auth/me/admin`);
 }
 
+// ---------------------------------------------------------------------------
+// Módulo de Uso (mig 165) — relatório mensal que a VSA envia aos clientes.
+// Todas as rotas exigem superadmin no servidor.
+// ---------------------------------------------------------------------------
+
+export interface ClienteUso {
+  empresa_id: number;
+  nome: string;
+  conexoes_ativas: number;
+  provider: string | null;
+  telefone: string | null;
+  envio_mensal_ativo: boolean;
+  pode_enviar: boolean;
+  /** Por que não pode enviar. Null quando pode. */
+  motivo: string | null;
+  ultima_competencia: string | null;
+  ultimo_status: string | null;
+  ultimo_erro: string | null;
+  ultima_tentativa_em: string | null;
+}
+
+export interface RelatorioUso {
+  empresa: { id: number; nome: string };
+  competencia: string;
+  inicio: string;
+  fim: string;
+  parcial: boolean;
+  tz: string;
+  totais: {
+    mensagens: number;
+    com_arquivo: number;
+    dias_com_movimento: number;
+    mensagens_por_dia: number;
+    contatos: number;
+    atendimentos: number;
+    arquivos_recebidos: number;
+    arquivos_lidos: number;
+  };
+  diario: Array<{
+    dia: string;
+    mensagens: number;
+    com_arquivo: number;
+    contatos: number;
+    atendimentos: number;
+  }>;
+  formatos: Array<{ formato: string; recebidos: number; lidos: number }>;
+  destino: {
+    respondida: number;
+    encaminhada: number;
+    silenciada: number;
+    manual: number;
+    superada: number;
+  };
+  desempenho: {
+    processadas: number;
+    seg_medio: number | null;
+    seg_p95: number | null;
+    falhas: number;
+    taxa_sucesso: number | null;
+  };
+  horas: Array<{ hora: number; mensagens: number }>;
+  triagem: {
+    atendimentos: number;
+    com_triagem: number;
+    urgentes: number;
+    alta: number;
+    pessoas: number;
+    cobertura_pct: number | null;
+  };
+}
+
+export interface ConfigUso {
+  ativo: boolean;
+  telefone: string | null;
+  dia: number;
+  horario: string;
+  tz: string;
+  ultima_competencia: string | null;
+  ultimo_status: string | null;
+  ultimo_erro: string | null;
+  ultima_tentativa_em: string | null;
+}
+
+export async function getClientesUso(): Promise<{ clientes: ClienteUso[] }> {
+  return apiFetch<{ clientes: ClienteUso[] }>(`/api/relatorios/uso/empresas`);
+}
+
+/**
+ * Busca os bytes do PDF com o service token, para o route handler devolver ao
+ * browser. `apiFetch` não serve: ele espera JSON. Mesmo desenho de
+ * `proxyHistoricoExport`.
+ */
+export async function proxyRelatorioUsoPdf(
+  empresaId: number,
+  competencia: string
+): Promise<{ bytes: ArrayBuffer; filename: string }> {
+  ensureFrontendRuntimeConfig();
+  const url = `${API_URL}/api/relatorios/uso/${empresaId}/pdf?competencia=${encodeURIComponent(competencia)}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+  };
+  try {
+    const session = await auth.api.getSession({ headers: await nextHeaders() });
+    if (session?.user?.id) headers["X-User-Id"] = session.user.id;
+  } catch {
+    // sem session → 401 esperado
+  }
+  try {
+    const empresaCookie = (await cookies()).get(ACTIVE_EMPRESA_COOKIE)?.value;
+    if (empresaCookie) headers["X-Empresa-Id"] = empresaCookie;
+  } catch {
+    // sem cookies
+  }
+  const resp = await fetch(url, { headers, cache: "no-store" });
+  if (!resp.ok) {
+    console.error("[api] relatorio-uso pdf", resp.status, resp.statusText, url);
+    throw new Error("Não foi possível gerar o PDF. Tente novamente.");
+  }
+  const cd = resp.headers.get("content-disposition") || "";
+  const m = cd.match(/filename="?([^"]+)"?/);
+  return {
+    bytes: await resp.arrayBuffer(),
+    filename: m?.[1] || `Relatorio-de-Uso-${competencia}.pdf`,
+  };
+}
+
+export async function getRelatorioUso(
+  empresaId: number,
+  competencia?: string
+): Promise<RelatorioUso> {
+  const q = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+  return apiFetch<RelatorioUso>(`/api/relatorios/uso/${empresaId}${q}`);
+}
+
+export async function enviarRelatorioUso(
+  empresaId: number,
+  body: { competencia?: string; telefone?: string }
+): Promise<{ ok: boolean; erro?: string; competencia: string }> {
+  return apiFetch<{ ok: boolean; erro?: string; competencia: string }>(
+    `/api/relatorios/uso/${empresaId}/enviar`,
+    { method: "POST", body }
+  );
+}
+
+export async function getConfigUso(empresaId: number): Promise<ConfigUso> {
+  return apiFetch<ConfigUso>(`/api/relatorios/uso/${empresaId}/config`);
+}
+
+export async function saveConfigUso(
+  empresaId: number,
+  body: Partial<ConfigUso>
+): Promise<ConfigUso> {
+  return apiFetch<ConfigUso>(`/api/relatorios/uso/${empresaId}/config`, {
+    method: "PUT",
+    body,
+  });
+}
+
 export async function reorderMenuItems(
   menuId: number,
   body: { parent_id: number | null; ordered_ids: number[] }

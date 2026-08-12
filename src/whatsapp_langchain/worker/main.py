@@ -139,6 +139,9 @@ async def main() -> None:
     # Resumo diário por WhatsApp (mig 135) — envia no horário configurado
     resumo_task = asyncio.create_task(_resumo_diario_loop(pool))
 
+    # Relatório mensal de uso (mig 165) — PDF para o cliente, no dia marcado
+    relatorio_task = asyncio.create_task(_relatorio_uso_loop(pool))
+
     # Sprint A.2.5 — importa context manager pra RLS
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -218,7 +221,8 @@ async def main() -> None:
         idle_task.cancel()
         cleanup_task.cancel()
         resumo_task.cancel()
-        for t in (sync_task, idle_task, cleanup_task, resumo_task):
+        relatorio_task.cancel()
+        for t in (sync_task, idle_task, cleanup_task, resumo_task, relatorio_task):
             try:
                 await t
             except asyncio.CancelledError:
@@ -372,6 +376,28 @@ async def _resumo_diario_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("resumo_diario_loop_error", error=str(e))
         await asyncio.sleep(60)
+
+
+async def _relatorio_uso_loop(pool) -> None:
+    """Checa a cada 5min se alguma empresa está no dia do relatório mensal.
+
+    Tick mais folgado que o do resumo diário porque a granularidade é mensal:
+    5 minutos de atraso num envio que acontece uma vez por mês não muda nada, e
+    o SELECT roda 12x menos. O claim atômico (`relatorio_uso_last_sent`, que
+    guarda a competência) garante um envio por mês por empresa mesmo com
+    vários workers.
+    """
+    from whatsapp_langchain.shared.relatorio_uso import run_relatorio_uso_all
+
+    # Aguarda o boot estabilizar (migrations/bootstrap)
+    await asyncio.sleep(180)
+
+    while True:
+        try:
+            await run_relatorio_uso_all(pool)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("relatorio_uso_loop_error", error=str(e))
+        await asyncio.sleep(300)
 
 
 if __name__ == "__main__":

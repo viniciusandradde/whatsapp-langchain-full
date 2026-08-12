@@ -57,11 +57,13 @@ export function AppSidebar({
 }) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
-  const { hasPerm } = usePermissionsContext();
+  const { hasPerm, isSuperadmin } = usePermissionsContext();
   const [saindo, setSaindo] = useState(false);
 
   const grupoAtivo = resolveGroup(pathname);
-  const podeVer = (i: NavItem) => !i.requires || hasPerm(i.requires);
+  const podeVer = (i: NavItem) =>
+    (!i.requires || hasPerm(i.requires)) &&
+    (!i.requiresSuperadmin || isSuperadmin);
 
   // Grupo aparece se o usuário puder ver QUALQUER item dele. A regra anterior
   // usava uma permissão "representante" por grupo, e quem tinha (por exemplo)

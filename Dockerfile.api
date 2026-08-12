@@ -8,10 +8,14 @@ WORKDIR /app
 # antiword: Word 97-2003 (.doc). Formato binário OLE, sem parser puro-Python
 #   confiável. Ausente, `file_extractor` degrada para "recebi seu arquivo" em
 #   vez de erro — nada quebra, só deixa de ler .doc.
+# fonts-dejavu-core: o PDF do relatório de uso (mig 165) precisa de uma fonte
+#   com acento e travessão — as core do fpdf2 são latin-1 e comeriam "—" e "→".
+#   Ausente, `relatorio_uso_pdf` degrada para Helvetica e troca esses glifos.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     poppler-utils \
     antiword \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Instala uv para gerenciar dependências
