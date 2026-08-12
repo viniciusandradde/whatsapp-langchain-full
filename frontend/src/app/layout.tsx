@@ -10,7 +10,7 @@ import { ServiceWorkerRegister } from "@/components/sw-register";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { getMyEmpresas, getMyPermissions } from "@/lib/api";
+import { getMyEmpresas, getMyPermissions, isMyAdmin } from "@/lib/api";
 import "./globals.css";
 
 const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
@@ -104,12 +104,17 @@ async function resolveInitialPermissions() {
   // Em /login (sem session), retorna [] — Client Components com
   // usePermission vão tratar como "não tem nada", o que é correto pro
   // contexto não-autenticado.
-  try {
-    const r = await getMyPermissions();
-    return { permissoes: r.permissoes ?? [], perfis: r.perfis ?? [] };
-  } catch {
-    return { permissoes: [], perfis: [] };
-  }
+  // `is_superadmin` vem de outra rota e falha independente: um erro dele não
+  // pode zerar as permissões do painel inteiro.
+  const [perms, admin] = await Promise.all([
+    getMyPermissions().catch(() => null),
+    isMyAdmin().catch(() => null),
+  ]);
+  return {
+    permissoes: perms?.permissoes ?? [],
+    perfis: perms?.perfis ?? [],
+    isSuperadmin: admin?.is_superadmin ?? false,
+  };
 }
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -183,6 +188,7 @@ export default async function RootLayout({
           <PermissionsProvider
             initialPerms={initialPerms.permissoes}
             initialPerfis={initialPerms.perfis}
+            initialIsSuperadmin={initialPerms.isSuperadmin}
           >
             <SidebarProvider defaultOpen={sidebarAberta}>
               <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>

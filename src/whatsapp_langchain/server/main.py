@@ -120,6 +120,9 @@ from whatsapp_langchain.server.routes.perfil import router as perfil_router
 from whatsapp_langchain.server.routes.rag_stats import (
     router as rag_stats_router,
 )
+from whatsapp_langchain.server.routes.relatorio_uso import (
+    router as relatorio_uso_router,
+)
 from whatsapp_langchain.server.routes.relatorios_nps import (
     router as relatorios_nps_router,
 )
@@ -489,6 +492,7 @@ app.mount(
 app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)
+app.include_router(relatorio_uso_router)
 app.include_router(rag_dataset_router)
 app.include_router(hitl_router)
 app.include_router(workflows_router)

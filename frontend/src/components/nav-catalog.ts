@@ -24,6 +24,16 @@ export interface NavItem {
   /** Permissão necessária. Undefined = sempre visível. */
   requires?: string | string[];
   /**
+   * Só para superadmin da PLATAFORMA.
+   *
+   * Existe porque `requires` não dá conta: não há permissão de superadmin no
+   * catálogo, e criar uma seria pior — `shared/perfil.py` concede o catálogo
+   * inteiro ao superadmin, então qualquer Admin de tenant também a teria. Até
+   * aqui, "Relatórios de teste" ficava visível para quem tem `agente.config`,
+   * e a página respondia "Acesso restrito".
+   */
+  requiresSuperadmin?: boolean;
+  /**
    * Subseção dentro do grupo. Serve pra grupos grandes, onde uma lista
    * corrida de 11 destinos não diz o que faz o quê — Governança junta
    * "quem é a empresa", "quem são as pessoas", "quem pode o quê" e "quando
@@ -153,7 +163,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { secao: "Qualidade", label: "Satisfação e NPS", href: "/dashboard/qualidade", requires: "atendimento.read" },
       { secao: "Qualidade", label: "Qualidade das respostas", href: "/dashboard/rag", requires: "agente.config" },
       { secao: "Qualidade", label: "Testar respostas", href: "/dashboard/rag/sandbox", requires: "agente.config" },
-      { secao: "Qualidade", label: "Relatórios de teste", href: "/relatorios/allure", requires: "agente.config" },
+      { secao: "Qualidade", label: "Relatórios de teste", href: "/relatorios/allure", requiresSuperadmin: true },
+      // Ferramenta de plataforma: mostra dados de todos os clientes e
+      // envia mensagem em nome deles.
+      { secao: "Plataforma", label: "Uso por cliente", href: "/relatorios/uso", requiresSuperadmin: true },
       // Quem fez o quê
       { secao: "Auditoria", label: "Histórico de acesso", href: "/settings/security/login-history", requires: "security.audit.read" },
       { secao: "Auditoria", label: "Registro de auditoria", href: "/settings/security/audit", requires: "security.audit.read" },

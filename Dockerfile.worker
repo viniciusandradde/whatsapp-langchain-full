@@ -7,9 +7,13 @@ WORKDIR /app
 # em shared/file_extractor.py). Mesma config do Dockerfile.api.
 # antiword: Word 97-2003 (.doc) que o cliente manda pelo WhatsApp. Ausente, o
 #   extrator degrada para "recebi seu arquivo" — não vira erro.
+# fonts-dejavu-core: o envio mensal do relatório de uso (mig 165) desenha o PDF
+#   aqui no worker. Sem a fonte, `relatorio_uso_pdf` cai na Helvetica latin-1 e
+#   troca "—" e "→" — o documento sai, com menos acabamento.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     antiword \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Instala uv para gerenciar dependências

@@ -40,6 +40,13 @@ interface PermissionsContextValue {
    * Aceita string única OU array (OR — qualquer uma serve).
    */
   hasPerm: (perm: string | string[]) => boolean;
+  /**
+   * Superadmin da PLATAFORMA (`auth.user.is_superadmin`), não admin de
+   * empresa. Governa os itens de menu marcados `requiresSuperadmin` — que
+   * não dá pra expressar em permissão: o superadmin recebe o catálogo
+   * inteiro, então qualquer código também valeria para Admin de tenant.
+   */
+  isSuperadmin: boolean;
 }
 
 const PermissionsContext = createContext<PermissionsContextValue | null>(null);
@@ -49,10 +56,12 @@ export function PermissionsProvider({
   /** Permissões iniciais carregadas server-side (evita flash de "sem perm"). */
   initialPerms,
   initialPerfis,
+  initialIsSuperadmin = false,
 }: {
   children: ReactNode;
   initialPerms?: string[];
   initialPerfis?: { id: number; nome: string }[];
+  initialIsSuperadmin?: boolean;
 }) {
   const [perms, setPerms] = useState<Set<string>>(
     () => new Set(initialPerms ?? [])
@@ -103,8 +112,16 @@ export function PermissionsProvider({
   );
 
   const value = useMemo<PermissionsContextValue>(
-    () => ({ perms, perfis, loading, error, refresh, hasPerm }),
-    [perms, perfis, loading, error, refresh, hasPerm]
+    () => ({
+      perms,
+      perfis,
+      loading,
+      error,
+      refresh,
+      hasPerm,
+      isSuperadmin: initialIsSuperadmin,
+    }),
+    [perms, perfis, loading, error, refresh, hasPerm, initialIsSuperadmin]
   );
 
   return (
@@ -127,6 +144,9 @@ export function usePermissionsContext(): PermissionsContextValue {
       error: null,
       refresh: async () => {},
       hasPerm: () => true,
+      // Fechado, ao contrário de `hasPerm`: esconder um item de plataforma
+      // fora do Provider é melhor que mostrá-lo a quem não pode abrir.
+      isSuperadmin: false,
     };
   }
   return ctx;

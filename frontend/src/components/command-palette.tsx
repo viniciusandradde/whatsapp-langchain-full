@@ -87,7 +87,7 @@ const EXTRAS: (NavItem & { grupoLabel: string })[] = [
 export function CommandPalette() {
   const [aberto, setAberto] = useState(false);
   const router = useRouter();
-  const { hasPerm } = usePermissionsContext();
+  const { hasPerm, isSuperadmin } = usePermissionsContext();
   const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -117,8 +117,12 @@ export function CommandPalette() {
     };
   }, []);
 
-  const podeVer = (i: { requires?: string | string[] }) =>
-    !i.requires || hasPerm(i.requires);
+  const podeVer = (i: {
+    requires?: string | string[];
+    requiresSuperadmin?: boolean;
+  }) =>
+    (!i.requires || hasPerm(i.requires)) &&
+    (!i.requiresSuperadmin || isSuperadmin);
 
   function ir(href: string) {
     setAberto(false);
