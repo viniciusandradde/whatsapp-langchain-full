@@ -429,6 +429,38 @@ constructor(private val api: AtendimentoApi) {
             )
     }
 
+    /**
+     * Transcreve a nota de voz de uma mensagem (mig 169) e injeta o texto na
+     * própria bolha — sem round-trip da lista inteira. O servidor é
+     * idempotente: repetir o toque devolve o texto salvo, sem custo novo.
+     */
+    suspend fun transcrever(mensagemId: Long) {
+        val id = atendimentoId ?: return
+        val resp =
+            try {
+                api.transcrever(id, mensagemId)
+            } catch (_: Exception) {
+                _estado.value = _estado.value.copy(aviso = "Sem conexão. Tente de novo.")
+                return
+            }
+        if (!resp.isSuccessful) {
+            _estado.value = _estado.value.copy(aviso = avisoTranscricaoDe(resp.code()))
+            return
+        }
+        val texto = resp.body()?.transcricao ?: return
+        recebidas =
+            recebidas.map { if (it.id == mensagemId) it.copy(transcricao = texto) else it }
+        _estado.value = _estado.value.copy(bolhas = recebidas.flatMap { it.paraBolhas() })
+    }
+
+    private fun avisoTranscricaoDe(codigo: Int) =
+        when (codigo) {
+            400 -> "Esta mensagem não tem áudio para transcrever."
+            404 -> "Mensagem não encontrada."
+            403 -> "Você não tem permissão neste atendimento."
+            else -> "Não foi possível transcrever agora. Tente novamente."
+        }
+
     /** O endpoint mapeia erro lógico pra 4xx; traduz o que o operador pode agir. */
     private fun avisoDe(codigo: Int) =
         when (codigo) {

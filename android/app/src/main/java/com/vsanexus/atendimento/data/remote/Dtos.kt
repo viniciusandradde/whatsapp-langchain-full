@@ -115,6 +115,19 @@ data class MensagemDto(
      */
     @SerialName("media_disponivel") val mediaDisponivel: Boolean = false,
     @SerialName("response_media_disponivel") val responseMediaDisponivel: Boolean = false,
+    /**
+     * Transcrição da nota de voz pro operador (mig 169) — preenchida pelo
+     * botão "Transcrever" ou pela transcrição automática da conexão.
+     */
+    val transcricao: String? = null,
+)
+
+/** Resposta do POST /mensagens/{id}/transcrever (mig 169). */
+@Serializable
+data class TranscreverResponse(
+    val ok: Boolean = false,
+    @SerialName("mensagem_id") val mensagemId: Long = 0,
+    val transcricao: String? = null,
 )
 
 @Serializable
