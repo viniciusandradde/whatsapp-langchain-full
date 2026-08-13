@@ -26,6 +26,7 @@ class TestMensagem:
     def test_contem_o_essencial(self) -> None:
         msg = montar_mensagem(
             nome="Maria Souza",
+            email="maria@empresa.com.br",
             painel_url="https://painel.example",
             link=LINK,
             expira_em=EXPIRA,
@@ -37,18 +38,48 @@ class TestMensagem:
         assert "uma vez" in msg
         assert "não repasse" in msg
 
+    def test_email_de_login_esta_na_mensagem(self) -> None:
+        """Aprendido no primeiro envio real: o convidado criou a senha e
+        parou no login sem saber COM QUAL e-mail entrar — quem escolheu o
+        endereço foi o admin, não ele."""
+        msg = montar_mensagem(
+            nome="Maria",
+            email="maria@empresa.com.br",
+            painel_url="https://x",
+            link=LINK,
+            expira_em=EXPIRA,
+        )
+        assert "maria@empresa.com.br" in msg
+
+    def test_email_sintetico_fica_de_fora(self) -> None:
+        """`user-<uuid>@no-email.local` não é digitável por humano — a linha
+        cai no genérico "seu e-mail" em vez de mandar a pessoa digitar isso."""
+        msg = montar_mensagem(
+            nome="Maria",
+            email="user-abc123@no-email.local",
+            painel_url="https://x",
+            link=LINK,
+            expira_em=EXPIRA,
+        )
+        assert "no-email.local" not in msg
+        assert "seu e-mail" in msg
+
     def test_prazo_no_fuso_local(self) -> None:
         """22:30 UTC = 18:30 em Campo Grande — o prazo tem que ser o local,
         senão a pessoa acha que tem 4h a mais do que tem."""
         msg = montar_mensagem(
-            nome="Maria", painel_url="https://x", link=LINK, expira_em=EXPIRA
+            nome="Maria",
+            email="m@x.com",
+            painel_url="https://x",
+            link=LINK,
+            expira_em=EXPIRA,
         )
         assert "18:30" in msg
         assert "22:30" not in msg
 
     def test_nome_vazio_nao_quebra(self) -> None:
         msg = montar_mensagem(
-            nome="", painel_url="https://x", link=LINK, expira_em=EXPIRA
+            nome="", email=None, painel_url="https://x", link=LINK, expira_em=EXPIRA
         )
         assert LINK in msg
 
@@ -80,7 +111,7 @@ class TestFalhas:
     async def test_usuario_sem_telefone(self) -> None:
         with pytest.raises(ConviteError, match="WhatsApp cadastrado") as exc:
             await enviar_convite(
-                _pool_com_user(("Maria", None)),
+                _pool_com_user(("Maria", None, "m@x.com")),
                 empresa_id=1,
                 user_id="u1",
                 link=LINK,
@@ -95,7 +126,7 @@ class TestFalhas:
         monkeypatch.setattr(m_conexao, "list_conexoes", AsyncMock(return_value=[]))
         with pytest.raises(ConviteError, match="conexão de WhatsApp ativa") as exc:
             await enviar_convite(
-                _pool_com_user(("Maria", "+5567999990000")),
+                _pool_com_user(("Maria", "+5567999990000", "m@x.com")),
                 empresa_id=1,
                 user_id="u1",
                 link=LINK,
@@ -124,7 +155,7 @@ class TestFalhas:
         )
         with pytest.raises(ConviteError, match="recusou o envio") as exc:
             await enviar_convite(
-                _pool_com_user(("Maria", "+5567999990000")),
+                _pool_com_user(("Maria", "+5567999990000", "m@x.com")),
                 empresa_id=1,
                 user_id="u1",
                 link=LINK,

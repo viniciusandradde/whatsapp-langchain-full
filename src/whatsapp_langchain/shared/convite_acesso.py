@@ -45,18 +45,40 @@ def _formatar_prazo(expira_em: datetime) -> str:
 
 
 def montar_mensagem(
-    *, nome: str, painel_url: str, link: str, expira_em: datetime
+    *,
+    nome: str,
+    email: str | None,
+    painel_url: str,
+    link: str,
+    expira_em: datetime,
 ) -> str:
     """Texto do convite. Curto, com o essencial: quem, onde, o link, o prazo,
-    e o pedido de não repassar — o link é a chave da conta."""
+    o E-MAIL de login e o pedido de não repassar — o link é a chave da conta.
+
+    O e-mail entra por escrito porque foi o admin quem o escolheu — a pessoa
+    não tem como adivinhar com qual endereço entrar (validado no primeiro
+    envio real: o convidado criou a senha e parou no login sem saber o
+    e-mail). E-mail sintético `@no-email.local` não é digitável por humano —
+    nesse caso a linha sai e fica só "seu e-mail", como antes.
+    """
     primeiro_nome = (nome or "").strip().split(" ")[0] or "Olá"
     prazo = _formatar_prazo(expira_em)
+    email_limpo = (email or "").strip()
+    if email_limpo and not email_limpo.endswith("@no-email.local"):
+        linha_login = (
+            f"Depois é só entrar em {painel_url} com o e-mail "
+            f"{email_limpo} e a senha que você criou."
+        )
+    else:
+        linha_login = (
+            f"Depois é só entrar em {painel_url} com seu e-mail e a "
+            f"senha que você criou."
+        )
     return (
         f"Olá, {primeiro_nome}! Seu acesso ao painel foi criado.\n\n"
         f"Crie sua senha neste link (vale até as {prazo} de hoje e "
         f"só funciona uma vez):\n{link}\n\n"
-        f"Depois é só entrar em {painel_url} com seu e-mail e a senha "
-        f"que você criou.\n\n"
+        f"{linha_login}\n\n"
         f"Este link dá acesso à sua conta — não repasse para ninguém."
     )
 
@@ -81,13 +103,13 @@ async def enviar_convite(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            'SELECT name, telefone FROM auth."user" WHERE id = %s',
+            'SELECT name, telefone, email FROM auth."user" WHERE id = %s',
             (user_id,),
         )
         row = await cur.fetchone()
     if row is None:
         raise ConviteError("Usuário não encontrado.")
-    nome, telefone = row[0] or "", (row[1] or "").strip()
+    nome, telefone, email = row[0] or "", (row[1] or "").strip(), row[2]
     if not telefone:
         raise ConviteError(
             "O usuário não tem WhatsApp cadastrado. Preencha o telefone "
@@ -104,7 +126,11 @@ async def enviar_convite(
         )
 
     texto = montar_mensagem(
-        nome=nome, painel_url=painel_url, link=link, expira_em=expira_em
+        nome=nome,
+        email=email,
+        painel_url=painel_url,
+        link=link,
+        expira_em=expira_em,
     )
 
     conexao = ativas[0]  # list_conexoes ordena is_default DESC
