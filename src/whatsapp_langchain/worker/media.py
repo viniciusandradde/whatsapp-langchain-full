@@ -165,6 +165,7 @@ async def preprocess_incoming_message(
     aceita_imagem: bool = True,
     aceita_audio: bool = True,
     aceita_documento: bool = True,
+    transcricao_previa: str | None = None,
 ) -> MediaPreprocessResult:
     """Normaliza entrada para texto antes da chamada ao agente.
 
@@ -245,7 +246,10 @@ async def preprocess_incoming_message(
             normalized = "\n".join(parts)
 
         elif kind == "audio":
-            transcription = await _transcribe_audio(
+            # `transcricao_previa`: o gancho de transcrição automática do
+            # worker (mig 169) pode já ter transcrito este áudio pro painel —
+            # reusar evita pagar a MESMA chamada de LLM duas vezes.
+            transcription = transcricao_previa or await _transcribe_audio(
                 media_bytes, media_type, model=midia_model
             )
             parts = [

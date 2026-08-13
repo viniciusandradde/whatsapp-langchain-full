@@ -262,6 +262,8 @@ export interface Conexao {
   warmup_started_at?: string | null;
   // Agrupamento de resposta (mig 144): 0 desliga
   resposta_agrupamento_segundos?: number | null;
+  // Mig 169 — transcreve todo áudio recebido, mesmo sem agente responder
+  transcrever_audio_sempre?: boolean;
 }
 
 export interface ConexoesResponse {
@@ -291,6 +293,7 @@ export interface ConexaoPatchInput {
   warmup_enabled?: boolean | null;
   // Agrupamento de resposta (mig 144): 0..60, 0 desliga
   resposta_agrupamento_segundos?: number | null;
+  transcrever_audio_sempre?: boolean | null;
 }
 
 export interface ConexaoQuota {
@@ -653,6 +656,8 @@ export interface AtendimentoMensagem {
   media_url: string | null;
   media_type: string | null;
   normalized_input: string | null;
+  // Mig 169 — transcrição da nota de voz pro OPERADOR (botão ou automática)
+  transcricao: string | null;
   media_processing_status: string | null;
   response: string | null;
   status: string;
@@ -2646,6 +2651,17 @@ export async function reprocessarMensagem(
   // o apiFetch serializa, e JSON.stringify aqui dá 422 (ver PR #54).
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${messageId}/reprocessar`,
+    { method: "POST" }
+  );
+}
+
+export async function transcreverMensagem(
+  atendimentoId: number,
+  mensagemId: number
+): Promise<{ ok: boolean; mensagem_id: number; transcricao: string }> {
+  // Sem body: o alvo vai na URL (mesma regra do reprocessar acima).
+  return apiFetch(
+    `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/transcrever`,
     { method: "POST" }
   );
 }

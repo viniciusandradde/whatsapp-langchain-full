@@ -765,7 +765,7 @@ async def list_atendimento_mensagens(
                    response, status, created_at, processed_at,
                    media_processing_error, error,
                    interna, criado_por_user_id,
-                   {col_midia_out}, response_media_type
+                   {col_midia_out}, response_media_type, transcricao
               FROM message_queue
              WHERE {" AND ".join(where)}
              ORDER BY id DESC
@@ -803,6 +803,10 @@ async def list_atendimento_mensagens(
             "response_media_url": r[15] if incluir_midia else None,
             "response_media_disponivel": bool(r[15]),
             "response_media_type": r[16],
+            # Mig 169 — transcrição da nota de voz PARA O OPERADOR (botão
+            # "Transcrever" ou automática por conexão). Não é o
+            # normalized_input, que é o input montado pro agente.
+            "transcricao": r[17],
         }
         for r in rows
     ]

@@ -77,6 +77,10 @@ from whatsapp_langchain.shared.permissoes import (
     get_user_departamento_ids,
 )
 from whatsapp_langchain.shared.queue import reset_thread_checkpoint
+from whatsapp_langchain.shared.transcricao import (
+    MensagemSemAudioError,
+    transcrever_mensagem,
+)
 from whatsapp_langchain.shared.variavel import build_render_context, render_template
 from whatsapp_langchain.shared.whitelist import is_whitelisted
 
@@ -519,6 +523,54 @@ async def read_atendimento_mensagens(
         "mensagens": mensagens,
         "next_cursor": next_cursor,
     }
+
+
+@router.post("/{atendimento_id}/mensagens/{mensagem_id}/transcrever")
+async def transcrever_mensagem_audio(
+    atendimento_id: int,
+    mensagem_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Transcreve sob demanda a nota de voz de UMA mensagem (mig 169).
+
+    Preenche `message_queue.transcricao` — texto pro OPERADOR, independente
+    do agente IA. Idempotente: mensagem já transcrita devolve o texto salvo
+    sem nova chamada de LLM. Escopo por empresa (quem vê a conversa pode
+    transcrever); custa uma chamada de LLM por áudio novo.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    try:
+        texto = await transcrever_mensagem(
+            pool,
+            mensagem_id,
+            empresa_id=empresa_id,
+            atendimento_id=atendimento_id,
+        )
+    except MensagemSemAudioError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        # Falha de provedor (OpenRouter fora, timeout): transitória — o
+        # operador tenta de novo pelo mesmo botão.
+        logger.warning(
+            "transcricao_manual_falhou",
+            atendimento_id=atendimento_id,
+            mensagem_id=mensagem_id,
+            actor_user_id=user_id,
+            erro=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível transcrever agora. Tente novamente.",
+        ) from e
+    logger.info(
+        "transcricao_manual_ok",
+        atendimento_id=atendimento_id,
+        mensagem_id=mensagem_id,
+        actor_user_id=user_id,
+    )
+    return {"ok": True, "mensagem_id": mensagem_id, "transcricao": texto}
 
 
 @router.get("/{atendimento_id}/mensagens/{mensagem_id}/midia")

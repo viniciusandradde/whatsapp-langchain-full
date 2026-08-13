@@ -34,7 +34,8 @@ _SELECT_COLS = (
     "waba_account_id, waba_phone_id, waba_app_id, waba_account_description, "
     "connection_state, state_message, qr_code, qr_expires_at, "
     "ultimo_health_check_at, ultimo_health_check_ok, webhook_verify_token, "
-    "daily_send_cap, warmup_started_at, resposta_agrupamento_segundos"
+    "daily_send_cap, warmup_started_at, resposta_agrupamento_segundos, "
+    "transcrever_audio_sempre"
 )
 
 
@@ -68,6 +69,7 @@ def _row_to_conexao(row) -> Conexao:
         daily_send_cap=row[25],
         warmup_started_at=row[26],
         resposta_agrupamento_segundos=row[27] if row[27] is not None else 8,
+        transcrever_audio_sempre=bool(row[28]),
     )
 
 
@@ -344,6 +346,7 @@ async def patch_conexao(
     daily_send_cap: int | None = None,
     warmup_enabled: bool | None = None,
     resposta_agrupamento_segundos: int | None = None,
+    transcrever_audio_sempre: bool | None = None,
 ) -> Conexao | None:
     """UPDATE parcial — só seta colunas não-None.
 
@@ -388,6 +391,10 @@ async def patch_conexao(
         # aceita chamada direta e um 500 de constraint não ajuda ninguém.
         sets.append("resposta_agrupamento_segundos = %s")
         args.append(max(0, min(60, resposta_agrupamento_segundos)))
+
+    if transcrever_audio_sempre is not None:
+        sets.append("transcrever_audio_sempre = %s")
+        args.append(transcrever_audio_sempre)
 
     if not sets:
         return await get_conexao_by_id(pool, conexao_id)

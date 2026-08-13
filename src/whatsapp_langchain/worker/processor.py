@@ -96,6 +96,7 @@ from whatsapp_langchain.shared.queue import (
     mark_failed,
     upsert_conversation,
 )
+from whatsapp_langchain.shared.transcricao import transcrever_mensagem
 from whatsapp_langchain.shared.whitelist import is_whitelisted
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
@@ -2266,6 +2267,27 @@ async def process_message(
         if await _try_handle_opt_out(message, pool, outbound):
             return
 
+        # Transcrição automática de áudio (mig 169) — liga por conexão. Roda
+        # ANTES dos gates de modo manual/whitelist de propósito: é justamente
+        # nesses caminhos, sem agente, que a nota de voz nunca viraria texto
+        # pro operador. Best-effort — falha de provedor não trava a fila (o
+        # painel ainda tem o botão "Transcrever"); se o fluxo seguir até o
+        # agente, o preprocess reusa o texto via `transcricao_previa` em vez
+        # de pagar a mesma transcrição de novo.
+        transcricao_previa: str | None = None
+        if conexao.transcrever_audio_sempre and (message.media_type or "").startswith(
+            "audio/"
+        ):
+            try:
+                transcricao_previa = await transcrever_mensagem(pool, message.id)
+            except Exception as e:
+                logger.warning(
+                    "transcricao_automatica_falhou",
+                    message_id=message.id,
+                    conexao_id=conexao.id,
+                    erro=type(e).__name__,
+                )
+
         # Gate modo manual (mig 132) — conexão com tipo_atendimento='manual'
         # não dispara NENHUMA resposta automática (workflow/menu/agente/CSAT):
         # a mensagem fica na timeline e o atendimento segue na fila humana
@@ -2395,6 +2417,7 @@ async def process_message(
             aceita_documento=(
                 agente_runtime.aceita_documento if agente_runtime else True
             ),
+            transcricao_previa=transcricao_previa,
         )
 
         # Falha TRANSITÓRIA de mídia volta pra fila em vez de virar desculpa.
