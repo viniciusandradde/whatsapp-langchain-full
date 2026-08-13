@@ -461,6 +461,23 @@ async def transfer_to_human(
             f"não existe ou está inativo. Avise o admin."
         )
 
+    # Já encaminhado e ainda na fila: transferir de novo não move nada e cobra
+    # caro — outra linha em `atendimento_transferencia`, outra anotação no
+    # cliente, outro aviso oficial no WhatsApp e outro disparo de hook. Antes da
+    # mig 166 o caso não existia (a IA calava depois de transferir); com ela o
+    # agente segue conversando, e sem esta guarda ele reencaminharia a cada
+    # mensagem. A frase de volta é instrutiva de propósito: é o que o modelo lê.
+    if (
+        atd.departamento_id == dep.id
+        and atd.status == "aguardando"
+        and not atd.assigned_to_user_id
+    ):
+        return (
+            f"Este atendimento JÁ está encaminhado ao setor {dep.nome} e "
+            "aguardando atendimento humano. Não transfira de novo e não repita "
+            "a frase de despedida — siga ajudando o cliente normalmente."
+        )
+
     # 1. UPDATE atendimento (departamento + resumo + triagem_completa)
     atd_updated = await complete_triagem(
         pool,

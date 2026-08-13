@@ -2462,6 +2462,11 @@ async def process_message(
             )
             return
 
+        # Nome do departamento quando a conversa segue na fila COM a IA ativa
+        # (mig 166). Vira prefixo no texto do agente mais abaixo, pra ele saber
+        # que já encaminhou e parar de anunciar a transferência a cada mensagem.
+        fila_com_ia: str | None = None
+
         # 1.5. Handoff humano: se o atendimento foi claim'ado por um operador
         # (status=em_andamento + assigned_to_user_id), o worker pula a invocação
         # do agente IA — o humano responde manualmente via composer no painel.
@@ -2486,6 +2491,30 @@ async def process_message(
                 and atd.departamento_id is not None
                 and not atd.assigned_to_user_id
             )
+            # Mig 166 — o silêncio acima pressupõe fila trabalhada por gente.
+            # Quando o departamento é caixa de entrada de uma pessoa só, que lê
+            # quando pode, calar deixa o cliente falando sozinho: medido na
+            # empresa 1018, 465 mensagens sem resposta em 7 dias, com 0
+            # atendimentos assumidos no destino. Com o interruptor ligado o
+            # agente segue conversando; o handoff continua valendo, e assim que
+            # alguém assume de fato (dono + em_andamento) a IA cala no ramo
+            # seguinte.
+            if na_fila_do_departamento:
+                assert atd is not None  # garantido pela condição acima
+                depto_da_fila = atd.departamento_id
+                assert depto_da_fila is not None  # idem
+                dep_fila = await get_departamento_by_id(
+                    pool, message.empresa_id, depto_da_fila
+                )
+                if dep_fila is not None and dep_fila.ia_continua_na_fila:
+                    na_fila_do_departamento = False
+                    fila_com_ia = dep_fila.nome
+                    logger.info(
+                        "worker_fila_departamento_ia_ativa",
+                        message_id=message.id,
+                        atendimento_id=message.atendimento_id,
+                        departamento_id=atd.departamento_id,
+                    )
             if na_fila_do_departamento:
                 assert atd is not None  # garantido pela condição acima
                 await mark_done(
@@ -2632,6 +2661,25 @@ async def process_message(
         except Exception as guard_err:
             # Guardrails não devem quebrar o atendimento
             logger.warning("guardrail_input_failed", error=str(guard_err))
+
+        # Mig 166 — mesma técnica do prefixo `[FORA DO EXPEDIENTE]`. Sem esta
+        # linha o agente reencontra a regra "toda conversa termina transferida",
+        # anuncia o encaminhamento de novo e repete a mesma frase a cada
+        # mensagem: foi o que aconteceu em 12 conversas da empresa 1018, uma
+        # delas com a frase repetida 11 vezes. Aqui ele fica sabendo que a
+        # passagem já foi feita e que o trabalho agora é seguir ajudando.
+        #
+        # DEPOIS dos guardrails de propósito: o filtro de injeção e a redação de
+        # PII julgam o que o CLIENTE escreveu. Antes, este bloco — que é uma
+        # instrução entre colchetes, a forma de um ataque — passaria pelo mesmo
+        # crivo, e um aperto futuro nos padrões derrubaria a própria mensagem do
+        # sistema. A redação também reescreve o texto, e viria por cima daqui.
+        if fila_com_ia:
+            normalized_text = (
+                f"[JÁ ENCAMINHADO AO SETOR {fila_com_ia.upper()} — não anuncie "
+                f"transferência de novo nem repita a frase de despedida; "
+                f"continue ajudando normalmente] {normalized_text}"
+            )
 
         human_message = HumanMessage(content=normalized_text)
 

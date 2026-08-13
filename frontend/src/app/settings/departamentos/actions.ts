@@ -44,6 +44,7 @@ export async function saveDepartamentoAction(
           | null,
       ativo: formData.get("ativo") === "on",
       parent_id: parseParentId(formData.get("parent_id")),
+      ia_continua_na_fila: formData.get("ia_continua_na_fila") === "on",
     };
     if (!input.nome) return { ok: false, error: "Nome é obrigatório." };
     const departamento = idRaw
