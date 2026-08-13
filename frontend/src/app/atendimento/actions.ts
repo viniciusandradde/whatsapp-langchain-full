@@ -28,6 +28,7 @@ import {
   getTags,
   getTagsAtendimento,
   getTagsOpcoesAba,
+  createWhitelistNumero,
   marcarAtendimentoLido,
   reorderAbas,
   resetAtendimentoThread,
@@ -546,6 +547,27 @@ export async function aplicarTagsClienteAction(
     for (const t of add) await addClienteTag(clienteId, t);
     for (const t of remove) await removeClienteTag(clienteId, t);
     revalidatePath("/atendimento");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/**
+ * Inclui o número do cliente na lista "números sem IA" (whitelist_numero —
+ * apesar do nome, é lista de BLOQUEIO: nenhuma conexão da empresa responde
+ * automaticamente a esse número). Atalho do menu ⋮ da conversa; a página
+ * /whitelist continua sendo o lugar de gestão.
+ */
+export async function incluirNumeroSemIaAction(
+  telefone: string,
+  nome: string | null
+): Promise<Result> {
+  try {
+    await createWhitelistNumero({ telefone, nome });
+    // A situação da fila ("Sem IA") e a página de gestão derivam desse dado.
+    revalidatePath("/atendimento");
+    revalidatePath("/whitelist");
     return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };

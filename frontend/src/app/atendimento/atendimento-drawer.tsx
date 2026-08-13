@@ -13,14 +13,25 @@ import {
   MoreVertical,
   RefreshCw,
   Send,
+  ShieldOff,
   TriangleAlert,
   UserPlus,
   X,
   XCircle,
 } from "lucide-react";
 
+import { toast } from "sonner";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type {
   AtendenteStatus,
   Atendimento,
@@ -36,6 +47,7 @@ import {
   closeAction,
   devolverParaIaAction,
   criarNotaInternaAction,
+  incluirNumeroSemIaAction,
   loadAtendentesOnlineAction,
   enviarTemplateAction,
   loadDepartamentosAction,
@@ -49,6 +61,7 @@ import {
   transferAction,
   transferDepartamentoAction,
 } from "./actions";
+import { usePermission } from "@/hooks/use-permission";
 import { PainelCliente } from "./painel-cliente";
 import { SITUACAO_AJUDA, SITUACAO_CLASSE, SITUACAO_LABEL } from "./situacao";
 import { TagPopover } from "./tag-popover";
@@ -80,6 +93,9 @@ export function AtendimentoDrawer({
   const [mensagens, setMensagens] = useState<AtendimentoMensagem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const podeGerirSemIa = usePermission("whitelist.manage");
+  const [semIaOpen, setSemIaOpen] = useState(false);
+  const [semIaPending, setSemIaPending] = useState(false);
   const [composer, setComposer] = useState("");
   const [composerInterna, setComposerInterna] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -322,6 +338,25 @@ export function AtendimentoDrawer({
     );
   }
 
+  async function confirmarIncluirSemIa() {
+    const telefone = atendimento.cliente_telefone;
+    if (!telefone) return;
+    setSemIaPending(true);
+    const r = await incluirNumeroSemIaAction(
+      telefone,
+      atendimento.cliente_nome ?? null
+    );
+    setSemIaPending(false);
+    if (!r.ok) {
+      toast.error(r.error);
+      return;
+    }
+    setSemIaOpen(false);
+    toast.success(
+      "Número incluído na lista de números sem IA. Gerencie em Conectividade → Números sem IA."
+    );
+  }
+
   async function openModelosDropdown() {
     if (modelos === null) {
       const r = await loadModelosAction();
@@ -426,7 +461,44 @@ export function AtendimentoDrawer({
             <MoreActionsMenu
               onLoadModelos={() => void openModelosDropdown()}
               onResetThread={() => void handleResetThread()}
+              onIncluirSemIa={
+                podeGerirSemIa && atendimento.cliente_telefone
+                  ? () => setSemIaOpen(true)
+                  : undefined
+              }
             />
+            {semIaOpen && (
+              <Dialog open onOpenChange={(v) => !v && setSemIaOpen(false)}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <ShieldOff className="size-4" />
+                      Incluir {atendimento.cliente_telefone} nos números sem IA
+                    </DialogTitle>
+                    <DialogDescription>
+                      Nenhuma conexão da empresa vai responder automaticamente a
+                      esse número — sem agente, menu ou mensagens automáticas —
+                      até que ele seja removido na tela Números sem IA.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSemIaOpen(false)}
+                      disabled={semIaPending}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={() => void confirmarIncluirSemIa()}
+                      disabled={semIaPending}
+                    >
+                      {semIaPending ? "Incluindo…" : "Incluir número"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
               <X className="size-4" />
             </Button>
@@ -818,9 +890,12 @@ export function AtendimentoDrawer({
 function MoreActionsMenu({
   onLoadModelos,
   onResetThread,
+  onIncluirSemIa,
 }: {
   onLoadModelos: () => void;
   onResetThread: () => void;
+  /** Ausente quando o usuário não tem `whitelist.manage` ou não há telefone. */
+  onIncluirSemIa?: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -855,6 +930,19 @@ function MoreActionsMenu({
               <FileText className="size-3.5" />
               Inserir modelo de mensagem
             </button>
+            {onIncluirSemIa && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onIncluirSemIa();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+              >
+                <ShieldOff className="size-3.5" />
+                Incluir em números sem IA
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
