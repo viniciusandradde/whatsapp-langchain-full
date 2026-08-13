@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import {
   Copy,
   KeyRound,
+  MessageCircle,
   Pencil,
   Plus,
   Power,
@@ -47,10 +48,12 @@ import { plural } from "@/lib/formato";
 import type { Usuario } from "@/lib/api";
 
 import {
+  enviarConviteAction,
   loadUsuariosAction,
   removerUsuarioAction,
   resetarSenhaUsuarioAction,
   setStatusUsuarioAction,
+  type ConviteResultado,
 } from "./actions";
 import { UsuarioFormModal } from "./usuario-form-modal";
 import { SenhaGeradaModal } from "./senha-gerada-modal";
@@ -114,6 +117,7 @@ export function UsuariosPageClient() {
   const [senhaGerada, setSenhaGerada] = useState<{
     password: string;
     userName: string;
+    convite?: ConviteResultado;
   } | null>(null);
 
   // Debounce da busca → reseta paginação ao digitar.
@@ -156,6 +160,20 @@ export function UsuariosPageClient() {
   useEffect(() => reload(), [reload]);
 
   const nomeDe = (u: Usuario) => u.nome || u.email || u.id;
+
+  function enviarConvite(usuario: Usuario) {
+    startTransition(async () => {
+      const r = await enviarConviteAction(usuario.id);
+      if (r.ok) {
+        toast.success("Convite enviado", {
+          description: `${nomeDe(usuario)} recebeu no WhatsApp ${r.telefone} um link para criar a senha (vale 1 hora).`,
+        });
+        reload();
+      } else {
+        toast.error("O convite n\u00e3o saiu", { description: r.erro });
+      }
+    });
+  }
 
   function executarPendente() {
     if (!confirmando) return;
@@ -397,6 +415,19 @@ export function UsuariosPageClient() {
                           <KeyRound className="size-3.5" />
                         </AcaoIcone>
                         <AcaoIcone
+                          rotulo={
+                            !u.telefone
+                              ? "Convite por WhatsApp (sem telefone cadastrado)"
+                              : u.convite_enviado_at
+                                ? `Reenviar convite de acesso (último: ${formatRelative(u.convite_enviado_at)})`
+                                : "Enviar convite de acesso por WhatsApp"
+                          }
+                          disabled={pending || !u.telefone}
+                          onClick={() => enviarConvite(u)}
+                        >
+                          <MessageCircle className="size-3.5" />
+                        </AcaoIcone>
+                        <AcaoIcone
                           rotulo="Clonar usuário"
                           disabled={pending}
                           onClick={() => setCloning(u)}
@@ -487,10 +518,11 @@ export function UsuariosPageClient() {
             setCreating(false);
             setEditing(null);
           }}
-          onCreated={(usuario, password) => {
+          onCreated={(usuario, password, convite) => {
             setSenhaGerada({
               password,
               userName: usuario.nome || usuario.email || usuario.id,
+              convite,
             });
             setCreating(false);
             reload();
@@ -536,6 +568,7 @@ export function UsuariosPageClient() {
         <SenhaGeradaModal
           password={senhaGerada.password}
           userName={senhaGerada.userName}
+          convite={senhaGerada.convite}
           onClose={() => setSenhaGerada(null)}
         />
       )}

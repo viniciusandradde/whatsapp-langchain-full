@@ -31,7 +31,10 @@ export function AppShell({
 }) {
   const pathname = usePathname();
 
-  if (pathname === "/login") {
+  // `/reset-password` entra na mesma regra do login: é a chegada do convite
+  // de acesso por WhatsApp — a pessoa ainda NÃO tem sessão nem empresa, e o
+  // sidebar ali seria vitrine de um painel que ela ainda não pode abrir.
+  if (pathname === "/login" || pathname === "/reset-password") {
     // O `w-full` não é decorativo. O SidebarProvider fica no layout raiz e
     // envolve **até** o login com um wrapper `display:flex`. Sem esticar
     // aqui, o conteúdo vira um flex item, encolhe até o `max-w-sm` do

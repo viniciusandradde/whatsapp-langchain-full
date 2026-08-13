@@ -4872,11 +4872,18 @@ export interface Usuario {
   atendente_max_paralelos: number;
   last_login_at: string | null;
   created_at: string | null;
+  convite_enviado_at: string | null;
   role_legacy: "admin" | "operator" | "viewer" | null;
   is_default_empresa: boolean;
   perfis: { id: number; nome: string; is_system: boolean }[];
   departamentos: { id: number; nome: string }[];
   conexoes: UsuarioConexao[];
+}
+
+export interface ConviteResult {
+  ok: boolean;
+  telefone?: string;
+  erro?: string;
 }
 
 export interface ConexaoAssignInput {
@@ -4940,6 +4947,16 @@ export async function getUsuario(userId: string): Promise<Usuario> {
 
 export async function criarUsuario(body: UsuarioCreateInput): Promise<Usuario> {
   return apiFetch<Usuario>("/api/usuarios", { method: "POST", body });
+}
+
+export async function enviarConviteUsuario(
+  userId: string,
+  body: { link: string; expira_em: string }
+): Promise<ConviteResult> {
+  return apiFetch<ConviteResult>(`/api/usuarios/${userId}/convite`, {
+    method: "POST",
+    body,
+  });
 }
 
 export async function atualizarUsuario(

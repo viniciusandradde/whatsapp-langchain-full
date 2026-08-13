@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import { friendlyError } from "@/lib/api-error-shared";
 import { upsertUserPassword } from "@/lib/user-password";
-import { auth } from "@/lib/auth";
+import { auth, authPool } from "@/lib/auth";
 import {
   atualizarUsuario,
   criarUsuario,
+  enviarConviteUsuario,
   deletarUsuario,
   getConexoes,
   getDepartamentos,
@@ -84,10 +85,73 @@ export async function loadUsuariosAction(params: {
   }
 }
 
+export interface ConviteResultado {
+  ok: boolean;
+  telefone?: string;
+  erro?: string;
+}
+
+/**
+ * Envia no WhatsApp do usuário um link de uso único para ELE criar a senha.
+ *
+ * O link nasce aqui no Next (só o Better Auth gera token que ele mesmo
+ * aceita: `requestPasswordReset` → callback `sendResetPassword` persiste em
+ * `auth.password_reset_pending`, mig 025) e o WhatsApp sai do FastAPI (só o
+ * backend tem `build_outbound_client`). Esta action é a ponte.
+ *
+ * O link NÃO volta para a tela nem entra em log — quem tem o link define a
+ * senha da conta. A tela só recebe {ok, telefone|erro}.
+ */
+export async function enviarConviteAction(
+  userId: string
+): Promise<ConviteResultado> {
+  try {
+    // 1. Email do user (Better Auth exige email pro flow de reset).
+    const userRow = await authPool.query<{ email: string | null }>(
+      `SELECT email FROM auth."user" WHERE id = $1`,
+      [userId]
+    );
+    const email = userRow.rows[0]?.email;
+    if (!email) {
+      return {
+        ok: false,
+        erro: "Usuário sem e-mail — o link de acesso precisa de um e-mail.",
+      };
+    }
+
+    // 2. Dispara o flow de reset — o callback persiste o link.
+    await auth.api.requestPasswordReset({
+      body: { email, redirectTo: "/reset-password" },
+    });
+
+    // 3. Lê o link recém-persistido (UPSERT: sempre o mais novo).
+    const linkRow = await authPool.query<{ url: string; expires_at: Date }>(
+      `SELECT url, expires_at FROM auth.password_reset_pending
+        WHERE user_id = $1`,
+      [userId]
+    );
+    const row = linkRow.rows[0];
+    if (!row) {
+      return { ok: false, erro: "O link de acesso não foi gerado." };
+    }
+
+    // 4. Backend envia no WhatsApp. 200 com ok:false = motivo legível.
+    const r = await enviarConviteUsuario(userId, {
+      link: row.url,
+      expira_em: row.expires_at.toISOString(),
+    });
+    if (r.ok) revalidatePath("/usuarios");
+    return { ok: r.ok, telefone: r.telefone, erro: r.erro };
+  } catch (e) {
+    return { ok: false, erro: _err(e) };
+  }
+}
+
 export async function criarUsuarioAction(
-  body: UsuarioCreateInput
+  body: UsuarioCreateInput,
+  opts?: { enviarConvite?: boolean }
 ): Promise<
-  | { ok: true; usuario: Usuario; password: string }
+  | { ok: true; usuario: Usuario; password: string; convite?: ConviteResultado }
   | { ok: false; error: string }
 > {
   try {
@@ -95,6 +159,8 @@ export async function criarUsuarioAction(
     const u = await criarUsuario(body);
 
     // 2. Gera senha + persiste hash em auth.account (providerId='credential')
+    // A senha continua existindo MESMO com convite: é o plano B quando o
+    // WhatsApp não sai (sem telefone, sem conexão, provedor fora).
     const password = _generatePassword(16);
     try {
       await upsertUserPassword(u.id, password);
@@ -108,8 +174,15 @@ export async function criarUsuarioAction(
       };
     }
 
+    // 3. Convite por WhatsApp (opt-in do form). Falha aqui NÃO desfaz nada:
+    // o resultado viaja pra modal explicar e cair no plano B da senha.
+    let convite: ConviteResultado | undefined;
+    if (opts?.enviarConvite && body.telefone) {
+      convite = await enviarConviteAction(u.id);
+    }
+
     revalidatePath("/usuarios");
-    return { ok: true, usuario: u, password };
+    return { ok: true, usuario: u, password, convite };
   } catch (e) {
     return { ok: false, error: _err(e) };
   }

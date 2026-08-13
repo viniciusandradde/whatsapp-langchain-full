@@ -21,8 +21,12 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Protege todas as rotas do painel exceto login, API, assets estáticos
-// e arquivos especiais do PWA.
+// Protege todas as rotas do painel exceto login, reset-password, API,
+// assets estáticos e arquivos especiais do PWA.
+//
+// `reset-password` é público POR DESENHO: é onde a pessoa chega pelo link
+// do convite de acesso (WhatsApp) ANTES de ter qualquer sessão. O que
+// protege a página é o token de uso único do Better Auth, não o cookie.
 //
 // Cuidado: SW (`/sw.js`) e Manifest (`/manifest.webmanifest`) PRECISAM
 // ser servidos com Content-Type correto sem redirect. Se caírem no
@@ -30,6 +34,6 @@ export function proxy(request: NextRequest) {
 // PWA NÃO fica installable. Esses paths são excluídos por nome.
 export const config = {
   matcher: [
-    "/((?!login|api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|webmanifest)$).*)",
+    "/((?!login|reset-password|api|_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|webmanifest)$).*)",
   ],
 };

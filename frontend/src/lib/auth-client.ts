@@ -9,6 +9,7 @@ import { createAuthClient } from "better-auth/react";
 
 export const {
   changePassword,
+  resetPassword,
   signIn,
   signOut,
   useSession,

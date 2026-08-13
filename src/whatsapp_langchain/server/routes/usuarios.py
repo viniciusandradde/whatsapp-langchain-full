@@ -20,7 +20,9 @@ from __future__ import annotations
 import io
 import os
 import re
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -43,6 +45,7 @@ from whatsapp_langchain.shared.audit_governanca import (
 )
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import set_user_status
+from whatsapp_langchain.shared.telefone import normalizar_br
 from whatsapp_langchain.shared.usuarios import (
     TenantValidationError,
     atualizar_usuario,
@@ -84,6 +87,32 @@ def _delete_avatar_file(user_id: str) -> None:
         (_AVATARS_DIR / f"{_avatar_safe_id(user_id)}.png").unlink(missing_ok=True)
     except OSError:
         logger.warning("avatar_unlink_failed", user_id=user_id)
+
+
+def _telefone_normalizado_ou_400(raw: str | None) -> str | None:
+    """Telefone completo (+55 DDD linha) ou 400 com frase legível.
+
+    Antes disso o campo aceitava qualquer texto de até 30 chars, gravado cru —
+    e a empresa 1 ficou um mês com o relatório mensal falhando porque o número
+    cadastrado não tinha DDD. Telefone de usuário é destino de WhatsApp
+    (convite de acesso, avisos): ou está completo, ou é recusado na entrada.
+
+    Vazio/None passa como None — telefone continua opcional; obrigatório é só
+    quando o admin pede o envio do convite.
+    """
+    if raw is None or not raw.strip():
+        return None
+    tel = normalizar_br(raw)
+    if tel is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Telefone incompleto ou inválido. Informe com DDD, no formato "
+                "+5567999990000 — é para esse número que o convite de acesso "
+                "e os avisos são enviados."
+            ),
+        )
+    return tel
 
 
 # Pydantic models
@@ -137,6 +166,18 @@ class ReplicarUsuarioInput(BaseModel):
     nome: str = Field(min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=254)
     telefone: str | None = Field(default=None, max_length=30)
+
+
+class ConviteInput(BaseModel):
+    """Link de definição de senha gerado pelo Better Auth no frontend.
+
+    O link nasce no Next (só o Better Auth gera token que ele aceita) e o
+    WhatsApp sai daqui (só o backend tem `build_outbound_client`). Este corpo
+    é a ponte entre os dois mundos.
+    """
+
+    link: str = Field(min_length=8, max_length=2000)
+    expira_em: datetime
 
 
 # -------------------------------------------------------------------
@@ -228,13 +269,14 @@ async def create_endpoint(
     3. Mostra senha UMA vez pro admin copiar
     """
     pool = await get_pool()
+    telefone = _telefone_normalizado_ou_400(body.telefone)
     try:
         u = await criar_usuario_completo(
             pool,
             empresa_id=empresa_id,
             nome=body.nome,
             email=body.email,
-            telefone=body.telefone,
+            telefone=telefone,
             role_legacy=body.role_legacy,
             perfis_ids=body.perfis_ids,
             departamentos_ids=body.departamentos_ids,
@@ -267,6 +309,7 @@ async def update_endpoint(
     _: None = Depends(require_permission("empresa.member.add")),
 ):
     pool = await get_pool()
+    telefone = _telefone_normalizado_ou_400(body.telefone)
     try:
         u = await atualizar_usuario(
             pool,
@@ -274,7 +317,7 @@ async def update_endpoint(
             user_id=user_id,
             nome=body.nome,
             email=body.email,
-            telefone=body.telefone,
+            telefone=telefone,
             role_legacy=body.role_legacy,
             perfis_ids=body.perfis_ids,
             departamentos_ids=body.departamentos_ids,
@@ -299,6 +342,73 @@ async def update_endpoint(
             status_code=404, detail="Usuário não encontrado nesta empresa."
         )
     return u.to_dict()
+
+
+@router.post("/{user_id}/convite")
+async def convite_endpoint(
+    user_id: str,
+    body: ConviteInput,
+    request: Request,
+    empresa_id: int = Depends(get_empresa_context),
+    actor_user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("empresa.member.add")),
+):
+    """Envia o convite de acesso (link de definição de senha) no WhatsApp.
+
+    Devolve **200 com `ok: false` e o motivo** quando o envio não sai — a
+    falha é do WhatsApp (sem telefone, sem conexão, provedor recusou), não do
+    request, e a tela precisa do texto para cair no plano B (mostrar a senha).
+
+    O link chega no corpo, vai para o provedor, e MORRE aqui: não entra em
+    log, nem na auditoria, nem na resposta.
+    """
+    from whatsapp_langchain.shared.convite_acesso import (
+        ConviteError,
+        enviar_convite,
+    )
+
+    pool = await get_pool()
+    u = await get_usuario(pool, empresa_id=empresa_id, user_id=user_id)
+    if u is None:
+        raise HTTPException(
+            status_code=404, detail="Usuário não encontrado nesta empresa."
+        )
+
+    parsed = urlparse(body.link)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Link inválido.")
+    painel_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    try:
+        telefone = await enviar_convite(
+            pool,
+            empresa_id=empresa_id,
+            user_id=user_id,
+            link=body.link,
+            expira_em=body.expira_em,
+            painel_url=painel_url,
+        )
+    except ConviteError as e:
+        logger.info(
+            "convite_acesso_nao_enviado",
+            user_id=user_id,
+            empresa_id=empresa_id,
+            motivo=str(e),
+        )
+        return {"ok": False, "erro": str(e)}
+
+    await record_audit_governanca(
+        pool,
+        empresa_id=empresa_id,
+        actor_user_id=actor_user_id,
+        target_user_id=user_id,
+        action="member.convite",
+        entity_type="empresa_membro",
+        entity_id=user_id,
+        payload_after={"telefone": telefone},  # o número, NUNCA o link
+        request=request,
+    )
+    return {"ok": True, "telefone": telefone}
 
 
 @router.get("/exists/{user_id}")
@@ -483,6 +593,7 @@ async def replicar_endpoint(
     pra um novo (paridade ZigChat `replicarUsuario`). Senha gerada no fluxo
     normal do create pela Server Action do frontend."""
     pool = await get_pool()
+    telefone = _telefone_normalizado_ou_400(body.telefone)
     try:
         u = await replicar_usuario(
             pool,
@@ -490,7 +601,7 @@ async def replicar_endpoint(
             origem_user_id=user_id,
             nome=body.nome,
             email=body.email,
-            telefone=body.telefone,
+            telefone=telefone,
             criado_por_user_id=actor_user_id,
         )
     except TenantValidationError as e:
