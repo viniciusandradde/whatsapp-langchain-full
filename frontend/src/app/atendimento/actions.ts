@@ -468,6 +468,7 @@ export async function criarNotaInternaAction(
       media_url: null,
       media_type: null,
       normalized_input: null,
+      transcricao: null,
       media_processing_status: null,
       response: r.response,
       status: "done",
@@ -570,6 +571,28 @@ export async function incluirNumeroSemIaAction(
     revalidatePath("/whitelist");
     return { ok: true };
   } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type TranscricaoResult =
+  | { ok: true; transcricao: string }
+  | { ok: false; error: string };
+
+/**
+ * Transcreve sob demanda a nota de voz de uma mensagem (mig 169).
+ * Idempotente no servidor: mensagem já transcrita devolve o texto salvo.
+ */
+export async function transcreverMensagemAction(
+  atendimentoId: number,
+  mensagemId: number
+): Promise<TranscricaoResult> {
+  try {
+    const { transcreverMensagem } = await import("@/lib/api");
+    const r = await transcreverMensagem(atendimentoId, mensagemId);
+    return { ok: true, transcricao: r.transcricao };
+  } catch (e) {
+    // 400 (não é áudio) e 502 (provedor fora) já vêm com frase em pt-BR.
     return { ok: false, error: toError(e) };
   }
 }

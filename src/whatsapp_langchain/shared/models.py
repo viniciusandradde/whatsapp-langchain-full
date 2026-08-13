@@ -299,6 +299,8 @@ class Conexao(BaseModel):
     # Agrupamento de resposta (mig 144): segundos que o agente espera antes de
     # responder mensagens seguidas do mesmo contato. 0 desliga.
     resposta_agrupamento_segundos: int = 8
+    # Mig 169 — transcreve todo áudio recebido, mesmo sem agente responder.
+    transcrever_audio_sempre: bool = False
 
 
 class ConexaoInput(BaseModel):
@@ -328,6 +330,7 @@ class ConexaoPatchInput(BaseModel):
     warmup_enabled: bool | None = None  # True liga aquecimento (seta warmup_started_at)
     # Agrupamento de resposta (mig 144). 0 desliga; faixa 0..60 (CHECK no banco)
     resposta_agrupamento_segundos: int | None = Field(default=None, ge=0, le=60)
+    transcrever_audio_sempre: bool | None = None
 
 
 # --- M3 CRM Light: Cliente + Atendimento ---

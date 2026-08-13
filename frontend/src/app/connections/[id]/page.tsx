@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/session";
 
 import { AntiBanPanel } from "./anti-ban-panel";
 import { RespostaPanel } from "./resposta-panel";
+import { TranscricaoPanel } from "./transcricao-panel";
 import { DefaultAgentSelect } from "./default-agent-select";
 import { TipoAtendimentoSelect } from "./tipo-atendimento-select";
 
@@ -141,6 +142,11 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
       <RespostaPanel
         conexaoId={conexao.id}
         initialAgrupamento={conexao.resposta_agrupamento_segundos ?? 8}
+      />
+
+      <TranscricaoPanel
+        conexaoId={conexao.id}
+        initialAtivo={conexao.transcrever_audio_sempre ?? false}
       />
 
       <AntiBanPanel

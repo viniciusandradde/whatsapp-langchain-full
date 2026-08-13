@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   Bot,
+  Captions,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -58,6 +59,7 @@ import {
   reprocessarMensagemAction,
   resetThreadAction,
   responderAction,
+  transcreverMensagemAction,
   transferAction,
   transferDepartamentoAction,
 } from "./actions";
@@ -1258,6 +1260,9 @@ function MessageBubbles({
         mediaUrl: string;
         mediaType: string | null;
         caption?: string;
+        /** Só inbound de áudio (mig 169): habilita transcrição no painel. */
+        mensagemId?: number;
+        transcricao?: string | null;
       };
 
   const bubbles: Bubble[] = [];
@@ -1271,6 +1276,8 @@ function MessageBubbles({
         `/api/proxy/midia/${atendimentoId}/${m.id}?lado=in`,
       mediaType: m.media_type ?? null,
       caption: m.incoming_message ?? undefined,
+      mensagemId: m.id,
+      transcricao: m.transcricao,
     });
   } else if (m.incoming_message) {
     bubbles.push({ side: "in", kind: "text", text: m.incoming_message });
@@ -1366,11 +1373,22 @@ function MessageBubbles({
             )}
           >
             {b.kind === "media" ? (
-              <MediaPreview
-                url={b.mediaUrl}
-                type={b.mediaType}
-                caption={b.caption}
-              />
+              <>
+                <MediaPreview
+                  url={b.mediaUrl}
+                  type={b.mediaType}
+                  caption={b.caption}
+                />
+                {b.side === "in" &&
+                  b.mensagemId !== undefined &&
+                  (b.mediaType ?? "").startsWith("audio/") && (
+                    <TranscricaoAudio
+                      atendimentoId={atendimentoId}
+                      mensagemId={b.mensagemId}
+                      transcricao={b.transcricao ?? null}
+                    />
+                  )}
+              </>
             ) : (
               <p className="whitespace-pre-wrap">{b.text}</p>
             )}
@@ -1413,6 +1431,58 @@ function MessageBubbles({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Transcrição da nota de voz pro operador (mig 169).
+ *
+ * Se a mensagem já tem transcrição (automática por conexão ou de um clique
+ * anterior), mostra o texto direto. Senão, oferece o botão — o servidor é
+ * idempotente, então cliques repetidos não pagam LLM de novo.
+ */
+function TranscricaoAudio({
+  atendimentoId,
+  mensagemId,
+  transcricao,
+}: {
+  atendimentoId: number;
+  mensagemId: number;
+  transcricao: string | null;
+}) {
+  const [texto, setTexto] = useState<string | null>(transcricao);
+  const [transcrevendo, setTranscrevendo] = useState(false);
+
+  async function transcrever() {
+    setTranscrevendo(true);
+    const r = await transcreverMensagemAction(atendimentoId, mensagemId);
+    setTranscrevendo(false);
+    if (!r.ok) {
+      toast.error(r.error);
+      return;
+    }
+    setTexto(r.transcricao);
+  }
+
+  if (texto !== null) {
+    return (
+      <p className="mt-1 whitespace-pre-wrap border-l-2 border-muted-foreground/30 pl-2 text-xs text-muted-foreground">
+        <span className="font-medium">Transcrição:</span> {texto}
+      </p>
+    );
+  }
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="mt-1 h-7 gap-1 px-2 text-xs text-muted-foreground"
+      onClick={() => void transcrever()}
+      disabled={transcrevendo}
+    >
+      <Captions className="size-3.5" />
+      {transcrevendo ? "Transcrevendo…" : "Transcrever"}
+    </Button>
   );
 }
 
