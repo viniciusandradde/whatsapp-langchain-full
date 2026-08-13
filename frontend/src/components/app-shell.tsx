@@ -56,9 +56,17 @@ export function AppShell({
           <CommandPaletteTrigger />
         </header>
         <CommandPalette />
-        <div className="mx-auto w-full max-w-(--breakpoint-2xl) p-6">
-          {children}
-        </div>
+        {pathname === "/atendimento" ? (
+          // Workspace de colunas (sidebar própria + lista + conversa): o cap
+          // centrado de 1536px vira faixa morta dos dois lados quando o menu
+          // principal retrai — aqui a largura útil inteira é do conteúdo. O
+          // padding também fica por conta da página (era anulado com -m-6).
+          <div className="w-full">{children}</div>
+        ) : (
+          <div className="mx-auto w-full max-w-(--breakpoint-2xl) p-6">
+            {children}
+          </div>
+        )}
       </SidebarInset>
     </TooltipProvider>
   );

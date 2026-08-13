@@ -127,7 +127,17 @@ export function AtendimentoDrawer({
     }
   }
 
+  // Scroll estilo WhatsApp: a conversa abre na ÚLTIMA mensagem e acompanha
+  // as novas, mas quem rolou pra cima lendo histórico não é puxado de volta
+  // — `grudadoNoFimRef` rastreia se o usuário está perto do fim (via
+  // onScroll) e só aí a chegada de mensagem re-ancora.
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const grudadoNoFimRef = useRef(true);
+  const primeiraCargaRef = useRef(true);
+
   useEffect(() => {
+    primeiraCargaRef.current = true;
+    grudadoNoFimRef.current = true;
     void reload();
     // Marca como lido após 1s (debounce) — evita race quando user só
     // tangencia o item (esc rápido). Fire-and-forget; ignore erro.
@@ -137,6 +147,21 @@ export function AtendimentoDrawer({
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atendimento.id]);
+
+  useEffect(() => {
+    if (!mensagens) return;
+    const el = timelineRef.current;
+    if (!el) return;
+    if (primeiraCargaRef.current || grudadoNoFimRef.current) {
+      el.scrollTop = el.scrollHeight;
+      primeiraCargaRef.current = false;
+      // Mídia que carrega depois estica o conteúdo — re-ancora no frame
+      // seguinte pra primeira abertura não parar "quase" no fim.
+      requestAnimationFrame(() => {
+        if (grudadoNoFimRef.current) el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [mensagens, activeTab]);
 
   // E2.E SSE: substitui polling 3s por EventSource. Backend dispara
   // eventos via Postgres LISTEN/NOTIFY (mig 035) — chega <1s do INSERT
@@ -462,7 +487,15 @@ export function AtendimentoDrawer({
             </div>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          <div
+            ref={timelineRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              grudadoNoFimRef.current =
+                el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+            }}
+            className="flex-1 space-y-3 overflow-y-auto px-5 py-4"
+          >
             {error && (
               <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
