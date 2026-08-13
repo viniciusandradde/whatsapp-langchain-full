@@ -76,9 +76,7 @@ class UsuarioInfo:
             ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "convite_enviado_at": (
-                self.convite_enviado_at.isoformat()
-                if self.convite_enviado_at
-                else None
+                self.convite_enviado_at.isoformat() if self.convite_enviado_at else None
             ),
             "role_legacy": self.role_legacy,
             "is_default_empresa": self.is_default_empresa,
