@@ -29,7 +29,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -62,9 +67,7 @@ fun ConversasScreen(
     onMudarTema: (String) -> Unit = {},
     vm: ConversasViewModel = hiltViewModel(),
 ) {
-    var menuConfig by androidx.compose.runtime.remember {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
+    var menuConfig by remember { mutableStateOf(false) }
     val ui by vm.ui.collectAsStateWithLifecycle()
     val conversas by vm.conversas.collectAsStateWithLifecycle()
 
@@ -97,7 +100,7 @@ fun ConversasScreen(
                         // espalhar botões pelo topo.
                         androidx.compose.material3.IconButton(onClick = { menuConfig = true }) {
                             androidx.compose.material3.Icon(
-                                androidx.compose.material.icons.Icons.Filled.MoreVert,
+                                Icons.Filled.MoreVert,
                                 contentDescription = "Configurações",
                             )
                         }
@@ -115,7 +118,7 @@ fun ConversasScreen(
                                     trailingIcon = {
                                         if (temaAtual == modo) {
                                             androidx.compose.material3.Icon(
-                                                androidx.compose.material.icons.Icons.Filled.Check,
+                                                Icons.Filled.Check,
                                                 contentDescription = "Tema atual",
                                             )
                                         }
