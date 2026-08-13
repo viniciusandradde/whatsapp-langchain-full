@@ -142,6 +142,13 @@ async def main() -> None:
     # Relatório mensal de uso (mig 165) — PDF para o cliente, no dia marcado
     relatorio_task = asyncio.create_task(_relatorio_uso_loop(pool))
 
+    # Push FCM (mig 168): LISTEN no mesmo canal do SSE → notifica os
+    # dispositivos da empresa em mensagem nova de cliente. No-op sem a
+    # credencial no env.
+    from whatsapp_langchain.shared.push_loop import push_loop
+
+    push_task = asyncio.create_task(push_loop(pool))
+
     # Sprint A.2.5 — importa context manager pra RLS
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -222,7 +229,8 @@ async def main() -> None:
         cleanup_task.cancel()
         resumo_task.cancel()
         relatorio_task.cancel()
-        for t in (sync_task, idle_task, cleanup_task, resumo_task, relatorio_task):
+        push_task.cancel()
+        for t in (sync_task, idle_task, cleanup_task, resumo_task, relatorio_task, push_task):
             try:
                 await t
             except asyncio.CancelledError:

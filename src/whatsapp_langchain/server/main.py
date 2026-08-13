@@ -117,6 +117,7 @@ from whatsapp_langchain.server.routes.modelo_mensagem import (
 )
 from whatsapp_langchain.server.routes.pasta import router as pasta_router
 from whatsapp_langchain.server.routes.perfil import router as perfil_router
+from whatsapp_langchain.server.routes.push import router as push_router
 from whatsapp_langchain.server.routes.rag_stats import (
     router as rag_stats_router,
 )
@@ -410,6 +411,7 @@ app.include_router(agendamento_regras_router)
 app.include_router(audit_router)
 app.include_router(feature_flag_router)
 app.include_router(agente_router)
+app.include_router(push_router)
 app.include_router(menu_chatbot_router)
 app.include_router(modelo_llm_router)
 app.include_router(mcp_router)
