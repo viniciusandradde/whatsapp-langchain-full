@@ -134,3 +134,97 @@ data class EmpresaDto(
 data class EmpresasResponse(
     val empresas: List<EmpresaDto> = emptyList(),
 )
+
+// --- Fatia 3: ações da conversa (paridade com o drawer do painel web) ---
+
+@Serializable
+data class CloseRequest(
+    /** `resolvido` ou `abandonado` — os dois únicos status finais. */
+    val status: String,
+)
+
+/**
+ * Destino da transferência. O backend exige EXATAMENTE um dos dois campos —
+ * atendente OU departamento — e o app monta um ou outro, nunca ambos.
+ */
+@Serializable
+data class TransferRequest(
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("departamento_id") val departamentoId: Long? = null,
+)
+
+@Serializable
+data class NotaRequest(
+    val texto: String,
+)
+
+/** Delta idempotente de tags do atendimento: só o que muda viaja. */
+@Serializable
+data class ApplyTagsRequest(
+    val add: List<Long> = emptyList(),
+    val remove: List<Long> = emptyList(),
+)
+
+/** Tag do catálogo da empresa (a cor vem como hex, ex. "#F97316"). */
+@Serializable
+data class TagDto(
+    val id: Long = 0,
+    val nome: String = "",
+    val cor: String? = null,
+    val descricao: String? = null,
+    val ativo: Boolean = true,
+    /** Presentes só em GET tags do atendimento — origem da aplicação. */
+    @SerialName("aplicado_por_ia") val aplicadoPorIa: Boolean? = null,
+)
+
+@Serializable
+data class TagsResponse(
+    val items: List<TagDto> = emptyList(),
+)
+
+@Serializable
+data class DepartamentoDto(
+    val id: Long = 0,
+    val nome: String = "",
+    val ativo: Boolean = true,
+)
+
+@Serializable
+data class DepartamentosResponse(
+    val departamentos: List<DepartamentoDto> = emptyList(),
+)
+
+@Serializable
+data class AtendenteDto(
+    @SerialName("user_id") val userId: String = "",
+    val nome: String? = null,
+    val email: String? = null,
+    @SerialName("is_active") val isActive: Boolean = true,
+    /** online | ausente | pausa | offline | null (nunca ficou online). */
+    @SerialName("atendente_status") val atendenteStatus: String? = null,
+    @SerialName("count_atendimentos_abertos") val atendimentosAbertos: Int = 0,
+)
+
+@Serializable
+data class AtendentesResponse(
+    val atendentes: List<AtendenteDto> = emptyList(),
+)
+
+@Serializable
+data class ClienteDto(
+    val id: Long = 0,
+    val nome: String? = null,
+    val telefone: String? = null,
+    /** Tags do CLIENTE são texto livre — diferente das tags de atendimento. */
+    val tags: List<String> = emptyList(),
+)
+
+@Serializable
+data class ClienteDetailResponse(
+    val cliente: ClienteDto = ClienteDto(),
+)
+
+@Serializable
+data class ClienteTagRequest(
+    val tag: String,
+)

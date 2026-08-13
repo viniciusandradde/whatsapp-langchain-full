@@ -1,8 +1,12 @@
 package com.vsanexus.atendimento.data
 
 import com.vsanexus.atendimento.data.remote.AtendimentoApi
+import com.vsanexus.atendimento.data.remote.AtendimentoDto
+import com.vsanexus.atendimento.data.remote.CloseRequest
 import com.vsanexus.atendimento.data.remote.MensagemDto
+import com.vsanexus.atendimento.data.remote.NotaRequest
 import com.vsanexus.atendimento.data.remote.ResponderRequest
+import com.vsanexus.atendimento.data.remote.TransferRequest
 import com.vsanexus.atendimento.domain.Bolha
 import com.vsanexus.atendimento.domain.Lado
 import com.vsanexus.atendimento.domain.paraBolhas
@@ -41,12 +45,24 @@ data class EstadoConversa(
     val status: String? = null,
     /** Ação de assumir/devolver em curso — desabilita os botões. */
     val mudandoDono: Boolean = false,
+    /**
+     * Detalhe completo do atendimento — alimenta o cartão de triagem
+     * (resumo da IA, prioridade, sentimento, categoria) e o painel do cliente
+     * (id e nome). Vem da mesma chamada que já buscava o status.
+     */
+    val detalhe: AtendimentoDto? = null,
+    /** Confirmação curta de ação concluída (transferido, encerrado, nota). */
+    val confirmacao: String? = null,
 ) {
     val podeAtender: Boolean
         get() = status == "aguardando"
 
     val podeDevolverParaIa: Boolean
         get() = status == "em_andamento"
+
+    /** Encerrar e transferir só fazem sentido com o atendimento aberto. */
+    val aberto: Boolean
+        get() = status == "aguardando" || status == "em_andamento"
 }
 
 /**
@@ -82,10 +98,16 @@ constructor(private val api: AtendimentoApi) {
         // minutos atrás, e é o status que decide se a tela oferece "Atender" ou
         // "Devolver para a IA". Errar isso mostraria a ação errada.
         // Best-effort nos dois: falhar aqui não impede LER a conversa.
+        recarregarDetalhe()
+        runCatching { api.marcarLido(id) }
+    }
+
+    /** Relê o detalhe (status + triagem) — best-effort. */
+    private suspend fun recarregarDetalhe() {
+        val id = atendimentoId ?: return
         runCatching { api.detalhe(id) }
             .getOrNull()
-            ?.let { _estado.value = _estado.value.copy(status = it.status) }
-        runCatching { api.marcarLido(id) }
+            ?.let { _estado.value = _estado.value.copy(status = it.status, detalhe = it) }
     }
 
     /**
@@ -115,8 +137,8 @@ constructor(private val api: AtendimentoApi) {
                 // Relê o status do servidor em vez de assumir o resultado: o
                 // claim pode ser recusado por capacidade (409) e o status real é
                 // o que decide qual botão a tela mostra a seguir.
-                val novo = runCatching { api.detalhe(id) }.getOrNull()?.status
-                _estado.value = _estado.value.copy(status = novo, mudandoDono = false)
+                recarregarDetalhe()
+                _estado.value = _estado.value.copy(mudandoDono = false)
                 atualizar()
                 true
             } else {
@@ -139,6 +161,108 @@ constructor(private val api: AtendimentoApi) {
             404 -> "Atendimento não encontrado."
             else -> "Não foi possível concluir a ação."
         }
+
+    /**
+     * Encerra como `resolvido` ou `abandonado`.
+     *
+     * Resolvido pode disparar a pesquisa de satisfação no WhatsApp do cliente
+     * — decisão que o operador confirma na tela ANTES de chegar aqui. Depois
+     * do encerramento os botões de ação somem sozinhos: o status novo vem do
+     * servidor e `aberto` vira false.
+     */
+    suspend fun encerrar(statusFinal: String): Boolean {
+        val id = atendimentoId ?: return false
+        _estado.value = _estado.value.copy(mudandoDono = true, aviso = null)
+        return try {
+            val r = api.encerrar(id, CloseRequest(statusFinal))
+            if (r.isSuccessful) {
+                recarregarDetalhe()
+                _estado.value =
+                    _estado.value.copy(
+                        mudandoDono = false,
+                        confirmacao =
+                            if (statusFinal == "resolvido") "Atendimento resolvido."
+                            else "Atendimento marcado como abandonado.",
+                    )
+                true
+            } else {
+                _estado.value =
+                    _estado.value.copy(mudandoDono = false, aviso = avisoDonoDe(r.code()))
+                false
+            }
+        } catch (e: Exception) {
+            _estado.value =
+                _estado.value.copy(mudandoDono = false, aviso = "Sem conexão. Tente de novo.")
+            false
+        }
+    }
+
+    /**
+     * Transfere para atendente OU departamento (exatamente um).
+     *
+     * Departamento avisa o cliente da mudança de setor (comportamento do
+     * backend, igual ao web); atendente não avisa. Nos dois casos o status
+     * novo vem do servidor — a tela se reorganiza a partir dele.
+     */
+    suspend fun transferir(userId: String?, departamentoId: Long?, nomeDestino: String): Boolean {
+        val id = atendimentoId ?: return false
+        _estado.value = _estado.value.copy(mudandoDono = true, aviso = null)
+        return try {
+            val r = api.transferir(id, TransferRequest(userId = userId, departamentoId = departamentoId))
+            if (r.isSuccessful) {
+                recarregarDetalhe()
+                _estado.value =
+                    _estado.value.copy(
+                        mudandoDono = false,
+                        confirmacao = "Transferido para $nomeDestino.",
+                    )
+                atualizar()
+                true
+            } else {
+                _estado.value =
+                    _estado.value.copy(mudandoDono = false, aviso = avisoDonoDe(r.code()))
+                false
+            }
+        } catch (e: Exception) {
+            _estado.value =
+                _estado.value.copy(mudandoDono = false, aviso = "Sem conexão. Tente de novo.")
+            false
+        }
+    }
+
+    /**
+     * Nota interna: entra na timeline, nunca sai pro cliente.
+     *
+     * Sem bolha otimista: a nota real chega no `atualizar()` logo em seguida,
+     * e a janela é curta demais pra valer a complexidade de reconciliar.
+     */
+    suspend fun criarNota(texto: String): Boolean {
+        val id = atendimentoId ?: return false
+        val corpo = texto.trim()
+        if (corpo.isEmpty()) return false
+        return try {
+            val r = api.criarNota(id, NotaRequest(corpo))
+            if (r.isSuccessful) {
+                atualizar()
+                true
+            } else {
+                val aviso =
+                    if (r.code() == 403) "Você não tem permissão para criar nota interna."
+                    else avisoDe(r.code())
+                _estado.value = _estado.value.copy(aviso = aviso)
+                false
+            }
+        } catch (e: Exception) {
+            _estado.value =
+                _estado.value.copy(aviso = "Sem conexão. A nota não foi salva.")
+            false
+        }
+    }
+
+    /** A tela chama depois de exibir a confirmação — evita reexibição. */
+    fun limparConfirmacao() {
+        _estado.value = _estado.value.copy(confirmacao = null)
+    }
 
     /** Carrega a página anterior do histórico usando o cursor. */
     suspend fun carregarHistorico() {

@@ -8,12 +8,21 @@ import com.vsanexus.atendimento.data.local.ConversaEntity
 import com.vsanexus.atendimento.data.local.Credenciais
 import com.vsanexus.atendimento.data.local.Sessao
 import com.vsanexus.atendimento.data.local.SessaoStore
+import com.vsanexus.atendimento.data.remote.ApplyTagsRequest
+import com.vsanexus.atendimento.data.remote.AtendentesResponse
 import com.vsanexus.atendimento.data.remote.AtendimentoApi
 import com.vsanexus.atendimento.data.remote.AtendimentoDto
 import com.vsanexus.atendimento.data.remote.AtendimentosResponse
+import com.vsanexus.atendimento.data.remote.ClienteDetailResponse
+import com.vsanexus.atendimento.data.remote.ClienteTagRequest
+import com.vsanexus.atendimento.data.remote.CloseRequest
+import com.vsanexus.atendimento.data.remote.DepartamentosResponse
 import com.vsanexus.atendimento.data.remote.EmpresasResponse
 import com.vsanexus.atendimento.data.remote.MensagensResponse
+import com.vsanexus.atendimento.data.remote.NotaRequest
 import com.vsanexus.atendimento.data.remote.ResponderRequest
+import com.vsanexus.atendimento.data.remote.TagsResponse
+import com.vsanexus.atendimento.data.remote.TransferRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -265,6 +274,36 @@ private class FakeApi(
     override suspend fun marcarLido(id: Long) = vazio()
 
     override suspend fun empresas() = EmpresasResponse()
+
+    // Fatia 3 — a lista não usa nenhum destes; existem porque a interface
+    // obriga. As ações são exercitadas nos testes do próprio módulo.
+    override suspend fun encerrar(id: Long, body: CloseRequest) = vazio()
+
+    override suspend fun transferir(id: Long, body: TransferRequest) = vazio()
+
+    override suspend fun criarNota(id: Long, body: NotaRequest) = vazio()
+
+    override suspend fun tagsDoAtendimento(id: Long) = TagsResponse()
+
+    override suspend fun aplicarTags(id: Long, body: ApplyTagsRequest) = vazio()
+
+    override suspend fun catalogoTags(somenteAtivas: Boolean) = TagsResponse()
+
+    override suspend fun departamentos() = DepartamentosResponse()
+
+    override suspend fun atendentesEmpresa() = AtendentesResponse()
+
+    override suspend fun cliente(id: Long) = ClienteDetailResponse()
+
+    override suspend fun adicionarTagCliente(id: Long, body: ClienteTagRequest) = vazio()
+
+    override suspend fun removerTagCliente(id: Long, tag: String) = vazio()
+
+    override suspend fun atendimentosAnteriores(
+        id: Long,
+        limit: Int,
+        excludeId: Long?,
+    ) = AtendimentosResponse()
 
     private fun vazio(): Response<Unit> = Response.success(Unit)
 }

@@ -27,8 +27,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -88,8 +92,23 @@ fun ConversaScreen(
 ) {
     val estado by vm.estado.collectAsStateWithLifecycle()
     val rascunho by vm.rascunho.collectAsStateWithLifecycle()
+    val modoNota by vm.modoNota.collectAsStateWithLifecycle()
+    val transferencia by vm.transferencia.collectAsStateWithLifecycle()
+    val tags by vm.tags.collectAsStateWithLifecycle()
+    val cliente by vm.cliente.collectAsStateWithLifecycle()
     val cores = coresChat()
     val listState = rememberLazyListState()
+    var menuAberto by remember { mutableStateOf(false) }
+    // Qual encerramento está aguardando confirmação: "resolvido"/"abandonado".
+    var confirmandoEncerrar by remember { mutableStateOf<String?>(null) }
+
+    // A confirmação de ação some sozinha — é um aceno, não um estado.
+    LaunchedEffect(estado.confirmacao) {
+        if (estado.confirmacao != null) {
+            delay(3_000)
+            vm.limparConfirmacao()
+        }
+    }
 
     LaunchedEffect(atendimentoId) { vm.abrir(atendimentoId) }
 
@@ -143,6 +162,51 @@ fun ConversaScreen(
                             Text("Devolver à IA")
                         }
                     }
+                    IconButton(onClick = { menuAberto = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Mais ações")
+                    }
+                    DropdownMenu(
+                        expanded = menuAberto,
+                        onDismissRequest = { menuAberto = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Ficha do cliente") },
+                            onClick = {
+                                menuAberto = false
+                                vm.abrirCliente()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Tags do atendimento") },
+                            onClick = {
+                                menuAberto = false
+                                vm.abrirTags()
+                            },
+                        )
+                        if (estado.aberto) {
+                            DropdownMenuItem(
+                                text = { Text("Transferir…") },
+                                onClick = {
+                                    menuAberto = false
+                                    vm.carregarTransferencia()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Resolver atendimento") },
+                                onClick = {
+                                    menuAberto = false
+                                    confirmandoEncerrar = "resolvido"
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Marcar como abandonado") },
+                                onClick = {
+                                    menuAberto = false
+                                    confirmandoEncerrar = "abandonado"
+                                },
+                            )
+                        }
+                    }
                 },
                 // Barra clara com texto escuro, não uma faixa laranja: no tema
                 // clean da VSA a marca aparece em acento (botão de enviar, aba
@@ -161,6 +225,8 @@ fun ConversaScreen(
                 onTexto = vm::onRascunho,
                 onEnviar = vm::enviar,
                 onEnviarMidia = vm::enviarMidia,
+                modoNota = modoNota,
+                onAlternarModoNota = vm::alternarModoNota,
             )
         },
     ) { inner ->
@@ -181,10 +247,12 @@ fun ConversaScreen(
                     )
                 else -> {
                     val invertidas = remember(estado.bolhas) { estado.bolhas.reversed() }
+                    Column(Modifier.fillMaxSize()) {
+                    estado.detalhe?.let { TriagemCard(it) }
                     LazyColumn(
                         state = listState,
                         reverseLayout = true,
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                        modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
                     ) {
                         items(invertidas, key = { it.id }) { b ->
                             BolhaItem(b, cores, vm::arquivoDeMidia)
@@ -197,6 +265,7 @@ fun ConversaScreen(
                                 ) { CircularProgressIndicator(Modifier.height(20.dp)) }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -214,7 +283,50 @@ fun ConversaScreen(
                     )
                 }
             }
+            if (estado.confirmacao != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                ) {
+                    Text(
+                        estado.confirmacao!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
         }
+    }
+
+    // Diálogos e folhas — fora do Scaffold pra flutuarem sobre tudo.
+    confirmandoEncerrar?.let { statusFinal ->
+        DialogoEncerrar(
+            statusFinal = statusFinal,
+            onConfirmar = {
+                confirmandoEncerrar = null
+                vm.encerrar(statusFinal)
+            },
+            onCancelar = { confirmandoEncerrar = null },
+        )
+    }
+    transferencia?.let {
+        FolhaTransferencia(
+            opcoes = it,
+            onDepartamento = vm::transferirParaDepartamento,
+            onAtendente = vm::transferirParaAtendente,
+            onFechar = vm::fecharTransferencia,
+        )
+    }
+    tags?.let {
+        FolhaTags(estado = it, onAlternar = vm::alternarTag, onFechar = vm::fecharTags)
+    }
+    cliente?.let {
+        FolhaCliente(
+            estado = it,
+            onAlternarTag = vm::alternarTagCliente,
+            onFechar = vm::fecharCliente,
+        )
     }
 }
 
@@ -343,6 +455,9 @@ private fun Composer(
     onTexto: (String) -> Unit,
     onEnviar: () -> Unit,
     onEnviarMidia: (File, String) -> Unit,
+    /** Modo nota interna: o texto vai pra timeline da equipe, não pro cliente. */
+    modoNota: Boolean = false,
+    onAlternarModoNota: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val escopo = rememberCoroutineScope()
@@ -437,10 +552,33 @@ private fun Composer(
                 return@Column
             }
 
+            if (modoNota) {
+                Surface(color = MaterialTheme.colorScheme.tertiaryContainer) {
+                    Text(
+                        "Nota interna — não será enviada ao cliente",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                // Alterna o modo nota. Fica ao lado do anexo porque é uma
+                // segunda forma de "conteúdo diferente de mensagem comum".
+                IconButton(onClick = onAlternarModoNota) {
+                    Icon(
+                        Icons.Filled.EditNote,
+                        contentDescription =
+                            if (modoNota) "Sair do modo nota interna" else "Escrever nota interna",
+                        tint =
+                            if (modoNota) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 IconButton(onClick = { escolherAnexo.launch("*/*") }) {
                     Icon(
                         Icons.Filled.AttachFile,
@@ -451,7 +589,7 @@ private fun Composer(
                 OutlinedTextField(
                     value = texto,
                     onValueChange = onTexto,
-                    placeholder = { Text("Mensagem") },
+                    placeholder = { Text(if (modoNota) "Nota interna" else "Mensagem") },
                     maxLines = 5,
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.weight(1f),
@@ -470,13 +608,25 @@ private fun Composer(
                     },
                     modifier =
                         Modifier.clip(RoundedCornerShape(24.dp))
-                            // Laranja da marca: é a ação primária da tela.
-                            .background(MaterialTheme.colorScheme.primary),
+                            // Laranja da marca é a ação primária; no modo nota o
+                            // botão muda de cor junto com a faixa — o operador
+                            // não pode mandar "nota" achando que era mensagem.
+                            .background(
+                                if (modoNota) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.primary,
+                            ),
                 ) {
                     Icon(
                         if (vaiEnviarTexto) Icons.AutoMirrored.Filled.Send else Icons.Filled.Mic,
-                        contentDescription = if (vaiEnviarTexto) "Enviar" else "Gravar áudio",
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        contentDescription =
+                            when {
+                                vaiEnviarTexto && modoNota -> "Salvar nota interna"
+                                vaiEnviarTexto -> "Enviar"
+                                else -> "Gravar áudio"
+                            },
+                        tint =
+                            if (modoNota) MaterialTheme.colorScheme.onTertiary
+                            else MaterialTheme.colorScheme.onPrimary,
                     )
                 }
             }
