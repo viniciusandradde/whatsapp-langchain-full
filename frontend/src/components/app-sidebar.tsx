@@ -21,6 +21,15 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -34,8 +43,10 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { signOut } from "@/lib/auth-client";
+import { cn } from "@/lib/utils";
 
 /**
  * Navegação do painel — uma camada, não três.
@@ -179,6 +190,7 @@ function GrupoDeNavegacao({
   abertoPorPadrao: boolean;
 }) {
   const Icone = grupo.icon;
+  const { state, isMobile } = useSidebar();
 
   // Aberto é estado controlado, não `defaultOpen`.
   //
@@ -196,6 +208,70 @@ function GrupoDeNavegacao({
   if (abertoPorPadrao !== padraoAnterior) {
     setPadraoAnterior(abertoPorPadrao);
     setAberto(abertoPorPadrao || aberto);
+  }
+
+  // Rail de ícones: o Collapsible fica invisível (`SidebarMenuSub` some via
+  // CSS no modo icon), então cada grupo vira um flyout — hover/clique no
+  // ícone abre um balão portalizado à direita com os subitens clicáveis.
+  // Sem `tooltip` aqui: o balão já traz o nome do grupo, e TooltipTrigger +
+  // MenuTrigger no mesmo botão brigam pelos handlers de hover.
+  if (state === "collapsed" && !isMobile) {
+    return (
+      <SidebarMenuItem>
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger
+            openOnHover
+            delay={100}
+            closeDelay={200}
+            render={
+              <SidebarMenuButton
+                isActive={abertoPorPadrao}
+                aria-label={grupo.label}
+              >
+                <Icone />
+              </SidebarMenuButton>
+            }
+          />
+          {/* w-auto: o Popup nasce com w-(--anchor-width) — 32px no rail. */}
+          <DropdownMenuContent
+            side="right"
+            align="start"
+            sideOffset={6}
+            className="w-auto min-w-56"
+          >
+            {/* GroupLabel do Base UI exige estar dentro de Menu.Group —
+                fora dele estoura o invariant #31 em produção. */}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{grupo.label}</DropdownMenuLabel>
+            </DropdownMenuGroup>
+            {agruparPorSecao(grupo.itens).map(([secao, itens]) => (
+              <Fragment key={secao ?? "_"}>
+                {secao && <DropdownMenuSeparator />}
+                <DropdownMenuGroup>
+                  {secao && (
+                    <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {secao}
+                    </DropdownMenuLabel>
+                  )}
+                  {itens.map((item) => (
+                    <DropdownMenuItem
+                      key={item.href}
+                      render={<Link href={item.href} />}
+                      className={cn(
+                        isItemActive(pathname, item.href) &&
+                          "bg-accent font-medium text-accent-foreground"
+                      )}
+                    >
+                      {item.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              </Fragment>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    );
   }
 
   return (
