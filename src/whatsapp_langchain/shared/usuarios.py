@@ -48,6 +48,8 @@ class UsuarioInfo:
     atendente_max_paralelos: int
     last_login_at: datetime | None
     created_at: datetime | None
+    # Mig 167 — último convite de acesso enviado no WhatsApp (None = nunca).
+    convite_enviado_at: datetime | None
 
     # Por empresa atual:
     role_legacy: str | None  # empresa_membro.role (admin|operator|viewer)
@@ -73,6 +75,9 @@ class UsuarioInfo:
                 self.last_login_at.isoformat() if self.last_login_at else None
             ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "convite_enviado_at": (
+                self.convite_enviado_at.isoformat() if self.convite_enviado_at else None
+            ),
             "role_legacy": self.role_legacy,
             "is_default_empresa": self.is_default_empresa,
             "perfis": self.perfis,
@@ -126,7 +131,7 @@ _CONEXOES_SUBQUERY = """
 def _enriched_sql(*, where_extra: str, tail: str, with_total: bool) -> str:
     """Monta o SELECT enriquecido. `where_extra` entra após `m.empresa_id = %s`.
 
-    Colunas: 0-15 base+perfis+deptos, 16 conexões, 17 total_count (se
+    Colunas: 0-16 base+perfis+deptos, 17 conexões, 18 total_count (se
     `with_total`). auth.user é global (sem RLS); empresa_membro/usuario_*
     têm RLS — caller usa empresa_scope(bypass=True) + filtro explícito.
     """
@@ -136,7 +141,7 @@ def _enriched_sql(*, where_extra: str, tail: str, with_total: bool) -> str:
         u.id, u.name, u.email, u.telefone, u.avatar_path, u.image,
         u.status, u.is_superadmin,
         u.atendente_status, u.atendente_max_paralelos,
-        u.last_login_at, u."createdAt",
+        u.last_login_at, u."createdAt", u.convite_enviado_at,
         m.role, m.is_default,
         {_PERFIS_SUBQUERY},
         {_DEPTOS_SUBQUERY},
@@ -163,11 +168,12 @@ def _row_to_usuario(r: Any) -> UsuarioInfo:
         atendente_max_paralelos=int(r[9]),
         last_login_at=r[10],
         created_at=r[11],
-        role_legacy=r[12],
-        is_default_empresa=bool(r[13]),
-        perfis=list(r[14]) if r[14] else [],
-        departamentos=list(r[15]) if r[15] else [],
-        conexoes=list(r[16]) if r[16] else [],
+        convite_enviado_at=r[12],
+        role_legacy=r[13],
+        is_default_empresa=bool(r[14]),
+        perfis=list(r[15]) if r[15] else [],
+        departamentos=list(r[16]) if r[16] else [],
+        conexoes=list(r[17]) if r[17] else [],
     )
 
 
@@ -232,7 +238,7 @@ async def list_usuarios_da_empresa(
             cur = await conn.execute(sql, tuple(params))  # type: ignore[arg-type]
             rows = await cur.fetchall()
 
-    total = int(rows[0][17]) if rows else 0
+    total = int(rows[0][18]) if rows else 0
     return [_row_to_usuario(r) for r in rows], total
 
 

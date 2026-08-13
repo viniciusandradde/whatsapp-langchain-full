@@ -50,6 +50,7 @@ import {
   setMaxParalelosAction,
   uploadAvatarAction,
   type ConexaoOption,
+  type ConviteResultado,
   type DepartamentoOption,
   type PerfilOption,
 } from "./actions";
@@ -75,7 +76,7 @@ const CARGO_LABEL: Record<string, string> = {
 interface Props {
   usuario: Usuario | null; // null = criar novo
   onClose: () => void;
-  onCreated: (u: Usuario, password: string) => void;
+  onCreated: (u: Usuario, password: string, convite?: ConviteResultado) => void;
   onUpdated: (u: Usuario) => void;
 }
 
@@ -106,6 +107,9 @@ export function UsuarioFormModal({
       : ""
   );
   const [telefone, setTelefone] = useState(usuario?.telefone ?? "");
+  // Convite de acesso por WhatsApp (só no criar): manda um link de uso único
+  // pra pessoa criar a própria senha, em vez de o admin repassar a gerada.
+  const [enviarConvite, setEnviarConvite] = useState(true);
   const [roleLegacy, setRoleLegacy] = useState<"admin" | "operator" | "viewer">(
     usuario?.role_legacy ?? "operator"
   );
@@ -260,16 +264,19 @@ export function UsuarioFormModal({
         toast.success(`${r.data.nome || "Usuário"} atualizado.`);
         onUpdated(r.data);
       } else {
-        const r = await criarUsuarioAction({
-          ...baseBody,
-          atendente_max_paralelos: maxParalelos,
-        });
+        const r = await criarUsuarioAction(
+          {
+            ...baseBody,
+            atendente_max_paralelos: maxParalelos,
+          },
+          { enviarConvite: enviarConvite && !!telefone.trim() }
+        );
         if (!r.ok) {
           setError(r.error);
           return;
         }
         await uploadPendingAvatar(r.usuario.id);
-        onCreated(r.usuario, r.password);
+        onCreated(r.usuario, r.password, r.convite);
       }
     });
   }
@@ -362,17 +369,39 @@ export function UsuarioFormModal({
                   </Field>
                   <Field>
                     <FieldLabel htmlFor={`${id}-telefone`}>
-                      Telefone (opcional)
+                      WhatsApp (com DDD)
                     </FieldLabel>
                     <Input
                       id={`${id}-telefone`}
                       type="tel"
                       value={telefone}
                       onChange={(e) => setTelefone(e.target.value)}
-                      placeholder="(11) 99999-9999"
+                      placeholder="+5567999990000"
                       disabled={pending}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      É para este número que o convite de acesso e os avisos
+                      são enviados. Opcional — mas sem ele o convite não sai.
+                    </p>
                   </Field>
+                  {!isEdit && (
+                    <label className="flex items-start gap-2 rounded-md border bg-muted/20 p-3 text-sm">
+                      <Checkbox
+                        checked={enviarConvite && !!telefone.trim()}
+                        disabled={pending || !telefone.trim()}
+                        onCheckedChange={(v) => setEnviarConvite(v === true)}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        Enviar convite de acesso pelo WhatsApp
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          A pessoa recebe um link que vale 1 hora e funciona uma
+                          única vez, e cria a própria senha. Se o envio falhar,
+                          a senha gerada aparece para você repassar como hoje.
+                        </span>
+                      </span>
+                    </label>
+                  )}
                 </div>
               </div>
             </div>

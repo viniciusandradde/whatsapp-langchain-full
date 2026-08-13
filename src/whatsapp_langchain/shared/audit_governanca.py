@@ -51,6 +51,7 @@ VALID_ACTIONS = frozenset(
         "member.remove",
         "member.disable",
         "member.enable",
+        "member.convite",  # POST /usuarios/{id}/convite — link de acesso no WhatsApp
     }
 )
 
