@@ -137,33 +137,33 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
         initialAbas={abas}
         initialContadores={contadores}
       />
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
-        <div className="mb-4 flex items-center gap-2 md:mb-6">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:p-4">
+        {/* Título e filtros dividem UMA linha — a linha própria do título +
+            margens custava ~80px que fazem falta pra lista/conversa. */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <ShellToggleButton className="shrink-0" />
-          <Headphones className="hidden h-6 w-6 md:block" />
-          <h1 className="truncate text-lg font-semibold md:text-2xl">
-            {contextoLabel}
-          </h1>
+          <Headphones className="hidden h-5 w-5 md:block" />
+          <h1 className="truncate text-lg font-semibold">{contextoLabel}</h1>
+          <ListFilters
+            tipo={tipo}
+            departamentos={departamentos}
+            depId={depId}
+            prioridade={prioridade}
+            q={q}
+            tagIds={tagIds}
+            className="ml-auto"
+          />
         </div>
 
-        <ListFilters
-          tipo={tipo}
-          departamentos={departamentos}
-          depId={depId}
-          prioridade={prioridade}
-          q={q}
-          tagIds={tagIds}
-        />
-
         {error && (
-          <div className="mt-4 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
             <p className="font-medium">Não foi possível carregar a caixa</p>
             <p className="mt-1 text-destructive/80">{error}</p>
           </div>
         )}
 
         {!error && (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <AtendimentoList atendimentos={atendimentos} tipo={tipo} />
           </div>
         )}

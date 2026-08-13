@@ -6,6 +6,7 @@ import { Search, Tag as TagIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { Departamento, Tag, TipoVisualizacao } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 import { loadTagsAction } from "./actions";
 import { TagChip } from "./tag-chip";
@@ -27,6 +28,7 @@ interface Props {
   prioridade?: "baixa" | "media" | "alta" | "urgente";
   q?: string;
   tagIds?: number[];
+  className?: string;
 }
 
 export function ListFilters({
@@ -36,6 +38,7 @@ export function ListFilters({
   prioridade,
   q,
   tagIds = [],
+  className,
 }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -80,7 +83,8 @@ export function ListFilters({
   const hasFiltros = depId || prioridade || q || tagIds.length > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 p-3">
+    // Toolbar inline (sem moldura): divide a linha com o título da página.
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <select
         value={depId ?? ""}
         onChange={(e) => setParam("dep_id", e.target.value || undefined)}
