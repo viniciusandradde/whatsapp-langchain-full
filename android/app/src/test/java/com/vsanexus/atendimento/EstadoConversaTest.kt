@@ -28,6 +28,23 @@ class EstadoConversaTest {
         assertFalse(e.podeAtender)
     }
 
+    // Fatia 3: encerrar e transferir só aparecem com o atendimento ABERTO.
+    // Oferecer "Resolver" num atendimento já resolvido dispararia a pesquisa
+    // de satisfação de novo — o backend recusa com 409, mas o botão nem deve
+    // existir.
+    @Test
+    fun `aberto vale para aguardando e em_andamento`() {
+        assertTrue(EstadoConversa(status = "aguardando").aberto)
+        assertTrue(EstadoConversa(status = "em_andamento").aberto)
+    }
+
+    @Test
+    fun `fechado e desconhecido nao contam como aberto`() {
+        assertFalse(EstadoConversa(status = "resolvido").aberto)
+        assertFalse(EstadoConversa(status = "abandonado").aberto)
+        assertFalse(EstadoConversa(status = null).aberto)
+    }
+
     @Test
     fun `conversa fechada nao oferece nenhuma das duas`() {
         for (s in listOf("resolvido", "abandonado")) {

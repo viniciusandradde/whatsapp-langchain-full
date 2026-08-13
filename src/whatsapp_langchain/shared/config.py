@@ -311,6 +311,12 @@ class Settings(BaseSettings):
             and self.langfuse_secret_key is not None
         )
 
+    # --- Push (FCM, app Android) ---
+    # O JSON INTEIRO da service account do Firebase, numa linha. Vazio = push
+    # desligado (o loop do worker nem inicia). Nunca commitar o valor: quem o
+    # tem envia push em nome do app.
+    firebase_service_account_json: str = ""
+
     # --- Semantic Memory (LangGraph Store) ---
     memory_enabled: bool = True
     # Nome do modelo no OpenRouter (sem prefixo "openai:")

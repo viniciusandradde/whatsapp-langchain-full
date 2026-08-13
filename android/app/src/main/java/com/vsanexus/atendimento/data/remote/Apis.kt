@@ -5,6 +5,7 @@ import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
@@ -164,4 +165,103 @@ interface AtendimentoApi {
      */
     @GET("api/empresas")
     suspend fun empresas(): EmpresasResponse
+
+    // --- Fatia 3: ações da conversa ---
+
+    /**
+     * Encerra o atendimento como `resolvido` ou `abandonado`.
+     *
+     * Resolvido pode disparar a pesquisa de satisfação no WhatsApp do cliente
+     * (config da empresa) — por isso a tela SEMPRE confirma antes.
+     */
+    @POST("api/atendimentos/{id}/close")
+    suspend fun encerrar(
+        @Path("id") id: Long,
+        @Body body: CloseRequest,
+    ): Response<Unit>
+
+    /**
+     * Transfere para um atendente OU um departamento (exatamente um).
+     *
+     * Departamento: limpa o dono, volta pra `aguardando` e o backend AVISA o
+     * cliente da mudança de setor. Atendente: mantém `em_andamento` com o novo
+     * dono, sem aviso.
+     */
+    @POST("api/atendimentos/{id}/transfer")
+    suspend fun transferir(
+        @Path("id") id: Long,
+        @Body body: TransferRequest,
+    ): Response<Unit>
+
+    /**
+     * Nota interna: entra na timeline mas NUNCA sai pro cliente (gate no
+     * backend). Exige a permissão `atendimento.nota_interna.criar` — 403 vira
+     * aviso legível na tela.
+     */
+    @POST("api/atendimentos/{id}/nota")
+    suspend fun criarNota(
+        @Path("id") id: Long,
+        @Body body: NotaRequest,
+    ): Response<Unit>
+
+    /** Tags aplicadas neste atendimento (com origem humano/IA). */
+    @GET("api/atendimentos/{id}/tags")
+    suspend fun tagsDoAtendimento(@Path("id") id: Long): TagsResponse
+
+    /** Aplica o delta de tags. Exige `atendimento.tag.aplicar`. */
+    @POST("api/atendimentos/{id}/tags")
+    suspend fun aplicarTags(
+        @Path("id") id: Long,
+        @Body body: ApplyTagsRequest,
+    ): Response<Unit>
+
+    /** Catálogo de tags da empresa — leitura liberada a qualquer membro. */
+    @GET("api/tags")
+    suspend fun catalogoTags(
+        @Query("only_ativos") somenteAtivas: Boolean = true,
+    ): TagsResponse
+
+    /** Departamentos da empresa — destinos possíveis de transferência. */
+    @GET("api/departamentos")
+    suspend fun departamentos(): DepartamentosResponse
+
+    /**
+     * Atendentes da empresa com status de presença e carga — o seletor de
+     * transferência mostra só os online e ativos, com o count pra ajudar a
+     * escolher (mesma regra do popover web).
+     */
+    @GET("api/atendentes/empresa-status")
+    suspend fun atendentesEmpresa(): AtendentesResponse
+
+    /** Ficha do cliente — nome, telefone e as tags de CLIENTE (texto livre). */
+    @GET("api/clientes/{id}")
+    suspend fun cliente(@Path("id") id: Long): ClienteDetailResponse
+
+    /** Marca uma tag no cliente. Idempotente (204 mesmo se já existia). */
+    @POST("api/clientes/{id}/tags")
+    suspend fun adicionarTagCliente(
+        @Path("id") id: Long,
+        @Body body: ClienteTagRequest,
+    ): Response<Unit>
+
+    /**
+     * Desmarca uma tag do cliente. DELETE com corpo não é universal no HTTP —
+     * aqui a tag viaja no PATH, URL-encoded pelo Retrofit.
+     */
+    @DELETE("api/clientes/{id}/tags/{tag}")
+    suspend fun removerTagCliente(
+        @Path("id") id: Long,
+        @Path("tag") tag: String,
+    ): Response<Unit>
+
+    /**
+     * Atendimentos anteriores do mesmo cliente — contexto pro painel.
+     * `exclude_id` tira o atual da lista.
+     */
+    @GET("api/clientes/{id}/atendimentos-anteriores")
+    suspend fun atendimentosAnteriores(
+        @Path("id") id: Long,
+        @Query("limit") limit: Int = 3,
+        @Query("exclude_id") excludeId: Long? = null,
+    ): AtendimentosResponse
 }
