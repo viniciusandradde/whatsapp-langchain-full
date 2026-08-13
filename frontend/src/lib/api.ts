@@ -882,6 +882,7 @@ export interface Departamento {
   ativo: boolean;
   parent_id: number | null;
   users_count: number | null;
+  ia_continua_na_fila: boolean;
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
@@ -892,6 +893,7 @@ export interface DepartamentoInput {
   descricao?: string | null;
   ativo?: boolean;
   parent_id?: number | null;
+  ia_continua_na_fila?: boolean;
 }
 
 export interface DepartamentosResponse {

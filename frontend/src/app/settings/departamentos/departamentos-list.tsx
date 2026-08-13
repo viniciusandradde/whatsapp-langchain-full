@@ -94,7 +94,15 @@ export function DepartamentosList({
       }
       const next = [...departamentos];
       const idx = next.findIndex((d) => d.id === r.departamento.id);
-      if (idx >= 0) next[idx] = r.departamento;
+      // O PUT não faz o JOIN de membros (só a listagem faz), então a resposta
+      // traz `users_count: null`. Sem preservar o valor que já estava em tela,
+      // salvar qualquer campo fazia o selo "2 membros" sumir da linha até o
+      // próximo reload — parecia que a edição tinha desvinculado as pessoas.
+      if (idx >= 0)
+        next[idx] = {
+          ...r.departamento,
+          users_count: r.departamento.users_count ?? next[idx].users_count,
+        };
       else next.push(r.departamento);
       next.sort((a, b) => a.nome.localeCompare(b.nome));
       setDepartamentos(next);
@@ -240,6 +248,30 @@ export function DepartamentosList({
               />
               Ativo
             </label>
+            <div className="rounded-md border bg-background p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="ia_continua_na_fila"
+                  defaultChecked={
+                    edit.mode === "edit"
+                      ? edit.departamento.ia_continua_na_fila
+                      : false
+                  }
+                  className="mt-0.5 size-4"
+                />
+                <span>
+                  Manter a IA respondendo enquanto ninguém puxa
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    Por padrão, encaminhar para este setor faz a IA parar de
+                    falar até um atendente assumir. Marque quando este setor for
+                    caixa de entrada de quem lê no tempo dele — assim o cliente
+                    continua sendo atendido na espera. Quando alguém assume o
+                    atendimento, a IA cala do mesmo jeito.
+                  </span>
+                </span>
+              </label>
+            </div>
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -278,6 +310,11 @@ export function DepartamentosList({
                     <p className="font-medium">{d.nome}</p>
                     {!d.ativo && (
                       <Badge variant="secondary">inativo</Badge>
+                    )}
+                    {d.ia_continua_na_fila && (
+                      <Badge variant="outline" className="text-[10px]">
+                        IA responde na espera
+                      </Badge>
                     )}
                     {d.users_count !== null && d.users_count > 0 && (
                       <Badge variant="outline" className="text-[10px]">

@@ -17,7 +17,8 @@ class DuplicateDepartamentoError(ValueError):
 
 _SELECT_COLS = (
     "id, empresa_id, nome, descricao, ativo, "
-    "created_by_user_id, created_at, updated_at, parent_id"
+    "created_by_user_id, created_at, updated_at, parent_id, "
+    "ia_continua_na_fila"
 )
 
 
@@ -32,6 +33,7 @@ def _row_to_departamento(row, users_count: int | None = None) -> Departamento:
         created_at=row[6],
         updated_at=row[7],
         parent_id=row[8] if len(row) > 8 else None,
+        ia_continua_na_fila=bool(row[9]) if len(row) > 9 else False,
         users_count=users_count,
     )
 
@@ -257,8 +259,9 @@ async def create_departamento(
             cur = await conn.execute(
                 f"""
                 INSERT INTO departamento
-                    (empresa_id, nome, descricao, ativo, created_by_user_id, parent_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (empresa_id, nome, descricao, ativo, created_by_user_id,
+                     parent_id, ia_continua_na_fila)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_SELECT_COLS}
                 """,
                 (
@@ -268,6 +271,7 @@ async def create_departamento(
                     data.ativo,
                     user_id,
                     data.parent_id,
+                    data.ia_continua_na_fila,
                 ),
             )
             row = await cur.fetchone()
@@ -305,6 +309,7 @@ async def update_departamento(
                        descricao = %s,
                        ativo = %s,
                        parent_id = %s,
+                       ia_continua_na_fila = %s,
                        updated_at = NOW()
                  WHERE id = %s AND empresa_id = %s
                 RETURNING {_SELECT_COLS}
@@ -314,6 +319,7 @@ async def update_departamento(
                     data.descricao,
                     data.ativo,
                     data.parent_id,
+                    data.ia_continua_na_fila,
                     dep_id,
                     empresa_id,
                 ),

@@ -774,6 +774,10 @@ class Departamento(BaseModel):
     ativo: bool = True
     parent_id: int | None = None
     users_count: int | None = None
+    # Mig 166 — a IA segue respondendo enquanto o atendimento espera na fila.
+    # Serve a operação em que a fila é caixa de entrada de uma pessoa só, que
+    # lê quando pode; sem isso, o cliente fica sem resposta até alguém puxar.
+    ia_continua_na_fila: bool = False
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -792,6 +796,7 @@ class DepartamentoInput(BaseModel):
     descricao: str | None = Field(default=None, max_length=200)
     ativo: bool = True
     parent_id: int | None = None
+    ia_continua_na_fila: bool = False
 
 
 class HorarioFuncionamento(BaseModel):
