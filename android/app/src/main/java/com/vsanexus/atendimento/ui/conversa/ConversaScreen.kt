@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -255,7 +256,7 @@ fun ConversaScreen(
                         modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
                     ) {
                         items(invertidas, key = { it.id }) { b ->
-                            BolhaItem(b, cores, vm::arquivoDeMidia)
+                            BolhaItem(b, cores, vm::arquivoDeMidia, vm::transcrever)
                         }
                         if (estado.carregandoHistorico) {
                             item {
@@ -336,6 +337,8 @@ private fun BolhaItem(
     cores: CoresChat,
     /** `(mensagemId, éSaída) -> arquivo local`, baixando na primeira vez. */
     carregarMidia: suspend (Long, Boolean) -> File?,
+    /** Transcreve a nota de voz da mensagem (mig 169). */
+    transcrever: (Long) -> Unit,
 ) {
     when (b) {
         is Bolha.Texto -> {
@@ -398,8 +401,28 @@ private fun BolhaItem(
                         // externo.
                         val buscar: suspend () -> File? = { carregarMidia(b.mensagemId, !entrada) }
                         when {
-                            b.tipo?.startsWith("audio") == true ->
+                            b.tipo?.startsWith("audio") == true -> {
                                 AudioDaConversa(b.id, buscar, Modifier.width(240.dp))
+                                // Transcrição pro operador (mig 169): texto se
+                                // já existe (automática ou toque anterior);
+                                // senão o botão. Só entrada — o backend só
+                                // transcreve áudio do cliente.
+                                if (entrada && b.transcricao != null) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        b.transcricao,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else if (entrada) {
+                                    TextButton(
+                                        onClick = { transcrever(b.mensagemId) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                    ) {
+                                        Text("Transcrever")
+                                    }
+                                }
+                            }
                             b.tipo?.startsWith("image") == true ->
                                 ImagemDaConversa(b.id, buscar, Modifier.fillMaxWidth())
                             else ->

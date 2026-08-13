@@ -23,6 +23,7 @@ import com.vsanexus.atendimento.data.remote.NotaRequest
 import com.vsanexus.atendimento.data.remote.PushTokenRequest
 import com.vsanexus.atendimento.data.remote.ResponderRequest
 import com.vsanexus.atendimento.data.remote.TagsResponse
+import com.vsanexus.atendimento.data.remote.TranscreverResponse
 import com.vsanexus.atendimento.data.remote.TransferRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -258,6 +259,11 @@ private class FakeApi(
     ): Response<ResponseBody> = Response.success(ByteArray(0).toResponseBody())
 
     override suspend fun responder(id: Long, body: ResponderRequest) = vazio()
+
+    override suspend fun transcrever(
+        id: Long,
+        mensagemId: Long,
+    ): Response<TranscreverResponse> = Response.success(TranscreverResponse())
 
     // Este fake é da LISTA de conversas, que não envia mídia. Existe só porque
     // implementar a interface obriga — o envio de anexo é exercitado onde ele

@@ -73,6 +73,12 @@ sealed interface Bolha {
          * cliente na timeline.
          */
         val lado: Lado,
+        /**
+         * Transcrição da nota de voz pro operador (mig 169). Com default e no
+         * FIM da lista: só a bolha de entrada de áudio preenche, e call-sites
+         * posicionais (testes) continuam válidos.
+         */
+        val transcricao: String? = null,
     ) : Bolha
 
     /** Nota interna do operador — não foi enviada ao cliente. */
@@ -125,6 +131,7 @@ fun MensagemDto.paraBolhas(): List<Bolha> {
                 tipo = mediaType,
                 legenda = incomingMessage?.takeIf { it.isNotBlank() },
                 lado = Lado.ENTRADA,
+                transcricao = transcricao,
             )
     } else if (!incomingMessage.isNullOrBlank()) {
         bolhas += Bolha.Texto("$id-in", createdAt, Lado.ENTRADA, incomingMessage)

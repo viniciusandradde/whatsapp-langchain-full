@@ -108,6 +108,17 @@ interface AtendimentoApi {
         @Query("lado") lado: String = "in",
     ): Response<ResponseBody>
 
+    /**
+     * Transcreve a nota de voz de UMA mensagem (mig 169). Idempotente no
+     * servidor: já transcrita devolve o texto salvo sem nova chamada de LLM.
+     * 400 = mensagem sem áudio; 502 = provedor fora (vale tentar de novo).
+     */
+    @POST("api/atendimentos/{id}/mensagens/{mensagemId}/transcrever")
+    suspend fun transcrever(
+        @Path("id") id: Long,
+        @Path("mensagemId") mensagemId: Long,
+    ): Response<TranscreverResponse>
+
     @POST("api/atendimentos/{id}/responder")
     suspend fun responder(
         @Path("id") id: Long,

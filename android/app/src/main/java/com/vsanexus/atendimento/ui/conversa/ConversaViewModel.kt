@@ -281,6 +281,11 @@ constructor(
         viewModelScope.launch { repo.devolverParaIa() }
     }
 
+    /** Transcreve a nota de voz de uma mensagem (mig 169). */
+    fun transcrever(mensagemId: Long) {
+        viewModelScope.launch { repo.transcrever(mensagemId) }
+    }
+
     /**
      * Arquivo local de uma mídia da conversa, baixando na primeira vez.
      *
