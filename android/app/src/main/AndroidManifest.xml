@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissões da fatia atual. POST_NOTIFICATIONS e o serviço de FCM
-         entram junto com o push, na fatia dele. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Push (fatia 2). Em Android 13+ notificação é permissão de runtime,
+         pedida na lista de conversas — o primeiro lugar onde ela faz falta. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Gravar nota de voz. Pedida em runtime na hora do primeiro toque no
          microfone, não na instalação. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -21,6 +22,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:theme="@style/Theme.NexusAtendimento"
             android:windowSoftInputMode="adjustResize">
@@ -29,6 +31,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Recebe os data-pushes do FCM. exported=false: só o sistema chama. -->
+        <service
+            android:name=".push.PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

@@ -7,6 +7,7 @@ import com.vsanexus.atendimento.data.ConversasRepository
 import com.vsanexus.atendimento.data.Sincronizacao
 import com.vsanexus.atendimento.data.local.ConversaEntity
 import com.vsanexus.atendimento.data.remote.EventosAtendimento
+import com.vsanexus.atendimento.push.PushRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,8 +37,16 @@ class ConversasViewModel
 constructor(
     private val repo: ConversasRepository,
     private val eventos: EventosAtendimento,
+    private val push: PushRepository,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ConversasUiState())
+
+    init {
+        // Registrar o aparelho toda vez que a lista nasce é barato (UPSERT no
+        // backend) e cobre relogin, troca de empresa e token girado — sem
+        // depender de acertar cada um desses eventos individualmente.
+        viewModelScope.launch { push.registrar() }
+    }
     val ui: StateFlow<ConversasUiState> = _ui.asStateFlow()
 
     private val abaSelecionada = MutableStateFlow(Aba.NAO_RESOLVIDAS)

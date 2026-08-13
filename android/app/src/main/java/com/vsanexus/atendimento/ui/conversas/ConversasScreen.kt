@@ -63,6 +63,21 @@ fun ConversasScreen(
     val ui by vm.ui.collectAsStateWithLifecycle()
     val conversas by vm.conversas.collectAsStateWithLifecycle()
 
+    // Android 13+ exige permissão de runtime pra NOTIFICAÇÃO. A lista é o
+    // primeiro lugar onde ela faz falta (push de mensagem nova) — pedir no
+    // login seria cedo demais pra pessoa entender o porquê. Uma vez só:
+    // negou, o app não insiste (o sistema para de perguntar de qualquer
+    // forma na segunda negativa).
+    val pedirNotificacao =
+        androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+        ) { }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            pedirNotificacao.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     Scaffold(
         topBar = {
             Column {
