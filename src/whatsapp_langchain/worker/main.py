@@ -230,7 +230,14 @@ async def main() -> None:
         resumo_task.cancel()
         relatorio_task.cancel()
         push_task.cancel()
-        for t in (sync_task, idle_task, cleanup_task, resumo_task, relatorio_task, push_task):
+        for t in (
+            sync_task,
+            idle_task,
+            cleanup_task,
+            resumo_task,
+            relatorio_task,
+            push_task,
+        ):
             try:
                 await t
             except asyncio.CancelledError:
