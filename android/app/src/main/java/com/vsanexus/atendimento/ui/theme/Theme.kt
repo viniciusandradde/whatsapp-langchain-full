@@ -3,6 +3,7 @@ package com.vsanexus.atendimento.ui.theme
 import android.app.Activity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -45,13 +46,17 @@ private val Erro = Color(0xFFEF4444) // --vsa-error
 private val ErroClaro = Color(0xFFFEE2E2) // --vsa-error-light
 private val ErroTexto = Color(0xFF991B1B)
 
-/**
- * Tema único, claro.
- *
- * Não há variante escura de propósito: o app é a versão CLEAN da VSA, e seguir
- * `isSystemInDarkTheme()` traria de volta um obsidian improvisado — justamente o
- * tema que este app não usa. O painel web também abre no claro por default.
- */
+// Paleta escura — o obsidian dos tokens da VSA (`[data-theme="obsidian"]` no
+// painel web). Entrou a pedido do dono depois do clean-only original: virou
+// ESCOLHA no menu (claro | escuro | sistema), com o claro seguindo default.
+private val NoiteCanvas = Color(0xFF0F172A) // --obsidian-950
+private val NoiteSuperficie = Color(0xFF1E293B) // --obsidian-800
+private val NoiteAlta = Color(0xFF334155) // --obsidian-700
+private val NoiteDivisor = Color(0xFF475569)
+private val NoiteTextoForte = Color(0xFFF1F5F9)
+private val NoiteTextoFraco = Color(0xFF94A3B8)
+
+/** Tema claro (default) — o CLEAN da VSA. */
 private val Clean =
     lightColorScheme(
         primary = Laranja,
@@ -102,10 +107,53 @@ data class CoresChat(
  * bolha branca `#ffffff` fica indistinguível, e o único jeito de separá-las
  * seria contorná-las. Um degrau de cinza resolve sem borda.
  */
-@Composable fun coresChat(): CoresChat = CoresChat(AzulClaro, Canvas, SuperficieAlta)
+@Composable
+fun coresChat(): CoresChat {
+    // Deriva do tema ATIVO em vez de receber flag: a luminância do fundo diz
+    // se estamos no escuro, e nenhum call site precisa mudar quando o tema
+    // muda de lugar.
+    val escuro = MaterialTheme.colorScheme.background == NoiteCanvas
+    return if (escuro) {
+        CoresChat(
+            bolhaSaida = Color(0xFF1E3A8A), // azul-900: saída legível no escuro
+            bolhaEntrada = NoiteSuperficie,
+            fundoConversa = NoiteCanvas,
+        )
+    } else {
+        CoresChat(AzulClaro, Canvas, SuperficieAlta)
+    }
+}
+
+private val Noite =
+    darkColorScheme(
+        primary = Laranja,
+        onPrimary = Color.White,
+        primaryContainer = Color(0xFF7C2D12), // laranja-900
+        onPrimaryContainer = LaranjaClaro,
+        secondary = Azul,
+        onSecondary = Color.White,
+        secondaryContainer = Color(0xFF1E3A8A),
+        onSecondaryContainer = AzulClaro,
+        tertiary = Ambar,
+        onTertiary = Color.Black,
+        tertiaryContainer = Color(0xFF78350F), // âmbar-900
+        onTertiaryContainer = AmbarClaro,
+        background = NoiteCanvas,
+        onBackground = NoiteTextoForte,
+        surface = NoiteSuperficie,
+        onSurface = NoiteTextoForte,
+        surfaceVariant = NoiteAlta,
+        onSurfaceVariant = NoiteTextoFraco,
+        outline = NoiteDivisor,
+        outlineVariant = NoiteAlta,
+        error = Erro,
+        onError = Color.White,
+        errorContainer = Color(0xFF7F1D1D),
+        onErrorContainer = ErroClaro,
+    )
 
 @Composable
-fun NexusAtendimentoTheme(content: @Composable () -> Unit) {
+fun NexusAtendimentoTheme(escuro: Boolean = false, content: @Composable () -> Unit) {
     val view = LocalView.current
     // A Activity é resolvida FORA do SideEffect: dentro dele não há escopo
     // composable, então ler `LocalContext` ali não compila. E o cast é seguro
@@ -113,13 +161,16 @@ fun NexusAtendimentoTheme(content: @Composable () -> Unit) {
     val activity = LocalContext.current as? Activity
     if (!view.isInEditMode && activity != null) {
         SideEffect {
-            // Barras do sistema com ícones ESCUROS: as superfícies são claras, e
-            // no default (ícones brancos) o relógio e os botões de navegação
-            // desapareceriam no branco.
+            // Ícones das barras acompanham o tema: escuros sobre superfície
+            // clara, claros sobre a escura — senão relógio e botões somem.
             val controlador = WindowCompat.getInsetsController(activity.window, view)
-            controlador.isAppearanceLightStatusBars = true
-            controlador.isAppearanceLightNavigationBars = true
+            controlador.isAppearanceLightStatusBars = !escuro
+            controlador.isAppearanceLightNavigationBars = !escuro
         }
     }
-    MaterialTheme(colorScheme = Clean, typography = Typography(), content = content)
+    MaterialTheme(
+        colorScheme = if (escuro) Noite else Clean,
+        typography = Typography(),
+        content = content,
+    )
 }

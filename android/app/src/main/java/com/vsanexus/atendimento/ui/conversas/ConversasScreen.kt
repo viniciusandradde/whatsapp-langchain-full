@@ -58,8 +58,13 @@ fun ConversasScreen(
     /** id + título: o título vem da lista pra a conversa não precisar de um GET. */
     onAbrirConversa: (Long, String) -> Unit,
     onSair: () -> Unit,
+    temaAtual: String = "claro",
+    onMudarTema: (String) -> Unit = {},
     vm: ConversasViewModel = hiltViewModel(),
 ) {
+    var menuConfig by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
     val ui by vm.ui.collectAsStateWithLifecycle()
     val conversas by vm.conversas.collectAsStateWithLifecycle()
 
@@ -87,6 +92,41 @@ fun ConversasScreen(
                         TextButton(onClick = onSair) {
                             Text("Sair", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        // Configurações do app — por ora, o tema. É o lugar
+                        // pra onde novas preferências devem ir, em vez de
+                        // espalhar botões pelo topo.
+                        androidx.compose.material3.IconButton(onClick = { menuConfig = true }) {
+                            androidx.compose.material3.Icon(
+                                androidx.compose.material.icons.Icons.Filled.MoreVert,
+                                contentDescription = "Configurações",
+                            )
+                        }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = menuConfig,
+                            onDismissRequest = { menuConfig = false },
+                        ) {
+                            listOf(
+                                "claro" to "Tema claro",
+                                "escuro" to "Tema escuro",
+                                "sistema" to "Seguir o sistema",
+                            ).forEach { (modo, rotulo) ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(rotulo) },
+                                    trailingIcon = {
+                                        if (temaAtual == modo) {
+                                            androidx.compose.material3.Icon(
+                                                androidx.compose.material.icons.Icons.Filled.Check,
+                                                contentDescription = "Tema atual",
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        menuConfig = false
+                                        onMudarTema(modo)
+                                    },
+                                )
+                            }
+                        }
                     },
                     // Tema clean: topo é superfície clara com texto escuro. O
                     // laranja da marca fica no indicador da aba ativa, que é
@@ -98,10 +138,14 @@ fun ConversasScreen(
                             actionIconContentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 )
-                TabRow(
+                androidx.compose.material3.ScrollableTabRow(
                     selectedTabIndex = Aba.entries.indexOf(ui.aba),
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary,
+                    // Zero: a primeira aba encosta na margem como no TabRow.
+                    // Com 5 abas em 360dp o TabRow fixo dava ~72dp por aba e
+                    // "Resolvidas" virava "Resolvida" — visto em aparelho real.
+                    edgePadding = androidx.compose.ui.unit.Dp(0f),
                 ) {
                     Aba.entries.forEach { aba ->
                         Tab(

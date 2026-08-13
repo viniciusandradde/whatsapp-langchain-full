@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -56,8 +57,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         lerIntent(intent)
         setContent {
-            NexusAtendimentoTheme {
-                Raiz(pedidoDoPush)
+            // O tema é decidido AQUI, acima de tudo: o login também muda.
+            val vm: LoginViewModel = hiltViewModel()
+            val tema by vm.tema.collectAsStateWithLifecycle()
+            val escuro =
+                when (tema) {
+                    "escuro" -> true
+                    "sistema" -> isSystemInDarkTheme()
+                    else -> false
+                }
+            NexusAtendimentoTheme(escuro = escuro) {
+                Raiz(pedidoDoPush, vm)
             }
         }
     }
@@ -77,6 +87,7 @@ private fun Raiz(
     vm: LoginViewModel = hiltViewModel(),
 ) {
     val sessao by vm.sessao.collectAsStateWithLifecycle()
+    val tema by vm.tema.collectAsStateWithLifecycle()
     var aberta by remember { mutableStateOf<ConversaAberta?>(null) }
     val pedido by pedidoDoPush.collectAsStateWithLifecycle()
 
@@ -114,6 +125,8 @@ private fun Raiz(
                 empresaNome = sessao.empresaNome,
                 onAbrirConversa = { id, titulo -> aberta = ConversaAberta(id, titulo) },
                 onSair = vm::sair,
+                temaAtual = tema,
+                onMudarTema = vm::mudarTema,
             )
     }
 }

@@ -40,7 +40,13 @@ class LoginViewModel
 constructor(
     private val repo: SessaoRepository,
     private val push: com.vsanexus.atendimento.push.PushRepository,
+    private val temaStore: com.vsanexus.atendimento.ui.theme.TemaStore,
 ) : ViewModel() {
+    /** `claro` | `escuro` | `sistema` — aplicado na raiz da árvore. */
+    val tema = temaStore.estado
+
+    fun mudarTema(modo: String) = temaStore.mudar(modo)
+
     private val _ui = MutableStateFlow(LoginUiState())
     val ui: StateFlow<LoginUiState> = _ui.asStateFlow()
 
