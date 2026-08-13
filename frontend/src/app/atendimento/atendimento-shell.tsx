@@ -92,7 +92,10 @@ export function AtendimentoShell({ children }: Props) {
     <ShellContext.Provider
       value={{ state, mobileOpen, toggle, closeMobile, isMobile }}
     >
-      <div className="flex h-[calc(100vh-4rem)] gap-0 -m-6">
+      {/* 3rem = h-12 do header do AppShell; 100dvh evita o estouro de 16px
+          que a conta antiga (100vh-4rem) causava. O AppShell não aplica
+          max-width nem padding nesta rota — a largura toda é nossa. */}
+      <div className="flex h-[calc(100dvh-3rem)] gap-0">
         {children}
       </div>
     </ShellContext.Provider>
