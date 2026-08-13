@@ -169,7 +169,15 @@ export const auth = betterAuth({
       // 15 em 15 min segue inviável pra força bruta.
       "/sign-in/email": { window: 900, max: 15 },
       "/sign-up/email": { window: 900, max: 3 },         // 3 / 15 min (mesmo com disableSignUp)
-      "/forget-password": { window: 3600, max: 3 },      // 3 / hora
+      // O Better Auth desta versão expõe `/request-password-reset`; o nome
+      // antigo `/forget-password` não existe mais como rota (POST nele dá
+      // 404). A regra antiga ficou mirando o caminho morto — ou seja, o
+      // endpoint público REAL rodou sob o teto global (30/min), não sob os
+      // 3/h documentados. Descoberto em 2026-08-13 ao integrar o convite de
+      // acesso. As duas entradas ficam: se uma atualização reintroduzir o
+      // alias, ele já nasce coberto.
+      "/request-password-reset": { window: 3600, max: 3 }, // 3 / hora
+      "/forget-password": { window: 3600, max: 3 },      // 3 / hora (alias morto)
       "/reset-password": { window: 3600, max: 5 },       // 5 / hora
     },
   },
