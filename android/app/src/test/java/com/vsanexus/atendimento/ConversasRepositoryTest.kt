@@ -20,6 +20,7 @@ import com.vsanexus.atendimento.data.remote.DepartamentosResponse
 import com.vsanexus.atendimento.data.remote.EmpresasResponse
 import com.vsanexus.atendimento.data.remote.MensagensResponse
 import com.vsanexus.atendimento.data.remote.NotaRequest
+import com.vsanexus.atendimento.data.remote.PushTokenRequest
 import com.vsanexus.atendimento.data.remote.ResponderRequest
 import com.vsanexus.atendimento.data.remote.TagsResponse
 import com.vsanexus.atendimento.data.remote.TransferRequest
@@ -304,6 +305,10 @@ private class FakeApi(
         limit: Int,
         excludeId: Long?,
     ) = AtendimentosResponse()
+
+    override suspend fun registrarPush(body: PushTokenRequest) = vazio()
+
+    override suspend fun removerPush(body: PushTokenRequest) = vazio()
 
     private fun vazio(): Response<Unit> = Response.success(Unit)
 }

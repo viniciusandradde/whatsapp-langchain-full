@@ -37,7 +37,16 @@ data class LoginUiState(
 @HiltViewModel
 class LoginViewModel
 @Inject
-constructor(private val repo: SessaoRepository) : ViewModel() {
+constructor(
+    private val repo: SessaoRepository,
+    private val push: com.vsanexus.atendimento.push.PushRepository,
+    private val temaStore: com.vsanexus.atendimento.ui.theme.TemaStore,
+) : ViewModel() {
+    /** `claro` | `escuro` | `sistema` — aplicado na raiz da árvore. */
+    val tema = temaStore.estado
+
+    fun mudarTema(modo: String) = temaStore.mudar(modo)
+
     private val _ui = MutableStateFlow(LoginUiState())
     val ui: StateFlow<LoginUiState> = _ui.asStateFlow()
 
@@ -105,6 +114,12 @@ constructor(private val repo: SessaoRepository) : ViewModel() {
     fun escolher(empresa: EmpresaResumo) = repo.escolherEmpresa(empresa)
 
     fun sair() {
-        viewModelScope.launch { repo.logout() }
+        viewModelScope.launch {
+            // Antes do logout: depois de limpar a sessão não há mais como
+            // autenticar a remoção, e o aparelho continuaria recebendo
+            // conversa de cliente de uma conta da qual a pessoa saiu.
+            push.remover()
+            repo.logout()
+        }
     }
 }

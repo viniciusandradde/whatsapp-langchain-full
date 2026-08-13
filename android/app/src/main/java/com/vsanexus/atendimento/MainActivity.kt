@@ -1,5 +1,6 @@
 package com.vsanexus.atendimento
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -9,6 +10,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -18,6 +21,7 @@ import com.vsanexus.atendimento.ui.login.LoginScreen
 import com.vsanexus.atendimento.ui.login.LoginViewModel
 import com.vsanexus.atendimento.ui.theme.NexusAtendimentoTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Activity única do app.
@@ -33,14 +37,44 @@ import dagger.hilt.android.AndroidEntryPoint
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    /**
+     * Pedido de abertura vindo da NOTIFICAÇÃO de push. Flow e não estado do
+     * Compose porque chega por duas portas: `onCreate` (app estava fechado) e
+     * `onNewIntent` (app aberto, activity é singleTop) — e a segunda vive
+     * fora da composição.
+     */
+    private val pedidoDoPush = MutableStateFlow<ConversaAberta?>(null)
+
+    private fun lerIntent(i: Intent?) {
+        val id = i?.getLongExtra("atendimento_id", -1L) ?: -1L
+        if (id > 0) {
+            pedidoDoPush.value = ConversaAberta(id, i?.getStringExtra("titulo") ?: "")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lerIntent(intent)
         setContent {
-            NexusAtendimentoTheme {
-                Raiz()
+            // O tema é decidido AQUI, acima de tudo: o login também muda.
+            val vm: LoginViewModel = hiltViewModel()
+            val tema by vm.tema.collectAsStateWithLifecycle()
+            val escuro =
+                when (tema) {
+                    "escuro" -> true
+                    "sistema" -> isSystemInDarkTheme()
+                    else -> false
+                }
+            NexusAtendimentoTheme(escuro = escuro) {
+                Raiz(pedidoDoPush, vm)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        lerIntent(intent)
     }
 }
 
@@ -48,9 +82,24 @@ class MainActivity : ComponentActivity() {
 private data class ConversaAberta(val id: Long, val titulo: String)
 
 @Composable
-private fun Raiz(vm: LoginViewModel = hiltViewModel()) {
+private fun Raiz(
+    pedidoDoPush: MutableStateFlow<ConversaAberta?>,
+    vm: LoginViewModel = hiltViewModel(),
+) {
     val sessao by vm.sessao.collectAsStateWithLifecycle()
+    val tema by vm.tema.collectAsStateWithLifecycle()
     var aberta by remember { mutableStateOf<ConversaAberta?>(null) }
+    val pedido by pedidoDoPush.collectAsStateWithLifecycle()
+
+    // Toque na notificação abre a conversa. Consumir (zerar o flow) impede
+    // reabrir a mesma conversa numa recomposição futura.
+    LaunchedEffect(pedido) {
+        val pdd = pedido
+        if (pdd != null && sessao.logado) {
+            aberta = pdd
+            pedidoDoPush.value = null
+        }
+    }
 
     // Sessão caiu (logout ou 401) com conversa aberta: fecha, senão a tela
     // ficaria por cima do login.
@@ -76,6 +125,8 @@ private fun Raiz(vm: LoginViewModel = hiltViewModel()) {
                 empresaNome = sessao.empresaNome,
                 onAbrirConversa = { id, titulo -> aberta = ConversaAberta(id, titulo) },
                 onSair = vm::sair,
+                temaAtual = tema,
+                onMudarTema = vm::mudarTema,
             )
     }
 }

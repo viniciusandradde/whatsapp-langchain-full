@@ -254,6 +254,16 @@ interface AtendimentoApi {
         @Path("tag") tag: String,
     ): Response<Unit>
 
+    // --- Push (fatia 2, mig 168) ---
+
+    /** Registra o aparelho pra receber push da empresa ativa. UPSERT no backend. */
+    @POST("api/push/registrar")
+    suspend fun registrarPush(@Body body: PushTokenRequest): Response<Unit>
+
+    /** Sair: o aparelho para de receber conversa da empresa. */
+    @POST("api/push/remover")
+    suspend fun removerPush(@Body body: PushTokenRequest): Response<Unit>
+
     /**
      * Atendimentos anteriores do mesmo cliente — contexto pro painel.
      * `exclude_id` tira o atual da lista.

@@ -228,3 +228,9 @@ data class ClienteDetailResponse(
 data class ClienteTagRequest(
     val tag: String,
 )
+
+@Serializable
+data class PushTokenRequest(
+    val token: String,
+    val plataforma: String = "android",
+)

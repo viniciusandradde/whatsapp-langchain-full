@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // Lê o google-services.json e liga o app ao projeto Firebase (push).
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -96,6 +98,8 @@ android {
 }
 
 dependencies {
+    // Push (fatia 2) — só o messaging, sem o BoM: uma lib só não paga BoM.
+    implementation(libs.firebase.messaging)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

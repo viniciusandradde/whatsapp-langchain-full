@@ -10,6 +10,7 @@ import com.vsanexus.atendimento.data.remote.ClienteDto
 import com.vsanexus.atendimento.data.remote.DepartamentoDto
 import com.vsanexus.atendimento.data.remote.EventosAtendimento
 import com.vsanexus.atendimento.data.remote.TagDto
+import com.vsanexus.atendimento.push.ConversaAtual
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,7 @@ constructor(
     private val midias: MidiaRepository,
     private val eventos: EventosAtendimento,
     private val apoio: ApoioRepository,
+    private val conversaAtual: ConversaAtual,
 ) : ViewModel() {
     val estado = repo.estado
 
@@ -104,6 +106,9 @@ constructor(
         // frame se não houver controle — e cada chamada refaria a busca.
         if (abertoId == id) return
         abertoId = id
+        // O serviço de push consulta isto pra NÃO notificar a conversa que o
+        // operador já está lendo.
+        conversaAtual.id = id
         viewModelScope.launch { repo.abrir(id) }
     }
 
@@ -307,6 +312,7 @@ constructor(
     }
 
     override fun onCleared() {
+        conversaAtual.id = null
         repo.fechar()
         super.onCleared()
     }
