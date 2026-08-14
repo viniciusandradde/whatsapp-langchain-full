@@ -102,6 +102,7 @@ fun ConversaScreen(
     var menuAberto by remember { mutableStateOf(false) }
     // Qual encerramento está aguardando confirmação: "resolvido"/"abandonado".
     var confirmandoEncerrar by remember { mutableStateOf<String?>(null) }
+    var confirmandoSemIa by remember { mutableStateOf(false) }
 
     // A confirmação de ação some sozinha — é um aceno, não um estado.
     LaunchedEffect(estado.confirmacao) {
@@ -184,6 +185,15 @@ fun ConversaScreen(
                                 vm.abrirTags()
                             },
                         )
+                        if (estado.detalhe?.clienteTelefone != null) {
+                            DropdownMenuItem(
+                                text = { Text("Incluir em números sem IA") },
+                                onClick = {
+                                    menuAberto = false
+                                    confirmandoSemIa = true
+                                },
+                            )
+                        }
                         if (estado.aberto) {
                             DropdownMenuItem(
                                 text = { Text("Transferir…") },
@@ -309,6 +319,16 @@ fun ConversaScreen(
                 vm.encerrar(statusFinal)
             },
             onCancelar = { confirmandoEncerrar = null },
+        )
+    }
+    if (confirmandoSemIa) {
+        DialogoSemIa(
+            telefone = estado.detalhe?.clienteTelefone ?: "",
+            onConfirmar = {
+                confirmandoSemIa = false
+                vm.incluirSemIa()
+            },
+            onCancelar = { confirmandoSemIa = false },
         )
     }
     transferencia?.let {

@@ -188,6 +188,34 @@ fun DialogoEncerrar(
 }
 
 /**
+ * Confirmação de "incluir em números sem IA" (whitelist de BLOQUEIO, mig
+ * 133): efeito forte — nenhuma conexão da empresa responde automaticamente
+ * ao número — então o diálogo explica antes de executar.
+ */
+@Composable
+fun DialogoSemIa(
+    telefone: String,
+    onConfirmar: () -> Unit,
+    onCancelar: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancelar,
+        title = { Text("Incluir $telefone nos números sem IA?") },
+        text = {
+            Text(
+                "Nenhuma conexão da empresa vai responder automaticamente a " +
+                    "esse número (sem agente, menu ou mensagens automáticas) " +
+                    "até que ele seja removido na tela Números sem IA do painel.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirmar) { Text("Incluir número") }
+        },
+        dismissButton = { TextButton(onClick = onCancelar) { Text("Cancelar") } },
+    )
+}
+
+/**
  * Folha de transferência — os dois modos do popover web: departamento (vai
  * pra fila do setor; o cliente é avisado) e atendente online (assume direto,
  * sem aviso). O count de atendimentos abertos ajuda a não sobrecarregar quem

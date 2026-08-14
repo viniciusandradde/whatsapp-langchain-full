@@ -109,6 +109,13 @@ interface AtendimentoApi {
     ): Response<ResponseBody>
 
     /**
+     * Inclui um número na lista "números sem IA" (whitelist de bloqueio).
+     * 409 = já cadastrado; 403 = sem a permissão whitelist.manage.
+     */
+    @POST("api/whitelist")
+    suspend fun incluirSemIa(@Body body: SemIaRequest): Response<Unit>
+
+    /**
      * Transcreve a nota de voz de UMA mensagem (mig 169). Idempotente no
      * servidor: já transcrita devolve o texto salvo sem nova chamada de LLM.
      * 400 = mensagem sem áudio; 502 = provedor fora (vale tentar de novo).

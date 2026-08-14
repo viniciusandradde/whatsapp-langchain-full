@@ -6,6 +6,7 @@ import com.vsanexus.atendimento.data.remote.CloseRequest
 import com.vsanexus.atendimento.data.remote.MensagemDto
 import com.vsanexus.atendimento.data.remote.NotaRequest
 import com.vsanexus.atendimento.data.remote.ResponderRequest
+import com.vsanexus.atendimento.data.remote.SemIaRequest
 import com.vsanexus.atendimento.data.remote.TransferRequest
 import com.vsanexus.atendimento.domain.Bolha
 import com.vsanexus.atendimento.domain.Lado
@@ -428,6 +429,37 @@ constructor(private val api: AtendimentoApi) {
                 aviso = aviso,
             )
     }
+
+    /**
+     * Inclui o número do cliente na lista "números sem IA" (whitelist de
+     * BLOQUEIO, mig 133): nenhuma conexão da empresa responde automaticamente
+     * a esse número até alguém removê-lo na tela Números sem IA do painel.
+     */
+    suspend fun incluirSemIa() {
+        val det = _estado.value.detalhe
+        val telefone = det?.clienteTelefone ?: return
+        val resp =
+            try {
+                api.incluirSemIa(SemIaRequest(telefone, det.clienteNome))
+            } catch (_: Exception) {
+                _estado.value = _estado.value.copy(aviso = "Sem conexão. Tente de novo.")
+                return
+            }
+        if (!resp.isSuccessful) {
+            _estado.value = _estado.value.copy(aviso = avisoSemIaDe(resp.code()))
+            return
+        }
+        _estado.value =
+            _estado.value.copy(confirmacao = "Número incluído nos números sem IA.")
+    }
+
+    private fun avisoSemIaDe(codigo: Int) =
+        when (codigo) {
+            409 -> "Esse número já está na lista de números sem IA."
+            403 -> "Você não tem permissão para gerenciar números sem IA."
+            400 -> "Telefone do cliente inválido."
+            else -> "Não foi possível incluir agora. Tente novamente."
+        }
 
     /**
      * Transcreve a nota de voz de uma mensagem (mig 169) e injeta o texto na
