@@ -122,6 +122,16 @@ data class MensagemDto(
     val transcricao: String? = null,
 )
 
+/**
+ * Cadastro na lista "números sem IA" (whitelist de BLOQUEIO, mig 133):
+ * número cadastrado não recebe nenhuma resposta automática da empresa.
+ */
+@Serializable
+data class SemIaRequest(
+    val telefone: String,
+    val nome: String? = null,
+)
+
 /** Resposta do POST /mensagens/{id}/transcrever (mig 169). */
 @Serializable
 data class TranscreverResponse(

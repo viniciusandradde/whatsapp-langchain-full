@@ -286,6 +286,11 @@ constructor(
         viewModelScope.launch { repo.transcrever(mensagemId) }
     }
 
+    /** Inclui o número do cliente nos "números sem IA" (bloqueio, mig 133). */
+    fun incluirSemIa() {
+        viewModelScope.launch { repo.incluirSemIa() }
+    }
+
     /**
      * Arquivo local de uma mídia da conversa, baixando na primeira vez.
      *
