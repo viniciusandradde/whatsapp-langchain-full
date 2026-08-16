@@ -60,6 +60,10 @@ from whatsapp_langchain.shared.atendimento_tag import (
 from whatsapp_langchain.shared.atendimento_visualizacao import marcar_lido
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
+from whatsapp_langchain.shared.conversa_ativa import (
+    ConversaAtivaError,
+    iniciar_conversa,
+)
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import get_empresa_by_id, is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
@@ -115,6 +119,27 @@ router = APIRouter(
 
 class CloseInput(BaseModel):
     status: Literal["resolvido", "abandonado"] = "resolvido"
+
+
+class IniciarConversaInput(BaseModel):
+    """Conversa ativa (mig 170): exatamente um de `mensagem` OU `template_id`.
+
+    Evolution envia texto livre; WABA/Twilio exigem template aprovado (a
+    validação por provider mora em `shared/conversa_ativa.py`).
+    """
+
+    telefone: str = Field(min_length=8, max_length=32)
+    conexao_id: int
+    mensagem: str | None = Field(default=None, max_length=4096)
+    template_id: int | None = None
+    variaveis: dict[str, str] | None = None
+    nome: str | None = Field(default=None, max_length=120)
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> IniciarConversaInput:
+        if bool((self.mensagem or "").strip()) == bool(self.template_id):
+            raise ValueError("Informe exatamente um: mensagem OU template_id")
+        return self
 
 
 class TransferInput(BaseModel):
@@ -216,6 +241,60 @@ async def list_my_atendimentos(
         scope_departamento_ids=scope_dept_ids,
     )
     return {"atendimentos": rows}
+
+
+@router.post("/iniciar", status_code=201)
+async def iniciar_conversa_endpoint(
+    body: IniciarConversaInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.iniciar")),
+) -> dict:
+    """Conversa ativa 1:1 (mig 170) — operador inicia contato com um número.
+
+    Cria (ou anexa a) atendimento `iniciado_cliente=false`, nascendo
+    `em_andamento` e ATRIBUÍDO a quem iniciou — a IA fica calada pelo gate de
+    handoff. Compliance do disparo se aplica (opt-out 409, teto diário 409).
+    Nasce `em_andamento`, então o auto-abandono de `aguardando>48h` do
+    cleanup não mata a conversa enquanto o cliente não responde.
+    """
+    pool = await get_pool()
+    try:
+        atendimento, was_created = await iniciar_conversa(
+            pool,
+            empresa_id=empresa_id,
+            user_id=user_id,
+            conexao_id=body.conexao_id,
+            telefone=body.telefone,
+            mensagem=body.mensagem,
+            template_id=body.template_id,
+            variaveis=body.variaveis,
+            nome=body.nome,
+        )
+    except ConversaAtivaError as e:
+        raise HTTPException(status_code=e.status, detail=str(e)) from e
+
+    if was_created:
+        await dispatch_event(
+            pool,
+            empresa_id,
+            "atendimento.aberto",
+            {
+                "atendimento_id": atendimento.id,
+                "cliente_id": atendimento.cliente_id,
+                "conexao_id": atendimento.conexao_id,
+                "agente_atual": atendimento.agente_atual,
+                "iniciado_cliente": False,
+                "iniciado_por_user_id": user_id,
+            },
+        )
+    # Nasce atribuída a quem criou — o selo correto sem re-derivar a página.
+    atendimento.situacao = "em_atendimento"
+    return {
+        "ok": True,
+        "was_created": was_created,
+        "atendimento": atendimento.model_dump(mode="json"),
+    }
 
 
 @router.get("/contadores")

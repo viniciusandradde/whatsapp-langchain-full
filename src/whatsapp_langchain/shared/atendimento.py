@@ -198,6 +198,8 @@ async def open_or_attach_atendimento(
     *,
     agente: str = "vsa_tech",
     conexao: Conexao | None = None,
+    iniciado_cliente: bool = True,
+    assigned_to_user_id: str | None = None,
 ) -> tuple[Atendimento, bool]:
     """Abre novo atendimento ou anexa ao já-aberto (fluxo do webhook).
 
@@ -205,6 +207,11 @@ async def open_or_attach_atendimento(
     WHERE status IN aguardando|em_andamento) pra garantir 1 atendimento aberto
     por tupla. Quando já existe, atualiza `last_message_at` e retorna o id
     existente em uma transação curta.
+
+    Conversa ativa (mig 170): `iniciado_cliente=False` marca origem outbound e
+    `assigned_to_user_id` faz o atendimento NASCER `em_andamento` e atribuído
+    ao operador que iniciou — o gate de handoff do worker cala a IA. Anexar a
+    um atendimento já aberto NÃO rouba o dono existente.
 
     Retorna `(atendimento, was_created)` — o flag permite o caller disparar
     o evento `atendimento.aberto` só quando um row novo foi inserido.
@@ -276,8 +283,9 @@ async def open_or_attach_atendimento(
             f"""
             INSERT INTO atendimento
                 (empresa_id, cliente_id, conexao_id, agente_atual,
-                 conexao_nome, conexao_numero, conexao_provider)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                 conexao_nome, conexao_numero, conexao_provider,
+                 iniciado_cliente, assigned_to_user_id, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {_BARE_COLS}
             """,
             (
@@ -288,6 +296,9 @@ async def open_or_attach_atendimento(
                 conexao.display_name if conexao else None,
                 conexao.from_number if conexao else None,
                 conexao.provider if conexao else None,
+                iniciado_cliente,
+                assigned_to_user_id,
+                "em_andamento" if assigned_to_user_id else "aguardando",
             ),
         )
         new = await cur.fetchone()

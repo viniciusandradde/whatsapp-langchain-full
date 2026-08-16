@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
+import { NovaConversaBotao } from "@/app/atendimento/nova-conversa-modal";
 import { getCliente } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
@@ -67,11 +68,16 @@ export default async function ClienteDetailPage({ params }: PageProps) {
         Voltar para clientes
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-semibold">{cliente.nome ?? cliente.telefone}</h1>
-        <p className="mt-0.5 font-mono text-sm text-muted-foreground">
-          {cliente.telefone}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">{cliente.nome ?? cliente.telefone}</h1>
+          <p className="mt-0.5 font-mono text-sm text-muted-foreground">
+            {cliente.telefone}
+          </p>
+        </div>
+        <NovaConversaBotao
+          clienteInicial={{ telefone: cliente.telefone, nome: cliente.nome }}
+        />
       </div>
 
       {/* Fase 1.A: ficha enriquecida (4 tabs editáveis) */}
