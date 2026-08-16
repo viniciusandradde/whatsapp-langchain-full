@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -32,6 +35,9 @@ import androidx.compose.ui.unit.dp
 fun NovaConversaFolha(
     ui: NovaConversaUi,
     onIniciar: (telefone: String, nome: String, mensagem: String) -> Unit,
+    /** Cada tecla no campo de contato — o ViewModel faz o debounce. */
+    onBuscarContato: (String) -> Unit,
+    onLimparSugestoes: () -> Unit,
     onFechar: () -> Unit,
 ) {
     val telefone = remember { mutableStateOf("") }
@@ -62,11 +68,47 @@ fun NovaConversaFolha(
                 else -> {
                     OutlinedTextField(
                         value = telefone.value,
-                        onValueChange = { telefone.value = it },
-                        label = { Text("Telefone (com DDD)") },
+                        onValueChange = {
+                            telefone.value = it
+                            onBuscarContato(it)
+                        },
+                        label = { Text("Nome ou telefone") },
+                        placeholder = { Text("Busque um contato ou digite o número") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
+                    // Contatos que casam com o digitado: tocar preenche número
+                    // e nome — é o caminho de quem já falou com a empresa.
+                    if (ui.sugestoes.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Surface(
+                            tonalElevation = 2.dp,
+                            shape = MaterialTheme.shapes.medium,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column {
+                                ui.sugestoes.take(6).forEach { c ->
+                                    ListItem(
+                                        headlineContent = { Text(c.nome ?: "Sem nome") },
+                                        supportingContent = { Text(c.telefone ?: "") },
+                                        modifier =
+                                            Modifier.fillMaxWidth().clickable {
+                                                telefone.value = c.telefone ?: ""
+                                                nome.value = c.nome ?: ""
+                                                onLimparSugestoes()
+                                            },
+                                    )
+                                }
+                            }
+                        }
+                    } else if (ui.buscando) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Procurando contatos…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = nome.value,

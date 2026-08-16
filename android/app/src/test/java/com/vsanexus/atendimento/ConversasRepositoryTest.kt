@@ -15,6 +15,7 @@ import com.vsanexus.atendimento.data.remote.AtendimentoDto
 import com.vsanexus.atendimento.data.remote.AtendimentosResponse
 import com.vsanexus.atendimento.data.remote.ClienteDetailResponse
 import com.vsanexus.atendimento.data.remote.ClienteTagRequest
+import com.vsanexus.atendimento.data.remote.ClientesResponse
 import com.vsanexus.atendimento.data.remote.ConexoesResponse
 import com.vsanexus.atendimento.data.remote.IniciarConversaRequest
 import com.vsanexus.atendimento.data.remote.IniciarConversaResponse
@@ -270,6 +271,9 @@ private class FakeApi(
     ): Response<TranscreverResponse> = Response.success(TranscreverResponse())
 
     override suspend fun incluirSemIa(body: SemIaRequest): Response<Unit> = vazio()
+
+    override suspend fun buscarClientes(search: String, limit: Int): ClientesResponse =
+        ClientesResponse()
 
     override suspend fun conexoes(): ConexoesResponse = ConexoesResponse()
 

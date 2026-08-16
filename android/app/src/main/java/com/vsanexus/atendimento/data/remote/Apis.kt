@@ -108,6 +108,17 @@ interface AtendimentoApi {
         @Query("lado") lado: String = "in",
     ): Response<ResponseBody>
 
+    /**
+     * Busca de contatos por nome OU telefone — autocomplete do "Nova
+     * conversa". O backend aplica o escopo record-level (`cliente.read.own`
+     * vs `.all`), então o app só recebe quem o operador pode ver.
+     */
+    @GET("api/clientes")
+    suspend fun buscarClientes(
+        @Query("search") search: String,
+        @Query("limit") limit: Int = 8,
+    ): ClientesResponse
+
     /** Conexões da empresa — seletor do "Nova conversa". */
     @GET("api/conexoes")
     suspend fun conexoes(): ConexoesResponse

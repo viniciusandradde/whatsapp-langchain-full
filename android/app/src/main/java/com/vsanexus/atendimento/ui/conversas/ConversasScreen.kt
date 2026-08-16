@@ -231,6 +231,8 @@ fun ConversasScreen(
         NovaConversaFolha(
             ui = estado,
             onIniciar = vm::iniciarConversa,
+            onBuscarContato = vm::buscarContatos,
+            onLimparSugestoes = vm::limparSugestoes,
             onFechar = vm::fecharNovaConversa,
         )
     }

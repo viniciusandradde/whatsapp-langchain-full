@@ -132,6 +132,9 @@ data class SemIaRequest(
     val nome: String? = null,
 )
 
+@Serializable
+data class ClientesResponse(val clientes: List<ClienteDto> = emptyList())
+
 /** Conexão da empresa (lista pro seletor de "Nova conversa"). */
 @Serializable
 data class ConexaoDto(

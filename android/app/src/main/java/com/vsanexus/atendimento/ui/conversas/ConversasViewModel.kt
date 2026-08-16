@@ -10,6 +10,7 @@ import com.vsanexus.atendimento.data.remote.EventosAtendimento
 import com.vsanexus.atendimento.push.PushRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +39,9 @@ data class NovaConversaUi(
     val conexoes: List<com.vsanexus.atendimento.data.remote.ConexaoDto>? = null,
     val enviando: Boolean = false,
     val erro: String? = null,
+    /** Contatos que casam com o que o operador digitou (nome ou número). */
+    val sugestoes: List<com.vsanexus.atendimento.data.remote.ClienteDto> = emptyList(),
+    val buscando: Boolean = false,
 )
 
 data class ConversaCriada(val id: Long, val titulo: String)
@@ -105,6 +109,8 @@ constructor(
      */
     // --- Nova conversa (mig 170) ---
 
+    private var buscaContatos: kotlinx.coroutines.Job? = null
+
     fun abrirNovaConversa() {
         _ui.value = _ui.value.copy(novaConversa = NovaConversaUi())
         viewModelScope.launch {
@@ -127,7 +133,44 @@ constructor(
     }
 
     fun fecharNovaConversa() {
+        buscaContatos?.cancel()
         _ui.value = _ui.value.copy(novaConversa = null)
+    }
+
+    /**
+     * Busca contato por nome ou número enquanto o operador digita.
+     *
+     * Debounce de 300ms com cancelamento da busca anterior: sem isso cada
+     * tecla vira uma requisição e a lista pisca com resultado desatualizado.
+     */
+    fun buscarContatos(termo: String) {
+        buscaContatos?.cancel()
+        val q = termo.trim()
+        val atual = _ui.value.novaConversa ?: return
+        if (q.length < 3) {
+            _ui.value =
+                _ui.value.copy(
+                    novaConversa = atual.copy(sugestoes = emptyList(), buscando = false),
+                )
+            return
+        }
+        _ui.value = _ui.value.copy(novaConversa = atual.copy(buscando = true))
+        buscaContatos =
+            viewModelScope.launch {
+                delay(300)
+                val achados = apoio.buscarClientes(q) ?: emptyList()
+                val aberta = _ui.value.novaConversa ?: return@launch
+                _ui.value =
+                    _ui.value.copy(
+                        novaConversa = aberta.copy(sugestoes = achados, buscando = false),
+                    )
+            }
+    }
+
+    fun limparSugestoes() {
+        val atual = _ui.value.novaConversa ?: return
+        buscaContatos?.cancel()
+        _ui.value = _ui.value.copy(novaConversa = atual.copy(sugestoes = emptyList()))
     }
 
     fun iniciarConversa(telefone: String, nome: String, mensagem: String) {
