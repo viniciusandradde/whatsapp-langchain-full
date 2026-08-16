@@ -129,7 +129,8 @@ class IniciarConversaInput(BaseModel):
     """
 
     telefone: str = Field(min_length=8, max_length=32)
-    conexao_id: int
+    #: Omitido = conexão padrão da empresa (mig 170).
+    conexao_id: int | None = None
     mensagem: str | None = Field(default=None, max_length=4096)
     template_id: int | None = None
     variaveis: dict[str, str] | None = None

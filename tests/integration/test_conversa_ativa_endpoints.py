@@ -21,6 +21,9 @@ from fastapi.testclient import TestClient
 from .helpers import API_BASE_URL, get_admin_api_headers, get_db_url
 
 _RUN = uuid.uuid4().hex[:8]
+#: Sufixo NUMÉRICO. Telefone com letra do hex é flaky: `normalize_phone`
+#: descarta não-dígitos, e o número semeado deixa de casar com o do request.
+_D = f"{int(_RUN, 16) % 1_000_000:06d}"
 
 
 def _client() -> TestClient:
@@ -56,7 +59,7 @@ class TestE2E:
             VALUES (%s, 'evolution', %s, '{"instance_name": "e2e-conv"}')
             RETURNING id
             """,
-            (empresa_id, f"+5567{_RUN[:8]}"),
+            (empresa_id, f"+5567900{_D}"),
         )
         conexao_id = cur.fetchone()[0]
         user_id = f"test-conv-{_RUN}"
@@ -70,7 +73,7 @@ class TestE2E:
             (user_id, f"{user_id}@e2e.test"),
         )
         # Número em opt-out pro teste do 409.
-        tel_optout = f"+5567988{_RUN[:6]}"
+        tel_optout = f"+5567988{_D}"
         cur.execute(
             """
             INSERT INTO disparador_opt_out (empresa_id, wa_jid, telefone)
@@ -161,7 +164,7 @@ class TestE2E:
         # falha volta como 502 sem apagar nada.
         conn = psycopg.connect(get_db_url(), autocommit=True)
         cur = conn.cursor()
-        tel = f"+5567977{_RUN[:6]}"
+        tel = f"+5567977{_D}"
         cur.execute(
             "INSERT INTO cliente (empresa_id, telefone, nome) VALUES (%s, %s, 'X') "
             "RETURNING id",
@@ -195,12 +198,14 @@ class TestE2E:
         row = cur.fetchone()
         conn.close()
         assert row is not None, "atendimento pré-existente foi apagado!"
-        assert row[1] == dados["user_id"]
+        assert row[1] == dados["user_id"], "dono do atendimento foi trocado"
+        assert r.status_code in (201, 502), r.text
         if r.status_code == 201:
             assert r.json()["was_created"] is False
+            assert r.json()["atendimento"]["id"] == atd_id
 
     def test_5_falha_envio_desfaz_atendimento_novo(self, dados) -> None:
-        tel = f"+5567966{_RUN[:6]}"
+        tel = f"+5567966{_D}"
         r = self._post(
             dados,
             {"telefone": tel, "conexao_id": dados["conexao_id"], "mensagem": "oi"},

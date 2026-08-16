@@ -40,7 +40,6 @@ import {
   type Aba,
   type AtendenteStatus,
   type Atendimento,
-  type Conexao,
   type AtendimentoMensagem,
   type AtendimentoTag,
   type ContadoresAtendimento,
@@ -599,42 +598,6 @@ export async function transcreverMensagemAction(
 }
 
 // --- Conversa ativa (mig 170): operador inicia contato com um número ---
-
-type ConexoesAtivasResult =
-  | { ok: true; conexoes: Conexao[] }
-  | { ok: false; error: string };
-
-export async function loadConexoesAtivasAction(): Promise<ConexoesAtivasResult> {
-  try {
-    const { getConexoes } = await import("@/lib/api");
-    const r = await getConexoes();
-    return { ok: true, conexoes: r.conexoes.filter((c) => c.status === "active") };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
-
-type BuscaClientesResult =
-  | { ok: true; clientes: { id: number; nome: string | null; telefone: string }[] }
-  | { ok: false; error: string };
-
-/** Autocomplete do modal de nova conversa — 5 primeiros por nome/telefone. */
-export async function buscarClientesAction(q: string): Promise<BuscaClientesResult> {
-  try {
-    const { getClientes } = await import("@/lib/api");
-    const r = await getClientes({ search: q, limit: 5 });
-    return {
-      ok: true,
-      clientes: r.clientes.map((c) => ({
-        id: c.id,
-        nome: c.nome,
-        telefone: c.telefone,
-      })),
-    };
-  } catch (e) {
-    return { ok: false, error: toError(e) };
-  }
-}
 
 type IniciarConversaResult =
   | { ok: true; atendimentoId: number; wasCreated: boolean }

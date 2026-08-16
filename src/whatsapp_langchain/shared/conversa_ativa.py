@@ -20,7 +20,7 @@ from psycopg_pool import AsyncConnectionPool
 from whatsapp_langchain.shared.atendimento import open_or_attach_atendimento
 from whatsapp_langchain.shared.campanha import normalize_phone
 from whatsapp_langchain.shared.cliente import upsert_cliente
-from whatsapp_langchain.shared.conexao import get_conexao_by_id
+from whatsapp_langchain.shared.conexao import get_conexao_by_id, get_conexao_padrao
 from whatsapp_langchain.shared.conexao_quota import incr_uso_hoje, quota_status
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.opt_out import telefones_suprimidos
@@ -45,7 +45,7 @@ async def iniciar_conversa(
     *,
     empresa_id: int,
     user_id: str,
-    conexao_id: int,
+    conexao_id: int | None,
     telefone: str,
     mensagem: str | None = None,
     template_id: int | None = None,
@@ -66,7 +66,16 @@ async def iniciar_conversa(
     if tel is None:
         raise ConversaAtivaError("Telefone inválido. Informe DDD e número.")
 
-    conexao = await get_conexao_by_id(pool, conexao_id)
+    # Sem conexão escolhida, o servidor usa a padrão da empresa — a tela não
+    # pergunta "por qual número?" toda vez; quem quiser trocar marca outra
+    # como padrão em /connections.
+    if conexao_id is None:
+        conexao = await get_conexao_padrao(pool, empresa_id)
+        if conexao is None:
+            raise ConversaAtivaError("Nenhuma conexão ativa nesta empresa.", status=409)
+        conexao_id = conexao.id
+    else:
+        conexao = await get_conexao_by_id(pool, conexao_id)
     if conexao is None or conexao.empresa_id != empresa_id:
         raise ConversaAtivaError("Conexão não encontrada.", status=404)
     if conexao.status != "active":

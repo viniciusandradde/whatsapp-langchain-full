@@ -18,7 +18,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -26,12 +25,7 @@ import {
 import { usePermission } from "@/hooks/use-permission";
 import type { Conexao, WabaTemplate } from "@/lib/api";
 
-import {
-  buscarClientesAction,
-  iniciarConversaAction,
-  loadConexoesAtivasAction,
-  loadTemplatesAprovadosAction,
-} from "./actions";
+import { iniciarConversaAction, loadTemplatesAprovadosAction } from "./actions";
 
 function _bodyText(t: WabaTemplate): string {
   const body = t.componentes_json.find(
@@ -92,8 +86,10 @@ function NovaConversaModal({
   onFechar: () => void;
 }) {
   const router = useRouter();
+  // Conexão NÃO é escolha do operador: usamos a padrão da empresa (o
+  // servidor resolve igual quando `conexao_id` vai vazio). Só carregamos a
+  // lista pra saber o provider — WABA/Twilio exige template.
   const [conexoes, setConexoes] = useState<Conexao[] | null>(null);
-  const [conexaoId, setConexaoId] = useState<number | "">("");
   const [telefone, setTelefone] = useState(clienteInicial?.telefone ?? "");
   const [nome, setNome] = useState(clienteInicial?.nome ?? "");
   const [mensagem, setMensagem] = useState("");
@@ -106,17 +102,21 @@ function NovaConversaModal({
   const [enviando, startEnviar] = useTransition();
 
   useEffect(() => {
-    loadConexoesAtivasAction().then((r) => {
-      if (!r.ok) {
-        toast.error(r.error);
-        return;
-      }
-      setConexoes(r.conexoes);
-      if (r.conexoes.length === 1) setConexaoId(r.conexoes[0].id);
-    });
+    let vivo = true;
+    fetch("/api/nova-conversa/opcoes")
+      .then((r) => r.json())
+      .then((d) => {
+        if (vivo) setConexoes(d.conexao ? [d.conexao as Conexao] : []);
+      })
+      .catch(() => toast.error("Não foi possível carregar a conexão."));
+    return () => {
+      vivo = false;
+    };
   }, []);
 
-  const conexao = conexoes?.find((c) => c.id === conexaoId) ?? null;
+  // Padrão da empresa: `is_default` primeiro (a API já ordena assim).
+  const conexao = conexoes?.[0] ?? null;
+  const conexaoId = conexao?.id ?? "";
   const ehTemplate =
     conexao?.provider === "waba" ||
     (conexao?.provider?.startsWith("twilio") ?? false);
@@ -146,9 +146,10 @@ function NovaConversaModal({
         setSugestoes([]);
         return;
       }
-      buscarClientesAction(q).then((r) => {
-        if (r.ok) setSugestoes(r.clientes);
-      });
+      fetch(`/api/nova-conversa/opcoes?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((d) => setSugestoes(d.clientes ?? []))
+        .catch(() => {});
     }, 300);
     return () => window.clearTimeout(t);
   }, [telefone, clienteInicial]);
@@ -194,52 +195,9 @@ function NovaConversaModal({
             <MessageSquarePlus className="size-4" />
             Nova conversa
           </DialogTitle>
-          <DialogDescription>
-            A conversa nasce atribuída a você — a IA não responde por você
-            nela. Se já houver conversa aberta com o número, a mensagem entra
-            nela.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
-          <div>
-            <label className="mb-0.5 block text-xs text-muted-foreground">
-              Conexão
-            </label>
-            <Select
-              value={conexaoId === "" ? null : String(conexaoId)}
-              onValueChange={(v: string | null) => {
-                setConexaoId(v ? Number(v) : "");
-                // Reset do caminho de template ao trocar de conexão.
-                setTemplates(null);
-                setTemplateId(null);
-                setVars({});
-              }}
-            >
-              <SelectTrigger className="w-full" aria-label="Conexão">
-                <SelectValue
-                  placeholder={
-                    conexoes === null ? "Carregando…" : "Selecione a conexão…"
-                  }
-                >
-                  {(v: string | null) => {
-                    const c = conexoes?.find((x) => String(x.id) === v);
-                    return c
-                      ? `${c.display_name || c.from_number} (${c.provider})`
-                      : "Selecione a conexão…";
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {conexoes?.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.display_name || c.from_number} ({c.provider})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="relative">
             <label className="mb-0.5 block text-xs text-muted-foreground">
               Telefone (com DDD) ou busque um cliente
