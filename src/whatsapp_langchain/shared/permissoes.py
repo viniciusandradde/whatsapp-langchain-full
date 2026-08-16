@@ -84,6 +84,11 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "atendimento",
     ),
     (
+        "atendimento.iniciar",
+        "Iniciar conversa ativa com um número (cria atendimento outbound)",
+        "atendimento",
+    ),
+    (
         "atendimento.scope.departamento",
         "Ver atendimentos só do próprio departamento (deprecated, use .own)",
         "atendimento",
@@ -228,6 +233,7 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             # Mesmo nível de poder do reset: mexe na conversa e dispara
             # WhatsApp ao cliente. Quem pode um, pode o outro.
             "atendimento.reprocessar",
+            "atendimento.iniciar",
             "agendamento.read",
             "agendamento.create",
             "agendamento.cancel",
@@ -277,6 +283,8 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "atendimento.claim",
             "atendimento.transfer.own",
             "atendimento.close.own",
+            # Quem responde também inicia conversa (decisão 2026-08-15).
+            "atendimento.iniciar",
             "agendamento.read",
             "agendamento.create",
             "agendamento.cancel",

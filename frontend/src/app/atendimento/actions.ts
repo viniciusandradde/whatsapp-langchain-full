@@ -40,6 +40,7 @@ import {
   type Aba,
   type AtendenteStatus,
   type Atendimento,
+  type Conexao,
   type AtendimentoMensagem,
   type AtendimentoTag,
   type ContadoresAtendimento,
@@ -593,6 +594,66 @@ export async function transcreverMensagemAction(
     return { ok: true, transcricao: r.transcricao };
   } catch (e) {
     // 400 (não é áudio) e 502 (provedor fora) já vêm com frase em pt-BR.
+    return { ok: false, error: toError(e) };
+  }
+}
+
+// --- Conversa ativa (mig 170): operador inicia contato com um número ---
+
+type ConexoesAtivasResult =
+  | { ok: true; conexoes: Conexao[] }
+  | { ok: false; error: string };
+
+export async function loadConexoesAtivasAction(): Promise<ConexoesAtivasResult> {
+  try {
+    const { getConexoes } = await import("@/lib/api");
+    const r = await getConexoes();
+    return { ok: true, conexoes: r.conexoes.filter((c) => c.status === "active") };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type BuscaClientesResult =
+  | { ok: true; clientes: { id: number; nome: string | null; telefone: string }[] }
+  | { ok: false; error: string };
+
+/** Autocomplete do modal de nova conversa — 5 primeiros por nome/telefone. */
+export async function buscarClientesAction(q: string): Promise<BuscaClientesResult> {
+  try {
+    const { getClientes } = await import("@/lib/api");
+    const r = await getClientes({ search: q, limit: 5 });
+    return {
+      ok: true,
+      clientes: r.clientes.map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        telefone: c.telefone,
+      })),
+    };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+type IniciarConversaResult =
+  | { ok: true; atendimentoId: number; wasCreated: boolean }
+  | { ok: false; error: string };
+
+export async function iniciarConversaAction(
+  payload: import("@/lib/api").IniciarConversaPayload
+): Promise<IniciarConversaResult> {
+  try {
+    const { iniciarConversa } = await import("@/lib/api");
+    const r = await iniciarConversa(payload);
+    revalidatePath("/atendimento");
+    return {
+      ok: true,
+      atendimentoId: r.atendimento.id,
+      wasCreated: r.was_created,
+    };
+  } catch (e) {
+    // 409 (opt-out/teto diário) e 400 já vêm com frase acionável em pt-BR.
     return { ok: false, error: toError(e) };
   }
 }

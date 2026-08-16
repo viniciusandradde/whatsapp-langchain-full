@@ -2655,6 +2655,25 @@ export async function reprocessarMensagem(
   );
 }
 
+export interface IniciarConversaPayload {
+  telefone: string;
+  conexao_id: number;
+  mensagem?: string;
+  template_id?: number;
+  variaveis?: Record<string, string>;
+  nome?: string;
+}
+
+/** Conversa ativa 1:1 (mig 170) — operador inicia contato com um número. */
+export async function iniciarConversa(
+  payload: IniciarConversaPayload
+): Promise<{ ok: boolean; was_created: boolean; atendimento: Atendimento }> {
+  return apiFetch(`/api/atendimentos/iniciar`, {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export async function transcreverMensagem(
   atendimentoId: number,
   mensagemId: number

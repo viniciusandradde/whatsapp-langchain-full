@@ -16,6 +16,7 @@ import { AtendimentoList } from "./atendimento-list";
 import { AtendimentoShell, ShellToggleButton } from "./atendimento-shell";
 import { AtendimentoSidebar } from "./atendimento-sidebar";
 import { ListFilters } from "./list-filters";
+import { NovaConversaBotao } from "./nova-conversa-modal";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           <ShellToggleButton className="shrink-0" />
           <Headphones className="hidden h-5 w-5 md:block" />
           <h1 className="truncate text-lg font-semibold">{contextoLabel}</h1>
+          <NovaConversaBotao />
           <ListFilters
             tipo={tipo}
             departamentos={departamentos}
