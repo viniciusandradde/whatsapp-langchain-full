@@ -7,9 +7,13 @@
     <color name="canvas">#FFFFFFFF</color>
     <color name="superficie_barra">#FFF8FAFC</color>
 
-    <!-- Chapa do ícone. Escura de propósito: é a mesma chapa do ícone PWA da
-         VSA (frontend/public/icon-maskable-512.png), onde o laranja e o azul do
-         mark ganham contraste máximo. O tema claro do app não vale no launcher,
-         que tem papel de parede próprio e imprevisível atrás. -->
-    <color name="ic_launcher_background">#FF0D0D10</color>
+    <!-- Chapa do ícone: TRANSPARENTE (2026-08-16, pedido do dono: "só o V").
+         O mark fica solto sobre o papel de parede, sem moldura.
+
+         Trade-off assumido: launcher que força máscara (círculo/squircle)
+         desenha o recorte sem chapa por baixo — o V aparece sozinho, que é o
+         efeito desejado; em alguns launchers antigos isso pode render um
+         fundo do próprio tema. Se um dia precisar voltar a ter chapa, é só
+         restaurar #FF0D0D10 aqui. -->
+    <color name="ic_launcher_background">#00000000</color>
 </resources>
