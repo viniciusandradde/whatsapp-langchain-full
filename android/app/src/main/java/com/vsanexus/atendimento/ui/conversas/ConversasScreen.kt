@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.getValue
@@ -92,6 +94,12 @@ fun ConversasScreen(
                 TopAppBar(
                     title = { Text(empresaNome ?: "Conversas") },
                     actions = {
+                        androidx.compose.material3.IconButton(onClick = vm::abrirNovaConversa) {
+                            androidx.compose.material3.Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Nova conversa",
+                            )
+                        }
                         TextButton(onClick = onSair) {
                             Text("Sair", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -216,6 +224,21 @@ fun ConversasScreen(
                         }
                     }
             }
+        }
+    }
+
+    ui.novaConversa?.let { estado ->
+        NovaConversaFolha(
+            ui = estado,
+            onIniciar = vm::iniciarConversa,
+            onFechar = vm::fecharNovaConversa,
+        )
+    }
+    // Conversa criada: abre direto, como o toque num cartão da lista.
+    LaunchedEffect(ui.conversaCriada) {
+        ui.conversaCriada?.let { c ->
+            vm.consumirConversaCriada()
+            onAbrirConversa(c.id, c.titulo)
         }
     }
 }

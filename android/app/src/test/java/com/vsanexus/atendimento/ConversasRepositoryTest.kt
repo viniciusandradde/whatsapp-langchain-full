@@ -15,6 +15,9 @@ import com.vsanexus.atendimento.data.remote.AtendimentoDto
 import com.vsanexus.atendimento.data.remote.AtendimentosResponse
 import com.vsanexus.atendimento.data.remote.ClienteDetailResponse
 import com.vsanexus.atendimento.data.remote.ClienteTagRequest
+import com.vsanexus.atendimento.data.remote.ConexoesResponse
+import com.vsanexus.atendimento.data.remote.IniciarConversaRequest
+import com.vsanexus.atendimento.data.remote.IniciarConversaResponse
 import com.vsanexus.atendimento.data.remote.CloseRequest
 import com.vsanexus.atendimento.data.remote.DepartamentosResponse
 import com.vsanexus.atendimento.data.remote.EmpresasResponse
@@ -267,6 +270,12 @@ private class FakeApi(
     ): Response<TranscreverResponse> = Response.success(TranscreverResponse())
 
     override suspend fun incluirSemIa(body: SemIaRequest): Response<Unit> = vazio()
+
+    override suspend fun conexoes(): ConexoesResponse = ConexoesResponse()
+
+    override suspend fun iniciarConversa(
+        body: IniciarConversaRequest,
+    ): Response<IniciarConversaResponse> = Response.success(IniciarConversaResponse())
 
     // Este fake é da LISTA de conversas, que não envia mídia. Existe só porque
     // implementar a interface obriga — o envio de anexo é exercitado onde ele
