@@ -98,6 +98,10 @@ constructor(private val api: AtendimentoApi) {
             }
         }.getOrNull()
 
+    /** Contatos que casam com nome ou telefone digitado. */
+    suspend fun buscarClientes(q: String): List<ClienteDto>? =
+        runCatching { api.buscarClientes(q).clientes }.getOrNull()
+
     /**
      * Conversa ativa (mig 170). Sucesso devolve o atendimento criado/anexado;
      * falha devolve a frase acionável do backend (409 opt-out/teto, 403 sem
