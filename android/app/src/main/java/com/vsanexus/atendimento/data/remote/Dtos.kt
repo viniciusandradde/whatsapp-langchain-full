@@ -132,6 +132,36 @@ data class SemIaRequest(
     val nome: String? = null,
 )
 
+/** Conexão da empresa (lista pro seletor de "Nova conversa"). */
+@Serializable
+data class ConexaoDto(
+    val id: Long = 0,
+    val provider: String? = null,
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("from_number") val fromNumber: String? = null,
+    val status: String? = null,
+)
+
+@Serializable
+data class ConexoesResponse(val conexoes: List<ConexaoDto> = emptyList())
+
+/** Conversa ativa (mig 170): operador inicia contato com um número. */
+@Serializable
+data class IniciarConversaRequest(
+    val telefone: String,
+    /** Omitido: o servidor usa a conexão padrão da empresa. */
+    @SerialName("conexao_id") val conexaoId: Long? = null,
+    val mensagem: String? = null,
+    val nome: String? = null,
+)
+
+@Serializable
+data class IniciarConversaResponse(
+    val ok: Boolean = false,
+    @SerialName("was_created") val wasCreated: Boolean = false,
+    val atendimento: AtendimentoDto = AtendimentoDto(),
+)
+
 /** Resposta do POST /mensagens/{id}/transcrever (mig 169). */
 @Serializable
 data class TranscreverResponse(

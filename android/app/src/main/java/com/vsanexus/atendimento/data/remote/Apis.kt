@@ -108,6 +108,19 @@ interface AtendimentoApi {
         @Query("lado") lado: String = "in",
     ): Response<ResponseBody>
 
+    /** Conexões da empresa — seletor do "Nova conversa". */
+    @GET("api/conexoes")
+    suspend fun conexoes(): ConexoesResponse
+
+    /**
+     * Conversa ativa (mig 170): cria/anexa atendimento e envia a 1ª mensagem.
+     * 409 = opt-out ou teto diário; 403 = sem a permissão atendimento.iniciar.
+     */
+    @POST("api/atendimentos/iniciar")
+    suspend fun iniciarConversa(
+        @Body body: IniciarConversaRequest,
+    ): Response<IniciarConversaResponse>
+
     /**
      * Inclui um número na lista "números sem IA" (whitelist de bloqueio).
      * 409 = já cadastrado; 403 = sem a permissão whitelist.manage.

@@ -6,7 +6,9 @@ import com.vsanexus.atendimento.data.remote.AtendimentoApi
 import com.vsanexus.atendimento.data.remote.AtendimentoDto
 import com.vsanexus.atendimento.data.remote.ClienteDto
 import com.vsanexus.atendimento.data.remote.ClienteTagRequest
+import com.vsanexus.atendimento.data.remote.ConexaoDto
 import com.vsanexus.atendimento.data.remote.DepartamentoDto
+import com.vsanexus.atendimento.data.remote.IniciarConversaRequest
 import com.vsanexus.atendimento.data.remote.TagDto
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -83,4 +85,64 @@ constructor(private val api: AtendimentoApi) {
         runCatching {
             api.atendimentosAnteriores(clienteId, limit = 3, excludeId = excludeId).atendimentos
         }.getOrNull()
+
+    /**
+     * Conexões onde o app consegue INICIAR conversa: ativas e Evolution
+     * (texto livre). WABA/Twilio exigem template HSM com variáveis — fluxo
+     * do painel web, fora do escopo do app por ora.
+     */
+    suspend fun conexoesParaIniciar(): List<ConexaoDto>? =
+        runCatching {
+            api.conexoes().conexoes.filter {
+                it.status == "active" && it.provider == "evolution"
+            }
+        }.getOrNull()
+
+    /**
+     * Conversa ativa (mig 170). Sucesso devolve o atendimento criado/anexado;
+     * falha devolve a frase acionável do backend (409 opt-out/teto, 403 sem
+     * permissão) ou uma genérica.
+     */
+    suspend fun iniciarConversa(
+        telefone: String,
+        nome: String?,
+        mensagem: String,
+    ): ResultadoIniciar {
+        val resp =
+            try {
+                api.iniciarConversa(
+                    IniciarConversaRequest(
+                        telefone = telefone,
+                        mensagem = mensagem,
+                        nome = nome?.takeIf { it.isNotBlank() },
+                    ),
+                )
+            } catch (_: Exception) {
+                return ResultadoIniciar.Falha("Sem conexão. Tente de novo.")
+            }
+        if (!resp.isSuccessful) {
+            val detalhe =
+                runCatching { resp.errorBody()?.string() }.getOrNull()?.let { corpo ->
+                    Regex("\"detail\"\\s*:\\s*\"([^\"]+)\"")
+                        .find(corpo)?.groupValues?.get(1)
+                }
+            return ResultadoIniciar.Falha(
+                detalhe
+                    ?: when (resp.code()) {
+                        403 -> "Você não tem permissão para iniciar conversas."
+                        else -> "Não foi possível iniciar a conversa. Tente novamente."
+                    },
+            )
+        }
+        val atd = resp.body()?.atendimento
+            ?: return ResultadoIniciar.Falha("Resposta inesperada do servidor.")
+        return ResultadoIniciar.Criada(atd)
+    }
+}
+
+/** Resultado do [ApoioRepository.iniciarConversa]. */
+sealed interface ResultadoIniciar {
+    data class Criada(val atendimento: AtendimentoDto) : ResultadoIniciar
+
+    data class Falha(val mensagem: String) : ResultadoIniciar
 }
