@@ -92,6 +92,30 @@ async def list_conexoes(pool: AsyncConnectionPool, empresa_id: int) -> list[Cone
     return [_row_to_conexao(r) for r in rows]
 
 
+async def get_conexao_padrao(
+    pool: AsyncConnectionPool, empresa_id: int
+) -> Conexao | None:
+    """Conexão que a empresa usa quando ninguém escolhe (mig 170).
+
+    A marcada como padrão (`is_default`, garantida única pela mig 108) e, na
+    falta dela, a ativa mais antiga. Existe para o operador não ter que
+    escolher número toda vez que inicia conversa: quem quiser trocar marca
+    outra como padrão em /connections.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT {_SELECT_COLS} FROM conexao
+             WHERE empresa_id = %s AND status = 'active'
+             ORDER BY is_default DESC, id ASC
+             LIMIT 1
+            """,
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    return _row_to_conexao(row) if row else None
+
+
 async def get_conexao_by_id(
     pool: AsyncConnectionPool, conexao_id: int
 ) -> Conexao | None:
