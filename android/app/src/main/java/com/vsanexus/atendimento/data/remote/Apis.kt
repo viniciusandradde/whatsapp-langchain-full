@@ -8,6 +8,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Path
@@ -149,6 +150,27 @@ interface AtendimentoApi {
         @Path("id") id: Long,
         @Path("mensagemId") mensagemId: Long,
     ): Response<TranscreverResponse>
+
+    /**
+     * Corrige no WhatsApp do cliente uma mensagem já entregue (mig 172).
+     *
+     * 400 quando não pode mais: passou dos 15 minutos do WhatsApp, é resposta
+     * da IA (sem chave do provedor), é nota interna, ou o canal é WABA — que
+     * não suporta edição.
+     */
+    @PATCH("api/atendimentos/{id}/mensagens/{mensagemId}/texto")
+    suspend fun editarMensagem(
+        @Path("id") id: Long,
+        @Path("mensagemId") mensagemId: Long,
+        @Body body: EditarMensagemRequest,
+    ): Response<Unit>
+
+    /** Apaga para todos (mig 172). Janela bem maior que a de edição, ~2 dias. */
+    @DELETE("api/atendimentos/{id}/mensagens/{mensagemId}/texto")
+    suspend fun apagarMensagem(
+        @Path("id") id: Long,
+        @Path("mensagemId") mensagemId: Long,
+    ): Response<Unit>
 
     @POST("api/atendimentos/{id}/responder")
     suspend fun responder(

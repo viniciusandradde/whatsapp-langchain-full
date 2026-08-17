@@ -20,6 +20,7 @@ import com.vsanexus.atendimento.data.remote.ConexoesResponse
 import com.vsanexus.atendimento.data.remote.IniciarConversaRequest
 import com.vsanexus.atendimento.data.remote.IniciarConversaResponse
 import com.vsanexus.atendimento.data.remote.CloseRequest
+import com.vsanexus.atendimento.data.remote.EditarMensagemRequest
 import com.vsanexus.atendimento.data.remote.DepartamentosResponse
 import com.vsanexus.atendimento.data.remote.EmpresasResponse
 import com.vsanexus.atendimento.data.remote.MensagensResponse
@@ -269,6 +270,14 @@ private class FakeApi(
         id: Long,
         mensagemId: Long,
     ): Response<TranscreverResponse> = Response.success(TranscreverResponse())
+
+    override suspend fun editarMensagem(
+        id: Long,
+        mensagemId: Long,
+        body: EditarMensagemRequest,
+    ): Response<Unit> = vazio()
+
+    override suspend fun apagarMensagem(id: Long, mensagemId: Long): Response<Unit> = vazio()
 
     override suspend fun incluirSemIa(body: SemIaRequest): Response<Unit> = vazio()
 

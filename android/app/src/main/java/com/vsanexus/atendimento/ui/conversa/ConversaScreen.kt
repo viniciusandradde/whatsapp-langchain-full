@@ -59,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -97,6 +98,8 @@ fun ConversaScreen(
     val transferencia by vm.transferencia.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val cliente by vm.cliente.collectAsStateWithLifecycle()
+    val editando by vm.editando.collectAsStateWithLifecycle()
+    val confirmandoApagar by vm.confirmandoApagar.collectAsStateWithLifecycle()
     val cores = coresChat()
     val listState = rememberLazyListState()
     var menuAberto by remember { mutableStateOf(false) }
@@ -234,10 +237,15 @@ fun ConversaScreen(
             Composer(
                 texto = rascunho,
                 onTexto = vm::onRascunho,
-                onEnviar = vm::enviar,
+                // Em modo edição o mesmo botão confirma a correção em vez de
+                // mandar mensagem nova — senão o operador acabaria enviando
+                // duas vezes a mesma coisa.
+                onEnviar = if (editando != null) vm::confirmarEdicao else vm::enviar,
                 onEnviarMidia = vm::enviarMidia,
                 modoNota = modoNota,
                 onAlternarModoNota = vm::alternarModoNota,
+                editando = editando != null,
+                onCancelarEdicao = vm::cancelarEdicao,
             )
         },
     ) { inner ->
@@ -266,7 +274,14 @@ fun ConversaScreen(
                         modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
                     ) {
                         items(invertidas, key = { it.id }) { b ->
-                            BolhaItem(b, cores, vm::arquivoDeMidia, vm::transcrever)
+                            BolhaItem(
+                                b,
+                                cores,
+                                vm::arquivoDeMidia,
+                                vm::transcrever,
+                                vm::editarMensagem,
+                                vm::pedirParaApagar,
+                            )
                         }
                         if (estado.carregandoHistorico) {
                             item {
@@ -321,6 +336,12 @@ fun ConversaScreen(
             onCancelar = { confirmandoEncerrar = null },
         )
     }
+    if (confirmandoApagar != null) {
+        DialogoApagarMensagem(
+            onConfirmar = vm::confirmarApagar,
+            onCancelar = vm::cancelarApagar,
+        )
+    }
     if (confirmandoSemIa) {
         DialogoSemIa(
             telefone = estado.detalhe?.clienteTelefone ?: "",
@@ -359,6 +380,10 @@ private fun BolhaItem(
     carregarMidia: suspend (Long, Boolean) -> File?,
     /** Transcreve a nota de voz da mensagem (mig 169). */
     transcrever: (Long) -> Unit,
+    /** Abre o composer em modo edição com o texto atual (mig 172). */
+    editar: (Long, String) -> Unit,
+    /** Pede confirmação pra apagar para todos (mig 172). */
+    apagar: (Long) -> Unit,
 ) {
     when (b) {
         is Bolha.Texto -> {
@@ -372,8 +397,35 @@ private fun BolhaItem(
                 //
                 // Mensagem ainda `pendente` não entra no menu: copiar o que
                 // talvez nem tenha saído, ou agir sobre algo sem id no
-                // servidor, é convite a confusão.
-                BolhaComMenu(textoCopiavel = if (b.pendente) null else b.texto) {
+                // servidor, é convite a confusão. Apagada idem — o texto que
+                // sobrou é só registro nosso.
+                val inerte = b.pendente || b.apagada
+                val id = b.mensagemId
+                BolhaComMenu(
+                    textoCopiavel = if (inerte) null else b.texto,
+                    acoes =
+                        if (inerte || id == null) {
+                            emptyList()
+                        } else {
+                            buildList {
+                                // Some sozinho ao passar dos 15 min que o
+                                // WhatsApp permite, como no próprio WhatsApp.
+                                if (b.podeEditar) {
+                                    add(AcaoDaBolha("Editar") { editar(id, b.texto) })
+                                }
+                                // A janela de apagar é bem maior (~2 dias),
+                                // então costuma sobreviver à de editar — é a
+                                // saída pra quem percebeu o erro tarde.
+                                if (b.podeApagar) {
+                                    add(
+                                        AcaoDaBolha("Apagar para todos", destrutiva = true) {
+                                            apagar(id)
+                                        }
+                                    )
+                                }
+                            }
+                        },
+                ) {
                     Surface(
                         color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
                         shape =
@@ -389,7 +441,20 @@ private fun BolhaItem(
                         modifier = Modifier.widthIn(max = 300.dp),
                     ) {
                         Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                            Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+                            // Apagada para todos: o cliente não vê mais nada,
+                            // então mostrar o texto aqui faria a timeline
+                            // contar uma história que o WhatsApp não conta. O
+                            // texto continua no banco pra auditoria.
+                            if (b.apagada) {
+                                Text(
+                                    "Mensagem apagada",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontStyle = FontStyle.Italic,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+                            }
                             Row(
                                 Modifier.align(Alignment.End),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -528,6 +593,9 @@ private fun Composer(
     /** Modo nota interna: o texto vai pra timeline da equipe, não pro cliente. */
     modoNota: Boolean = false,
     onAlternarModoNota: () -> Unit = {},
+    /** Modo edição de mensagem já entregue (mig 172). */
+    editando: Boolean = false,
+    onCancelarEdicao: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val escopo = rememberCoroutineScope()
@@ -622,7 +690,31 @@ private fun Composer(
                 return@Column
             }
 
-            if (modoNota) {
+            // Editar tem barra própria com saída explícita: sem ela, o campo já
+            // preenchido pareceria um rascunho comum e o próximo toque em
+            // enviar sobrescreveria a mensagem antiga sem o operador querer.
+            if (editando) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Editando mensagem enviada",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = onCancelarEdicao) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Cancelar edição",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
+            } else if (modoNota) {
                 Surface(color = MaterialTheme.colorScheme.tertiaryContainer) {
                     Text(
                         "Nota interna — não será enviada ao cliente",

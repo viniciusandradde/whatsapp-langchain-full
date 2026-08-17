@@ -120,7 +120,27 @@ data class MensagemDto(
      * botão "Transcrever" ou pela transcrição automática da conexão.
      */
     val transcricao: String? = null,
+    /**
+     * Apagada para todos no WhatsApp (mig 172). O texto continua em [response]
+     * para auditoria — quem renderiza é que troca por "Mensagem apagada".
+     */
+    @SerialName("response_apagada") val responseApagada: Boolean = false,
+    /**
+     * O que o menu da bolha pode oferecer nesta mensagem (mig 172).
+     *
+     * Calculado no servidor porque a regra é longa (chave do provedor, origem
+     * manual, provedor da conexão, mídia, e as janelas de 15 min e 48h do
+     * WhatsApp) e precisa valer igual no app, no painel e na revalidação da
+     * rota. Default `false`: servidor antigo, ou campo ausente, não deve fazer
+     * aparecer um botão que vai falhar.
+     */
+    @SerialName("pode_editar_resposta") val podeEditarResposta: Boolean = false,
+    @SerialName("pode_apagar_resposta") val podeApagarResposta: Boolean = false,
 )
+
+/** Texto novo de uma mensagem já entregue (mig 172). */
+@Serializable
+data class EditarMensagemRequest(val texto: String)
 
 /**
  * Cadastro na lista "números sem IA" (whitelist de BLOQUEIO, mig 133):
