@@ -71,6 +71,47 @@ router = APIRouter(
 )
 
 
+@router.get("/me/tour")
+async def read_meu_tour(
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """O usuário já viu o guia de primeiro acesso? (mig 171)
+
+    Sem permissão específica de propósito: é preferência do PRÓPRIO usuário,
+    mesmo padrão do `me-status` do atendente. Falhar aqui não pode travar o
+    painel — o frontend trata erro como "já viu" e segue.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            'SELECT tour_operador_at FROM auth."user" WHERE id = %s',
+            (user_id,),
+        )
+        row = await cur.fetchone()
+    return {"visto": bool(row and row[0])}
+
+
+@router.post("/me/tour")
+async def marcar_meu_tour(
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Marca o guia como visto (concluído OU dispensado — dá no mesmo).
+
+    Idempotente: `COALESCE` preserva a primeira data, então rever o guia no
+    futuro não reescreve quando a pessoa viu pela primeira vez.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            'UPDATE auth."user" '
+            "SET tour_operador_at = COALESCE(tour_operador_at, NOW()) "
+            "WHERE id = %s",
+            (user_id,),
+        )
+    logger.info("tour_operador_visto", actor_user_id=user_id)
+    return {"ok": True}
+
+
 _AVATARS_DIR = Path(os.environ.get("AVATARS_DIR", "/app/uploads/avatars"))
 _AVATAR_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
 _ALLOWED_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}

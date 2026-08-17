@@ -282,6 +282,7 @@ function GrupoDeNavegacao({
       render={<SidebarMenuItem />}
     >
       <CollapsibleTrigger
+        data-tour={`grupo:${grupo.grupo}`}
         render={
           <SidebarMenuButton tooltip={grupo.label} isActive={abertoPorPadrao}>
             <Icone />
@@ -304,6 +305,9 @@ function GrupoDeNavegacao({
               {itens.map((item) => (
                 <SidebarMenuSubItem key={item.href}>
                   <SidebarMenuSubButton
+                    // Âncora do guia de primeiro acesso (mig 171): é por
+                    // ela que o tour ilumina "Fila de atendimento".
+                    data-tour={item.href}
                     isActive={isItemActive(pathname, item.href)}
                     render={<Link href={item.href} />}
                   >

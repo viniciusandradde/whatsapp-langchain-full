@@ -5,6 +5,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
 import { EmpresaSwitcher } from "@/components/empresa-switcher";
 import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
+import { TourPrimeiroAcesso } from "@/components/tour-primeiro-acesso";
 import { PermissionsProvider } from "@/components/permissions-context";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -194,6 +195,11 @@ export default async function RootLayout({
               <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>
                 {children}
               </AppShell>
+              {/* Guia de primeiro acesso (mig 171). Dentro do
+                  SidebarProvider porque ele abre o menu antes de apontar o
+                  caminho; e do PermissionsProvider porque só vale pra quem
+                  tem `atendimento.read`. */}
+              <TourPrimeiroAcesso />
             </SidebarProvider>
           </PermissionsProvider>
           <Toaster position="bottom-right" />
