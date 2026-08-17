@@ -658,6 +658,9 @@ export interface AtendimentoMensagem {
   normalized_input: string | null;
   // Mig 169 — transcrição da nota de voz pro OPERADOR (botão ou automática)
   transcricao: string | null;
+  // Mig 172 — apagada para todos no WhatsApp. O texto continua em `response`
+  // para auditoria; quem renderiza é que troca por "Mensagem apagada".
+  response_apagada?: boolean;
   media_processing_status: string | null;
   response: string | null;
   status: string;

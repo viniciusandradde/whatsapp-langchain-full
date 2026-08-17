@@ -1252,7 +1252,14 @@ function MessageBubbles({
   // Cada row pode gerar bolhas distintas: media (inbound), texto inbound,
   // resposta agente. Mídia é renderizada inline como <img>/<audio>/link.
   type Bubble =
-    | { side: "in" | "out"; kind: "text"; text: string; meta?: string }
+    | {
+        side: "in" | "out";
+        kind: "text";
+        text: string;
+        meta?: string;
+        /** Apagada para todos (mig 172): renderiza em itálico, apagado. */
+        apagada?: boolean;
+      }
     | {
         side: "in" | "out";
         kind: "media";
@@ -1323,7 +1330,15 @@ function MessageBubbles({
       caption: !isHandoff && m.response ? m.response : undefined,
     });
   } else if (m.response && !isHandoff) {
-    bubbles.push({ side: "out", kind: "text", text: m.response });
+    // Apagada para todos (mig 172): o cliente não vê mais nada, então exibir o
+    // texto aqui faria o painel afirmar que a mensagem foi entregue. O texto
+    // continua no banco para auditoria — quem precisa dele consulta lá, não
+    // pela timeline.
+    bubbles.push(
+      m.response_apagada
+        ? { side: "out", kind: "text", text: "Mensagem apagada", apagada: true }
+        : { side: "out", kind: "text", text: m.response }
+    );
   }
   if (m.error) {
     // NUNCA renderizar o detalhe técnico do erro como texto visível.
@@ -1390,7 +1405,14 @@ function MessageBubbles({
                   )}
               </>
             ) : (
-              <p className="whitespace-pre-wrap">{b.text}</p>
+              <p
+                className={cn(
+                  "whitespace-pre-wrap",
+                  b.apagada && "italic text-muted-foreground"
+                )}
+              >
+                {b.text}
+              </p>
             )}
             <p className="mt-1 font-mono text-[10px] text-muted-foreground">
               {formatTime(m.created_at)} · {b.side === "out" ? "agente" : "cliente"}
