@@ -17,3 +17,36 @@ ALTER TABLE message_queue
 
 COMMENT ON COLUMN message_queue.response_apagada_at IS
   'Quando o operador apagou para todos a mensagem enviada (mig 172). O texto em `response` é preservado para auditoria; as timelines mostram "Mensagem apagada". NULL = não apagada.';
+
+-- O gatilho de UPDATE (migs 035/145) avisa as timelines abertas por NOTIFY,
+-- mas só olhava `response` e `status`. Editar mexe em `response` e propagava
+-- de graça; APAGAR mexe só na coluna nova e ficaria invisível para quem já
+-- estivesse com a conversa aberta — justamente o caso que apagar precisa
+-- resolver, porque o painel estaria exibindo como entregue algo que o cliente
+-- não vê mais.
+--
+-- `kind` continua 'updated', então o loop de push (mig 168) segue ignorando:
+-- ele filtra 'inbound'. Apagar não deve notificar celular de ninguém.
+CREATE OR REPLACE FUNCTION notify_message_queue_updated() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.atendimento_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    IF (OLD.response IS DISTINCT FROM NEW.response)
+       OR (OLD.status IS DISTINCT FROM NEW.status)
+       OR (OLD.response_apagada_at IS DISTINCT FROM NEW.response_apagada_at) THEN
+        PERFORM pg_notify(
+            'atendimento_event',
+            json_build_object(
+                'event', 'mensagem',
+                'empresa_id', NEW.empresa_id,
+                'atendimento_id', NEW.atendimento_id,
+                'message_id', NEW.id,
+                'kind', 'updated',
+                'status', NEW.status
+            )::text
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
