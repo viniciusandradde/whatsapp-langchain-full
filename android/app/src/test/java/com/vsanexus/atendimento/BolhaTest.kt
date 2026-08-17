@@ -203,4 +203,71 @@ class BolhaTest {
 
         assertEquals(0, b.size)
     }
+
+    @Test
+    fun `bolha de saida carrega o id do servidor e o que pode fazer`() {
+        // Sem `mensagemId` o menu não teria o que chamar na API: o `id` da
+        // bolha é sintético ("1-out") e serve só de chave da lista.
+        val b =
+            MensagemDto(
+                id = 42,
+                response = "vou verificar",
+                podeEditarResposta = true,
+                podeApagarResposta = true,
+            ).paraBolhas()
+
+        val saida = b.single() as Bolha.Texto
+        assertEquals(42L, saida.mensagemId)
+        assertTrue(saida.podeEditar)
+        assertTrue(saida.podeApagar)
+        assertEquals(false, saida.apagada)
+    }
+
+    @Test
+    fun `bolha de entrada nao permite editar nem apagar`() {
+        // Mexer em mensagem do CLIENTE não existe no WhatsApp; se um dia o
+        // servidor mandar as permissões numa row inbound, a bolha de entrada
+        // não pode passar a oferecer o menu.
+        val b =
+            MensagemDto(
+                id = 7,
+                incomingMessage = "bom dia",
+                podeEditarResposta = true,
+                podeApagarResposta = true,
+            ).paraBolhas()
+
+        val entrada = b.single() as Bolha.Texto
+        assertEquals(Lado.ENTRADA, entrada.lado)
+        assertEquals(false, entrada.podeEditar)
+        assertEquals(false, entrada.podeApagar)
+        assertEquals(null, entrada.mensagemId)
+    }
+
+    @Test
+    fun `mensagem apagada preserva o texto e marca a bolha`() {
+        // Soft delete (mig 172): o texto continua vindo pra auditoria, e é a
+        // UI que troca por "Mensagem apagada". Se `apagada` não chegasse na
+        // bolha, a timeline mostraria ao operador algo que o cliente não vê.
+        val b =
+            MensagemDto(
+                id = 9,
+                response = "texto que foi apagado",
+                responseApagada = true,
+            ).paraBolhas()
+
+        val saida = b.single() as Bolha.Texto
+        assertTrue(saida.apagada)
+        assertEquals("texto que foi apagado", saida.texto)
+    }
+
+    @Test
+    fun `servidor sem os campos novos nao libera acao nenhuma`() {
+        // Default `false` nos DTOs: app novo contra API antiga não pode
+        // mostrar um botão que vai dar 404.
+        val saida = MensagemDto(id = 1, response = "oi").paraBolhas().single() as Bolha.Texto
+
+        assertEquals(false, saida.podeEditar)
+        assertEquals(false, saida.podeApagar)
+        assertEquals(false, saida.apagada)
+    }
 }

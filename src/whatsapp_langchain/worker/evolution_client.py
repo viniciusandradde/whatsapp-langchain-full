@@ -20,7 +20,7 @@ Uso:
 """
 
 import uuid
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import httpx
 import structlog
@@ -36,6 +36,23 @@ EVOLUTION_SEND_MEDIA_PATH = "/message/sendMedia/{instance}"
 # áudio do WhatsApp.
 EVOLUTION_SEND_AUDIO_PATH = "/message/sendWhatsAppAudio/{instance}"
 EVOLUTION_SEND_PRESENCE_PATH = "/chat/sendPresence/{instance}"
+# Editar e apagar mensagem já entregue (mig 172).
+#
+# Os dois contratos foram descobertos batendo na API v2.3.7, não deduzidos — e
+# são ASSIMÉTRICOS: editar recebe a chave aninhada em `key`, apagar recebe os
+# mesmos três campos soltos no topo. Deduzir "por simetria" daria 400.
+#
+#   POST   /chat/updateMessage/{instance}
+#          {"number": ..., "text": ..., "key": {id, remoteJid, fromMe}}
+#   DELETE /chat/deleteMessageForEveryone/{instance}
+#          {"id": ..., "remoteJid": ..., "fromMe": true}
+#
+# Editar depende de a Evolution ter guardado a mensagem no banco DELA
+# (`DATABASE_SAVE_DATA_NEW_MESSAGE`): o handler busca a original pra saber se é
+# texto ou legenda de mídia, e sem ela devolve "Message not compatible".
+# Conferido ligado em dev e produção.
+EVOLUTION_UPDATE_MESSAGE_PATH = "/chat/updateMessage/{instance}"
+EVOLUTION_DELETE_MESSAGE_PATH = "/chat/deleteMessageForEveryone/{instance}"
 # Captura (Task 4) — endpoints REST da Evolution usados server-side.
 EVOLUTION_CHECK_NUMBERS_PATH = "/chat/whatsappNumbers/{instance}"
 EVOLUTION_FIND_CONTACTS_PATH = "/chat/findContacts/{instance}"
@@ -215,6 +232,112 @@ class EvolutionClient:
             if api_url
             else ""
         )
+        self.update_message_url = (
+            f"{self.api_url}"
+            f"{EVOLUTION_UPDATE_MESSAGE_PATH.format(instance=instance_name)}"
+            if api_url
+            else ""
+        )
+        self.delete_message_url = (
+            f"{self.api_url}"
+            f"{EVOLUTION_DELETE_MESSAGE_PATH.format(instance=instance_name)}"
+            if api_url
+            else ""
+        )
+
+    async def editar_mensagem(
+        self, to: str, provider_message_id: str, texto: str
+    ) -> None:
+        """Edita no WhatsApp do cliente uma mensagem já entregue (mig 172).
+
+        Fora do Protocol `OutboundClient` de propósito: só a Evolution faz isso.
+        A WABA recusa com "Method not available on WhatsApp Business API" (lido
+        no binário v2.3.7), então quem chama usa `getattr` — mesmo padrão já
+        adotado pra `send_audio` em `shared/outbound.py`.
+
+        Quem decide se PODE editar é `shared/atendimento.avaliar_alteracao_resposta`
+        (janela de 15 min, origem manual, provedor). Aqui só executa.
+
+        Raises:
+            EvolutionSendError: 4xx/5xx. O caso mais comum é 400 "Message not
+                compatible", que significa que a Evolution não achou a mensagem
+                original no banco dela — não que o texto novo seja inválido.
+        """
+        await self._alterar_mensagem(
+            url=self.update_message_url,
+            metodo="POST",
+            # A chave vai ANINHADA aqui, e solta no apagar. Não é descuido:
+            # é o contrato da API, verificado batendo nela.
+            corpo={
+                "number": normalize_to_number(to),
+                "text": texto,
+                "key": self._chave(to, provider_message_id),
+            },
+            evento="evolution_message_edited",
+            to=to,
+        )
+
+    async def apagar_mensagem(self, to: str, provider_message_id: str) -> None:
+        """Apaga para todos uma mensagem já entregue (mig 172).
+
+        Mesmas ressalvas de `editar_mensagem`. A janela do WhatsApp aqui é bem
+        maior (~2 dias contra 15 min), e quem corta é a camada de regra.
+        """
+        await self._alterar_mensagem(
+            url=self.delete_message_url,
+            metodo="DELETE",
+            corpo=self._chave(to, provider_message_id),
+            evento="evolution_message_deleted",
+            to=to,
+        )
+
+    def _chave(self, to: str, provider_message_id: str) -> dict[str, Any]:
+        """A tripla que identifica a mensagem no WhatsApp.
+
+        `fromMe` é sempre True: só editamos/apagamos o que NÓS enviamos —
+        mexer em mensagem do cliente não existe no WhatsApp.
+        """
+        return {
+            "id": provider_message_id,
+            "remoteJid": f"{normalize_to_number(to)}@s.whatsapp.net",
+            "fromMe": True,
+        }
+
+    async def _alterar_mensagem(
+        self,
+        *,
+        url: str,
+        metodo: str,
+        corpo: dict[str, Any],
+        evento: str,
+        to: str,
+    ) -> None:
+        """Tronco comum de editar e apagar: só mudam método, URL e corpo."""
+        if self.delivery_mode == "mock":
+            logger.info(f"{evento}_mocked", to=to, instance=self.instance_name)
+            return
+
+        async with httpx.AsyncClient() as http:
+            response = await http.request(
+                metodo,
+                url,
+                headers={"apikey": self.api_key},
+                json=corpo,
+                timeout=15.0,
+            )
+
+        if not response.is_success:
+            detail = response.text[:500]
+            logger.error(
+                f"{evento}_failed",
+                to=to,
+                instance=self.instance_name,
+                status_code=response.status_code,
+                detail=detail,
+            )
+            raise EvolutionSendError(response.status_code, detail)
+
+        logger.info(evento, to=to, instance=self.instance_name)
 
     async def send_message(self, to: str, body: str) -> str:
         """Envia mensagem WhatsApp via Evolution API.

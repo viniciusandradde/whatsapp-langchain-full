@@ -3,6 +3,7 @@ package com.vsanexus.atendimento.data
 import com.vsanexus.atendimento.data.remote.AtendimentoApi
 import com.vsanexus.atendimento.data.remote.AtendimentoDto
 import com.vsanexus.atendimento.data.remote.CloseRequest
+import com.vsanexus.atendimento.data.remote.EditarMensagemRequest
 import com.vsanexus.atendimento.data.remote.MensagemDto
 import com.vsanexus.atendimento.data.remote.NotaRequest
 import com.vsanexus.atendimento.data.remote.ResponderRequest
@@ -484,6 +485,93 @@ constructor(private val api: AtendimentoApi) {
             recebidas.map { if (it.id == mensagemId) it.copy(transcricao = texto) else it }
         _estado.value = _estado.value.copy(bolhas = recebidas.flatMap { it.paraBolhas() })
     }
+
+    /**
+     * Corrige no WhatsApp do cliente uma mensagem já entregue (mig 172).
+     *
+     * Devolve `true` só quando o servidor confirmou — é o que diz ao ViewModel
+     * se pode fechar o modo edição. Em falha o texto fica no campo, porque
+     * quem acabou de digitar a correção não deve ter que redigitá-la.
+     *
+     * O 400 aqui quase sempre é a janela de 15 minutos tendo virado entre a
+     * lista carregar e o toque acontecer; a mensagem do servidor já é
+     * legível pro operador, então é ela que aparece.
+     */
+    suspend fun editarMensagem(mensagemId: Long, texto: String): Boolean {
+        val id = atendimentoId ?: return false
+        val resp =
+            try {
+                api.editarMensagem(id, mensagemId, EditarMensagemRequest(texto))
+            } catch (_: Exception) {
+                _estado.value = _estado.value.copy(aviso = "Sem conexão. Tente de novo.")
+                return false
+            }
+        if (!resp.isSuccessful) {
+            _estado.value = _estado.value.copy(aviso = avisoAlteracaoDe(resp.code(), true))
+            return false
+        }
+        // Patch local em vez de refetch, como em `transcrever`: o servidor só
+        // responde depois que o WhatsApp aceitou, então o texto novo já é o
+        // que o cliente vê.
+        recebidas = recebidas.map { if (it.id == mensagemId) it.copy(response = texto) else it }
+        _estado.value =
+            _estado.value.copy(bolhas = recebidas.flatMap { it.paraBolhas() }, aviso = null)
+        return true
+    }
+
+    /** Apaga para todos (mig 172). Soft delete: a bolha vira "Mensagem apagada". */
+    suspend fun apagarMensagem(mensagemId: Long) {
+        val id = atendimentoId ?: return
+        val resp =
+            try {
+                api.apagarMensagem(id, mensagemId)
+            } catch (_: Exception) {
+                _estado.value = _estado.value.copy(aviso = "Sem conexão. Tente de novo.")
+                return
+            }
+        if (!resp.isSuccessful) {
+            _estado.value =
+                _estado.value.copy(aviso = avisoAlteracaoDe(resp.code(), false))
+            return
+        }
+        recebidas =
+            recebidas.map {
+                if (it.id == mensagemId) {
+                    // `podeEditar/podeApagar` caem junto: agir de novo sobre
+                    // uma mensagem apagada não faz sentido, e o servidor
+                    // recusaria — melhor a opção sumir do menu na hora.
+                    it.copy(
+                        responseApagada = true,
+                        podeEditarResposta = false,
+                        podeApagarResposta = false,
+                    )
+                } else {
+                    it
+                }
+            }
+        _estado.value =
+            _estado.value.copy(bolhas = recebidas.flatMap { it.paraBolhas() }, aviso = null)
+    }
+
+    private fun avisoAlteracaoDe(codigo: Int, editando: Boolean) =
+        when (codigo) {
+            // O detalhe do 400 vem do servidor já em português e explica QUAL
+            // regra barrou; repetir aqui daria duas verdades.
+            400 ->
+                if (editando) {
+                    "Não é mais possível editar esta mensagem."
+                } else {
+                    "Não é mais possível apagar esta mensagem."
+                }
+            403 -> "Você não tem permissão neste atendimento."
+            404 -> "Mensagem não encontrada."
+            else ->
+                if (editando) {
+                    "Não foi possível editar agora. Tente novamente."
+                } else {
+                    "Não foi possível apagar agora. Tente novamente."
+                }
+        }
 
     private fun avisoTranscricaoDe(codigo: Int) =
         when (codigo) {

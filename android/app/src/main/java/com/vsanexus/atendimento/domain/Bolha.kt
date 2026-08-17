@@ -50,6 +50,26 @@ sealed interface Bolha {
         val texto: String,
         /** Envio ainda não confirmado pelo servidor. */
         val pendente: Boolean = false,
+        /**
+         * Id da MENSAGEM no servidor (mig 172), pra editar e apagar.
+         *
+         * O [id] acima é sintético (`"$id-out"`) e serve só de chave da lista —
+         * não é endereçável na API. Nulo enquanto a bolha é otimista, quando
+         * ainda não existe linha no servidor.
+         *
+         * Com default e no FIM: `Bolha.Texto` é construída por posição em
+         * vários testes, e um parâmetro no meio quebraria todos eles.
+         */
+        val mensagemId: Long? = null,
+        /**
+         * O que o menu pode oferecer (mig 172). Quem decide é o servidor — a
+         * regra depende da chave do provedor, do canal e das janelas do
+         * WhatsApp, coisas que o app não tem como saber.
+         */
+        val podeEditar: Boolean = false,
+        val podeApagar: Boolean = false,
+        /** Apagada para todos: a timeline mostra o aviso, não o texto. */
+        val apagada: Boolean = false,
     ) : Bolha
 
     data class Midia(
@@ -160,7 +180,19 @@ fun MensagemDto.paraBolhas(): List<Bolha> {
                 lado = Lado.SAIDA,
             )
     } else if (!response.isNullOrBlank() && !ehMarcadorInterno(response)) {
-        bolhas += Bolha.Texto("$id-out", processedAt ?: createdAt, Lado.SAIDA, response)
+        // Só o lado de SAÍDA leva id e permissões: editar e apagar valem pro
+        // que NÓS mandamos. Mexer em mensagem do cliente não existe no WhatsApp.
+        bolhas +=
+            Bolha.Texto(
+                id = "$id-out",
+                quandoIso = processedAt ?: createdAt,
+                lado = Lado.SAIDA,
+                texto = response,
+                mensagemId = id,
+                podeEditar = podeEditarResposta,
+                podeApagar = podeApagarResposta,
+                apagada = responseApagada,
+            )
     }
 
     // 4. Falha: frase fixa, nunca o detalhe.

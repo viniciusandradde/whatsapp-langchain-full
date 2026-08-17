@@ -71,6 +71,8 @@ from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.nota_interna import create_nota_interna
 from whatsapp_langchain.shared.outbound import (
     OutboundError,
+    apagar_mensagem_enviada,
+    editar_mensagem_enviada,
     send_outbound_manual,
     send_outbound_manual_midia,
     send_template_by_id,
@@ -651,6 +653,87 @@ async def transcrever_mensagem_audio(
         actor_user_id=user_id,
     )
     return {"ok": True, "mensagem_id": mensagem_id, "transcricao": texto}
+
+
+class EditarMensagemInput(BaseModel):
+    """Texto novo de uma mensagem já entregue."""
+
+    texto: str = Field(min_length=1, max_length=4096)
+
+
+@router.patch("/{atendimento_id}/mensagens/{mensagem_id}/texto")
+async def editar_mensagem(
+    atendimento_id: int,
+    mensagem_id: int,
+    body: EditarMensagemInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.write")),
+) -> dict:
+    """Corrige no WhatsApp do cliente uma mensagem que o operador enviou (mig 172).
+
+    Vale só para o que saiu pelo painel/app: `shared/outbound.py` guarda a
+    chave devolvida pelo provedor, enquanto o worker descarta a das respostas
+    da IA — então mensagem de agente não é editável, por falta de endereço.
+
+    Janela de 15 minutos, imposta pelo WhatsApp. A regra completa mora em
+    `shared/atendimento.avaliar_alteracao_resposta` e é revalidada aqui: a UI
+    esconde o que não pode, mas entre a tela carregar e o toque acontecer a
+    janela vira.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    try:
+        await editar_mensagem_enviada(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            mensagem_id=mensagem_id,
+            texto=body.texto,
+        )
+    except OutboundError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    logger.info(
+        "mensagem_editada_ok",
+        atendimento_id=atendimento_id,
+        mensagem_id=mensagem_id,
+        actor_user_id=user_id,
+    )
+    return {"ok": True, "mensagem_id": mensagem_id, "texto": body.texto}
+
+
+@router.delete("/{atendimento_id}/mensagens/{mensagem_id}/texto")
+async def apagar_mensagem(
+    atendimento_id: int,
+    mensagem_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _: None = Depends(require_permission("atendimento.write")),
+) -> dict:
+    """Apaga para todos, no WhatsApp, uma mensagem que o operador enviou (mig 172).
+
+    Mesmas pré-condições da edição, com janela bem maior (~2 dias; cortamos em
+    48h por segurança). Do nosso lado é soft delete: o texto fica no banco para
+    auditoria e a timeline passa a mostrar "Mensagem apagada".
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    try:
+        await apagar_mensagem_enviada(
+            pool,
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            mensagem_id=mensagem_id,
+        )
+    except OutboundError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    logger.info(
+        "mensagem_apagada_ok",
+        atendimento_id=atendimento_id,
+        mensagem_id=mensagem_id,
+        actor_user_id=user_id,
+    )
+    return {"ok": True, "mensagem_id": mensagem_id}
 
 
 @router.get("/{atendimento_id}/mensagens/{mensagem_id}/midia")

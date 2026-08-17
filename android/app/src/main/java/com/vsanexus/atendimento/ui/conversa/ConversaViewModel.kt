@@ -75,6 +75,20 @@ constructor(
     private val _cliente = MutableStateFlow<EstadoCliente?>(null)
     val cliente: StateFlow<EstadoCliente?> = _cliente.asStateFlow()
 
+    /**
+     * Id da mensagem em edição (mig 172), ou nulo fora do modo edição.
+     *
+     * Espelha o desenho de [_modoNota]: um estado do composer, não uma tela
+     * nova. Os dois são mutuamente exclusivos — editar uma mensagem já enviada
+     * não é escrever nota interna.
+     */
+    private val _editando = MutableStateFlow<Long?>(null)
+    val editando: StateFlow<Long?> = _editando.asStateFlow()
+
+    /** Mensagem aguardando confirmação de "apagar para todos". */
+    private val _confirmandoApagar = MutableStateFlow<Long?>(null)
+    val confirmandoApagar: StateFlow<Long?> = _confirmandoApagar.asStateFlow()
+
     private var abertoId: Long? = null
 
     init {
@@ -284,6 +298,63 @@ constructor(
     /** Transcreve a nota de voz de uma mensagem (mig 169). */
     fun transcrever(mensagemId: Long) {
         viewModelScope.launch { repo.transcrever(mensagemId) }
+    }
+
+    /**
+     * Entra no modo edição com o texto atual no campo (mig 172).
+     *
+     * Diferente de [enviar], que limpa o rascunho: aqui o texto original é o
+     * ponto de partida da correção. Editar sai do modo nota — as duas coisas
+     * não coexistem.
+     */
+    fun editarMensagem(mensagemId: Long, textoAtual: String) {
+        _modoNota.value = false
+        _editando.value = mensagemId
+        _rascunho.value = textoAtual
+    }
+
+    fun cancelarEdicao() {
+        _editando.value = null
+        _rascunho.value = ""
+    }
+
+    /**
+     * Confirma a edição.
+     *
+     * Ao contrário do envio normal, o campo NÃO é limpo antes da resposta: se
+     * a edição falhar, o operador perderia a correção que acabou de escrever e
+     * teria que redigitar olhando pro texto antigo. (O envio comum limpa na
+     * hora de propósito, mas ali o custo de falhar é reescrever do zero uma
+     * mensagem que ainda nem existia.)
+     */
+    fun confirmarEdicao() {
+        val id = _editando.value ?: return
+        val texto = _rascunho.value
+        if (texto.isBlank()) return
+        viewModelScope.launch {
+            if (repo.editarMensagem(id, texto)) {
+                _editando.value = null
+                _rascunho.value = ""
+            }
+        }
+    }
+
+    /** Pede confirmação antes de apagar para todos (mig 172). */
+    fun pedirParaApagar(mensagemId: Long) {
+        _confirmandoApagar.value = mensagemId
+    }
+
+    fun cancelarApagar() {
+        _confirmandoApagar.value = null
+    }
+
+    fun confirmarApagar() {
+        val id = _confirmandoApagar.value ?: return
+        _confirmandoApagar.value = null
+        // Sair do modo edição se era essa a mensagem: apagar vence, e deixar o
+        // composer editando algo que não existe mais seria beco sem saída.
+        if (_editando.value == id) cancelarEdicao()
+        viewModelScope.launch { repo.apagarMensagem(id) }
     }
 
     /** Inclui o número do cliente nos "números sem IA" (bloqueio, mig 133). */

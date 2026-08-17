@@ -25,7 +25,10 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.integrations.waba import templates as waba_templates
 from whatsapp_langchain.integrations.waba.client import WabaClient
-from whatsapp_langchain.shared.atendimento import get_atendimento_by_id
+from whatsapp_langchain.shared.atendimento import (
+    avaliar_alteracao_resposta,
+    get_atendimento_by_id,
+)
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
@@ -307,6 +310,206 @@ async def send_outbound_manual(
         outbound_mode=outbound_mode,
     )
     return row
+
+
+async def _carregar_alteravel(
+    pool: AsyncConnectionPool,
+    *,
+    atendimento_id: int,
+    empresa_id: int,
+    mensagem_id: int,
+    para_apagar: bool,
+) -> tuple[str, str, Conexao]:
+    """Valida no SERVIDOR se a mensagem pode ser alterada e devolve o alvo.
+
+    A UI já esconde o que não pode (a listagem devolve `pode_editar_resposta` e
+    `pode_apagar_resposta`), mas a decisão não pode morar só lá: entre a tela
+    carregar e o toque acontecer, a janela de 15 minutos vira. Aqui é a
+    autoridade — e usa a MESMA função de regra da listagem.
+
+    A conexão usada é a **da mensagem**, não a atual do atendimento. Elas podem
+    divergir: a mig 129 desacoplou os dois, então o número pode ter sido trocado
+    ou removido depois do envio. Quem guarda a mensagem é a instância que a
+    enviou — editar pela conexão de hoje bateria na instância errada. O telefone
+    também sai da própria linha, pelo mesmo motivo.
+
+    Returns:
+        `(chave_do_provedor, telefone_do_cliente, conexao)`.
+
+    Raises:
+        OutboundError: com frase pronta pro operador, nunca detalhe técnico.
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT mq.message_id, mq.normalized_input, mq.interna,
+                   mq.response_media_url, mq.response_apagada_at,
+                   mq.phone_number, mq.conexao_id,
+                   EXTRACT(EPOCH FROM (
+                       NOW() - COALESCE(mq.processed_at, mq.created_at)
+                   ))
+              FROM message_queue mq
+             WHERE mq.id = %s AND mq.empresa_id = %s AND mq.atendimento_id = %s
+            """,
+            (mensagem_id, empresa_id, atendimento_id),
+        )
+        row = await cur.fetchone()
+
+    if row is None:
+        raise OutboundError("Mensagem não encontrada neste atendimento.")
+
+    conexao = await get_conexao_by_id(pool, row[6]) if row[6] else None
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise OutboundError(
+            "A conexão que enviou esta mensagem foi removida — não é mais "
+            "possível alterá-la no WhatsApp."
+        )
+
+    pode_editar, pode_apagar = avaliar_alteracao_resposta(
+        message_id=row[0],
+        normalized_input=row[1],
+        provider=conexao.provider,
+        interna=bool(row[2]),
+        tem_midia=bool(row[3]),
+        apagada=row[4] is not None,
+        idade_seg=float(row[7]) if row[7] is not None else None,
+    )
+
+    if para_apagar and not pode_apagar:
+        raise OutboundError(
+            "Não é mais possível apagar esta mensagem. O WhatsApp só permite "
+            "por cerca de dois dias, e apenas nas mensagens que você enviou."
+        )
+    if not para_apagar and not pode_editar:
+        raise OutboundError(
+            "Não é mais possível editar esta mensagem. O WhatsApp só permite "
+            "por 15 minutos, e apenas nas mensagens de texto que você enviou."
+        )
+    return row[0], row[5], conexao
+
+
+async def _cliente_evolution(pool: AsyncConnectionPool, conexao: Conexao, acao: str):
+    """Cliente do provedor, exigindo que ele saiba fazer `acao`.
+
+    Duck-typing em vez de método no Protocol `OutboundClient`, pelo mesmo
+    motivo de `send_audio`: só a Evolution faz isso. A WABA recusa editar e
+    apagar com "Method not available on WhatsApp Business API", e obrigar as
+    outras implementações a ter um método que só levanta erro seria pior.
+    """
+    client, _ = await _build_client(pool, conexao)
+    metodo = getattr(client, acao, None)
+    if metodo is None:
+        raise OutboundError(
+            "Este canal não permite editar nem apagar mensagens já enviadas."
+        )
+    return metodo
+
+
+async def editar_mensagem_enviada(
+    pool: AsyncConnectionPool,
+    *,
+    atendimento_id: int,
+    empresa_id: int,
+    mensagem_id: int,
+    texto: str,
+) -> None:
+    """Corrige no WhatsApp do cliente uma mensagem que o operador enviou.
+
+    O banco só é atualizado DEPOIS que o provedor confirma. Se a ordem fosse
+    invertida e o envio falhasse, a timeline mostraria um texto que o cliente
+    nunca viu — e o operador acharia que corrigiu.
+    """
+    novo = texto.strip()
+    if not novo:
+        raise OutboundError("A mensagem não pode ficar vazia.")
+
+    chave, telefone, conexao = await _carregar_alteravel(
+        pool,
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        mensagem_id=mensagem_id,
+        para_apagar=False,
+    )
+    editar = await _cliente_evolution(pool, conexao, "editar_mensagem")
+
+    try:
+        await editar(telefone, chave, novo)
+    except Exception as e:  # noqa: BLE001 — embrulha qualquer falha do client
+        logger.error(
+            "mensagem_editar_falhou",
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            mensagem_id=mensagem_id,
+            error=str(e),
+        )
+        raise OutboundError("Não foi possível editar a mensagem no WhatsApp.") from e
+
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE message_queue SET response = %s WHERE id = %s AND empresa_id = %s",
+            (novo, mensagem_id, empresa_id),
+        )
+        await conn.commit()
+
+    logger.info(
+        "mensagem_editada",
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        mensagem_id=mensagem_id,
+    )
+
+
+async def apagar_mensagem_enviada(
+    pool: AsyncConnectionPool,
+    *,
+    atendimento_id: int,
+    empresa_id: int,
+    mensagem_id: int,
+) -> None:
+    """Apaga para todos, no WhatsApp, uma mensagem que o operador enviou.
+
+    Soft delete do nosso lado (mig 172): o texto continua em `response` para
+    auditoria e a timeline mostra "Mensagem apagada". Zerar a coluna apagaria o
+    registro do que foi dito ao cliente.
+    """
+    chave, telefone, conexao = await _carregar_alteravel(
+        pool,
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        mensagem_id=mensagem_id,
+        para_apagar=True,
+    )
+    apagar = await _cliente_evolution(pool, conexao, "apagar_mensagem")
+
+    try:
+        await apagar(telefone, chave)
+    except Exception as e:  # noqa: BLE001 — embrulha qualquer falha do client
+        logger.error(
+            "mensagem_apagar_falhou",
+            atendimento_id=atendimento_id,
+            empresa_id=empresa_id,
+            mensagem_id=mensagem_id,
+            error=str(e),
+        )
+        raise OutboundError("Não foi possível apagar a mensagem no WhatsApp.") from e
+
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE message_queue
+               SET response_apagada_at = NOW()
+             WHERE id = %s AND empresa_id = %s
+            """,
+            (mensagem_id, empresa_id),
+        )
+        await conn.commit()
+
+    logger.info(
+        "mensagem_apagada",
+        atendimento_id=atendimento_id,
+        empresa_id=empresa_id,
+        mensagem_id=mensagem_id,
+    )
 
 
 #: Teto prático do WhatsApp para documento. Acima disso o provider recusa, e

@@ -216,6 +216,34 @@ fun DialogoSemIa(
 }
 
 /**
+ * Confirmação de "apagar para todos" (mig 172).
+ *
+ * Pede confirmação porque é irreversível do lado do cliente e não há como
+ * desfazer: o WhatsApp remove a mensagem no aparelho dele e não devolve.
+ * O texto continua no nosso banco para auditoria, mas isso é registro
+ * interno — para o cliente, sumiu.
+ */
+@Composable
+fun DialogoApagarMensagem(
+    onConfirmar: () -> Unit,
+    onCancelar: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancelar,
+        title = { Text("Apagar mensagem para todos?") },
+        text = {
+            Text(
+                "A mensagem será removida do WhatsApp do cliente e não há " +
+                    "como desfazer. Ela continua registrada aqui no histórico " +
+                    "do atendimento.",
+            )
+        },
+        confirmButton = { TextButton(onClick = onConfirmar) { Text("Apagar") } },
+        dismissButton = { TextButton(onClick = onCancelar) { Text("Cancelar") } },
+    )
+}
+
+/**
  * Folha de transferência — os dois modos do popover web: departamento (vai
  * pra fila do setor; o cliente é avisado) e atendente online (assume direto,
  * sem aviso). O count de atendimentos abertos ajuda a não sobrecarregar quem

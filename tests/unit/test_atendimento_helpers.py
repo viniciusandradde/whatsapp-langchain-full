@@ -86,6 +86,17 @@ def _row_with_cliente(*, nome="Fulano", telefone="+5511999", **kwargs):
     return _row(**kwargs) + (nome, telefone)
 
 
+#: Quantas colunas o SELECT de `list_atendimento_mensagens` devolve.
+#:
+#: Existe porque as duas fakes abaixo ficaram desatualizadas em silêncio: a mig
+#: 169 acrescentou `transcricao` ao SELECT e ninguém acrescentou à linha falsa,
+#: então os testes passaram a estourar `IndexError` e ficaram vermelhos sem
+#: ninguém notar (o `make ci` não roda a suíte completa aqui). Com a asserção
+#: de tamanho, quem mexer no SELECT descobre no ato — e com uma mensagem que
+#: diz o que fazer, em vez de um IndexError no meio do mapeamento.
+_COLUNAS_MENSAGEM = 22
+
+
 def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
     cur = AsyncMock()
     fetchone_seq = [r for r in results if not isinstance(r, list)]
@@ -496,8 +507,17 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
             # Mig 146: mídia enviada pelo OPERADOR (anexo/nota de voz do app).
             None,
             None,
+            # Mig 169: transcrição da nota de voz.
+            None,
+            # Mig 172: apagada + os três insumos da regra de editar/apagar
+            # (chave do provedor, provider da conexão e idade em segundos).
+            None,
+            None,
+            None,
+            0.0,
         )
     ]
+    assert len(rows[0]) == _COLUNAS_MENSAGEM
     pool, conn = _mock_pool(rows)
     out = await list_atendimento_mensagens(pool, 42, 7)
     assert len(out) == 1
@@ -507,9 +527,12 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
     # o que é o que faz a timeline renderizar bolha de texto e não de anexo.
     assert out[0]["response_media_url"] is None
     assert out[0]["response_media_type"] is None
+    # Sem chave do provedor não há o que alterar no WhatsApp (mig 172).
+    assert out[0]["pode_editar_resposta"] is False
+    assert out[0]["pode_apagar_resposta"] is False
     sql = conn.execute.await_args.args[0]
-    assert "WHERE empresa_id = %s" in sql
-    assert "AND atendimento_id = %s" in sql
+    assert "WHERE mq.empresa_id = %s" in sql
+    assert "AND mq.atendimento_id = %s" in sql
     args = conn.execute.await_args.args[1]
     assert args[0] == 7
     assert args[1] == 42
@@ -546,15 +569,21 @@ async def test_incluir_midia_false_nao_seleciona_o_blob():
             None,
             False,  # response_media_url IS NOT NULL
             None,
+            None,  # transcricao (mig 169)
+            None,  # response_apagada_at (mig 172)
+            None,  # message_id
+            None,  # provider da conexão
+            0.0,  # idade em segundos
         )
     ]
+    assert len(rows[0]) == _COLUNAS_MENSAGEM
     pool, conn = _mock_pool(rows)
     out = await list_atendimento_mensagens(pool, 42, 7, incluir_midia=False)
 
     sql = conn.execute.await_args.args[0]
     assert "media_url IS NOT NULL" in sql
     # A coluna crua não pode aparecer como item selecionado.
-    assert "incoming_message, media_url," not in sql
+    assert "incoming_message, mq.media_url," not in sql
 
     assert out[0]["media_disponivel"] is True
     assert out[0]["media_url"] is None

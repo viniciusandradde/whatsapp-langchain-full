@@ -59,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -97,6 +98,8 @@ fun ConversaScreen(
     val transferencia by vm.transferencia.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
     val cliente by vm.cliente.collectAsStateWithLifecycle()
+    val editando by vm.editando.collectAsStateWithLifecycle()
+    val confirmandoApagar by vm.confirmandoApagar.collectAsStateWithLifecycle()
     val cores = coresChat()
     val listState = rememberLazyListState()
     var menuAberto by remember { mutableStateOf(false) }
@@ -234,10 +237,15 @@ fun ConversaScreen(
             Composer(
                 texto = rascunho,
                 onTexto = vm::onRascunho,
-                onEnviar = vm::enviar,
+                // Em modo edição o mesmo botão confirma a correção em vez de
+                // mandar mensagem nova — senão o operador acabaria enviando
+                // duas vezes a mesma coisa.
+                onEnviar = if (editando != null) vm::confirmarEdicao else vm::enviar,
                 onEnviarMidia = vm::enviarMidia,
                 modoNota = modoNota,
                 onAlternarModoNota = vm::alternarModoNota,
+                editando = editando != null,
+                onCancelarEdicao = vm::cancelarEdicao,
             )
         },
     ) { inner ->
@@ -266,7 +274,14 @@ fun ConversaScreen(
                         modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp),
                     ) {
                         items(invertidas, key = { it.id }) { b ->
-                            BolhaItem(b, cores, vm::arquivoDeMidia, vm::transcrever)
+                            BolhaItem(
+                                b,
+                                cores,
+                                vm::arquivoDeMidia,
+                                vm::transcrever,
+                                vm::editarMensagem,
+                                vm::pedirParaApagar,
+                            )
                         }
                         if (estado.carregandoHistorico) {
                             item {
@@ -321,6 +336,12 @@ fun ConversaScreen(
             onCancelar = { confirmandoEncerrar = null },
         )
     }
+    if (confirmandoApagar != null) {
+        DialogoApagarMensagem(
+            onConfirmar = vm::confirmarApagar,
+            onCancelar = vm::cancelarApagar,
+        )
+    }
     if (confirmandoSemIa) {
         DialogoSemIa(
             telefone = estado.detalhe?.clienteTelefone ?: "",
@@ -359,6 +380,10 @@ private fun BolhaItem(
     carregarMidia: suspend (Long, Boolean) -> File?,
     /** Transcreve a nota de voz da mensagem (mig 169). */
     transcrever: (Long) -> Unit,
+    /** Abre o composer em modo edição com o texto atual (mig 172). */
+    editar: (Long, String) -> Unit,
+    /** Pede confirmação pra apagar para todos (mig 172). */
+    apagar: (Long) -> Unit,
 ) {
     when (b) {
         is Bolha.Texto -> {
@@ -367,31 +392,79 @@ private fun BolhaItem(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 horizontalArrangement = if (entrada) Arrangement.Start else Arrangement.End,
             ) {
-                Surface(
-                    color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
-                    shape =
-                        RoundedCornerShape(
-                            topStart = 12.dp,
-                            topEnd = 12.dp,
-                            // Canto "rabinho" do lado de quem fala, como no
-                            // WhatsApp: sem isso as bolhas viram cartões
-                            // genéricos e a tela perde a familiaridade.
-                            bottomStart = if (entrada) 2.dp else 12.dp,
-                            bottomEnd = if (entrada) 12.dp else 2.dp,
-                        ),
-                    modifier = Modifier.widthIn(max = 300.dp),
+                // Menu ancorado na BOLHA, não na linha: a linha ocupa a largura
+                // toda e o balão abriria longe de onde o dedo tocou.
+                //
+                // Mensagem ainda `pendente` não entra no menu: copiar o que
+                // talvez nem tenha saído, ou agir sobre algo sem id no
+                // servidor, é convite a confusão. Apagada idem — o texto que
+                // sobrou é só registro nosso.
+                val inerte = b.pendente || b.apagada
+                val id = b.mensagemId
+                BolhaComMenu(
+                    textoCopiavel = if (inerte) null else b.texto,
+                    acoes =
+                        if (inerte || id == null) {
+                            emptyList()
+                        } else {
+                            buildList {
+                                // Some sozinho ao passar dos 15 min que o
+                                // WhatsApp permite, como no próprio WhatsApp.
+                                if (b.podeEditar) {
+                                    add(AcaoDaBolha("Editar") { editar(id, b.texto) })
+                                }
+                                // A janela de apagar é bem maior (~2 dias),
+                                // então costuma sobreviver à de editar — é a
+                                // saída pra quem percebeu o erro tarde.
+                                if (b.podeApagar) {
+                                    add(
+                                        AcaoDaBolha("Apagar para todos", destrutiva = true) {
+                                            apagar(id)
+                                        }
+                                    )
+                                }
+                            }
+                        },
                 ) {
-                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        Text(b.texto, style = MaterialTheme.typography.bodyMedium)
-                        Row(
-                            Modifier.align(Alignment.End),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                if (b.pendente) "enviando…" else horaCurta(b.quandoIso),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                    Surface(
+                        color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
+                        shape =
+                            RoundedCornerShape(
+                                topStart = 12.dp,
+                                topEnd = 12.dp,
+                                // Canto "rabinho" do lado de quem fala, como no
+                                // WhatsApp: sem isso as bolhas viram cartões
+                                // genéricos e a tela perde a familiaridade.
+                                bottomStart = if (entrada) 2.dp else 12.dp,
+                                bottomEnd = if (entrada) 12.dp else 2.dp,
+                            ),
+                        modifier = Modifier.widthIn(max = 300.dp),
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            // Apagada para todos: o cliente não vê mais nada,
+                            // então mostrar o texto aqui faria a timeline
+                            // contar uma história que o WhatsApp não conta. O
+                            // texto continua no banco pra auditoria.
+                            if (b.apagada) {
+                                Text(
+                                    "Mensagem apagada",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontStyle = FontStyle.Italic,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Row(
+                                Modifier.align(Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    if (b.pendente) "enviando…" else horaCurta(b.quandoIso),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -406,81 +479,100 @@ private fun BolhaItem(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 horizontalArrangement = if (entrada) Arrangement.Start else Arrangement.End,
             ) {
-                Surface(
-                    color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.widthIn(max = 300.dp),
+                // Numa bolha de mídia o que dá pra copiar é o TEXTO que a
+                // acompanha: a legenda que o operador escreveu e a transcrição
+                // da nota de voz. Foto sem legenda não abre menu — quem quer a
+                // imagem não a quer como texto.
+                BolhaComMenu(
+                    textoCopiavel =
+                        listOfNotNull(b.legenda, b.transcricao)
+                            .joinToString("\n\n")
+                            .ifBlank { null },
                 ) {
-                    Column(Modifier.padding(10.dp)) {
-                        // Áudio e imagem tocam/aparecem aqui mesmo, mas o
-                        // conteúdo NÃO vem na lista: é buscado por mensagem em
-                        // `/mensagens/{id}/midia` quando a bolha aparece na tela.
-                        // Decodificar e reduzir acontece fora da thread
-                        // principal, em `Midia.kt`. Documento continua como
-                        // rótulo: abrir arquivo pede FileProvider e visualizador
-                        // externo.
-                        val buscar: suspend () -> File? = { carregarMidia(b.mensagemId, !entrada) }
-                        when {
-                            b.tipo?.startsWith("audio") == true -> {
-                                AudioDaConversa(b.id, buscar, Modifier.width(240.dp))
-                                // Transcrição pro operador (mig 169): texto se
-                                // já existe (automática ou toque anterior);
-                                // senão o botão. Só entrada — o backend só
-                                // transcreve áudio do cliente.
-                                if (entrada && b.transcricao != null) {
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        b.transcricao,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else if (entrada) {
-                                    TextButton(
-                                        onClick = { transcrever(b.mensagemId) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp),
-                                    ) {
-                                        Text("Transcrever")
+                    Surface(
+                        color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.widthIn(max = 300.dp),
+                    ) {
+                        Column(Modifier.padding(10.dp)) {
+                            // Áudio e imagem tocam/aparecem aqui mesmo, mas o
+                            // conteúdo NÃO vem na lista: é buscado por mensagem
+                            // em `/mensagens/{id}/midia` quando a bolha aparece
+                            // na tela. Decodificar e reduzir acontece fora da
+                            // thread principal, em `Midia.kt`. Documento
+                            // continua como rótulo: abrir arquivo pede
+                            // FileProvider e visualizador externo.
+                            val buscar: suspend () -> File? = {
+                                carregarMidia(b.mensagemId, !entrada)
+                            }
+                            when {
+                                b.tipo?.startsWith("audio") == true -> {
+                                    AudioDaConversa(b.id, buscar, Modifier.width(240.dp))
+                                    // Transcrição pro operador (mig 169): texto
+                                    // se já existe (automática ou toque
+                                    // anterior); senão o botão. Só entrada — o
+                                    // backend só transcreve áudio do cliente.
+                                    if (entrada && b.transcricao != null) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            b.transcricao,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    } else if (entrada) {
+                                        TextButton(
+                                            onClick = { transcrever(b.mensagemId) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp),
+                                        ) {
+                                            Text("Transcrever")
+                                        }
                                     }
                                 }
+                                b.tipo?.startsWith("image") == true ->
+                                    ImagemDaConversa(b.id, buscar, Modifier.fillMaxWidth())
+                                else ->
+                                    Text(
+                                        rotuloMidia(b.tipo, entrada),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
                             }
-                            b.tipo?.startsWith("image") == true ->
-                                ImagemDaConversa(b.id, buscar, Modifier.fillMaxWidth())
-                            else ->
-                                Text(
-                                    rotuloMidia(b.tipo, entrada),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
+                            if (b.legenda != null) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(b.legenda, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(
+                                horaCurta(b.quandoIso),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        if (b.legenda != null) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(b.legenda, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Text(
-                            horaCurta(b.quandoIso),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
         }
         is Bolha.NotaInterna ->
-            Surface(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            ) {
-                Column(Modifier.padding(10.dp)) {
-                    Text(
-                        "Nota interna · ${b.autor ?: "—"} · não enviada ao cliente",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+            // Nota interna copia só o texto da nota, sem o cabeçalho de autoria:
+            // quem copia quer colar o conteúdo, não "Nota interna · fulano ·".
+            BolhaComMenu(textoCopiavel = b.texto) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(
+                            "Nota interna · ${b.autor ?: "—"} · não enviada ao cliente",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
+        // Bolha de erro fica de fora: o texto é uma frase fixa nossa, não algo
+        // que alguém queira copiar ou agir sobre.
         is Bolha.Erro ->
             Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), Alignment.Center) {
                 Text(
@@ -501,6 +593,9 @@ private fun Composer(
     /** Modo nota interna: o texto vai pra timeline da equipe, não pro cliente. */
     modoNota: Boolean = false,
     onAlternarModoNota: () -> Unit = {},
+    /** Modo edição de mensagem já entregue (mig 172). */
+    editando: Boolean = false,
+    onCancelarEdicao: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val escopo = rememberCoroutineScope()
@@ -595,7 +690,31 @@ private fun Composer(
                 return@Column
             }
 
-            if (modoNota) {
+            // Editar tem barra própria com saída explícita: sem ela, o campo já
+            // preenchido pareceria um rascunho comum e o próximo toque em
+            // enviar sobrescreveria a mensagem antiga sem o operador querer.
+            if (editando) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Editando mensagem enviada",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = onCancelarEdicao) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Cancelar edição",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
+            } else if (modoNota) {
                 Surface(color = MaterialTheme.colorScheme.tertiaryContainer) {
                     Text(
                         "Nota interna — não será enviada ao cliente",

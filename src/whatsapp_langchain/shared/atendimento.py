@@ -716,6 +716,64 @@ async def close_atendimento(
     return _row_to_atendimento(row) if row else None
 
 
+#: Janela do WhatsApp para editar mensagem já entregue. É regra da plataforma,
+#: não nossa — não há como estender.
+JANELA_EDICAO_SEG = 15 * 60
+
+#: Janela para "apagar para todos". O WhatsApp aceita cerca de 2 dias, mas as
+#: fontes divergem (48h/60h/68h) e a plataforma é quem decide na hora. 48h é
+#: corte conservador: esconder cedo é melhor que oferecer um botão que falha.
+JANELA_APAGAR_SEG = 48 * 3600
+
+
+def avaliar_alteracao_resposta(
+    *,
+    message_id: str | None,
+    normalized_input: str | None,
+    provider: str | None,
+    interna: bool,
+    tem_midia: bool,
+    apagada: bool,
+    idade_seg: float | None,
+) -> tuple[bool, bool]:
+    """`(pode_editar, pode_apagar)` de uma mensagem que saiu para o cliente.
+
+    Regra única, usada tanto pela listagem (para a UI decidir o que mostrar)
+    quanto pelas rotas (que revalidam — o cliente nunca é autoridade).
+
+    Editar e apagar exigem a **chave que o WhatsApp devolveu no envio**, e ela
+    só existe no caminho manual: `shared/outbound.py` guarda o retorno do
+    provedor em `message_queue.message_id`, enquanto o worker descarta o
+    retorno nas dezenas de chamadas de envio da IA. Consequência prática: dá
+    para mexer no que o operador digitou, não no que a IA respondeu.
+
+    Cada condição, e por quê:
+
+    - **`message_id`** ausente → não há o que endereçar no WhatsApp.
+    - prefixo **`mock-`** → ambiente sem envio real; oferecer a ação seria
+      prometer algo que falha na cara do operador.
+    - **`manual:`** em `normalized_input` → identifica envio de gente. O
+      `manual:system:` (transferência, avisos) é excluído: ninguém "errou de
+      digitar" uma mensagem que o sistema montou.
+    - **`evolution`** → verificado no binário v2.3.7 de produção: a WABA recusa
+      as duas operações com "Method not available on WhatsApp Business API".
+    - **nota interna** nunca foi ao cliente; editar no WhatsApp não faz sentido.
+    - **mídia** fica de fora: o que existe do outro lado é o arquivo, e a
+      edição do WhatsApp é de texto.
+    - **já apagada** não se edita nem se apaga de novo.
+    """
+    if not message_id or message_id.startswith("mock-"):
+        return (False, False)
+    entrada = normalized_input or ""
+    if not entrada.startswith("manual:") or entrada.startswith("manual:system:"):
+        return (False, False)
+    if provider != "evolution" or interna or tem_midia or apagada:
+        return (False, False)
+    if idade_seg is None:
+        return (False, False)
+    return (idade_seg < JANELA_EDICAO_SEG, idade_seg < JANELA_APAGAR_SEG)
+
+
 async def list_atendimento_mensagens(
     pool: AsyncConnectionPool,
     atendimento_id: int,
@@ -753,74 +811,110 @@ async def list_atendimento_mensagens(
     isso é a diferença entre abrir a conversa e não abrir. O `False` nem SELECTa
     a coluna, então o blob não sai do Postgres nem passa pela memória da API.
     """
-    where = ["empresa_id = %s", "atendimento_id = %s"]
+    where = ["mq.empresa_id = %s", "mq.atendimento_id = %s"]
     args: list[Any] = [empresa_id, atendimento_id]
     if before_id is not None:
-        where.append("id < %s")
+        where.append("mq.id < %s")
         args.append(before_id)
     args.append(limit)
 
     # Mesmas POSIÇÕES nas duas variantes: o mapeamento abaixo é por índice, e
     # trocar a ordem aqui silenciosamente embaralharia os campos.
     if incluir_midia:
-        col_midia_in, col_midia_out = "media_url", "response_media_url"
+        col_midia_in, col_midia_out = "mq.media_url", "mq.response_media_url"
     else:
-        col_midia_in = "(media_url IS NOT NULL)"
-        col_midia_out = "(response_media_url IS NOT NULL)"
+        col_midia_in = "(mq.media_url IS NOT NULL)"
+        col_midia_out = "(mq.response_media_url IS NOT NULL)"
 
     async with pool.connection() as conn:
+        # LEFT JOIN na conexão (não INNER): a mig 129 desacoplou atendimento de
+        # conexão com FK SET NULL, então apagar um número preserva o histórico —
+        # e essas linhas teriam sumido da timeline com INNER.
+        #
+        # A idade sai do banco, não de `datetime.now()` do processo: quem manda
+        # nas janelas de 15 min e 48h é o relógio do Postgres, e assim API e
+        # rota concordam mesmo com drift de container.
         cur = await conn.execute(
             f"""
-            SELECT id, agent_id, incoming_message, {col_midia_in}, media_type,
-                   normalized_input, media_processing_status,
-                   response, status, created_at, processed_at,
-                   media_processing_error, error,
-                   interna, criado_por_user_id,
-                   {col_midia_out}, response_media_type, transcricao
-              FROM message_queue
+            SELECT mq.id, mq.agent_id, mq.incoming_message, {col_midia_in},
+                   mq.media_type,
+                   mq.normalized_input, mq.media_processing_status,
+                   mq.response, mq.status, mq.created_at, mq.processed_at,
+                   mq.media_processing_error, mq.error,
+                   mq.interna, mq.criado_por_user_id,
+                   {col_midia_out}, mq.response_media_type, mq.transcricao,
+                   mq.response_apagada_at,
+                   mq.message_id, c.provider,
+                   EXTRACT(EPOCH FROM (
+                       NOW() - COALESCE(mq.processed_at, mq.created_at)
+                   ))
+              FROM message_queue mq
+              LEFT JOIN conexao c ON c.id = mq.conexao_id
              WHERE {" AND ".join(where)}
-             ORDER BY id DESC
+             ORDER BY mq.id DESC
              LIMIT %s
             """,  # type: ignore[arg-type]
             tuple(args),
         )
         rows = list(reversed(await cur.fetchall()))
-    return [
-        {
-            "id": r[0],
-            "agent_id": r[1],
-            "incoming_message": r[2],
-            # Com `incluir_midia=False` estas posições vêm como booleano do
-            # `IS NOT NULL`, e o conteúdo não é devolvido — o cliente busca em
-            # `/mensagens/{id}/midia`.
-            "media_url": r[3] if incluir_midia else None,
-            "media_disponivel": bool(r[3]),
-            "media_type": r[4],
-            "normalized_input": r[5],
-            "media_processing_status": r[6],
-            "response": r[7],
-            "status": r[8],
-            "created_at": r[9].isoformat() if r[9] else None,
-            "processed_at": r[10].isoformat() if r[10] else None,
-            "media_processing_error": r[11],
-            "error": r[12],
-            # Sprint 1.3 — notas internas (msg só pra equipe, não enviada)
-            "interna": r[13] or False,
-            "criado_por_user_id": r[14],
-            # Mig 146 — mídia enviada PELO OPERADOR. Separada de media_url, que
-            # é inbound: quem renderiza decide o lado da bolha pela origem do
-            # campo, e misturar as duas põe a foto do operador do lado do
-            # cliente.
-            "response_media_url": r[15] if incluir_midia else None,
-            "response_media_disponivel": bool(r[15]),
-            "response_media_type": r[16],
-            # Mig 169 — transcrição da nota de voz PARA O OPERADOR (botão
-            # "Transcrever" ou automática por conexão). Não é o
-            # normalized_input, que é o input montado pro agente.
-            "transcricao": r[17],
-        }
-        for r in rows
-    ]
+
+    saida: list[dict] = []
+    for r in rows:
+        pode_editar, pode_apagar = avaliar_alteracao_resposta(
+            message_id=r[19],
+            normalized_input=r[5],
+            provider=r[20],
+            interna=bool(r[13]),
+            tem_midia=bool(r[15]),
+            apagada=r[18] is not None,
+            # EXTRACT devolve Decimal; a regra compara com int.
+            idade_seg=float(r[21]) if r[21] is not None else None,
+        )
+        saida.append(
+            {
+                "id": r[0],
+                "agent_id": r[1],
+                "incoming_message": r[2],
+                # Com `incluir_midia=False` estas posições vêm como booleano do
+                # `IS NOT NULL`, e o conteúdo não é devolvido — o cliente busca
+                # em `/mensagens/{id}/midia`.
+                "media_url": r[3] if incluir_midia else None,
+                "media_disponivel": bool(r[3]),
+                "media_type": r[4],
+                "normalized_input": r[5],
+                "media_processing_status": r[6],
+                "response": r[7],
+                "status": r[8],
+                "created_at": r[9].isoformat() if r[9] else None,
+                "processed_at": r[10].isoformat() if r[10] else None,
+                "media_processing_error": r[11],
+                "error": r[12],
+                # Sprint 1.3 — notas internas (msg só pra equipe, não enviada)
+                "interna": r[13] or False,
+                "criado_por_user_id": r[14],
+                # Mig 146 — mídia enviada PELO OPERADOR. Separada de media_url,
+                # que é inbound: quem renderiza decide o lado da bolha pela
+                # origem do campo, e misturar as duas põe a foto do operador do
+                # lado do cliente.
+                "response_media_url": r[15] if incluir_midia else None,
+                "response_media_disponivel": bool(r[15]),
+                "response_media_type": r[16],
+                # Mig 169 — transcrição da nota de voz PARA O OPERADOR (botão
+                # "Transcrever" ou automática por conexão). Não é o
+                # normalized_input, que é o input montado pro agente.
+                "transcricao": r[17],
+                # Mig 172 — apagada para todos no WhatsApp. O texto continua em
+                # `response` para auditoria; quem renderiza é que troca por
+                # "Mensagem apagada".
+                "response_apagada": r[18] is not None,
+                # Mig 172 — o que a UI pode oferecer nesta mensagem. Booleanos,
+                # e não a chave do provedor (`message_id`): ela não serve ao
+                # cliente e não precisa sair daqui.
+                "pode_editar_resposta": pode_editar,
+                "pode_apagar_resposta": pode_apagar,
+            }
+        )
+    return saida
 
 
 #: Prefixo que separa metadados dos bytes num data-URL.
