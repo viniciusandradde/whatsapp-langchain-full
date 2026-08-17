@@ -367,31 +367,39 @@ private fun BolhaItem(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 horizontalArrangement = if (entrada) Arrangement.Start else Arrangement.End,
             ) {
-                Surface(
-                    color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
-                    shape =
-                        RoundedCornerShape(
-                            topStart = 12.dp,
-                            topEnd = 12.dp,
-                            // Canto "rabinho" do lado de quem fala, como no
-                            // WhatsApp: sem isso as bolhas viram cartões
-                            // genéricos e a tela perde a familiaridade.
-                            bottomStart = if (entrada) 2.dp else 12.dp,
-                            bottomEnd = if (entrada) 12.dp else 2.dp,
-                        ),
-                    modifier = Modifier.widthIn(max = 300.dp),
-                ) {
-                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        Text(b.texto, style = MaterialTheme.typography.bodyMedium)
-                        Row(
-                            Modifier.align(Alignment.End),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                if (b.pendente) "enviando…" else horaCurta(b.quandoIso),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                // Menu ancorado na BOLHA, não na linha: a linha ocupa a largura
+                // toda e o balão abriria longe de onde o dedo tocou.
+                //
+                // Mensagem ainda `pendente` não entra no menu: copiar o que
+                // talvez nem tenha saído, ou agir sobre algo sem id no
+                // servidor, é convite a confusão.
+                BolhaComMenu(textoCopiavel = if (b.pendente) null else b.texto) {
+                    Surface(
+                        color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
+                        shape =
+                            RoundedCornerShape(
+                                topStart = 12.dp,
+                                topEnd = 12.dp,
+                                // Canto "rabinho" do lado de quem fala, como no
+                                // WhatsApp: sem isso as bolhas viram cartões
+                                // genéricos e a tela perde a familiaridade.
+                                bottomStart = if (entrada) 2.dp else 12.dp,
+                                bottomEnd = if (entrada) 12.dp else 2.dp,
+                            ),
+                        modifier = Modifier.widthIn(max = 300.dp),
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                Modifier.align(Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    if (b.pendente) "enviando…" else horaCurta(b.quandoIso),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -406,81 +414,100 @@ private fun BolhaItem(
                 Modifier.fillMaxWidth().padding(vertical = 2.dp),
                 horizontalArrangement = if (entrada) Arrangement.Start else Arrangement.End,
             ) {
-                Surface(
-                    color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.widthIn(max = 300.dp),
+                // Numa bolha de mídia o que dá pra copiar é o TEXTO que a
+                // acompanha: a legenda que o operador escreveu e a transcrição
+                // da nota de voz. Foto sem legenda não abre menu — quem quer a
+                // imagem não a quer como texto.
+                BolhaComMenu(
+                    textoCopiavel =
+                        listOfNotNull(b.legenda, b.transcricao)
+                            .joinToString("\n\n")
+                            .ifBlank { null },
                 ) {
-                    Column(Modifier.padding(10.dp)) {
-                        // Áudio e imagem tocam/aparecem aqui mesmo, mas o
-                        // conteúdo NÃO vem na lista: é buscado por mensagem em
-                        // `/mensagens/{id}/midia` quando a bolha aparece na tela.
-                        // Decodificar e reduzir acontece fora da thread
-                        // principal, em `Midia.kt`. Documento continua como
-                        // rótulo: abrir arquivo pede FileProvider e visualizador
-                        // externo.
-                        val buscar: suspend () -> File? = { carregarMidia(b.mensagemId, !entrada) }
-                        when {
-                            b.tipo?.startsWith("audio") == true -> {
-                                AudioDaConversa(b.id, buscar, Modifier.width(240.dp))
-                                // Transcrição pro operador (mig 169): texto se
-                                // já existe (automática ou toque anterior);
-                                // senão o botão. Só entrada — o backend só
-                                // transcreve áudio do cliente.
-                                if (entrada && b.transcricao != null) {
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        b.transcricao,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else if (entrada) {
-                                    TextButton(
-                                        onClick = { transcrever(b.mensagemId) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp),
-                                    ) {
-                                        Text("Transcrever")
+                    Surface(
+                        color = if (entrada) cores.bolhaEntrada else cores.bolhaSaida,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.widthIn(max = 300.dp),
+                    ) {
+                        Column(Modifier.padding(10.dp)) {
+                            // Áudio e imagem tocam/aparecem aqui mesmo, mas o
+                            // conteúdo NÃO vem na lista: é buscado por mensagem
+                            // em `/mensagens/{id}/midia` quando a bolha aparece
+                            // na tela. Decodificar e reduzir acontece fora da
+                            // thread principal, em `Midia.kt`. Documento
+                            // continua como rótulo: abrir arquivo pede
+                            // FileProvider e visualizador externo.
+                            val buscar: suspend () -> File? = {
+                                carregarMidia(b.mensagemId, !entrada)
+                            }
+                            when {
+                                b.tipo?.startsWith("audio") == true -> {
+                                    AudioDaConversa(b.id, buscar, Modifier.width(240.dp))
+                                    // Transcrição pro operador (mig 169): texto
+                                    // se já existe (automática ou toque
+                                    // anterior); senão o botão. Só entrada — o
+                                    // backend só transcreve áudio do cliente.
+                                    if (entrada && b.transcricao != null) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            b.transcricao,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    } else if (entrada) {
+                                        TextButton(
+                                            onClick = { transcrever(b.mensagemId) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp),
+                                        ) {
+                                            Text("Transcrever")
+                                        }
                                     }
                                 }
+                                b.tipo?.startsWith("image") == true ->
+                                    ImagemDaConversa(b.id, buscar, Modifier.fillMaxWidth())
+                                else ->
+                                    Text(
+                                        rotuloMidia(b.tipo, entrada),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
                             }
-                            b.tipo?.startsWith("image") == true ->
-                                ImagemDaConversa(b.id, buscar, Modifier.fillMaxWidth())
-                            else ->
-                                Text(
-                                    rotuloMidia(b.tipo, entrada),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
+                            if (b.legenda != null) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(b.legenda, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(
+                                horaCurta(b.quandoIso),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        if (b.legenda != null) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(b.legenda, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Text(
-                            horaCurta(b.quandoIso),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
         }
         is Bolha.NotaInterna ->
-            Surface(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            ) {
-                Column(Modifier.padding(10.dp)) {
-                    Text(
-                        "Nota interna · ${b.autor ?: "—"} · não enviada ao cliente",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+            // Nota interna copia só o texto da nota, sem o cabeçalho de autoria:
+            // quem copia quer colar o conteúdo, não "Nota interna · fulano ·".
+            BolhaComMenu(textoCopiavel = b.texto) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(
+                            "Nota interna · ${b.autor ?: "—"} · não enviada ao cliente",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(b.texto, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
+        // Bolha de erro fica de fora: o texto é uma frase fixa nossa, não algo
+        // que alguém queira copiar ou agir sobre.
         is Bolha.Erro ->
             Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), Alignment.Center) {
                 Text(
