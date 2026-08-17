@@ -4,9 +4,17 @@
      O foreground é BITMAP, não vetor: o mark tem gradiente laranja→azul, e
      reproduzir isso em <vector> exigiria redesenhar a arte à mão. Os PNGs são
      gerados de frontend/public/icon-maskable-512.png (a mesma arte do ícone
-     PWA), com a chapa escura convertida em transparência e o mark dimensionado
-     em 62% do canvas — dentro dos 72dp de safe zone dos 108dp, com margem pra
-     máscara circular apertada.
+     PWA), com a chapa escura convertida em transparência.
+
+     O mark ocupa 38,9% do canvas. O número NÃO é estético, é derivado: o
+     launcher só mostra os 72dp centrais dos 108dp (66,7%), então o V aparece
+     no círculo em 38,9 / 66,7 = 58% — o mesmo tamanho relativo que ele tem
+     no ícone PWA (57,7%), que é a referência pedida pelo dono.
+
+     Já erramos isso duas vezes medindo o V contra o CANVAS em vez do círculo
+     visível: 62% e depois 74% renderizaram um V que engolia o círculo inteiro.
+     Ao mexer aqui, simule a máscara (compor sobre a chapa, recortar 72/108)
+     antes de acreditar no número.
 
      A camada <monochrome> (ícone temático) fica em mipmap-anydpi-v33, porque o
      elemento só existe a partir da API 33 e este arquivo é lido desde a 26. -->
