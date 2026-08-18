@@ -121,6 +121,9 @@ from whatsapp_langchain.server.routes.push import router as push_router
 from whatsapp_langchain.server.routes.rag_stats import (
     router as rag_stats_router,
 )
+from whatsapp_langchain.server.routes.relatorio_producao import (
+    router as relatorio_producao_router,
+)
 from whatsapp_langchain.server.routes.relatorio_uso import (
     router as relatorio_uso_router,
 )
@@ -495,6 +498,7 @@ app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)
 app.include_router(relatorio_uso_router)
+app.include_router(relatorio_producao_router)
 app.include_router(rag_dataset_router)
 app.include_router(hitl_router)
 app.include_router(workflows_router)
