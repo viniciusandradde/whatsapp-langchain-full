@@ -172,3 +172,48 @@ class TestConjunto:
 
     def test_texto_sem_achados_diz_que_nao_achou(self) -> None:
         assert "Nenhum problema" in resumo_texto([])
+
+
+class TestDollarQuote:
+    """O empacotamento do SQL do script do host.
+
+    Vale testar apesar de o módulo ser de operação: este código roda como root
+    no host, com psql superusuário, e recebe o texto ESCRITO PELO MODELO mais
+    mensagens de erro cujo conteúdo pode vir do que um cliente mandou.
+    """
+
+    @staticmethod
+    def _quote(valor):
+        import importlib.util
+
+        caminho = _SCRIPTS / "analise_producao.py"
+        spec = importlib.util.spec_from_file_location("analise_producao", caminho)
+        mod = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(mod)
+        return mod._dollar_quote(valor)
+
+    def test_texto_comum_usa_a_tag_padrao(self) -> None:
+        assert self._quote("olá") == "$rel$olá$rel$"
+
+    def test_valor_vazio_e_none_viram_string_vazia(self) -> None:
+        assert self._quote("") == "$rel$$rel$"
+        assert self._quote(None) == "$rel$$rel$"
+
+    def test_conteudo_com_a_tag_padrao_nao_encerra_o_literal(self) -> None:
+        # A tentativa de injeção: fechar o literal e emendar SQL.
+        malicioso = "x$rel$; DROP TABLE relatorio_producao; --"
+        saida = self._quote(malicioso)
+        # A tag escolhida não pode aparecer no meio do conteúdo, senão o
+        # Postgres encerraria o literal ali.
+        tag = saida[: saida.index("$", 1) + 1]
+        assert saida.count(tag) == 2
+        assert saida.startswith(tag) and saida.endswith(tag)
+        assert malicioso in saida
+
+    def test_escala_para_varias_tags_ocupadas(self) -> None:
+        malicioso = "$rel$ $rel1$ $rel2$ fim"
+        saida = self._quote(malicioso)
+        tag = saida[: saida.index("$", 1) + 1]
+        assert saida.count(tag) == 2
+        assert malicioso in saida

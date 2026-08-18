@@ -338,11 +338,28 @@ def sql_stdin(texto):
 def _dollar_quote(valor):
     """Empacota texto para o psql sem escapar nada.
 
-    `$rel$...$rel$` é literal cru no Postgres: aspas, barras e acentos passam
-    inteiros. O único jeito de quebrar seria o próprio conteúdo conter `$rel$`,
-    o que não acontece com JSON nem com texto de relatório.
+    `$tag$...$tag$` é literal cru no Postgres: aspas, barras e acentos passam
+    inteiros. Mas o delimitador é literal, então conteúdo que CONTENHA o
+    delimitador o encerra no meio e o resto vira SQL.
+
+    Uma versão anterior fixava a tag em `$rel$` supondo que isso "não acontece
+    com JSON nem com texto de relatório". Acontece: aqui entram o texto escrito
+    pelo MODELO e os dados coletados, que incluem `left(error, 120)` de
+    `message_queue` — mensagem de erro cujo conteúdo pode ter origem no que um
+    cliente mandou. E este script roda como root, com psql superusuário. Bastava
+    um cliente conseguir a string certa num erro, ou induzir o modelo a
+    escrevê-la, para injetar SQL.
+
+    Agora a tag é escolhida para não existir no valor. O laço termina sempre: a
+    cada volta o candidato é maior, e um texto finito não contém infinitas tags.
     """
-    return "$rel$" + (valor or "") + "$rel$"
+    v = valor or ""
+    tag = "rel"
+    i = 0
+    while ("$" + tag + "$") in v:
+        i += 1
+        tag = "rel%d" % i
+    return "$" + tag + "$" + v + "$" + tag + "$"
 
 
 def coletar_para_checagens():
