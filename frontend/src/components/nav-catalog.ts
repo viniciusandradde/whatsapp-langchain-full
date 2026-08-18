@@ -167,6 +167,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Ferramenta de plataforma: mostra dados de todos os clientes e
       // envia mensagem em nome deles.
       { secao: "Plataforma", label: "Uso por cliente", href: "/relatorios/uso", requiresSuperadmin: true },
+      { secao: "Plataforma", label: "Saúde da produção", href: "/relatorios/producao", requiresSuperadmin: true },
       // Quem fez o quê
       { secao: "Auditoria", label: "Histórico de acesso", href: "/settings/security/login-history", requires: "security.audit.read" },
       { secao: "Auditoria", label: "Registro de auditoria", href: "/settings/security/audit", requires: "security.audit.read" },
