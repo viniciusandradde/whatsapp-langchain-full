@@ -92,6 +92,15 @@ select = ["E", "F", "I", "UP"]
 # E402 (import fora do topo): há imports tardios intencionais (lazy/condicional).
 ignore = ["E501", "E402"]
 
+[tool.ruff.lint.per-file-ignores]
+# Os scripts de operação rodam no HOST de produção, fora dos containers, e o
+# cabeçalho do `analise_producao.py` promete sobreviver a um host sem o 3.11
+# (o Oracle Linux 8 traz 3.6, e o dnf depende dele). UP* pede sintaxe mais nova
+# — f-string, `capture_output`, `class X:` sem `object` — que quebraria essa
+# promessa. Lint não vale quebrar compatibilidade declarada.
+"scripts/analise_producao.py" = ["UP"]
+"scripts/producao_checks.py" = ["UP"]
+
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"

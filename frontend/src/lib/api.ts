@@ -5277,3 +5277,76 @@ export async function getAtendimentoWorkflowState(
     `/api/admin/atendimentos/${atendimentoId}/workflow-state`
   );
 }
+
+// ============================================================================
+// Relatório de produção — gestão da plataforma (mig 173)
+// ============================================================================
+
+/**
+ * Um achado de checagem determinística. É a parte VERIFICÁVEL do relatório:
+ * veio de uma regra com limiar, não da redação do modelo.
+ */
+export type AchadoProducao = {
+  chave: string;
+  severidade: "ok" | "atencao" | "critico";
+  titulo: string;
+  evidencia: string;
+  acao: string;
+};
+
+export type RelatorioProducao = {
+  id: number;
+  criado_at: string | null;
+  origem: "agendado" | "manual";
+  solicitado_por: string | null;
+  severidade: "ok" | "atencao" | "critico";
+  achados: AchadoProducao[];
+  /** Redação por IA. Nulo quando o modelo falhou — os achados valem assim mesmo. */
+  texto: string | null;
+  modelo: string | null;
+  erro: string | null;
+  /** Só no detalhe: permite conferir a conclusão contra a fonte. */
+  dados?: Record<string, unknown>;
+};
+
+export type ConfigProducao = {
+  ativo: boolean;
+  /** "HH:MM" na timezone abaixo. */
+  horario: string;
+  tz: string;
+  last_run_date: string | null;
+};
+
+export type PainelProducao = {
+  relatorios: RelatorioProducao[];
+  pendente: { id: number; criado_at: string; solicitado_por: string } | null;
+  config: ConfigProducao;
+};
+
+export async function getPainelProducao(): Promise<PainelProducao> {
+  return apiFetch<PainelProducao>("/api/relatorios/producao");
+}
+
+export async function getRelatorioProducao(
+  id: number
+): Promise<RelatorioProducao> {
+  return apiFetch<RelatorioProducao>(`/api/relatorios/producao/${id}`);
+}
+
+/**
+ * Enfileira "gerar agora". Responde 202: quem produz é o script no host, no
+ * próximo ciclo — o container não tem como disparar nada lá fora.
+ */
+export async function gerarRelatorioProducao(): Promise<{
+  ok: boolean;
+  id: number;
+  ja_existia: boolean;
+}> {
+  return apiFetch("/api/relatorios/producao/gerar", { method: "POST" });
+}
+
+export async function saveConfigProducao(
+  body: ConfigProducao
+): Promise<{ ok: boolean }> {
+  return apiFetch("/api/relatorios/producao/config", { method: "PUT", body });
+}
