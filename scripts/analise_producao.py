@@ -52,7 +52,14 @@ CONTAINER_EVO = os.environ.get(
     "CONTAINER_EVO", "automao-evolutionapi-tp0jdo-evolution-api-1"
 )
 PREFIXO_PROD = os.environ.get("PREFIXO_PROD", "projetos-chatvsanexus-er02mp")
-MODELO = os.environ.get("MODELO_ANALISE", "anthropic/claude-sonnet-4.5")
+# Haiku, não Sonnet: depois que a ANÁLISE saiu do modelo, o que sobra é
+# redigir ~10 linhas a partir de uma lista pronta de achados. Comparados no
+# mesmo input de produção, Haiku 4.5 escreveu um contexto MAIS rico que o
+# Sonnet (citou backup, healthchecks e uptime dos containers) por uma fração
+# do preço. O gemini-flash-lite também servia, mas chamou de "crítico" um
+# achado de "atenção" — e a severidade tem que vir da checagem, não do
+# adjetivo. Trocável por `MODELO_ANALISE` no env sem tocar no código.
+MODELO = os.environ.get("MODELO_ANALISE", "anthropic/claude-haiku-4.5")
 # Checkout do Dokploy: é a cópia do repositório que ACOMPANHA o deploy. O
 # `chatnexus-backup.service` já aponta para cá; análise e monitor apontavam
 # para `/opt/chatnexus`, cópia manual que ficou um commit atrás sem ninguém
