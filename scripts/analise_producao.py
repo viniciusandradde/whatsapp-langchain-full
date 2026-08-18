@@ -9,9 +9,10 @@ Complementa o `monitor_evolution.sh`. O monitor responde uma pergunta binária �
 "o socket está vivo?" — e age. Este script responde a pergunta aberta: o que os
 dados de hoje dizem, e o que fazer a respeito.
 
-Roda de duas formas:
-  scripts/analise_producao.py              # relatório e envio pro Telegram
-  scripts/analise_producao.py --seco       # imprime no terminal, não envia
+Roda assim:
+  scripts/analise_producao.py --ciclo      # o timer chama; decide se há o que fazer
+  scripts/analise_producao.py              # gera e envia agora
+  scripts/analise_producao.py --seco       # ensaio: imprime, não envia, não grava
   scripts/analise_producao.py --coleta     # só os dados crus, sem chamar o modelo
 
 Configuração em /etc/chatnexus-monitor.env (mesmo arquivo do monitor):
@@ -20,8 +21,20 @@ Configuração em /etc/chatnexus-monitor.env (mesmo arquivo do monitor):
   OPENROUTER_API_KEY=...        # se ausente, é lido do container da API
   MODELO_ANALISE=...            # default abaixo
 
-O relatório é gerado por LLM e pode errar. Por isso os números coletados vão
-junto no Telegram: dá pra conferir a conclusão contra o dado que a produziu.
+**Quem analisa são as CHECAGENS, não o modelo** (`producao_checks.py`). Elas
+decidem o que está errado, com limiar visível e teste de unidade; o modelo só
+redige o texto a partir do que elas acharem, e é proibido de introduzir fato
+novo. A versão anterior pedia a análise ao LLM e num dos primeiros dias ele
+relatou um incidente de uma data que não estava nos dados coletados.
+
+Consequência prática: **se o OpenRouter cair ou a chave faltar, o relatório sai
+mesmo assim**, em forma de lista. A análise não depende do modelo; só o
+acabamento depende.
+
+O `--ciclo` existe para o horário do envio morar no banco (mig 173) em vez de
+numa unit do systemd — quem opera muda pelo painel. O timer acorda de minuto em
+minuto, e este ramo atende primeiro um pedido de "gerar agora" do painel; se
+não houver, checa se é a hora agendada, com claim atômico contra envio duplo.
 """
 
 import json
@@ -40,6 +53,22 @@ CONTAINER_EVO = os.environ.get(
 )
 PREFIXO_PROD = os.environ.get("PREFIXO_PROD", "projetos-chatvsanexus-er02mp")
 MODELO = os.environ.get("MODELO_ANALISE", "anthropic/claude-sonnet-4.5")
+# Checkout do Dokploy: é a cópia do repositório que ACOMPANHA o deploy. O
+# `chatnexus-backup.service` já aponta para cá; análise e monitor apontavam
+# para `/opt/chatnexus`, cópia manual que ficou um commit atrás sem ninguém
+# perceber. Daqui saem as migrations para comparar com o banco.
+DIR_REPO = os.environ.get(
+    "DIR_REPO", "/etc/dokploy/compose/projetos-chatvsanexus-er02mp/code"
+)
+
+# As checagens vivem ao lado deste arquivo — no host não existe o pacote da
+# aplicação, então o import é por caminho, não por instalação.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from producao_checks import (  # noqa: E402
+    resumo_texto,
+    rodar_checagens,
+    severidade_geral,
+)
 
 
 def carregar_config():
@@ -131,45 +160,58 @@ def coletar():
     }
 
 
-def analisar(dados, chave):
-    prompt = f"""Você é o SRE deste sistema. Analise o estado de produção abaixo e produza
-um relatório curto e acionável, em português do Brasil.
+def analisar(dados, achados, chave):
+    """Pede ao modelo a REDAÇÃO — não a análise.
+
+    A análise já foi feita pelas checagens determinísticas e chega aqui pronta
+    em `achados`. O modelo escreve o texto em cima delas: ordena, agrupa o que
+    tem a mesma causa e explica o próximo passo.
+
+    A versão anterior pedia "analise o estado de produção" e mandava os dados
+    crus. O modelo respondia com conclusões plausíveis e, num dos primeiros
+    dias, com um incidente de uma data que não estava nos dados. Redigir é o
+    que ele faz bem; concluir sob pressão de formato, não.
+    """
+    resumo_achados = json.dumps(achados, ensure_ascii=False, indent=2)
+    prompt = f"""Você redige o relatório de operação deste sistema, em português do Brasil.
 
 O sistema é um atendimento de WhatsApp: uma API FastAPI recebe webhooks da Evolution API,
 enfileira em `message_queue` no Postgres, e workers processam com um agente LangGraph e
-respondem. Hoje (2026-07-31) houve um incidente: as instâncias da Evolution ficaram ~13h
-com o socket morto reportando "open", e foi preciso reiniciar o container.
+respondem.
 
-DADOS COLETADOS:
+A ANÁLISE JÁ ESTÁ FEITA. Estes são os problemas encontrados por checagens automáticas,
+cada um com a evidência que o sustenta e a ação sugerida:
+
+{resumo_achados}
+
+Os dados brutos de onde tudo saiu (use só para dar contexto ao que já está acima):
 {json.dumps(dados, ensure_ascii=False, indent=2)}
 
 Responda EXATAMENTE neste formato, sem preâmbulo:
 
-SAÚDE: <uma linha — está saudável, degradado ou em incidente, e por quê>
+SITUAÇÃO: <uma linha, coerente com a gravidade dos achados acima. Se a lista de achados
+estiver vazia, diga que nenhuma checagem encontrou problema — não procure um.>
 
-O QUE OS DADOS MOSTRAM:
-- <no máximo 5 itens, cada um citando o número que o sustenta>
-
-AÇÕES RECOMENDADAS:
-1. <ação concreta, com o comando ou arquivo quando fizer sentido>
+O QUE FAZER:
+1. <o achado mais grave, explicado em uma frase, com a ação>
 2. <...>
-(no máximo 4, ordenadas por urgência; se não houver nada urgente, diga isso)
+(um item por achado, na ordem em que vieram; se não houver achados, escreva "Nada a fazer.")
 
-RISCOS QUE NINGUÉM ESTÁ OLHANDO:
-- <no máximo 3>
+CONTEXTO ÚTIL:
+- <no máximo 3 observações dos dados brutos que ajudem a entender os achados>
+- <se não houver achados, use este espaço para o que os números mostram do dia>
 
-Regras (a primeira versão deste relatório violou as três):
-- Cite APENAS datas e números que aparecem em DADOS COLETADOS. Se um dia não está lá,
-  ele não existe para você — não conclua nada sobre ele.
+Regras — a primeira versão deste relatório violou as três primeiras:
+- NÃO invente problema que não esteja na lista de achados. Você redige, não diagnostica.
+- Cite APENAS datas e números que aparecem acima. Se um dia não está lá, ele não existe
+  para você.
 - Use o campo `agora` para calcular "há quanto tempo". Uptime de container NÃO é a hora
   do último incidente.
 - NUNCA sugira UPDATE, DELETE, TRUNCATE ou qualquer escrita em massa no banco. Ações são
-  de investigação (consultas SELECT, ler logs, olhar uma tela) ou de operação
-  (reiniciar serviço). Se achar que dados precisam ser corrigidos, diga o que investigar
-  e deixe a decisão para o humano.
-- Confira o nome das tabelas contra os dados; não invente plural nem singular.
+  de investigação (SELECT, ler log, olhar tela) ou de operação (reiniciar serviço).
 - Se um campo veio vazio ou com erro, diga que a coleta falhou em vez de inferir.
-- Escreva toda data no formato AAAA-MM-DD, nunca abreviada.\n- Seja específico, cite números, e não repita a descrição do sistema."""
+- Escreva toda data no formato AAAA-MM-DD, nunca abreviada.
+- Seja específico e não repita a descrição do sistema."""
 
     req = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -257,11 +299,212 @@ def telegram(texto):
         return False
 
 
+def sql_stdin(texto):
+    """Roda SQL pelo STDIN do psql, sem passar pelo shell.
+
+    O `sql()` acima monta a query dentro de uma string de shell e escapa aspas
+    na mão — serve para SELECT curto, mas quebra com JSON, que é justamente o
+    que precisamos gravar. Aqui o SQL vai por stdin: o shell não vê o conteúdo.
+    """
+    cmd = [
+        "docker",
+        "exec",
+        "-i",
+        CONTAINER_DB,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "whatsapp_langchain",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-t",
+        "-A",
+    ]
+    try:
+        p = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,  # noqa: UP021
+        )
+        saida, erro = p.communicate(texto, timeout=60)
+    except Exception as exc:  # noqa: BLE001 — coleta nunca deve derrubar o script
+        return "", str(exc)
+    return (saida or "").strip(), (erro or "").strip()
+
+
+def _dollar_quote(valor):
+    """Empacota texto para o psql sem escapar nada.
+
+    `$rel$...$rel$` é literal cru no Postgres: aspas, barras e acentos passam
+    inteiros. O único jeito de quebrar seria o próprio conteúdo conter `$rel$`,
+    o que não acontece com JSON nem com texto de relatório.
+    """
+    return "$rel$" + (valor or "") + "$rel$"
+
+
+def coletar_para_checagens():
+    """Números estruturados — o que as CHECAGENS consomem.
+
+    Separado do `coletar()`, que devolve texto tabular para o modelo ler. As
+    checagens precisam de valor, não de tabela formatada: comparar limiar com
+    string é como o erro entra sem ninguém ver.
+    """
+
+    def num(saida, default=None):
+        try:
+            return int(str(saida).strip().splitlines()[0])
+        except Exception:  # noqa: BLE001
+            return default
+
+    minutos, _ = sql_stdin(
+        "SELECT COALESCE(EXTRACT(EPOCH FROM (NOW()-MAX(processed_at)))/60, -1)::int "
+        "FROM message_queue WHERE status='done';"
+    )
+    fila, _ = sql_stdin("SELECT count(*) FROM message_queue WHERE status='queued';")
+    aplicadas, _ = sql_stdin("SELECT name FROM _migrations ORDER BY name;")
+
+    disco = num(sh("df -h / | tail -1 | awk '{print $5}' | tr -d %"))
+
+    # Horas desde o último sucesso do backup, pelo systemd.
+    backup_horas = None
+    epoch = num(
+        sh(
+            "systemctl show chatnexus-backup.service "
+            "-p ExecMainExitTimestampMonotonic --value"
+        )
+    )
+    ts = sh("systemctl show chatnexus-backup.service -p ExecMainExitTimestamp --value")
+    if ts and not ts.startswith("("):
+        segundos = num(sh('date -d "%s" +%%s' % ts.replace('"', "")))
+        agora = num(sh("date +%s"))
+        if segundos and agora:
+            backup_horas = (agora - segundos) / 3600.0
+    elif epoch:
+        backup_horas = None
+
+    arquivos = sh(
+        "ls %s/db/migrations/*.sql 2>/dev/null | xargs -n1 basename" % DIR_REPO
+    )
+
+    m = num(minutos, None)
+    return {
+        # -1 é o "nunca processou nada" do COALESCE; vira None para a checagem
+        # tratar como "não sei" em vez de "zero minutos".
+        "minutos_sem_done": None if m is None or m < 0 else m,
+        "fila_esperando": num(fila, 0),
+        "disco_pct": disco,
+        "backup_horas": backup_horas,
+        "migrations_arquivos": [x for x in arquivos.splitlines() if x.endswith(".sql")],
+        "migrations_aplicadas": [
+            x.strip() for x in aplicadas.splitlines() if x.strip().endswith(".sql")
+        ],
+    }
+
+
+def salvar_no_banco(origem, solicitado_por, severidade, achados, texto, erro, dados):
+    """Publica o relatório para o painel ler.
+
+    O host é quem tem acesso à máquina; o painel só consome o que ele grava.
+    Falha de gravação NÃO derruba o envio ao Telegram — o alerta chegar importa
+    mais que ficar registrado.
+    """
+    sql = (
+        "INSERT INTO relatorio_producao "
+        "(origem, solicitado_por, severidade, achados, texto, modelo, dados, erro) "
+        "VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s::jsonb, %s) RETURNING id;"
+        % (
+            _dollar_quote(origem),
+            "NULL" if not solicitado_por else _dollar_quote(solicitado_por),
+            _dollar_quote(severidade),
+            _dollar_quote(json.dumps(achados, ensure_ascii=False)),
+            "NULL" if texto is None else _dollar_quote(texto),
+            _dollar_quote(MODELO) if texto else "NULL",
+            _dollar_quote(json.dumps(dados, ensure_ascii=False)),
+            "NULL" if not erro else _dollar_quote(erro),
+        )
+    )
+    saida, err = sql_stdin(sql)
+    if err:
+        print(
+            "aviso: não consegui gravar o relatório no banco: " + err, file=sys.stderr
+        )
+        return None
+    try:
+        return int(saida.splitlines()[0])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def pedido_pendente():
+    """Alguém clicou "gerar agora" no painel?"""
+    saida, _ = sql_stdin(
+        "SELECT id, solicitado_por FROM relatorio_producao_pedido "
+        "WHERE atendido_at IS NULL ORDER BY criado_at LIMIT 1;"
+    )
+    linha = saida.splitlines()[0] if saida else ""
+    if "|" not in linha:
+        return None
+    pid, quem = linha.split("|", 1)
+    return {"id": int(pid), "solicitado_por": quem}
+
+
+def fechar_pedido(pedido_id, relatorio_id):
+    sql_stdin(
+        "UPDATE relatorio_producao_pedido SET atendido_at = NOW(), relatorio_id = %s "
+        "WHERE id = %s;"
+        % ("NULL" if relatorio_id is None else str(relatorio_id), int(pedido_id))
+    )
+
+
+def claim_agendado():
+    """É a hora configurada e ainda não rodou hoje?
+
+    O UPDATE condicional é o claim: quem consegue a linha roda. Mesmo desenho
+    de `shared/resumo_diario.py`, e pelo mesmo motivo — sem isso, dois ciclos
+    do timer no mesmo minuto mandariam dois relatórios.
+    """
+    saida, _ = sql_stdin(
+        "UPDATE relatorio_producao_config SET last_run_date = "
+        "(NOW() AT TIME ZONE tz)::date "
+        "WHERE id = 1 AND ativo "
+        "AND (NOW() AT TIME ZONE tz)::time >= horario "
+        "AND (last_run_date IS NULL OR last_run_date < (NOW() AT TIME ZONE tz)::date) "
+        "RETURNING 1;"
+    )
+    return saida.strip() == "1"
+
+
 def main():
     carregar_config()
     args = sys.argv[1:]
 
+    # Modo daemon: o timer acorda de minuto em minuto e este ramo decide se há
+    # o que fazer. Sem ele, mudar o horário exigiria editar unit do systemd.
+    origem = "manual" if "--forcar" in args or "--seco" in args else None
+    solicitado_por = None
+    pedido = None
+    if "--ciclo" in args:
+        pedido = pedido_pendente()
+        if pedido is not None:
+            origem, solicitado_por = "manual", pedido["solicitado_por"]
+        elif claim_agendado():
+            origem = "agendado"
+        else:
+            return 0
+    elif origem is None:
+        origem = "agendado"
+
     dados = coletar()
+    medidas = coletar_para_checagens()
+    dados["medidas"] = medidas
+
+    # A ANÁLISE acontece aqui, sem modelo nenhum.
+    achados = [a.como_dict() for a in rodar_checagens(medidas)]
+    severidade = severidade_geral(rodar_checagens(medidas))
+
     if "--coleta" in args:
         print(json.dumps(dados, ensure_ascii=False, indent=2))
         return 0
@@ -269,17 +512,34 @@ def main():
     chave = os.environ.get("OPENROUTER_API_KEY") or sh(
         f"docker exec {CONTAINER_API} printenv OPENROUTER_API_KEY"
     )
-    if not chave or chave.startswith("("):
-        print("sem OPENROUTER_API_KEY — configure em " + CONFIG, file=sys.stderr)
-        return 1
 
-    try:
-        relatorio = analisar(dados, chave)
-    except Exception as exc:  # noqa: BLE001
-        msg = f"Chat Nexus — a análise falhou\n\n{exc}\n\nOs dados foram coletados; rode com --coleta para vê-los."
-        telegram(msg)
-        print(msg, file=sys.stderr)
-        return 1
+    relatorio = None
+    erro_llm = None
+    if not chave or chave.startswith("("):
+        erro_llm = "sem OPENROUTER_API_KEY"
+    else:
+        try:
+            relatorio = analisar(dados, achados, chave)
+        except Exception as exc:  # noqa: BLE001
+            erro_llm = str(exc)
+
+    # O relatório sai mesmo sem o modelo: a análise está nos achados, e só a
+    # redação depende do LLM. Antes, falha do OpenRouter significava nenhum
+    # aviso — justamente no dia em que algo pode estar errado.
+    if relatorio is None:
+        relatorio = resumo_texto(rodar_checagens(medidas))
+        if erro_llm:
+            relatorio += "\n\n(sem redação por IA: %s)" % erro_llm
+
+    # `--seco` é ensaio: imprime e não deixa rastro. Gravar no banco a partir
+    # dele encheria o histórico do painel de relatórios que ninguém pediu, e
+    # ainda mexeria no claim do agendamento.
+    if "--seco" not in args:
+        relatorio_id = salvar_no_banco(
+            origem, solicitado_por, severidade, achados, relatorio, erro_llm, dados
+        )
+        if pedido is not None:
+            fechar_pedido(pedido["id"], relatorio_id)
 
     inventadas = datas_inventadas(relatorio, dados)
     aviso = ""
@@ -291,11 +551,22 @@ def main():
         )
 
     fila = dados["fila_por_status"].replace("\n", " | ")[:200]
+    # A severidade vem das checagens, não do texto: o relatório de antes abria
+    # com "Sistema saudável" e listava três problemas logo abaixo.
+    cabecalho = "Chat Nexus — produção [%s]" % severidade.upper()
+    achados_txt = ""
+    if achados:
+        achados_txt = "\nAchados (checagem automática):\n" + "\n".join(
+            "  [%s] %s — %s" % (a["severidade"].upper(), a["titulo"], a["evidencia"])
+            for a in achados
+        )
     texto = (
-        f"Chat Nexus — análise de produção\n"
+        f"{cabecalho}\n"
         f"modelo: {MODELO}\n"
-        f"{'-' * 32}\n{relatorio}\n{'-' * 32}\n"
-        f"Gerado por LLM: confira contra os dados.\nFila: {fila}{aviso}"
+        f"{'-' * 32}\n{relatorio}\n{'-' * 32}"
+        f"{achados_txt}\n"
+        f"Achados são determinísticos; o texto acima é redação por IA.\n"
+        f"Fila: {fila}{aviso}"
     )
 
     if "--seco" in args:
