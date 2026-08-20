@@ -145,6 +145,8 @@ def _make_agente(**overrides):
         "aceita_documento": True,
         # mig 143 — default do banco é TRUE (anuncia o departamento ao cliente)
         "anuncia_transferencia": True,
+        # mig 163 — default do banco é FALSE (few-shot é opt-in por agente)
+        "fewshot_enabled": False,
         "base_conhecimento_ids": [],
         "variavel_ids": [],
         "mcp_server_ids": [],

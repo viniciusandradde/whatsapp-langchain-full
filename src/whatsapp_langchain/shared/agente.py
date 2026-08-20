@@ -63,6 +63,7 @@ _COLS = (
     "prompt_override, modelo, estilo_resposta, temperatura_override, "
     "max_tokens, top_p_override, tools_enabled, tools_config, "
     "aceita_imagem, aceita_audio, aceita_documento, anuncia_transferencia, "
+    "fewshot_enabled, "
     "base_conhecimento_ids, variavel_ids, mcp_server_ids, "
     "limite_custo_acao, ativo, is_default, "
     "created_by_user_id, created_at, updated_at, "
@@ -97,6 +98,10 @@ class AgenteIA:
     # Quando False, transfer_to_human nao manda a mensagem de sistema
     # citando o departamento (mig 143). A transferencia ocorre igual.
     anuncia_transferencia: bool
+    # mig 163 — opt-in do few-shot; caminho quente, ver a migration.
+    # Sem default: a coluna é NOT NULL e `_row_to_agente` desempacota a linha
+    # posicionalmente, então a posição aqui TEM que espelhar `_COLS`.
+    fewshot_enabled: bool
     base_conhecimento_ids: list[int]
     variavel_ids: list[int]
     mcp_server_ids: list[int]
@@ -142,6 +147,7 @@ class AgenteIA:
             "aceita_audio": self.aceita_audio,
             "aceita_documento": self.aceita_documento,
             "anuncia_transferencia": self.anuncia_transferencia,
+            "fewshot_enabled": self.fewshot_enabled,
             "base_conhecimento_ids": list(self.base_conhecimento_ids or []),
             "variavel_ids": list(self.variavel_ids or []),
             "mcp_server_ids": list(self.mcp_server_ids or []),
@@ -864,6 +870,8 @@ class AgenteRuntime:
     aceita_imagem: bool = True
     aceita_audio: bool = True
     aceita_documento: bool = True
+    # mig 163 — o worker só busca exemplos quando isto está ligado.
+    fewshot_enabled: bool = False
     # Sprint 2 padrão profissional (mig 043)
     tipo_memoria: str = "window"
     janela_memoria: int | None = None
@@ -900,6 +908,7 @@ class AgenteRuntime:
             aceita_imagem=agente.aceita_imagem,
             aceita_audio=agente.aceita_audio,
             aceita_documento=agente.aceita_documento,
+            fewshot_enabled=agente.fewshot_enabled,
             tipo_memoria=agente.tipo_memoria,
             janela_memoria=agente.janela_memoria,
             timeout_minutos=agente.timeout_minutos,
