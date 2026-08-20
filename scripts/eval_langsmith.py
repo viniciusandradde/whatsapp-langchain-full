@@ -44,6 +44,12 @@ async def main() -> int:
         default=f"atendimento-{datetime.now().strftime('%Y%m%d-%H%M')}",
     )
     parser.add_argument("--max-concurrency", type=int, default=4)
+    parser.add_argument(
+        "--empresa-id",
+        type=int,
+        default=999,
+        help="Empresa dona do agente avaliado (default 999 = sandbox)",
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get("LANGSMITH_API_KEY")
@@ -83,7 +89,7 @@ async def main() -> int:
     from whatsapp_langchain.shared.db import get_pool
 
     pool = await get_pool()
-    EMPRESA_ID = 999  # sandbox
+    EMPRESA_ID = args.empresa_id
 
     async def target(inputs: dict) -> dict:
         cliente_msg = inputs.get("cliente_msg", "")
@@ -126,9 +132,15 @@ async def main() -> int:
             from openevals.llm import create_llm_as_judge
             from openevals.prompts import CORRECTNESS_PROMPT
 
+            # Judge via OpenRouter (factory do repo) — `model="openai:..."`
+            # falaria com api.openai.com e exigiria OPENAI_API_KEY, que este
+            # stack não tem; foi a causa de um experiment inteiro com score
+            # None (comment: OpenAIError) em 2026-08-20.
+            from whatsapp_langchain.shared.llm import create_chat_model
+
             judge = create_llm_as_judge(
                 prompt=CORRECTNESS_PROMPT,
-                model="openai:gpt-4o-mini",
+                judge=create_chat_model(model="openai/gpt-4o-mini"),
                 feedback_key="correctness",
             )
             return judge(

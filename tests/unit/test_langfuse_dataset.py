@@ -95,3 +95,73 @@ class TestIngestIdempotente:
         ):
             r = await ingest_from_langfuse(pool, 1)
         assert r["novos"] == 0 and r["cruzados"] == 0
+
+
+class TestIngestGoldProviderLangsmith:
+    """O branch LangSmith do ingest_gold — a fonte nova de 2026-08-20.
+
+    Antes deste branch existir, provider=langsmith gerava só um aviso de
+    limitação ("só guardamos o id de trace do Langfuse") e a fonte nunca
+    contribuía. Estes testes fixam o contrato novo: a função é CHAMADA, o
+    resultado dela entra em `por_fonte`, e os dois modos de silêncio são
+    distinguíveis (zero feedback ≠ provedor quebrado).
+    """
+
+    async def _gold(self, langsmith_result=None, langsmith_erro=None):
+        from whatsapp_langchain.shared import langfuse_dataset as mod
+
+        async def _fake_ingest(pool, empresa_id, **kw):
+            if langsmith_erro:
+                raise langsmith_erro
+            return langsmith_result
+
+        with (
+            patch.object(
+                mod,
+                "ingest_from_csat",
+                new=AsyncMock(return_value={"novos": 2, "skipped": 0}),
+            ),
+            patch.object(mod, "ingest_from_langsmith", new=_fake_ingest),
+            patch(
+                "whatsapp_langchain.shared.obs_provider.provider_efetivo",
+                new=AsyncMock(return_value="langsmith"),
+            ),
+            patch(
+                "whatsapp_langchain.shared.obs_provider.langfuse_configurado",
+                return_value=False,
+            ),
+        ):
+            return await mod.ingest_gold(MagicMock(), 1018)
+
+    async def test_langsmith_com_feedback_soma_na_fonte(self):
+        r = await self._gold(
+            langsmith_result={
+                "feedbacks_lidos": 3,
+                "cruzados": 2,
+                "novos": 2,
+                "skipped": 0,
+            }
+        )
+        assert r["por_fonte"]["langsmith"]["novos"] == 2
+        assert r["novos"] == 4  # 2 csat + 2 langsmith
+        # com feedback presente, nenhum aviso de "sem feedback"
+        assert not any("feedback" in a for a in r["avisos"])
+
+    async def test_langsmith_sem_feedback_avisa_como_agir(self):
+        r = await self._gold(
+            langsmith_result={
+                "feedbacks_lidos": 0,
+                "cruzados": 0,
+                "novos": 0,
+                "skipped": 0,
+            }
+        )
+        assert r["por_fonte"]["langsmith"]["novos"] == 0
+        # o zero vem explicado: falta anotar, não falta integração
+        assert any("feedback" in a and "anote" in a for a in r["avisos"])
+
+    async def test_langsmith_quebrado_nao_derruba_a_rodada(self):
+        r = await self._gold(langsmith_erro=RuntimeError("api fora"))
+        # CSAT continua contribuindo e o aviso diz que a consulta falhou
+        assert r["novos"] == 2
+        assert any("falhou" in a for a in r["avisos"])
