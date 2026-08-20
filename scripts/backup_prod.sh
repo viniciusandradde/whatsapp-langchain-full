@@ -29,6 +29,14 @@ RETENCAO_DIAS="${RETENCAO_DIAS:-14}"
 # infraestrutura nova — mas é a MESMA máquina. Ver "limitação" no fim.
 MINIO_ALIAS="${MINIO_ALIAS:-}"
 MINIO_BUCKET="${MINIO_BUCKET:-chatnexus-backups}"
+# Cópia FORA do host, via rclone (Google Drive). Vazio = desligado. Foi o
+# incidente de 2026-08-19 que provou a limitação descrita no fim deste arquivo:
+# o servidor sumiu e levou disco e MinIO junto.
+RCLONE_REMOTE="${RCLONE_REMOTE:-}"
+RCLONE_RETENCAO_DIAS="${RCLONE_RETENCAO_DIAS:-90}"
+# Marcador do último upload bem-sucedido. É o que o relatório de produção lê
+# (`producao_checks.checar_backup_offsite`) — sem ele, falha de upload some.
+MARCADOR_OFFSITE="${MARCADOR_OFFSITE:-.ultimo_upload_offsite_ok}"
 
 # Compressor, em ordem de preferência. `zstd` comprime melhor e mais rápido;
 # `pigz` usa todos os núcleos e é drop-in do gzip; `gzip` é o piso que sempre
@@ -43,6 +51,29 @@ else
 fi
 
 log() { printf '%s  %s\n' "$(date -Is)" "$*"; }
+
+# Alerta por Telegram, mesmo canal e mesmo arquivo de config do
+# `monitor_evolution.sh`. WhatsApp não serve aqui: quando o host cai, é
+# justamente o WhatsApp que para junto.
+CONFIG_ALERTA="${CONFIG_ALERTA:-/etc/chatnexus-monitor.env}"
+NL=$'\n'   # quebra de linha real: --data-urlencode escaparia um %0A literal
+alerta() {
+  local texto="$1"
+  log "ALERTA: $texto"
+  # shellcheck source=/dev/null
+  [ -f "$CONFIG_ALERTA" ] && . "$CONFIG_ALERTA"
+  if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+    log "  (Telegram não configurado em $CONFIG_ALERTA — alerta só no log)"
+    return 0
+  fi
+  curl -s -m 20 -o /dev/null \
+    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "text=${texto}" \
+    --data-urlencode "parse_mode=HTML" \
+    && log "  (enviado ao Telegram)"
+  return 0
+}
 
 # --- Instalação do timer ---------------------------------------------------
 
@@ -171,6 +202,47 @@ else
   log "MinIO não configurado (defina MINIO_ALIAS) — só cópia local"
 fi
 
+# --- Cópia fora do host (rclone → Google Drive) ----------------------------
+#
+# Roda DEPOIS da verificação de integridade: só sobe o que já se provou
+# restaurável. Falha aqui NÃO derruba o script — o backup local continua
+# válido —, mas grita no Telegram na hora, porque backup offsite que para de
+# funcionar em silêncio é a mesma armadilha do backup que nunca existiu.
+
+if [ -n "$RCLONE_REMOTE" ]; then
+  if ! command -v rclone >/dev/null; then
+    alerta "<b>Chat Nexus — backup</b>${NL}RCLONE_REMOTE está configurado mas o rclone não está instalado. O backup de hoje NÃO foi copiado para fora do host."
+  else
+    NOME="$(basename "$ARQUIVO")"
+    # A saída vai para variável, não para um pipe: `rclone ... | tail` devolve o
+    # status do `tail` (sempre 0) e engoliria a falha do upload.
+    SAIDA_RCLONE="$(rclone copyto "$ARQUIVO" "$RCLONE_REMOTE/$NOME" 2>&1)" \
+      && COPIOU=1 || COPIOU=0
+    [ -n "$SAIDA_RCLONE" ] && log "rclone: $(printf '%s' "$SAIDA_RCLONE" | tail -3 | tr '\n' ' ')"
+
+    # `lsf` confirma que o arquivo ficou no destino. O exit 0 do copy sozinho
+    # não basta: remoto que aceita e descarta depois existe.
+    if [ "$COPIOU" = 1 ] && rclone lsf "$RCLONE_REMOTE/$NOME" >/dev/null 2>&1; then
+      log "enviado para fora do host ($RCLONE_REMOTE/$NOME)"
+      touch "$DESTINO/$MARCADOR_OFFSITE"
+
+      REMOVIDOS_REMOTO=$(rclone delete "$RCLONE_REMOTE" \
+        --min-age "${RCLONE_RETENCAO_DIAS}d" --include "prod-*.dump.*" \
+        -v 2>&1 | grep -c 'Deleted' || true)
+      # `if` em vez de `[ ... ] && log`: com nada a remover (o caso normal), a
+      # lista devolveria 1, o bloco `then` inteiro devolveria 1 e o `set -e`
+      # abortaria o script ANTES da retenção local e do resumo final.
+      if [ "${REMOVIDOS_REMOTO:-0}" -gt 0 ]; then
+        log "removidos $REMOVIDOS_REMOTO backup(s) remotos com mais de $RCLONE_RETENCAO_DIAS dias"
+      fi
+    else
+      alerta "<b>Chat Nexus — backup</b>${NL}Falhou o envio do backup para <code>$RCLONE_REMOTE</code>. O dump local de hoje está OK, mas não existe cópia fora do host."
+    fi
+  fi
+else
+  log "cópia externa não configurada (defina RCLONE_REMOTE) — backup só neste host"
+fi
+
 # --- Retenção --------------------------------------------------------------
 
 APAGADOS=$(find "$DESTINO" -name "prod-*.dump.$EXT" -mtime "+$RETENCAO_DIAS" -print -delete | wc -l)
@@ -179,12 +251,18 @@ APAGADOS=$(find "$DESTINO" -name "prod-*.dump.$EXT" -mtime "+$RETENCAO_DIAS" -pr
 log "backups em disco: $(find "$DESTINO" -name "prod-*.dump.$EXT" | wc -l) ocupando $(du -sh "$DESTINO" | cut -f1)"
 
 # ---------------------------------------------------------------------------
-# LIMITAÇÃO CONHECIDA
+# COBERTURA
 #
-# Tudo aqui — disco e MinIO — vive NESTA máquina. Isso protege contra erro
-# humano, migration ruim e `DROP TABLE` acidental, que são as causas prováveis.
-# NÃO protege contra perder o servidor: incêndio, disco morto, conta suspensa.
+# Disco local e MinIO vivem NESTA máquina: protegem contra erro humano,
+# migration ruim e `DROP TABLE` acidental. NÃO protegem contra perder o
+# servidor — em 2026-08-19 o host sumiu e levou os dois junto.
 #
-# Fechar isso precisa de destino externo (S3, Backblaze, outra VPS) e é
-# decisão de custo. Enquanto não existir, este backup é meia rede.
+# `RCLONE_REMOTE` fecha esse buraco: cópia fora do host, com retenção própria
+# e alerta no Telegram quando o envio falha. Instalação SEM esse env continua
+# com a limitação antiga — o backup é meia rede.
+#
+# Setup do remoto (uma vez, como root, pois o timer roda como root):
+#   rclone authorize "drive" -- --scope drive.file   # numa máquina com navegador
+#   rclone config                                    # colar o token no host
+#   drop-in: Environment=RCLONE_REMOTE=gdrive:chatnexus-backups
 # ---------------------------------------------------------------------------

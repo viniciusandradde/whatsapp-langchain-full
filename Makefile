@@ -83,6 +83,7 @@ dev-banco-refresh: ## Restaura um dump saneado novo no banco de dev (DUMP=/camin
 
 ##@ Migração e backup
 # Ver docs/MIGRACAO_DEV.md para o roteiro completo e o contrato de isolamento.
+# Ver docs/BACKUP.md para as três cópias e o setup da cópia externa (rclone).
 migrar-exportar: ## Monta o pacote de migração — roda no VPS, só lê (SAIDA=/tmp/...)
 	scripts/migrar-dev/00-exportar.sh $(SAIDA)
 

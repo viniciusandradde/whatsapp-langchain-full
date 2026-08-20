@@ -175,3 +175,4 @@ When in doubt, prefer these over inferring from code:
 - `docs/DOKPLOY.md` — passo a passo completo Dokploy (Project + Compose service + Domains + envs); inclui caveat do bug do `addPrefix` quando usa `path != "/"`
 - `docs/DEPLOY.md` / `docs/RAILWAY.md` — alternative deploy targets
 - `docs/STRESS_TESTING.md` — Locust setup (`stress/` profile in compose)
+- `docs/BACKUP.md` — as três cópias do dump (host / Google Drive via rclone / dev), setup do remoto e a checagem `backup_offsite` do relatório
