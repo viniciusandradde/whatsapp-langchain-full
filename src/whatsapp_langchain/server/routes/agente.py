@@ -125,6 +125,9 @@ class UpdateAgenteInput(BaseModel):
     aceita_documento: bool | None = None
     # mig 143 — False suprime a mensagem de sistema citando o departamento
     anuncia_transferencia: bool | None = None
+    # mig 163 — opt-in do few-shot no caminho quente (custa embedding + tokens
+    # por mensagem); default OFF, liga-se por agente depois de medir
+    fewshot_enabled: bool | None = None
     base_conhecimento_ids: list[int] | None = None
     variavel_ids: list[int] | None = None
     mcp_server_ids: list[int] | None = None

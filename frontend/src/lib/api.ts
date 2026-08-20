@@ -3558,6 +3558,8 @@ export interface AgenteIA {
   aceita_documento: boolean;
   /** false = nao manda a mensagem de sistema citando o departamento (mig 143) */
   anuncia_transferencia: boolean;
+  /** mig 163 — opt-in: injeta exemplos bem avaliados no caminho quente */
+  fewshot_enabled: boolean;
   base_conhecimento_ids: number[];
   variavel_ids: number[];
   mcp_server_ids: number[];
