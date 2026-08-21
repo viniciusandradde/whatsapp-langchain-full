@@ -40,6 +40,10 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      # `scripts/` roda em PRODUÇÃO (backup, monitor, relatório diário) e tem
+      # teste em tests/unit — sem esta linha, mexer neles não disparava check
+      # nenhum e o PR aparecia verde por ausência.
+      - "scripts/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/ci.yml"
@@ -47,6 +51,7 @@ on:
     paths:
       - "src/**"
       - "tests/**"
+      - "scripts/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/ci.yml"
