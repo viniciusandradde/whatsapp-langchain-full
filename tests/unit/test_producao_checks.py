@@ -28,6 +28,7 @@ from producao_checks import (  # noqa: E402
     checar_graph_api_version,
     checar_migrations,
     checar_worker_mudo,
+    linha_backup,
     resumo_texto,
     rodar_checagens,
     severidade_geral,
@@ -275,3 +276,36 @@ class TestGraphApiVersion:
 
     def test_data_ilegivel_nao_quebra(self) -> None:
         assert checar_graph_api_version("v25.0", "ontem") is None
+
+
+class TestLinhaBackup:
+    """A linha que prova que o backup RODOU — não só que falhou.
+
+    As checagens só falam quando algo quebra, então backup saudável era
+    silêncio: o dono perguntou "não vi o backup rodando" com ele rodando havia
+    dias e subindo para o Drive.
+    """
+
+    BASE = {
+        "backup_arquivo": "prod-2026-08-21.dump.zst",
+        "backup_arquivo_hora": "03:18",
+        "backup_arquivo_tamanho": "2,1M",
+    }
+
+    def test_backup_do_dia_com_copia_externa(self) -> None:
+        linha = linha_backup(dict(self.BASE, backup_offsite_horas=2))
+        assert "prod-2026-08-21.dump.zst" in linha
+        assert "03:18" in linha
+        assert "2,1M" in linha
+        assert "Drive" in linha
+
+    def test_sem_copia_externa_configurada_diz_isso(self) -> None:
+        linha = linha_backup(dict(self.BASE, backup_offsite_horas=None))
+        assert "só neste host" in linha
+
+    def test_upload_atrasado_aparece_na_linha(self) -> None:
+        linha = linha_backup(dict(self.BASE, backup_offsite_horas=40))
+        assert "NAO subiu" in linha and "40h" in linha
+
+    def test_sem_arquivo_nenhum_e_explicito(self) -> None:
+        assert "sem arquivo" in linha_backup({})

@@ -339,6 +339,36 @@ def severidade_geral(achados):
     return max(achados, key=lambda a: _PESO[a.severidade]).severidade
 
 
+def linha_backup(dados):
+    """Uma linha dizendo que o backup rodou — inclusive quando deu tudo certo.
+
+    As checagens só falam quando algo quebrou, então backup saudável era
+    silêncio absoluto: o dono perguntou "não vi o backup rodando" com o backup
+    rodando havia dias. Alarme prova falha; esta linha prova funcionamento, que
+    é o que dá sossego para quem só quer saber se está protegido.
+    """
+    arquivo = (dados.get("backup_arquivo") or "").strip()
+    if not arquivo:
+        return "Backup: sem arquivo no diretório configurado."
+
+    quando = (dados.get("backup_arquivo_hora") or "").strip()
+    tamanho = (dados.get("backup_arquivo_tamanho") or "").strip()
+    partes = ["Backup: {0}".format(arquivo)]
+    if quando:
+        partes.append("às {0}".format(quando))
+    if tamanho:
+        partes.append("({0})".format(tamanho))
+
+    offsite = dados.get("backup_offsite_horas")
+    if offsite is None:
+        partes.append("— só neste host (sem cópia externa configurada)")
+    elif offsite < LIMITE_BACKUP_H:
+        partes.append("— no Google Drive tambem")
+    else:
+        partes.append("— NAO subiu para o Drive ha {0}h".format(int(offsite)))
+    return " ".join(partes)
+
+
 def resumo_texto(achados):
     """Relatório em lista, sem LLM.
 
