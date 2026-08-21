@@ -37,6 +37,8 @@ minuto, e este ramo atende primeiro um pedido de "gerar agora" do painel; se
 não houver, checa se é a hora agendada, com claim atômico contra envio duplo.
 """
 
+import datetime as _datetime
+import glob
 import json
 import os
 import re
@@ -117,6 +119,18 @@ def sh(cmd, timeout=60):
         return "(timeout)"
     except Exception as exc:  # noqa: BLE001 — coleta nunca deve derrubar o script
         return f"(erro: {exc})"
+
+
+def _tamanho_humano(bytes_):
+    """`2154067` → `2,1M`. Mesmo formato do `du -h`, que era quem fazia isso."""
+    valor = float(bytes_)
+    for unidade in ("B", "K", "M", "G"):
+        if valor < 1024 or unidade == "G":
+            if unidade == "B":
+                return "{0}B".format(int(valor))
+            return "{0:.1f}{1}".format(valor, unidade).replace(".", ",")
+        valor /= 1024
+    return ""
 
 
 def sql(query):
@@ -429,14 +443,25 @@ def coletar_para_checagens():
 
     # Dump mais recente no disco: nome, hora e tamanho. Vira a linha de status
     # que aparece TODO dia no relatório — inclusive quando está tudo certo.
-    ultimo_dump = sh(
-        "ls -t %s/prod-*.dump.* 2>/dev/null | head -1" % DIR_BACKUP
-    ).strip()
+    #
+    # Tudo pelo stdlib, sem passar o caminho por shell: nome de arquivo
+    # interpolado em string de comando quebra com aspas, `$` ou espaço, e vira
+    # execução de comando se alguém conseguir escrever no diretório. Aqui só
+    # root escreve, mas o custo de fazer certo é uma linha.
     backup_arquivo = backup_arquivo_hora = backup_arquivo_tamanho = ""
-    if ultimo_dump:
-        backup_arquivo = ultimo_dump.rsplit("/", 1)[-1]
-        backup_arquivo_hora = sh('date -r "%s" +%%H:%%M' % ultimo_dump).strip()
-        backup_arquivo_tamanho = sh('du -h "%s" | cut -f1' % ultimo_dump).strip()
+    dumps = glob.glob(os.path.join(DIR_BACKUP, "prod-*.dump.*"))
+    if dumps:
+        try:
+            ultimo_dump = max(dumps, key=os.path.getmtime)
+            backup_arquivo = os.path.basename(ultimo_dump)
+            backup_arquivo_hora = _datetime.datetime.fromtimestamp(
+                os.path.getmtime(ultimo_dump)
+            ).strftime("%H:%M")
+            backup_arquivo_tamanho = _tamanho_humano(os.path.getsize(ultimo_dump))
+        except OSError:
+            # Arquivo removido entre o glob e o stat (a retenção roda de
+            # madrugada): a linha sai sem o dado em vez de derrubar o relatório.
+            pass
 
     arquivos = sh(
         "ls %s/db/migrations/*.sql 2>/dev/null | xargs -n1 basename" % DIR_REPO
