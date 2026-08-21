@@ -23,6 +23,7 @@ from producao_checks import (  # noqa: E402
     CRITICO,
     OK,
     checar_backup,
+    checar_backup_offsite,
     checar_disco,
     checar_migrations,
     checar_worker_mudo,
@@ -91,6 +92,27 @@ class TestBackup:
         # é o caso em que ninguém descobre até precisar restaurar.
         a = checar_backup(None)
         assert a is not None and a.severidade == CRITICO
+
+
+class TestBackupOffsite:
+    """Nasceu do incidente de 2026-08-19: o host sumiu com dump e MinIO dentro."""
+
+    def test_upload_recente_nao_acusa(self) -> None:
+        assert checar_backup_offsite(5) is None
+
+    def test_mesma_folga_do_backup_local(self) -> None:
+        assert checar_backup_offsite(25) is None
+
+    def test_parou_de_subir_e_critico(self) -> None:
+        a = checar_backup_offsite(40)
+        assert a is not None and a.severidade == CRITICO
+        assert "40" in a.evidencia
+
+    def test_sem_marcador_fica_em_silencio(self) -> None:
+        # Diferente do backup local: aqui `None` significa "cópia externa não
+        # configurada". Alarmar todo dia por feature desligada treina quem lê a
+        # ignorar o relatório inteiro.
+        assert checar_backup_offsite(None) is None
 
 
 class TestMigrations:

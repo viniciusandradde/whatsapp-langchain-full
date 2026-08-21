@@ -150,6 +150,36 @@ def checar_backup(horas_desde_ultimo_sucesso):
     )
 
 
+def checar_backup_offsite(horas_desde_ultimo_upload):
+    """O backup existe FORA do host?
+
+    Em 2026-08-19 o servidor sumiu e levou junto o dump em disco e o espelho no
+    MinIO — os dois moravam nele. A cópia externa é a única que sobrevive a
+    perder a máquina, e ela para de funcionar em silêncio (token revogado, cota,
+    rede) exatamente como o backup parava antes de existir esta checagem.
+
+    `None` é silêncio proposital: instalação sem `RCLONE_REMOTE` não tem cópia
+    externa por opção, e alarmar todo dia por uma feature desligada treina quem
+    lê a ignorar o relatório.
+    """
+    if horas_desde_ultimo_upload is None:
+        return None
+    if horas_desde_ultimo_upload < LIMITE_BACKUP_H:
+        return None
+    return Achado(
+        chave="backup_offsite",
+        severidade=CRITICO,
+        titulo="Backup não sai do host há {0}h".format(int(horas_desde_ultimo_upload)),
+        evidencia="último upload externo bem-sucedido há {0}h".format(
+            int(horas_desde_ultimo_upload)
+        ),
+        acao=(
+            "Rodar `systemctl start chatnexus-backup.service` e ler o journal; "
+            "se o erro for do rclone, conferir o token com `rclone lsd <remoto>:`."
+        ),
+    )
+
+
 def checar_migrations(arquivos, aplicadas):
     """O repositório e o banco contam a mesma história?
 
@@ -208,6 +238,7 @@ def rodar_checagens(dados):
         ),
         checar_disco(dados.get("disco_pct")),
         checar_backup(dados.get("backup_horas")),
+        checar_backup_offsite(dados.get("backup_offsite_horas")),
         checar_migrations(
             dados.get("migrations_arquivos") or [],
             dados.get("migrations_aplicadas") or [],

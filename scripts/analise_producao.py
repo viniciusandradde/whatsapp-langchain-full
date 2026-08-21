@@ -67,6 +67,11 @@ MODELO = os.environ.get("MODELO_ANALISE", "anthropic/claude-haiku-4.5")
 DIR_REPO = os.environ.get(
     "DIR_REPO", "/etc/dokploy/compose/projetos-chatvsanexus-er02mp/code"
 )
+# Onde o `backup_prod.sh` grava os dumps e o marcador do último envio externo.
+# Precisa bater com o `DESTINO` do drop-in da unit de backup, senão a checagem
+# do offsite lê um caminho que ninguém escreve e fica muda para sempre.
+DIR_BACKUP = os.environ.get("DIR_BACKUP", "/home/opc/backup")
+MARCADOR_OFFSITE = os.environ.get("MARCADOR_OFFSITE", ".ultimo_upload_offsite_ok")
 
 # As checagens vivem ao lado deste arquivo — no host não existe o pacote da
 # aplicação, então o import é por caminho, não por instalação.
@@ -409,6 +414,18 @@ def coletar_para_checagens():
     elif epoch:
         backup_horas = None
 
+    # Horas desde o último upload do backup para fora do host. A fonte é o
+    # marcador que o `backup_prod.sh` toca só quando o envio se confirmou no
+    # destino — o exit do systemd não serve aqui, porque a falha de upload é
+    # best-effort e não derruba a unit.
+    backup_offsite_horas = None
+    mtime = num(
+        sh('stat -c %%Y "%s" 2>/dev/null' % (DIR_BACKUP + "/" + MARCADOR_OFFSITE))
+    )
+    agora_epoch = num(sh("date +%s"))
+    if mtime and agora_epoch:
+        backup_offsite_horas = (agora_epoch - mtime) / 3600.0
+
     arquivos = sh(
         "ls %s/db/migrations/*.sql 2>/dev/null | xargs -n1 basename" % DIR_REPO
     )
@@ -421,6 +438,7 @@ def coletar_para_checagens():
         "fila_esperando": num(fila, 0),
         "disco_pct": disco,
         "backup_horas": backup_horas,
+        "backup_offsite_horas": backup_offsite_horas,
         "migrations_arquivos": [x for x in arquivos.splitlines() if x.endswith(".sql")],
         "migrations_aplicadas": [
             x.strip() for x in aplicadas.splitlines() if x.strip().endswith(".sql")
