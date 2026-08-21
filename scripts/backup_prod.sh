@@ -37,6 +37,18 @@ RCLONE_RETENCAO_DIAS="${RCLONE_RETENCAO_DIAS:-90}"
 # Marcador do último upload bem-sucedido. É o que o relatório de produção lê
 # (`producao_checks.checar_backup_offsite`) — sem ele, falha de upload some.
 MARCADOR_OFFSITE="${MARCADOR_OFFSITE:-.ultimo_upload_offsite_ok}"
+# O `sudo` usa a `secure_path` do sudoers, que NÃO inclui /usr/local/bin — é
+# onde o rclone se instala. Sem esta busca, rodar o backup na mão com sudo
+# alertaria "rclone não instalado" com o binário ali do lado, justamente no dia
+# em que alguém roda na mão porque algo já deu errado.
+RCLONE_BIN="${RCLONE_BIN:-}"
+if [ -z "$RCLONE_BIN" ]; then
+  if command -v rclone >/dev/null; then
+    RCLONE_BIN="rclone"
+  elif [ -x /usr/local/bin/rclone ]; then
+    RCLONE_BIN="/usr/local/bin/rclone"
+  fi
+fi
 
 # Compressor, em ordem de preferência. `zstd` comprime melhor e mais rápido;
 # `pigz` usa todos os núcleos e é drop-in do gzip; `gzip` é o piso que sempre
@@ -210,23 +222,23 @@ fi
 # funcionar em silêncio é a mesma armadilha do backup que nunca existiu.
 
 if [ -n "$RCLONE_REMOTE" ]; then
-  if ! command -v rclone >/dev/null; then
+  if [ -z "$RCLONE_BIN" ]; then
     alerta "<b>Chat Nexus — backup</b>${NL}RCLONE_REMOTE está configurado mas o rclone não está instalado. O backup de hoje NÃO foi copiado para fora do host."
   else
     NOME="$(basename "$ARQUIVO")"
     # A saída vai para variável, não para um pipe: `rclone ... | tail` devolve o
     # status do `tail` (sempre 0) e engoliria a falha do upload.
-    SAIDA_RCLONE="$(rclone copyto "$ARQUIVO" "$RCLONE_REMOTE/$NOME" 2>&1)" \
+    SAIDA_RCLONE="$("$RCLONE_BIN" copyto "$ARQUIVO" "$RCLONE_REMOTE/$NOME" 2>&1)" \
       && COPIOU=1 || COPIOU=0
     [ -n "$SAIDA_RCLONE" ] && log "rclone: $(printf '%s' "$SAIDA_RCLONE" | tail -3 | tr '\n' ' ')"
 
     # `lsf` confirma que o arquivo ficou no destino. O exit 0 do copy sozinho
     # não basta: remoto que aceita e descarta depois existe.
-    if [ "$COPIOU" = 1 ] && rclone lsf "$RCLONE_REMOTE/$NOME" >/dev/null 2>&1; then
+    if [ "$COPIOU" = 1 ] && "$RCLONE_BIN" lsf "$RCLONE_REMOTE/$NOME" >/dev/null 2>&1; then
       log "enviado para fora do host ($RCLONE_REMOTE/$NOME)"
       touch "$DESTINO/$MARCADOR_OFFSITE"
 
-      REMOVIDOS_REMOTO=$(rclone delete "$RCLONE_REMOTE" \
+      REMOVIDOS_REMOTO=$("$RCLONE_BIN" delete "$RCLONE_REMOTE" \
         --min-age "${RCLONE_RETENCAO_DIAS}d" --include "prod-*.dump.*" \
         -v 2>&1 | grep -c 'Deleted' || true)
       # `if` em vez de `[ ... ] && log`: com nada a remover (o caso normal), a
