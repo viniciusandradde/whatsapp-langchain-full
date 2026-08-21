@@ -174,6 +174,53 @@ isso aponta direto pra Parte 4 (domínios).
 
 ---
 
+## Estado em 2026-08-21 (leia antes de tentar ligar)
+
+**A integração está DESLIGADA em produção.** `waba_enabled` é `False`: o app
+Meta que existia foi criado num painel cujas credenciais moravam no env do
+Dokploy, e esse env morreu com o servidor no incidente de 2026-08-19. Não
+sobreviveram nem no `.env` de desenvolvimento. Ligar de novo exige **recriar o
+app na Meta** e refazer as Partes 1 a 6 deste guia; o código não precisa mudar.
+
+Hoje não existe nenhuma conexão `waba` — a operação roda em **Evolution
+(Baileys)**, que é o padrão por decisão do dono. WABA fica disponível para quem
+pedir número oficial.
+
+### O que mudou na Meta e afeta a decisão
+
+- **1º/10/2026** — mensagens de **serviço** (resposta livre dentro da janela de
+  24h) e **utility dentro da janela** passam a ser **cobradas por mensagem**.
+  Hoje são gratuitas. É exatamente o padrão de uso do Nexus: o agente
+  respondendo cliente dentro da janela. Rates por país saem até 1º/09/2026.
+  Traduzindo: no número oficial, **cada resposta do agente passa a ter preço**.
+- **Desde abr/2026** o Embedded Signup é o caminho padrão de onboarding
+  (mandato de Tech Provider da Meta) — que é justamente o fluxo deste guia.
+- O cliente onboardado precisa cadastrar **método de pagamento** na conta
+  WhatsApp Business dele, senão o envio falha.
+- Versão da Graph API: usamos **v25.0** (`WABA_GRAPH_API_VERSION`), suportada
+  até **29/07/2028**. A checagem `graph_api_version` do relatório diário avisa
+  90 dias antes do sunset — ninguém precisa lembrar disso sozinho.
+
+### O que o código NÃO faz (para não descobrir no dia)
+
+- **Não envia mídia** por conexão WABA: falta o upload
+  (`POST /{phone_id}/media`). Anexo pelo composer é bloqueado com aviso.
+- **Não trata `statuses`** (enviado / entregue / lido) — sem tracking de entrega
+  em conexão oficial.
+- **Não guarda validade do token** (`expires_in` é descartado) nem faz refresh.
+- **Templates sem parâmetro de HEADER** (texto ou mídia) e sem named params.
+- **Sem retry/backoff em 429** no cliente WABA.
+- **Um app Meta para toda a plataforma**: o HMAC do webhook usa sempre o
+  `META_APP_SECRET` global; não há app por empresa.
+
+### Fluxo OAuth legado (depreciado)
+
+`/waba/oauth/start`, `/callback`, `/result` e `/finalize` são do fluxo antigo,
+por redirect. Continuam registrados, mas o caminho oficial é o Embedded Signup
+(`/waba/embedded-signup`). Não construa nada novo em cima do legado.
+
+---
+
 ## Endpoints envolvidos (referência técnica)
 
 | Endpoint | Função |

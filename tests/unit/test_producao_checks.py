@@ -25,6 +25,7 @@ from producao_checks import (  # noqa: E402
     checar_backup,
     checar_backup_offsite,
     checar_disco,
+    checar_graph_api_version,
     checar_migrations,
     checar_worker_mudo,
     resumo_texto,
@@ -239,3 +240,38 @@ class TestDollarQuote:
         tag = saida[: saida.index("$", 1) + 1]
         assert saida.count(tag) == 2
         assert malicioso in saida
+
+
+class TestGraphApiVersion:
+    """Versão da Graph API tem data de morte anunciada com 2 anos.
+
+    Quando cai, todo envio e todo webhook do WhatsApp oficial param juntos — e
+    o aviso está num changelog que ninguém relê.
+    """
+
+    def test_data_distante_nao_acusa(self) -> None:
+        assert checar_graph_api_version("v25.0", "2026-08-21") is None
+
+    def test_noventa_dias_antes_vira_atencao(self) -> None:
+        # v22.0 morre em 2027-05-20; 60 dias antes.
+        a = checar_graph_api_version("v22.0", "2027-03-21")
+        assert a is not None and a.severidade == ATENCAO
+        assert "2027-05-20" in a.evidencia
+
+    def test_depois_do_sunset_e_critico(self) -> None:
+        a = checar_graph_api_version("v20.0", "2026-10-01")
+        assert a is not None and a.severidade == CRITICO
+        assert "fora do ar" in a.titulo
+
+    def test_versao_nao_configurada_fica_em_silencio(self) -> None:
+        # WABA desligado: não existe versão para vencer.
+        assert checar_graph_api_version("", "2026-08-21") is None
+        assert checar_graph_api_version(None, "2026-08-21") is None
+
+    def test_versao_mais_nova_que_a_tabela_nao_alarma(self) -> None:
+        # Quem subiu para uma versão que este módulo ainda não conhece sabe o
+        # que fez; alarmar seria ruído.
+        assert checar_graph_api_version("v26.0", "2026-08-21") is None
+
+    def test_data_ilegivel_nao_quebra(self) -> None:
+        assert checar_graph_api_version("v25.0", "ontem") is None

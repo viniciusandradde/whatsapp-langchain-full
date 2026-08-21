@@ -1,12 +1,12 @@
 """Protocolo comum dos clientes de envio outbound.
 
-Define o contrato que `TwilioClient` e `EvolutionClient` cumprem, sem
-introduzir herança. O worker recebe um `dict[provider, OutboundClient]`
-e resolve o cliente certo via `Conexao.provider` da mensagem.
+Define o contrato que `TwilioClient`, `EvolutionClient` e `WabaClient`
+cumprem, sem introduzir herança. O worker recebe um
+`dict[provider, OutboundClient]` e resolve o cliente certo via
+`Conexao.provider` da mensagem.
 
-Adicionar um novo provider (ex: WABA Cloud direto) é só implementar
-`send_message` + `send_typing` com a mesma assinatura — nenhum import
-deste módulo é necessário.
+Adicionar um novo provider é só implementar `send_message` + `send_typing`
+com a mesma assinatura — nenhum import deste módulo é necessário.
 """
 
 from typing import Protocol
@@ -15,7 +15,7 @@ from typing import Protocol
 class OutboundClient(Protocol):
     """Cliente de envio outbound de mensagens WhatsApp.
 
-    Implementadores: `TwilioClient`, `EvolutionClient`.
+    Implementadores: `TwilioClient`, `EvolutionClient`, `WabaClient`.
 
     `delivery_mode` é exposto pra debugging/observabilidade — o worker
     loga o modo de cada provider no boot.

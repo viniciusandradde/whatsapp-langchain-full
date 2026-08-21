@@ -245,7 +245,13 @@ async def waba_oauth_start(
     request: Request,
     empresa_id: int = Depends(get_empresa_context),
 ) -> WabaOAuthStartResponse:
-    """Gera state CSRF + URL do Meta dialog. Front abre popup com redirect_url."""
+    """Gera state CSRF + URL do Meta dialog. Front abre popup com redirect_url.
+
+    DEPRECIADO — fluxo por redirect, anterior ao Embedded Signup. Desde
+    abr/2026 a Meta trata o Embedded Signup (`POST /waba/embedded-signup`)
+    como caminho padrão de onboarding. Mantido só para não quebrar quem já
+    tinha o popup antigo aberto; não construa nada novo em cima dele.
+    """
     if not settings.waba_enabled:
         raise HTTPException(
             status_code=503,
@@ -430,6 +436,11 @@ async def _create_waba_conexao(
             "phone_id": phone_id,
         },
     )
+    # NOTA: esta coluna é gravada mas NÃO é lida por ninguém — o handshake do
+    # webhook (`webhook_waba.py`) compara sempre com o token GLOBAL do env,
+    # porque a plataforma tem um app Meta só. Guardar por conexão é resquício
+    # de um desenho multi-app que não existe. Fica como registro do que foi
+    # usado no cadastro; se um dia houver app por empresa, é aqui que começa.
     verify_token = (
         settings.waba_webhook_verify_token.get_secret_value()
         if settings.waba_webhook_verify_token
@@ -445,12 +456,36 @@ async def _create_waba_conexao(
         webhook_verify_token=verify_token,
         from_number=from_number,
     )
-    await set_connection_state(pool, conexao.id, state="open", message=None)
+    # O estado só é decidido DEPOIS de registrar o número e assinar o webhook.
+    #
+    # Antes, `state="open"` era gravado aqui em cima e os retornos das duas
+    # chamadas eram descartados: a conexão aparecia "Conectada" na tela mesmo
+    # quando o número não registrou ou o app não ficou inscrito nos webhooks —
+    # ou seja, sem receber uma única mensagem. Tela que promete o que o backend
+    # não cumpre é pior do que erro visível.
+    problemas: list[str] = []
+    if register_phone and not await waba_oauth.register_phone(
+        access_token, phone_id, pin=pin
+    ):
+        problemas.append("o número não foi registrado na Meta")
+    if not await waba_oauth.subscribe_webhook(access_token, waba_account_id):
+        problemas.append("o app não ficou inscrito nos webhooks (não recebe mensagem)")
 
-    # Register phone (best-effort) + subscribe webhook
-    if register_phone:
-        await waba_oauth.register_phone(access_token, phone_id, pin=pin)
-    await waba_oauth.subscribe_webhook(access_token, waba_account_id)
+    if problemas:
+        logger.warning(
+            "waba_conexao_incompleta",
+            conexao_id=conexao.id,
+            empresa_id=empresa_id,
+            problemas=problemas,
+        )
+        await set_connection_state(
+            pool,
+            conexao.id,
+            state="close",
+            message="Conexão criada, mas " + " e ".join(problemas) + ".",
+        )
+    else:
+        await set_connection_state(pool, conexao.id, state="open", message=None)
     return conexao
 
 
@@ -1168,9 +1203,9 @@ async def send_template_endpoint(
 ) -> SendTemplateResponse:
     """Envia template HSM via Twilio Content API.
 
-    Único path pra mandar mensagem FORA da janela de 24h. Hoje só suporta
-    provider `twilio_sandbox` / `twilio_prod`. WABA tem fluxo próprio (Cloud
-    API) que vira em sprint futura; Evolution não suporta HSM.
+    Endpoint LEGADO, só `twilio_sandbox` / `twilio_prod`. Para WABA use
+    `POST /api/atendimentos/{id}/send-template`, que passa por
+    `send_template_by_id` e roteia os dois providers. Evolution não suporta HSM.
 
     Útil pra: CSAT proativo, lembrete de agendamento, alerta operacional,
     broadcast pra base de clientes que opted-in.

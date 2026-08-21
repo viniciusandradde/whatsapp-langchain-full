@@ -1,8 +1,12 @@
 """CRUD + submissão de templates HSM WhatsApp (per-conexão WABA).
 
-Endpoints nestados em /api/conexoes/{conexao_id}/templates/*. Perms:
-- waba_template.read: GET list/detail/sync
+Endpoints nestados em /api/conexoes/{conexao_id}/templates/*. Perms (mig 093),
+enforçadas por `require_permission` em cada rota:
+- waba_template.read: GET list/detail, POST sync
 - waba_template.write: POST create/submit, POST test-send, DELETE, POST import
+
+Até 2026-08-21 este docstring prometia as perms e NENHUMA rota as exigia —
+qualquer usuário autenticado da empresa criava, enviava e apagava template.
 
 Sync da Meta: GET /{meta_template_id} retorna status atual + quality_score.
 Auto-sync se ultimo_sync_at > 5min ao abrir detalhe.
@@ -27,6 +31,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     get_credentials_decrypted,
@@ -116,6 +121,7 @@ async def _validate_conexao(conexao_id: int, empresa_id: int):
 async def list_templates(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("waba_template.read")),
 ) -> dict[str, list[WabaTemplateRecord]]:
     await _validate_conexao(conexao_id, empresa_id)
     pool = await get_pool()
@@ -146,6 +152,7 @@ async def create_template(
     body: TemplateCreateInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("waba_template.write")),
 ) -> WabaTemplateRecord:
     conexao = await _validate_conexao(conexao_id, empresa_id)
     pool = await get_pool()
@@ -280,6 +287,7 @@ async def get_template(
     conexao_id: int,
     template_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("waba_template.read")),
 ) -> WabaTemplateRecord:
     await _validate_conexao(conexao_id, empresa_id)
     pool = await get_pool()
@@ -318,6 +326,7 @@ async def sync_template(
     conexao_id: int,
     template_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("waba_template.read")),
 ) -> WabaTemplateRecord:
     """Force-refresh status da Meta."""
     await _validate_conexao(conexao_id, empresa_id)
@@ -426,6 +435,7 @@ async def test_send(
     template_id: int,
     body: TemplateTestSendInput,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("waba_template.write")),
 ) -> dict[str, Any]:
     """Envia template aprovado pra número de teste."""
     conexao = await _validate_conexao(conexao_id, empresa_id)
@@ -469,6 +479,7 @@ async def delete_template_endpoint(
     conexao_id: int,
     template_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("waba_template.write")),
 ) -> None:
     conexao = await _validate_conexao(conexao_id, empresa_id)
     pool = await get_pool()
@@ -505,6 +516,7 @@ async def import_templates(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("waba_template.write")),
 ) -> dict[str, int]:
     """Importa templates já existentes no provider que não estão no DB local.
 

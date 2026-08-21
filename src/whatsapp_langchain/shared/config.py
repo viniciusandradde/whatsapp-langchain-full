@@ -195,8 +195,11 @@ class Settings(BaseSettings):
     # Token único pra validar handshake GET /webhook/waba (hub.verify_token).
     # Gerar uuid4 e setar UMA VEZ. Reutilizado por todas as conexões WABA.
     waba_webhook_verify_token: SecretStr | None = None
-    # Versão Graph API (atualizar periodicamente — Meta deprecia ~1x/ano).
-    # v25.0 = mais nova (fev/2026); v21.0 era a ativa mais antiga (sunset primeiro).
+    # Versão da Graph API. A Meta garante ~2 anos por versão e derruba na data:
+    # quando cai, todo o WhatsApp oficial para junto. v25.0 vale até 29/07/2028
+    # (a v26.0 saiu em 29/07/2026). Ninguém precisa lembrar disso: a checagem
+    # `graph_api_version` do relatório diário avisa 90 dias antes do sunset —
+    # a tabela de datas fica em `scripts/producao_checks.py::SUNSET_GRAPH_API`.
     waba_graph_api_version: str = "v25.0"
 
     # --- Sprint Conexões — Evolution admin (auto-provision de instances) ---

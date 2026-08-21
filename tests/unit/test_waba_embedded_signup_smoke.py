@@ -46,8 +46,6 @@ class TestFetchPhoneDetails:
     @pytest.mark.respx
     async def test_parses_phone_fields(self, respx_mock):
         from whatsapp_langchain.integrations.waba import oauth
-
-        version = "v21.0"
         from whatsapp_langchain.shared.config import settings
 
         version = settings.waba_graph_api_version
@@ -112,3 +110,82 @@ class TestConfigNoSecret:
         # Secret JAMAIS aparece no payload
         assert "topsecret" not in str(dumped)
         assert "secret" not in dumped
+
+
+# --- estado da conexão reflete register_phone + subscribe_webhook ---
+#
+# Antes, `state="open"` era gravado ANTES das duas chamadas e os retornos eram
+# descartados: a tela dizia "Conectada" mesmo quando o app não ficava inscrito
+# nos webhooks — conexão que não recebe uma única mensagem.
+
+
+async def _criar_conexao_fake(monkeypatch, *, registrou: bool, inscreveu: bool):
+    """Roda `_create_waba_conexao` com todo o I/O mockado e devolve o estado."""
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from whatsapp_langchain.server.routes import conexao as rotas
+    from whatsapp_langchain.shared.models import Conexao
+
+    conexao_fake = Conexao(
+        id=1,
+        empresa_id=1,
+        provider="waba",
+        sid="",
+        from_number="+5567999999999",
+        display_name="teste",
+        default_agent_id="agente",
+        status="active",
+        is_default=False,
+        payload_json={},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    estados: list[tuple[str, str | None]] = []
+
+    async def _set_state(_pool, _cid, *, state, message):
+        estados.append((state, message))
+
+    monkeypatch.setattr(rotas, "upsert_conexao", AsyncMock(return_value=conexao_fake))
+    monkeypatch.setattr(rotas, "save_credentials", AsyncMock())
+    monkeypatch.setattr(rotas, "update_waba_fields", AsyncMock())
+    monkeypatch.setattr(rotas, "set_connection_state", _set_state)
+    monkeypatch.setattr(
+        rotas.waba_oauth, "register_phone", AsyncMock(return_value=registrou)
+    )
+    monkeypatch.setattr(
+        rotas.waba_oauth, "subscribe_webhook", AsyncMock(return_value=inscreveu)
+    )
+
+    await rotas._create_waba_conexao(
+        None,
+        empresa_id=1,
+        access_token="tok",
+        waba_account_id="waba-1",
+        phone_id="phone-1",
+        display_name="teste",
+        account_description=None,
+        from_number="+5567999999999",
+        register_phone=True,
+    )
+    return estados
+
+
+async def test_conexao_fica_aberta_quando_tudo_da_certo(monkeypatch):
+    estados = await _criar_conexao_fake(monkeypatch, registrou=True, inscreveu=True)
+    assert estados == [("open", None)]
+
+
+async def test_webhook_nao_assinado_nao_vira_conectada(monkeypatch):
+    estados = await _criar_conexao_fake(monkeypatch, registrou=True, inscreveu=False)
+    assert len(estados) == 1
+    estado, mensagem = estados[0]
+    assert estado == "close"
+    assert mensagem is not None and "webhooks" in mensagem
+
+
+async def test_numero_nao_registrado_nao_vira_conectada(monkeypatch):
+    estados = await _criar_conexao_fake(monkeypatch, registrou=False, inscreveu=True)
+    estado, mensagem = estados[0]
+    assert estado == "close"
+    assert mensagem is not None and "registrado" in mensagem

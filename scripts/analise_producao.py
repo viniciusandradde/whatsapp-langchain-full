@@ -439,6 +439,14 @@ def coletar_para_checagens():
         "disco_pct": disco,
         "backup_horas": backup_horas,
         "backup_offsite_horas": backup_offsite_horas,
+        # Versão da Graph API em uso pelo container da API (vazio = WABA
+        # desligado). Lida do env do container, não do host: é lá que a
+        # aplicação roda.
+        "graph_api_version": sh(
+            "docker exec %s-api-1 printenv WABA_GRAPH_API_VERSION 2>/dev/null"
+            % PREFIXO_PROD
+        ).strip(),
+        "hoje": sh("date +%F").strip(),
         "migrations_arquivos": [x for x in arquivos.splitlines() if x.endswith(".sql")],
         "migrations_aplicadas": [
             x.strip() for x in aplicadas.splitlines() if x.strip().endswith(".sql")
