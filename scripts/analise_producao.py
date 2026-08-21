@@ -77,6 +77,7 @@ MARCADOR_OFFSITE = os.environ.get("MARCADOR_OFFSITE", ".ultimo_upload_offsite_ok
 # aplicação, então o import é por caminho, não por instalação.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from producao_checks import (  # noqa: E402
+    linha_backup,
     resumo_texto,
     rodar_checagens,
     severidade_geral,
@@ -426,6 +427,17 @@ def coletar_para_checagens():
     if mtime and agora_epoch:
         backup_offsite_horas = (agora_epoch - mtime) / 3600.0
 
+    # Dump mais recente no disco: nome, hora e tamanho. Vira a linha de status
+    # que aparece TODO dia no relatório — inclusive quando está tudo certo.
+    ultimo_dump = sh(
+        "ls -t %s/prod-*.dump.* 2>/dev/null | head -1" % DIR_BACKUP
+    ).strip()
+    backup_arquivo = backup_arquivo_hora = backup_arquivo_tamanho = ""
+    if ultimo_dump:
+        backup_arquivo = ultimo_dump.rsplit("/", 1)[-1]
+        backup_arquivo_hora = sh('date -r "%s" +%%H:%%M' % ultimo_dump).strip()
+        backup_arquivo_tamanho = sh('du -h "%s" | cut -f1' % ultimo_dump).strip()
+
     arquivos = sh(
         "ls %s/db/migrations/*.sql 2>/dev/null | xargs -n1 basename" % DIR_REPO
     )
@@ -442,6 +454,9 @@ def coletar_para_checagens():
         # Versão da Graph API em uso pelo container da API (vazio = WABA
         # desligado). Lida do env do container, não do host: é lá que a
         # aplicação roda.
+        "backup_arquivo": backup_arquivo,
+        "backup_arquivo_hora": backup_arquivo_hora,
+        "backup_arquivo_tamanho": backup_arquivo_tamanho,
         "graph_api_version": sh(
             "docker exec %s-api-1 printenv WABA_GRAPH_API_VERSION 2>/dev/null"
             % PREFIXO_PROD
@@ -616,6 +631,7 @@ def main():
         f"{'-' * 32}\n{relatorio}\n{'-' * 32}"
         f"{achados_txt}\n"
         f"Achados são determinísticos; o texto acima é redação por IA.\n"
+        f"{linha_backup(medidas)}\n"
         f"Fila: {fila}{aviso}"
     )
 
