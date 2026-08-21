@@ -376,3 +376,31 @@ class TestJanelaTexto:
 
     def test_sem_cadastro_fica_vazio(self) -> None:
         assert variavel._janela_texto(None, None, None) == ""
+
+
+class TestInstrucaoExpediente:
+    """A frase de "fora do horário" só existe no prompt quando ele está fechado.
+
+    Em produção o agente mandou a frase mesmo com `ATENDIMENTO AGORA: ABERTO`
+    escrito no prompt — ela estava logo abaixo, pronta para copiar. Tirar a
+    frase do prompt quando não cabe é mais confiável do que proibir o uso.
+    """
+
+    def test_aberto_nao_contem_a_frase_de_aviso(self) -> None:
+        txt = variavel._instrucao_expediente(
+            "ABERTO", "segunda a sexta, das 06:00 às 23:00"
+        )
+        assert "fora do horário de atendimento" not in txt
+        assert "ABERTO" in txt
+
+    def test_fechado_traz_a_frase_pronta_com_a_janela(self) -> None:
+        txt = variavel._instrucao_expediente(
+            "FECHADO", "segunda a sexta, das 06:00 às 23:00"
+        )
+        assert (
+            "fora do horário de atendimento (segunda a sexta, das 06:00 às 23:00)"
+            in txt
+        )
+
+    def test_sem_expediente_cadastrado_nao_diz_nada(self) -> None:
+        assert variavel._instrucao_expediente("", "") == ""

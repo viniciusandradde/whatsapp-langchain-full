@@ -118,7 +118,38 @@ def _contexto_de_data(
         # horário escrito fixo contradiz o cálculo assim que alguém muda o
         # cadastro — e o modelo obedece ao texto, não à conclusão.
         "data.expediente_janela": _janela_texto(*expediente),
+        "data.instrucao_expediente": _instrucao_expediente(
+            _expediente_agora(local, *expediente), _janela_texto(*expediente)
+        ),
     }
+
+
+def _instrucao_expediente(estado: str, janela: str) -> str:
+    """A instrução INTEIRA sobre expediente — inclusive a frase de aviso.
+
+    Dizer ao modelo "está ABERTO, não use a frase de fora do horário" não
+    funciona: testado em produção, ele mandou a frase mesmo com ABERTO no
+    prompt, porque ela estava logo ali, escrita, pronta para copiar. Modelo
+    copia o que vê.
+
+    Então a frase só EXISTE no prompt quando o expediente está fechado. O que
+    não está escrito não tem como ser copiado — é a mesma ideia de remover a
+    isca em vez de proibir a mordida.
+    """
+    if estado == "ABERTO":
+        return (
+            "O atendimento está ABERTO agora. Atenda normalmente. NÃO existe "
+            "aviso de fora do horário nesta conversa: se disser que estamos "
+            "fechados, estará dispensando um cliente no meio do expediente."
+        )
+    if estado == "FECHADO":
+        return (
+            "O atendimento está FECHADO agora. Antes de qualquer outra coisa, "
+            'avise UMA única vez, com estas palavras: "No momento estamos fora '
+            f"do horário de atendimento ({janela}). Sua mensagem foi registrada "
+            'e será respondida no próximo período."'
+        )
+    return ""
 
 
 def _janela_texto(
