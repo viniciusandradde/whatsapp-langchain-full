@@ -36,6 +36,23 @@ DISCO_CRITICO_PCT = 90
 #: unit e para um dia em que a máquina estava desligada na hora.
 LIMITE_BACKUP_H = 26
 
+#: Sunset das versões da Graph API (Meta garante 2 anos por versão). Datas
+#: públicas e fixas, conferidas na documentação oficial em 2026-08-21.
+#: Uma versão fora do ar derruba TODO o WhatsApp oficial de uma vez, e ninguém
+#: vai lembrar disso daqui a dois anos — é o mesmo caso do backup: falha
+#: anunciada com meses de antecedência que só se descobre no dia.
+SUNSET_GRAPH_API = {
+    "v20.0": "2026-09-24",
+    "v21.0": "2027-01-21",
+    "v22.0": "2027-05-20",
+    "v23.0": "2027-10-08",
+    "v24.0": "2028-02-18",
+    "v25.0": "2028-07-29",
+}
+
+#: Aviso com 90 dias: dá tempo de subir de versão, testar e deployar sem correria.
+DIAS_AVISO_GRAPH_API = 90
+
 
 class Achado(object):
     """Um problema encontrado, com o dado que o sustenta.
@@ -180,6 +197,65 @@ def checar_backup_offsite(horas_desde_ultimo_upload):
     )
 
 
+def checar_graph_api_version(versao, hoje):
+    """A versão da Graph API do WhatsApp oficial ainda está no ar?
+
+    Meta mantém cada versão por ~2 anos e derruba na data marcada. Quando cai,
+    todo envio e todo webhook do WhatsApp oficial param de uma vez — e o aviso
+    existe desde o lançamento, dois anos antes, num changelog que ninguém relê.
+
+    Silêncio (None) em três casos, de propósito: sem versão configurada (WABA
+    desligado), versão desconhecida (mais nova que esta tabela — quem atualizou
+    já sabe o que fez) e data ainda distante.
+    """
+    if not versao:
+        return None
+    sunset = SUNSET_GRAPH_API.get(versao)
+    if not sunset or not hoje:
+        return None
+
+    faltam = _dias_entre(hoje, sunset)
+    if faltam is None or faltam > DIAS_AVISO_GRAPH_API:
+        return None
+
+    if faltam <= 0:
+        return Achado(
+            chave="graph_api_version",
+            severidade=CRITICO,
+            titulo="Graph API {0} fora do ar desde {1}".format(versao, sunset),
+            evidencia="WABA_GRAPH_API_VERSION={0}, sunset em {1}".format(
+                versao, sunset
+            ),
+            acao=(
+                "Subir `WABA_GRAPH_API_VERSION` para uma versão suportada e "
+                "redeployar. Enquanto isso o WhatsApp oficial não envia nem recebe."
+            ),
+        )
+    return Achado(
+        chave="graph_api_version",
+        severidade=ATENCAO,
+        titulo="Graph API {0} sai do ar em {1} dias".format(versao, faltam),
+        evidencia="WABA_GRAPH_API_VERSION={0}, sunset em {1}".format(versao, sunset),
+        acao="Planejar o bump de `WABA_GRAPH_API_VERSION` antes da data.",
+    )
+
+
+def _dias_entre(inicio, fim):
+    """Dias de `inicio` até `fim`, ambos 'AAAA-MM-DD'. None se não der pra ler.
+
+    Conta na mão para não depender de `datetime` — este módulo roda no python do
+    host, fora da venv, e a regra do projeto é manter só stdlib básica aqui.
+    """
+    try:
+        import datetime as _dt
+
+        d0 = _dt.date(*[int(x) for x in str(inicio)[:10].split("-")])
+        d1 = _dt.date(*[int(x) for x in str(fim)[:10].split("-")])
+    except (ValueError, TypeError):
+        return None
+    return (d1 - d0).days
+
+
 def checar_migrations(arquivos, aplicadas):
     """O repositório e o banco contam a mesma história?
 
@@ -239,6 +315,7 @@ def rodar_checagens(dados):
         checar_disco(dados.get("disco_pct")),
         checar_backup(dados.get("backup_horas")),
         checar_backup_offsite(dados.get("backup_offsite_horas")),
+        checar_graph_api_version(dados.get("graph_api_version"), dados.get("hoje")),
         checar_migrations(
             dados.get("migrations_arquivos") or [],
             dados.get("migrations_aplicadas") or [],

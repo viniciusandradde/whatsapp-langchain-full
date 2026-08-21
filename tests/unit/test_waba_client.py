@@ -17,7 +17,6 @@ from whatsapp_langchain.shared.config import settings
 
 @pytest.fixture(autouse=True)
 def _patch_settings(monkeypatch):
-    monkeypatch.setattr(settings, "waba_graph_api_version", "v21.0")
     monkeypatch.setattr(settings, "meta_app_secret", SecretStr("test-secret"))
 
 
@@ -59,9 +58,9 @@ async def test_send_message_mock_retorna_id():
 @pytest.mark.asyncio
 @respx.mock
 async def test_send_message_real_posta_pra_meta():
-    respx.post("https://graph.facebook.com/v21.0/PHONE_ID/messages").mock(
-        return_value=httpx.Response(200, json={"messages": [{"id": "wamid.ABC"}]})
-    )
+    respx.post(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/PHONE_ID/messages"
+    ).mock(return_value=httpx.Response(200, json={"messages": [{"id": "wamid.ABC"}]}))
     client = WabaClient(access_token="EAA", phone_id="PHONE_ID", delivery_mode="real")
     msg_id = await client.send_message("+5511999990000", "olá")
     assert msg_id == "wamid.ABC"
@@ -70,9 +69,9 @@ async def test_send_message_real_posta_pra_meta():
 @pytest.mark.asyncio
 @respx.mock
 async def test_send_message_400_levanta_erro():
-    respx.post("https://graph.facebook.com/v21.0/PHONE_ID/messages").mock(
-        return_value=httpx.Response(400, text="invalid number")
-    )
+    respx.post(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/PHONE_ID/messages"
+    ).mock(return_value=httpx.Response(400, text="invalid number"))
     client = WabaClient(access_token="EAA", phone_id="PHONE_ID", delivery_mode="real")
     with pytest.raises(WabaSendError):
         await client.send_message("+5511999990000", "olá")

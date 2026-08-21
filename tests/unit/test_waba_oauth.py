@@ -15,7 +15,6 @@ def _patch_meta_settings(monkeypatch):
     monkeypatch.setattr(settings, "meta_app_secret", SecretStr("test-secret"))
     monkeypatch.setattr(settings, "meta_config_id", "config_abc")
     monkeypatch.setattr(settings, "waba_webhook_verify_token", SecretStr("verify_xx"))
-    monkeypatch.setattr(settings, "waba_graph_api_version", "v21.0")
     monkeypatch.setattr(
         settings,
         "meta_oauth_redirect_uri",
@@ -49,7 +48,9 @@ def test_build_oauth_url_falha_sem_config(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_exchange_code_retorna_token():
-    respx.get("https://graph.facebook.com/v21.0/oauth/access_token").mock(
+    respx.get(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/oauth/access_token"
+    ).mock(
         return_value=httpx.Response(
             200, json={"access_token": "EAAxxx", "token_type": "bearer"}
         )
@@ -61,9 +62,9 @@ async def test_exchange_code_retorna_token():
 @pytest.mark.asyncio
 @respx.mock
 async def test_exchange_code_levanta_erro_em_400():
-    respx.get("https://graph.facebook.com/v21.0/oauth/access_token").mock(
-        return_value=httpx.Response(400, text="bad code")
-    )
+    respx.get(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/oauth/access_token"
+    ).mock(return_value=httpx.Response(400, text="bad code"))
     with pytest.raises(oauth.WabaOAuthError):
         await oauth.exchange_code_for_token("badcode")
 
@@ -71,7 +72,7 @@ async def test_exchange_code_levanta_erro_em_400():
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_waba_accounts_combina_business_waba_phones():
-    base = "https://graph.facebook.com/v21.0"
+    base = f"https://graph.facebook.com/{settings.waba_graph_api_version}"
     respx.get(f"{base}/me/businesses").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "biz1"}]})
     )

@@ -11,16 +11,15 @@ from whatsapp_langchain.shared.config import settings
 
 @pytest.fixture(autouse=True)
 def _patch_settings(monkeypatch):
-    monkeypatch.setattr(settings, "waba_graph_api_version", "v21.0")
     monkeypatch.setattr(settings, "meta_app_secret", SecretStr("test-secret"))
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_submit_template_envia_payload_correto():
-    route = respx.post("https://graph.facebook.com/v21.0/WABA1/message_templates").mock(
-        return_value=httpx.Response(200, json={"id": "TMPL1", "status": "PENDING"})
-    )
+    route = respx.post(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/WABA1/message_templates"
+    ).mock(return_value=httpx.Response(200, json={"id": "TMPL1", "status": "PENDING"}))
     result = await templates.submit_template(
         access_token="EAA",
         waba_account_id="WABA1",
@@ -40,9 +39,9 @@ async def test_submit_template_envia_payload_correto():
 @pytest.mark.asyncio
 @respx.mock
 async def test_submit_template_400_levanta():
-    respx.post("https://graph.facebook.com/v21.0/WABA1/message_templates").mock(
-        return_value=httpx.Response(400, text="invalid components")
-    )
+    respx.post(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/WABA1/message_templates"
+    ).mock(return_value=httpx.Response(400, text="invalid components"))
     with pytest.raises(templates.WabaTemplateError):
         await templates.submit_template(
             access_token="EAA",
@@ -57,7 +56,9 @@ async def test_submit_template_400_levanta():
 @pytest.mark.asyncio
 @respx.mock
 async def test_sync_template_status_retorna_status_atual():
-    respx.get("https://graph.facebook.com/v21.0/TMPL1").mock(
+    respx.get(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/TMPL1"
+    ).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -75,7 +76,9 @@ async def test_sync_template_status_retorna_status_atual():
 @pytest.mark.asyncio
 @respx.mock
 async def test_list_remote_templates_retorna_array():
-    respx.get("https://graph.facebook.com/v21.0/WABA1/message_templates").mock(
+    respx.get(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/WABA1/message_templates"
+    ).mock(
         return_value=httpx.Response(
             200,
             json={
@@ -93,9 +96,9 @@ async def test_list_remote_templates_retorna_array():
 @pytest.mark.asyncio
 @respx.mock
 async def test_send_template_message_substitui_variables():
-    route = respx.post("https://graph.facebook.com/v21.0/PHONE1/messages").mock(
-        return_value=httpx.Response(200, json={"messages": [{"id": "wamid.SENT"}]})
-    )
+    route = respx.post(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/PHONE1/messages"
+    ).mock(return_value=httpx.Response(200, json={"messages": [{"id": "wamid.SENT"}]}))
     msg_id = await templates.send_template_message(
         access_token="EAA",
         phone_id="PHONE1",
@@ -115,8 +118,8 @@ async def test_send_template_message_substitui_variables():
 @pytest.mark.asyncio
 @respx.mock
 async def test_delete_template_chama_meta_delete():
-    respx.delete("https://graph.facebook.com/v21.0/WABA1/message_templates").mock(
-        return_value=httpx.Response(200)
-    )
+    respx.delete(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}/WABA1/message_templates"
+    ).mock(return_value=httpx.Response(200))
     ok = await templates.delete_template("EAA", "WABA1", "boas_vindas")
     assert ok is True

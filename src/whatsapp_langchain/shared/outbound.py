@@ -12,8 +12,10 @@ preservar o thread; `normalized_input` carrega `manual:{user_id}` para
 audit.
 
 Roteamento por provider:
-- `twilio_sandbox`, `twilio_prod`, `waba` → `TwilioClient`
+- `waba` COM `waba_phone_id` → `WabaClient` (Cloud API da Meta, direto)
 - `evolution` → `EvolutionClient`
+- `twilio_sandbox`, `twilio_prod` — e `waba` sem `phone_id`, que é fallback
+  legado de conexão criada antes do cliente próprio → `TwilioClient`
 """
 
 from __future__ import annotations
@@ -733,8 +735,9 @@ async def send_outbound_template(
     """Envia template HSM (Twilio Content) — FORA da janela 24h.
 
     Útil pra notificação ativa: CSAT proativo, lembrete agendamento, alerta.
-    Hoje só suporta Twilio (WABA tem fluxo de template próprio via Cloud API
-    que será atendido em sprint futura; Evolution não suporta HSM).
+    Caminho LEGADO, só Twilio. O envio de template que vale hoje é
+    `send_template_by_id`, que roteia WABA (Cloud API) e Twilio pelo mesmo
+    contrato. Evolution não suporta HSM.
 
     Args:
         conexao_id: ID da conexão (deve ser provider twilio_*).

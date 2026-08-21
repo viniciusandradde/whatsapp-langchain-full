@@ -197,3 +197,85 @@ def test_parse_template_status_updates_extrai_evento():
     assert len(updates) == 1
     assert updates[0]["meta_template_id"] == "12345"
     assert updates[0]["event"] == "APPROVED"
+
+
+def test_waba_post_rejeita_quando_nao_ha_secret(monkeypatch):
+    """Sem META_APP_SECRET o webhook NÃO processa nada (fail-closed).
+
+    A versão anterior validava assinatura dentro de `if app_secret:` — com a env
+    vazia, que é o estado de qualquer instalação que ainda não ligou o WABA, o
+    endpoint aceitava payload forjado sem assinatura nenhuma. Confirmado contra
+    produção antes da correção: `POST /webhook/waba` devolvia `received`.
+    """
+    from fastapi.testclient import TestClient
+
+    from whatsapp_langchain.server.main import app
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(settings, "meta_app_secret", None)
+
+    resp = TestClient(app).post(
+        "/webhook/waba", json={"object": "whatsapp_business_account"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "rejected_no_secret"}
+
+
+def test_handshake_devolve_challenge_em_texto_puro(monkeypatch):
+    """A Meta espera o challenge cru; JSON não fecha a verificação.
+
+    O código antigo fazia `int(challenge)` e caía num `{"challenge": ...}`
+    quando o valor não era numérico — passava enquanto a Meta mandasse dígitos.
+    """
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.server.main import app
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(
+        settings, "waba_webhook_verify_token", SecretStr("token-de-teste")
+    )
+    client = TestClient(app)
+
+    resp = client.get(
+        "/webhook/waba",
+        params={
+            "hub.mode": "subscribe",
+            "hub.verify_token": "token-de-teste",
+            "hub.challenge": "abc123XYZ",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.text == "abc123XYZ"
+    assert resp.headers["content-type"].startswith("text/plain")
+
+    # o caso numérico, que era o único que funcionava antes, segue igual
+    resp = client.get(
+        "/webhook/waba",
+        params={
+            "hub.mode": "subscribe",
+            "hub.verify_token": "token-de-teste",
+            "hub.challenge": "1234567890",
+        },
+    )
+    assert resp.text == "1234567890"
+
+
+def test_handshake_recusa_token_errado(monkeypatch):
+    from fastapi.testclient import TestClient
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.server.main import app
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(settings, "waba_webhook_verify_token", SecretStr("certo"))
+    resp = TestClient(app).get(
+        "/webhook/waba",
+        params={
+            "hub.mode": "subscribe",
+            "hub.verify_token": "errado",
+            "hub.challenge": "123",
+        },
+    )
+    assert resp.status_code == 403

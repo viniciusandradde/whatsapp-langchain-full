@@ -14,6 +14,7 @@ import hmac
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 from whatsapp_langchain.integrations.waba.client import download_media
 from whatsapp_langchain.integrations.waba.webhook import (
@@ -63,10 +64,16 @@ async def _resolve_waba_media_url(pool, conexao, msg) -> str | None:
 @router.get("")
 async def waba_webhook_verify(
     request: Request,
-) -> int | dict[str, str]:
-    """Handshake do Meta — retorna `hub.challenge` se verify_token bate.
+) -> PlainTextResponse:
+    """Handshake do Meta — devolve `hub.challenge` se o verify_token bate.
 
     Aceita query strings `hub.mode`, `hub.verify_token`, `hub.challenge`.
+
+    A resposta é o challenge **cru**, não JSON: é o que a Meta espera para dar o
+    webhook por verificado. A versão anterior fazia `int(challenge)` e caía num
+    `{"challenge": ...}` quando o valor não era numérico — funcionava por
+    acidente enquanto a Meta mandasse só dígitos, e o dia em que mandasse um
+    token alfanumérico a verificação falharia sem explicação.
     """
     params = dict(request.query_params)
     mode = params.get("hub.mode")
@@ -88,10 +95,7 @@ async def waba_webhook_verify(
         raise HTTPException(status_code=403, detail="verify_token inválido")
 
     logger.info("waba_webhook_verified")
-    try:
-        return int(challenge)
-    except (TypeError, ValueError):
-        return {"challenge": challenge}
+    return PlainTextResponse(challenge)
 
 
 @router.post("")
@@ -117,21 +121,31 @@ async def waba_webhook_post(
     # rejeitados pelo próprio Meta após N tentativas, mas atacante pode
     # forjar diretamente). Pré-Sprint D só rejeitava quando assinatura
     # inválida; ausência de header passava silenciosamente.
-    if app_secret:
-        if not x_hub_signature_256:
-            logger.warning(
-                "waba_webhook_signature_missing",
-                body_size=len(body),
-                production=settings.is_production,
-            )
-            # Assinatura ausente com app_secret configurado = SEMPRE rejeita
-            # (independente de is_production). Antes só rejeitava em prod, o que
-            # deixava staging / env com ENVIRONMENT != 'production' aceitar
-            # webhook WABA forjado sem HMAC (injeção de mensagem/empresa).
-            return {"status": "rejected_no_signature"}
-        elif not verify_signature(body, x_hub_signature_256, app_secret):
-            logger.warning("waba_webhook_signature_invalid", body_size=len(body))
-            return {"status": "rejected"}
+    # Sem secret NÃO se processa nada. A versão anterior só validava dentro de
+    # `if app_secret:` — com a env vazia (o caso de qualquer instalação que ainda
+    # não ligou o WABA) o endpoint aceitava payload forjado sem assinatura
+    # nenhuma. Fail-open num webhook público é convite: quem descobrisse um
+    # `phone_number_id` válido injetaria mensagem em nome do cliente.
+    #
+    # Fechar aqui não tira função de ninguém: `waba_enabled` já exige o secret
+    # para as rotas de conexão, então WABA ligado sempre tem secret.
+    if not app_secret:
+        logger.warning("waba_webhook_sem_secret", body_size=len(body))
+        return {"status": "rejected_no_secret"}
+
+    if not x_hub_signature_256:
+        logger.warning(
+            "waba_webhook_signature_missing",
+            body_size=len(body),
+            production=settings.is_production,
+        )
+        # Assinatura ausente = SEMPRE rejeita (independente de is_production).
+        # Antes só rejeitava em prod, o que deixava staging aceitar webhook WABA
+        # forjado sem HMAC (injeção de mensagem/empresa).
+        return {"status": "rejected_no_signature"}
+    if not verify_signature(body, x_hub_signature_256, app_secret):
+        logger.warning("waba_webhook_signature_invalid", body_size=len(body))
+        return {"status": "rejected"}
 
     try:
         payload = await request.json()

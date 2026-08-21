@@ -1,6 +1,6 @@
 """OAuth Embedded Signup com Meta (WABA Cloud).
 
-Fluxo (Graph API v21+):
+Fluxo (versão da Graph API vem de `WABA_GRAPH_API_VERSION`, hoje v25.0):
 1. Front abre popup com URL gerada por `build_oauth_url` (dialog Meta)
 2. User loga + escolhe Business + Phone Number
 3. Meta redireciona pra nosso `redirect_uri` com `code`
