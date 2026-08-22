@@ -19,6 +19,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import (
     add_member,
@@ -104,6 +105,10 @@ class UpdateRoleInput(BaseModel):
 
 VALID_ROLES = {"admin", "operator", "viewer"}
 
+# Detail pt-BR do 402 quando o plano não tem a feature 'voz' (mig 177).
+# A UI mostra `detail.message` direto (lib/api-error-shared) — sem jargão.
+_VOZ_PLANO_MSG = "Resposta em áudio está disponível nos planos Pro e Enterprise."
+
 
 def _check_role(role: str) -> None:
     if role not in VALID_ROLES:
@@ -167,6 +172,12 @@ async def update_empresa_endpoint(
             status_code=400,
             detail=f"Voz inválida. Valores aceitos: {sorted(VOZES)}.",
         )
+
+    # Feature de plano (mig 177): LIGAR a voz exige plano com 'voz'.
+    # Desligar (False) ou mexer só em voz_nome/voz_estilo continua livre —
+    # a config fica guardada pra quando o plano voltar a ter a feature.
+    if body.voz_ativa is True:
+        await assert_plano_feature(empresa_id, "voz", mensagem=_VOZ_PLANO_MSG)
 
     # Se slug enviado == slug atual, skipa pra não disparar UNIQUE check.
     if body.slug:
@@ -244,6 +255,10 @@ async def preview_voz_endpoint(
     pool = await get_pool()
     if not await is_admin_of(pool, empresa_id, user_id):
         raise HTTPException(status_code=403, detail="Só admin pode testar a voz.")
+    # Feature de plano (mig 177): preview também é TTS pago — mesmo gate
+    # do PUT. Empresa vem do PATH, por isso o helper e não o Depends do
+    # require_plano_feature (que resolve pelo header X-Empresa-Id).
+    await assert_plano_feature(empresa_id, "voz", mensagem=_VOZ_PLANO_MSG)
     if body.voz_nome not in VOZES:
         raise HTTPException(
             status_code=400,

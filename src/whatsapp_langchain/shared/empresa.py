@@ -243,13 +243,22 @@ async def get_empresa_voz_config(
     worker segue em texto sem tocar no TTS. Fallbacks defensivos pra voz
     vazia (não deveria acontecer — colunas NOT NULL — mas dado sujo não
     pode calar a resposta).
+
+    `plano_tem_voz` (mig 177): a voz é feature dos planos Pro/Enterprise.
+    O mesmo SELECT traz `plano.features->>'voz'` — assim downgrade de
+    plano desliga a voz sozinho, sem precisar limpar `empresa.voz_*` (a
+    config fica guardada pra quando o plano voltar a ter a feature).
+    Empresa sem plano cadastrado (LEFT JOIN vira NULL) = sem feature —
+    seguro por default. Quem decide pular a síntese (e loga) é o worker.
     """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT voz_ativa, voz_nome, voz_estilo
-              FROM empresa
-             WHERE id = %s
+            SELECT e.voz_ativa, e.voz_nome, e.voz_estilo,
+                   p.features ->> 'voz' AS plano_voz
+              FROM empresa e
+              LEFT JOIN plano p ON p.id = e.plano_id
+             WHERE e.id = %s
             """,
             (empresa_id,),
         )
@@ -259,6 +268,7 @@ async def get_empresa_voz_config(
     return {
         "voz_nome": (row[1] or "").strip() or "alloy",
         "voz_estilo": (row[2] or "").strip(),
+        "plano_tem_voz": row[3] == "true",
     }
 
 

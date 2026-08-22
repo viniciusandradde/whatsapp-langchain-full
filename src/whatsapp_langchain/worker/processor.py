@@ -440,6 +440,8 @@ async def _tentar_resposta_em_voz(
       só Evolution tem, padrão de `send_outbound_manual_midia`);
     - a empresa ligou `voz_ativa` (SELECT só acontece depois dos gates
       baratos acima — não paga query em toda resposta de texto);
+    - o plano da empresa tem a feature 'voz' (mig 177 — Pro/Enterprise;
+      vem no mesmo SELECT da config);
     - a resposta não é marcador de sistema.
 
     Retorna o base64 do OGG enviado, ou None = "siga em texto". Best-effort
@@ -456,6 +458,18 @@ async def _tentar_resposta_em_voz(
     try:
         voz_cfg = await get_empresa_voz_config(pool, message.empresa_id)
         if not voz_cfg:
+            return None
+        if not voz_cfg.get("plano_tem_voz"):
+            # Feature de plano (mig 177): o gate HTTP impede LIGAR a voz em
+            # plano sem a feature, mas não segura downgrade — a empresa fica
+            # com `voz_ativa=true` gravado e o plano sem 'voz'. Aqui a voz
+            # desliga sozinha (segue texto), sem erro e sem precisar limpar
+            # `empresa.voz_*`; 1 log info por mensagem pra diagnóstico.
+            logger.info(
+                "voz_sem_feature_plano",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+            )
             return None
         ogg = await sintetizar(
             response_text,

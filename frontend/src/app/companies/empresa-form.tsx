@@ -1207,6 +1207,11 @@ export function VozDoAgenteSection({ empresa }: { empresa: Empresa }) {
         {amostraErro && (
           <p className="text-sm text-destructive">{amostraErro}</p>
         )}
+        {/* Feature de plano (mig 177): o backend devolve 402 amigável se o
+            plano não tiver 'voz' — aqui é só o aviso discreto. */}
+        <p className="text-xs text-muted-foreground">
+          Disponível nos planos Pro e Enterprise.
+        </p>
       </CardContent>
       <CardFooter className="flex items-center justify-between gap-2">
         <div className="text-sm">

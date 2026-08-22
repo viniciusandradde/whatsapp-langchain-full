@@ -99,12 +99,66 @@ def require_plano_limit(recurso: str):
     return _checker
 
 
+async def assert_plano_feature(
+    empresa_id: int, feature: str, *, mensagem: str | None = None
+) -> None:
+    """Levanta 402 se o plano da empresa não tem a feature.
+
+    Mesmo contrato/payload do `require_plano_feature`, mas pra endpoints
+    onde a empresa-alvo vem do PATH (ex.: `/api/empresas/{id}/...`) e não
+    do header `X-Empresa-Id` que `get_empresa_context` resolve — usar o
+    Depends ali gatearia pela empresa ATIVA do usuário, não pela editada
+    (superadmin gerindo outra empresa ficaria preso ao próprio plano).
+
+    Args:
+        empresa_id: empresa-alvo (do path).
+        feature: chave em `plano.features` JSON.
+        mensagem: texto pt-BR amigável que substitui o default no
+            `detail.message` (a UI mostra direto via api-error-shared).
+
+    Raises:
+        HTTPException 402: feature não disponível no plano atual.
+    """
+    pool = await get_pool()
+    plano = await get_plano_info(pool, empresa_id)
+
+    if plano.tem_feature(feature):
+        return
+
+    upgrade = plano.upgrade_sugerido()
+    logger.warning(
+        "feature_unavailable",
+        empresa_id=empresa_id,
+        feature=feature,
+        plano=plano.plano_slug,
+    )
+    detail_pt = mensagem or (
+        f"Feature '{feature}' não está disponível no plano "
+        f"{plano.plano_nome}. "
+        + (
+            f"Faça upgrade pro plano {upgrade.title()} pra liberar."
+            if upgrade
+            else "Feature exclusiva — entre em contato."
+        )
+    )
+    raise HTTPException(
+        status_code=_STATUS_QUOTA_EXCEEDED,
+        detail={
+            "error": "feature_unavailable",
+            "feature": feature,
+            "plano_atual": plano.plano_slug,
+            "upgrade_to": upgrade,
+            "message": detail_pt,
+        },
+    )
+
+
 def require_plano_feature(feature: str):
     """Factory de dependency que bloqueia se plano não tem a feature.
 
     Args:
         feature: chave em `plano.features` JSON ('calendar', 'mcp',
-            'rbac', 'menu_moderno', 'white_label').
+            'rbac', 'menu_moderno', 'white_label', 'voz').
 
     Raises:
         HTTPException 402: feature não disponível no plano atual.
@@ -113,35 +167,6 @@ def require_plano_feature(feature: str):
     async def _checker(
         empresa_id: int = Depends(get_empresa_context),
     ) -> None:
-        pool = await get_pool()
-        plano = await get_plano_info(pool, empresa_id)
-
-        if not plano.tem_feature(feature):
-            upgrade = plano.upgrade_sugerido()
-            logger.warning(
-                "feature_unavailable",
-                empresa_id=empresa_id,
-                feature=feature,
-                plano=plano.plano_slug,
-            )
-            detail_pt = (
-                f"Feature '{feature}' não está disponível no plano "
-                f"{plano.plano_nome}. "
-                + (
-                    f"Faça upgrade pro plano {upgrade.title()} pra liberar."
-                    if upgrade
-                    else "Feature exclusiva — entre em contato."
-                )
-            )
-            raise HTTPException(
-                status_code=_STATUS_QUOTA_EXCEEDED,
-                detail={
-                    "error": "feature_unavailable",
-                    "feature": feature,
-                    "plano_atual": plano.plano_slug,
-                    "upgrade_to": upgrade,
-                    "message": detail_pt,
-                },
-            )
+        await assert_plano_feature(empresa_id, feature)
 
     return _checker
