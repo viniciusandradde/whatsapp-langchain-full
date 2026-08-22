@@ -1,369 +1,124 @@
 # Chat Nexus
 
-**Versão:** `v0.b2` (Beta 2 — 2026-06-05) · **Stack em produção:** [chat.vsanexus.com](https://chat.vsanexus.com)
-
-Plataforma de WhatsApp + IA multi-tenant, multi-conexão e multi-agente. Operação completa de atendimento humano + agentes LangGraph com governança, NPS, calendar, RBAC, white-label, dashboards operacionais e observabilidade — tudo num único stack `FastAPI + Next.js + PostgreSQL` sem dependência de Redis/RabbitMQ.
-
-Originalmente um harness educacional para agentes de WhatsApp com LangGraph, evoluiu para um produto completo de atendimento — preservando o caráter pedagógico do código (cada decisão de arquitetura é explícita e documentada).
-
----
-
-## Status do projeto
-
-| Métrica | Valor |
-|---|---|
-| Versão | `v0.b2` (Beta 2) |
-| Migrações aplicadas | 109 arquivos (`db/migrations/001` → `115`) |
-| Endpoints REST | ~290 |
-| Tabelas no schema da app | ~95 |
-| Tabelas no schema `auth` (Better Auth) | 5 (`user`, `session`, `account`, `verification`, `password_reset_pending`) |
-| Agentes no catálogo Python | 4 grafos (`vsa_tech`, `atendimento_completo`, `atendimento_router`, `agendamentos`) |
-| Frontend | Next.js 16.1 + React 19.2 + Tailwind 4 |
-| Backend | FastAPI 0.129 + psycopg 3.3 async + LangGraph 1.1 + LangChain 1.2 |
-| Em produção | ✅ 24/7 desde 2026-04-29, 4 réplicas worker |
-| Cobertura de testes | ~50% (gate CI) |
-
----
-
-## Andamento — milestones entregues
-
-### Fundação (Abril 2026)
-
-- ✅ **Webhook assíncrono** + fila PostgreSQL com `FOR UPDATE SKIP LOCKED`, debounce 2s, retries com backoff exponencial
-- ✅ **Worker LangGraph** com ciclo de vida explícito (`AsyncPostgresSaver` + `AsyncPostgresStore` abertos no boot, reutilizados)
-- ✅ **Painel admin** Next.js + Better Auth no mesmo PostgreSQL (schema `auth`)
-- ✅ **Hardening de produção**: CORS estrito, security headers, fail-fast em invariantes (token ≥32, signature Twilio, FRONTEND_ORIGINS)
-- ✅ **Rate limit distribuído** via Postgres (sliding window) — opt-in para multi-instância
-- ✅ **Multi-provider WhatsApp**: WABA oficial (Embedded Signup OAuth Meta), Evolution API (Baileys), Twilio sandbox/prod
-
-### Multi-tenant (M1 — 2026-04-29)
-
-- ✅ Empresa como tenant raiz: `empresa_membro` (FK em todas as tabelas), `is_default`, `role`
-- ✅ Bootstrap admin no primeiro `/login` com triple-insert (`auth.user` + `empresa_membro` + `is_superadmin`)
-- ✅ Switcher de empresa no sidebar para superadmin/multi-empresa
-- ✅ Empresa CRUD em `/companies/[id]` (status, branding, csat config)
-
-### Multi-conexão WhatsApp (M2 — 2026-04-29)
-
-- ✅ Tabela `conexao` com provider (twilio/evolution/waba), credenciais cifradas (Fernet), `connection_state`
-- ✅ Worker resolve cliente outbound por `Conexao.provider` via `OutboundClient` Protocol (mesmo contrato para os 3)
-- ✅ Webhook por provider: `/webhook/twilio`, `/webhook/evolution`, `/webhook/waba` (HMAC-SHA256)
-- ✅ UI `/connections` padrão ZigChat: tabela com badges de estado + modal "+ Nova" com 3 cards (WABA/Evolution/Twilio)
-
-### CRM Light (M3 — 2026-05-02)
-
-- ✅ Tabela `cliente` com nome, telefone, e-mail, endereço, VIP flag, tags, notas internas, dados enriquecidos (Wareline)
-- ✅ Form `/clientes/[id]` com 4 abas (Geral / Avançado / Integrações / Histórico)
-- ✅ Importação CSV + busca full-text
-
-### Multi-agente IA (Sub-fase A — 2026-05-06)
-
-- ✅ Tabela `agente_ia` com `template_catalog`, `modelo_llm`, `temperatura_override`, `prompt_override` (50k chars), tools opt-in
-- ✅ `AgenteRuntime` no worker carrega config da DB sobre o template Python
-- ✅ UI `/agents/[slug]` com 5 tabs (Identidade / Prompt / Modelo / Tools / Métricas)
-
-### Menu Chatbot (Sub-fase B+ — 2026-05-06)
-
-- ✅ Paridade ZigChat completa: **12 ações** suportadas (`enviar_mensagem`, `enviar_link`, `chamar_agente`, `transferir_dep`, `pesquisa_csat`, `enviar_template`, `coletar_dados`, etc.)
-- ✅ Wizard de coleta multi-pergunta por `menu_item` (validators BR: CPF, CNPJ, telefone, e-mail, data)
-- ✅ Templates render: `{{cliente.nome}}`, `{{coleta.X}}`, `{{atendimento.menu_path}}`
-
-### Calendar Agent v2 (S1+S2 — 2026-05-04)
-
-- ✅ Source-of-truth interno em tabela `agendamento` (INSERT local → POST Google → UPDATE com `evento_id_externo`)
-- ✅ 7 tools no agente: `get_current_time`, `list_calendars`, `set_active_calendar`, `list_events`, `find_free_slots`, `create_event`, `cancel_event`
-- ✅ Hooks `agendamento.criado` / `agendamento.cancelado`
-- 🟡 Pendente: regras de negócio (S3), aprovação via WhatsApp (S4), sync periódico + audit (S5)
-
-### Etapa 2 — RBAC + Departamentos + KB + Campanhas (2026-05-05)
-
-- ✅ **RBAC catalogado**: 80+ permissões em `permissao` + perfis system (`Admin`, `Gestor`, `Atendente`) + `perfil_permissao` + `perfil_user`
-- ✅ **Departamentos hierárquicos** com herança de regras de roteamento
-- ✅ **Base de conhecimento** com pastas + RAG (embeddings via OpenRouter)
-- ✅ **Campanhas** (broadcast com templates HSM aprovados)
-- ✅ **SSE** (server-sent events) no painel para notificação em tempo real de novos atendimentos
-
-### Sprint Mackenzie Hospital (2026-05-09)
-
-- ✅ Sandbox empresa 999 isolada com dump 3m do ZigChat real
-- ✅ 8 agentes hospitalares configurados (Triagem, Atendimento, Exames, Agendamentos, Financeiro, Ouvidoria, NPS, Suporte)
-- ✅ 9055 fewshots classificados + 40 sugestões de melhorias com UI de aprovação
-
-### Workflows LangGraph (2026-05-12)
-
-- ✅ 9 workflows ativos em produção (123 nodes total)
-- ✅ Fluxo Mackenzie completo: LGPD → nome → menu 8 setores → sub-workflows
-
-### Governança RBAC (Sprint 1+2 — 2026-05-15/17)
-
-- ✅ **Record-level permissions** (`.own` vs `.all`) — atendente vê só os próprios atendimentos
-- ✅ **Audit governança** em `audit_governanca` (toda mudança de perfil/depto logada)
-- ✅ **Permissions context** no frontend: sidebar/topnav filtram entradas por permissão, 403 sanitiza response
-
-### UX Atendimento (Fase 1.1→1.4 — 2026-05-19)
-
-- ✅ **Abas pessoais** (favoritos / aguardando minha resposta / em andamento)
-- ✅ **Tags multi-cor** com edição inline
-- ✅ **Notas internas** com menções (@usuário dispara hook)
-- ✅ **Painel cliente** lateral mostrando histórico cross-conexão
-- ✅ **PWA** com push notification e ícones por status
-- ✅ **Transferência por depto** com mensagem WhatsApp automática ao cliente
-
-### Sprint Conexões WABA/Evolution (2026-05-20)
-
-- ✅ **WABA Embedded Signup OAuth Meta** (1-clique) — replicando padrão ZigChat
-- ✅ **Evolution auto-provision** com QR no painel + polling até `READY`
-- ✅ **Importar instance existente** (modo alternativo) com fallback de API key global
-- ✅ **Templates HSM**: form completo (BODY/HEADER/FOOTER/BUTTONS) + submissão Meta + sync status + envio com variáveis substituídas
-- ✅ Twilio mantido 100% funcional como 3ª opção
-
-### Sprint A.2 — RLS Postgres real 10/10 (2026-05-22)
-
-- ✅ **4 roles app least-privilege**: `chat_nexus_app` (NOSUPERUSER, NOBYPASSRLS, runtime API+Worker), `chat_nexus_migrator` (DDL), `chat_nexus_readonly` (BI), `chat_nexus_audit` (BYPASSRLS pra compliance)
-- ✅ **58 tabelas com RLS + FORCE** — policy `_rls_tenant_match` estrita (`app.empresa_id` vazio = deny)
-- ✅ **Middleware FastAPI** seta `app.empresa_id` por request via header `X-Empresa-Id`
-- ✅ **Worker** envolve `process_message` em `empresa_scope(message.empresa_id)`
-- ✅ **`DATABASE_URL_APP`** em prod aponta pra `chat_nexus_app` — RLS REALMENTE enforcing
-- ✅ **Bypass cirúrgico** apenas em cross-tenant legítimos (claim queue, calendar sync, cleanup, webhook lookup, health)
-- ✅ **Tests E2E** (`tests/integration/test_rls_isolation.py`) 10/10 PASSED com role app
-- Runbook completo em [docs/RLS_OPERATIONS.md](docs/RLS_OPERATIONS.md)
-
-### Prompts hospitalares + LGPD (2026-05-21)
-
-- ✅ Metodologia canônica em `docs/agentes/prompts-saude/METODOLOGIA.md` (XML tags, few-shot, ReAct, Constitutional AI, RAG-aware)
-- ✅ **Tools LGPD**: `verify_patient_identity` (gate obrigatório antes de dado sensível) + `log_lgpd_event` (auditoria Art. 37)
-- ✅ Tabela `lgpd_event_log` + endpoint admin `/api/lgpd/eventos`
-
-### Dashboard Operacional + NPS (2026-05-21/22)
-
-- ✅ **Dashboard `/dashboard/atendimento`** como página inicial: 6 KPIs + 3 charts + 2 tabelas + sidebar atendentes online
-- ✅ **NPS / Pesquisa de satisfação** com captura automática 0-10 ao fechar + comentário follow-up, dashboard `/dashboard/qualidade`
-- ✅ **Cleanup zumbis automático** a cada 6h no worker (aguardando >48h / sem resposta >24h → `abandonado`)
-- ✅ **PATCH parcial** padronizado em todos endpoints (`body.model_dump(exclude_unset=True)`)
-
-### Billing Asaas (2026-05)
-
-- ✅ Schema de billing (`plano`, `transacao`) + campos Asaas em `empresa` (migs 059, 105)
-- ✅ Webhook `/webhook/asaas` com lookup indexado por `customer`/`subscription`
-
-### Módulo Histórico (2026-06-01)
-
-- ✅ Aba **`/chats` repaginada**: consulta todos os status + filtros + detalhe da conversa
-- ✅ **Export CSV/XLSX** (openpyxl) + relatórios agregados (mig 110)
-
-### Sprint U — Gestão de Usuários (2026-06-01)
-
-- ✅ Módulo `/usuarios` (caminho preferido sobre o legado `/api/empresas/{id}/membros`): CRUD enriquecido, upload de avatar local, invalidação de sessões pós-reset
-- ✅ **Turnos / jornada** (mig 112) com gate de distribuição no `pick_best_atendente`
-- ✅ **Conexão padrão por usuário** (mig 111) + campos `telefone`/`last_login_at`/`avatar_path` (mig 106)
-
-### Observabilidade Langfuse (2026-06-02)
-
-- ✅ **Langfuse self-host** em `langfuse.vsanexus.com` (Docker Compose dedicado)
-- ✅ Link bidirecional `ia_execucao`/`message_queue` ↔ trace Langfuse (mig 107, `trace_id` determinístico)
-- ✅ UI `/traces` com provider-switch Langfuse-primary / LangSmith-fallback
-
-### WABA Templates utilizáveis + Twilio legado (2026-06-02)
-
-- ✅ Templates HSM aprovados **enviáveis** via campanha e composer (mig 113, `message_template` multi-provider)
-- ✅ Mídia inbound WABA (imagem/áudio/documento)
-- ✅ Twilio marcado como **legado** (WABA-first, mig 114) — mantido funcional como fallback
-
-### White-label por empresa (2026-06-02)
-
-- ✅ **Logo + nome de marca + cores** por empresa no topo do sidebar (estilo ZigChat, mig 115)
-- ✅ `POST /api/empresas/{id}/logo` (Pillow PNG ≤512px) → `/uploads/logos` (StaticFiles + volume)
-- ✅ Cores viram CSS vars `--brand-primary`/`--brand-secondary` injetadas no `<head>` sem tocar nos temas
-
----
-
-## Roadmap — próximas sprints
-
-### 🟡 Curto prazo (Beta 3)
-
-- Calendar Agent v2 S3-S5 (regras de negócio, aprovação WhatsApp, sync periódico Google→DB)
-- Métricas Prometheus do worker (histograms por etapa: preprocess, LLM, outbound)
-- LISTEN/NOTIFY no Postgres para reduzir latência de claim de 1s → ~10ms
-- Dashboard IA: custo por agente + breakdown por modelo
-
-### 🔵 Médio prazo (1.0)
-
-- Concorrência intra-worker (`WORKER_CONCURRENCY=N` + lock por `thread_id`)
-- Library de templates HSM pré-prontos por vertical (saúde / e-commerce / educação)
-- Multi-app Meta (1 Meta App por empresa em vez de 1 global)
-- Auto-fallback multi-provider (se WABA cair, rotear pra Evolution backup)
-
-### 🟣 Longo prazo
-
-- Suporte oficial Telegram + Instagram (Meta Business Suite)
-- Workflows IDE visual drag-and-drop (hoje é JSON)
-- Dashboard executivo por vertical com KPIs customizados
-
-### ❌ Decisões arquiteturais firmes
-
-- **Sem RabbitMQ** — Postgres queue com `FOR UPDATE SKIP LOCKED` aguenta 10k+ msg/s. Trocar só faria sentido a partir de 500 msg/s sustained.
-- **Sem Redis** — rate limit + cache via tabelas dedicadas (`rate_limit_bucket`). Atomicidade transacional > velocidade que não precisamos.
-- **Postgres como queue + checkpointer + store + auth + audit** — 1 backup, 1 monitoramento, 1 cluster.
-
----
-
-## Stack técnica
-
-| Camada | Tecnologia |
-|---|---|
-| Frontend | Next.js 16.1, React 19.2, Tailwind 4, Better Auth, lucide-react |
-| Backend | FastAPI 0.129, psycopg 3.3 async, LangGraph 1.1, LangChain 1.2, structlog |
-| LLM | OpenRouter (Claude 4.x, GPT-5, Gemini 2.5) via factory `shared/llm.py` |
-| Persistência | PostgreSQL 16 (queue + checkpointer + store + auth + audit) |
-| Crypto | Fernet (credenciais de conexão), bcrypt (Better Auth) |
-| Mídia | OpenRouter multimodal (imagem/áudio → texto) |
-| Observabilidade | Langfuse (self-host) + LangSmith + OpenTelemetry + structlog JSON |
-| Deploy | Dokploy (Docker Compose) em Oracle Cloud ARM; Railway documentado |
-| Testes | pytest async-mode, TestClient + httpx + psycopg real, Locust (stress) |
-
----
+Plataforma de atendimento WhatsApp **multi-tenant** com agentes de IA (LangGraph), painel administrativo (Next.js) e app Android — em produção, num único stack `FastAPI + PostgreSQL + Next.js`, sem Redis/RabbitMQ.
 
 ## Arquitetura
 
-![Arquitetura](docs/diagrams/harness_whatsapp.jpg)
+Dois processos Python compartilham o Postgres — e o Postgres **é** a fila:
 
-```text
-WhatsApp via WABA / Evolution / Twilio
-        ↓
-API (/webhook/*) — valida HMAC + rate limit + debounce + lock advisory
-        ↓
-PostgreSQL message_queue (queued)
-        ↓
-Worker × 4 réplicas (FOR UPDATE SKIP LOCKED + lease)
-        ↓
-Preprocess media → LangGraph Agent → checkpointer + store
-        ↓
-Outbound (provider da conexão) → mark_done
-        ↓
-Hooks → DLQ se falhar 3×
+- **API (FastAPI)** — borda HTTP. Valida o webhook (Evolution / WABA; Twilio legado), aplica rate limit por telefone, normaliza o payload e enfileira em `message_queue`. Responde em <100ms; nunca invoca o agente inline.
+- **Worker assíncrono** — faz claim com `FOR UPDATE SKIP LOCKED` + lease, pré-processa mídia (imagem/áudio/documento → texto), invoca o agente LangGraph e só marca `done` depois do envio outbound bem-sucedido (entrega at-least-once). Retry com backoff até `MAX_ATTEMPTS`.
+- **LangGraph** — checkpointer (`AsyncPostgresSaver`) e store semântico (`AsyncPostgresStore`) abertos uma vez no boot do worker; histórico por `thread_id = telefone:agente`, memória cross-thread por usuário.
+- **Frontend (Next.js)** — painel administrativo com Better Auth (schema `auth` no mesmo Postgres), RBAC com governança record-level e white-label por empresa.
+- **Multi-tenant com RLS forçado** — Row-Level Security estrita em todas as tabelas com `empresa_id` (runbook em [docs/RLS_OPERATIONS.md](docs/RLS_OPERATIONS.md)).
+
+```mermaid
+flowchart LR
+    W[WhatsApp<br/>Evolution / WABA] -->|webhook| API[API FastAPI<br/>&lt;100ms]
+    API -->|enqueue| PG[(PostgreSQL<br/>fila + RLS +<br/>checkpointer/store)]
+    PG -->|claim| WK[Worker assíncrono]
+    WK -->|LangGraph| WK
+    WK -->|outbound| W
+    FE[Painel Next.js] -->|service token| API
+    APP[App Android] -->|API + SSE + push FCM| API
+    API --> PG
 ```
 
-Separar API e Worker evita bloqueio na borda HTTP. `mark_done` só roda após outbound bem-sucedido — garantia at-least-once.
+## Destaques
 
----
+- **Multi-empresa** com RLS forçado no Postgres (4 roles de aplicação, policies estritas)
+- **Multi-conexão**: Evolution API e WhatsApp Cloud API (WABA, com Embedded Signup); Twilio como legado
+- **Agentes de IA por empresa**: prompt versionado com diff e restauração, catálogo de modelos via OpenRouter, tools de calendário (Google Calendar), memória semântica e few-shot learning opt-in a partir de atendimentos bem avaliados
+- **Menu chatbot** (URA de texto) com wizard de coleta e triagem por departamento
+- **Atendimento humano**: fila por departamento, transferência (atendente/departamento), notas internas, tags, distribuição com turnos/jornada, transcrição de áudio para o operador
+- **Leitura de documentos** recebidos: PDF, DOCX, XLSX (o agente sempre recebe texto)
+- **Campanhas / disparador em massa** com anti-ban: teto diário por conexão, aquecimento, jitter, pausas periódicas e pool de conexões + extensão Chrome de captura (`extension/`)
+- **NPS/CSAT** automático ao fechar atendimento, com relatórios e ranking de operadores ([docs/NPS.md](docs/NPS.md))
+- **Base de conhecimento com RAG** (chunks vetorizados, busca no painel)
+- **Relatórios**: uso mensal por cliente em PDF enviado pelo WhatsApp, resumo diário de atendimentos e relatório de produção com checagens determinísticas (IA só redige)
+- **App Android** (`android/`): conversas via SSE, push FCM, ações de atendimento
+- **White-label por empresa**: logo, nome de marca e cores próprias no painel
+- **Backup em 3 cópias**: dump no host + espelho externo (Google Drive via rclone) + espelho de dev, com verificação de integridade ([docs/BACKUP.md](docs/BACKUP.md))
+- **Operabilidade**: retries com DLQ para hooks, rate limits distribuídos opcionais, correlation id em todo request, auditoria de login, teto de gasto de IA por empresa
 
-## Quick Start
+## Como rodar (dev)
 
-### 1. Setup
+Pré-requisitos: Docker, `uv` e Node 20+.
 
 ```bash
-git clone https://github.com/viniciusandradde/whatsapp-langchain-full.git chat-nexus
-cd chat-nexus
-make setup
-cp .env.example .env
+make setup      # uv venv + install (dev extras)
+make up         # stack completa: db + api + worker + frontend
+make migrate    # aplica as migrations SQL de db/migrations/
 ```
 
-Edite `.env`:
+Para iterar fora do Docker:
 
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-...
-INTERNAL_SERVICE_TOKEN=seu-token-local-32chars-no-min
-BETTER_AUTH_SECRET=seu-secret-local
-ADMIN_EMAIL=admin@suaempresa.com
-ADMIN_PASSWORD=trocar-no-primeiro-login
-TWILIO_OUTBOUND_MODE=mock
-WARELINE_ENCRYPTION_KEY=  # gere com: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+make db         # só o Postgres
+make api        # uvicorn com --reload na porta 8000
+make worker     # loop do worker
+make frontend   # Next.js dev (precisa de frontend/.env.local)
+make dev        # LangGraph Studio para iterar no agente
 ```
 
-`INTERNAL_SERVICE_TOKEN`, `BETTER_AUTH_SECRET` e `WARELINE_ENCRYPTION_KEY` precisam estar preenchidos mesmo localmente.
-
-### 2. Suba o stack
+Qualidade e testes:
 
 ```bash
-make up
-# db + api + worker + frontend
+make check      # ruff + pyright
+make ci         # check + pytest (o que o CI roda)
+make test       # suite completa (sem marker docker_demo)
 ```
 
-Acesse:
-- Painel: http://localhost:3000
-- API: http://localhost:8000
-- Health: http://localhost:8000/health
-- Swagger: http://localhost:8000/docs
+Configuração via `.env` (documentada em `.env.example`); `INTERNAL_SERVICE_TOKEN` e `BETTER_AUTH_SECRET` são obrigatórios mesmo em dev.
 
-### 3. Primeiro login
+## Stack
 
-Abra http://localhost:3000/login e use `ADMIN_EMAIL` / `ADMIN_PASSWORD`. O bootstrap cria automaticamente:
-- Linha em `auth.user` com `is_superadmin=true`
-- Linha em `empresa_membro` (empresa_id=1, role=admin)
-- Token Better Auth válido
+| Camada | Tecnologia |
+|---|---|
+| Backend | Python ≥3.11 (via `uv`), FastAPI 0.129, psycopg 3.3 async |
+| Agentes | LangGraph 1.1 + LangChain 1.2, LLMs via OpenRouter |
+| Banco | PostgreSQL — fila, RLS multi-tenant, checkpointer/store do LangGraph, schema `auth` |
+| Frontend | Next.js 16.1 + React 19.2 + Tailwind 4 + Better Auth |
+| Infra | Docker Compose, migrations SQL próprias (`db/migrations/`, 168 arquivos numerados até `175`) |
+| Observabilidade | structlog + LangSmith (datasets/eval); Langfuse self-host opcional |
 
-### 4. Teste rápido
+## Estrutura do repositório
 
-```bash
-curl -X POST "http://localhost:8000/webhook/sync?agent=vsa_tech" \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"+5511999999999","message":"Olá!"}'
+```
+src/whatsapp_langchain/
+  server/     # API FastAPI (webhooks, rotas /api/* do painel)
+  worker/     # loop assíncrono: claim da fila, mídia, agente, outbound
+  agents/     # catálogo plug-in de agentes (catalog/<agent_id>/)
+  shared/     # config, fila, LLM factory, integrações, helpers
+frontend/     # painel Next.js (Better Auth, RBAC, white-label)
+android/      # app Android do operador
+extension/    # extensão Chrome do disparador (captura de contatos)
+db/migrations/  # migrations SQL da aplicação
+docs/         # documentação de referência
+stress/       # perfil Locust de teste de carga
+patch/        # drop-ins por fase (origem didática, ver abaixo)
 ```
 
----
+## Origem didática
 
-## Comandos úteis
-
-```bash
-make help              # lista todos os targets
-make api               # API local (uvicorn --reload)
-make worker            # Worker local
-make frontend          # Next.js dev server
-make migrate           # aplica migrations pendentes
-make check             # ruff + pyright (sem alterar arquivos)
-make test              # suite normal (exclui docker_demo)
-make test-live         # testes live OpenRouter (OPENROUTER_LIVE_TESTS=1)
-make test-demo         # testes Docker realísticos (docker_demo)
-make ci                # check + suite normal (o que CI roda)
-make stress-evolution  # Locust contra /webhook/evolution
-make stress-twilio     # Locust contra /webhook/twilio
-make logs              # docker compose logs -f
-make reset             # rebuild Docker do zero
-```
-
----
-
-## Hardening de produção
-
-Em `ENVIRONMENT=production`, o startup faz **fail-fast** se qualquer destes invariantes falhar:
-
-| Invariante | Variável | Critério |
-|---|---|---|
-| Token interno presente | `INTERNAL_SERVICE_TOKEN` | não-vazio |
-| Token forte em prod | `INTERNAL_SERVICE_TOKEN` | ≥ 32 caracteres |
-| Signature obrigatória | `VALIDATE_TWILIO_SIGNATURE` | `true` |
-| CORS configurado | `FRONTEND_ORIGINS` | pelo menos 1 origem |
-
-Cabeçalhos de segurança automáticos: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Strict-Transport-Security` (1 ano em prod).
-
----
+O repositório nasceu como harness de ensino de agentes WhatsApp em fases (`Fase_1` → `Fase_4`), e essa estrutura continua no histórico e nas branches — os drop-ins por fase estão em [`patch/`](patch/README.md).
 
 ## Documentação
 
-- [Arquitetura](docs/ARCHITECTURE.md) — fluxo de dados + contratos do harness
-- [Primeiros Passos](docs/GETTING_STARTED.md)
-- [Banco de Dados](docs/DATABASE.md) — schema + queries de inspeção
-- [Criando Agentes](docs/ADDING_AGENTS.md) — contrato + exemplos
-- [Onboarding](ONBOARDING.md) — guia rápido para novos colaboradores
-- **Provedores WhatsApp:** [WABA / Meta (recomendado)](docs/WABA_SETUP.md) · [Evolution API](docs/EVOLUTION.md) · [Twilio (legado)](docs/TWILIO.md)
-- [Autenticação](docs/AUTH.md) — Better Auth + user status + reset sem SMTP + SSO Google
-- [Gestão de Usuários](docs/USUARIOS.md) — módulo `/usuarios` + turnos
-- [Histórico](docs/HISTORICO.md) — `/chats` + filtros + export
-- [NPS / Pesquisa de Satisfação](docs/NPS.md)
-- [Billing Asaas](docs/BILLING_ASAAS.md) — config (env/UI) + webhook + teste no Dokploy
-- [Observabilidade — Langfuse](docs/LANGFUSE.md) · [LangSmith](docs/LANGSMITH.md)
-- [RLS Operations Runbook](docs/RLS_OPERATIONS.md) — roles, troubleshooting, rotação de senha, emergency bypass
-- **Deploy:** [Dokploy (primário)](docs/DOKPLOY.md) · [genérico](docs/DEPLOY.md) · [Railway](docs/RAILWAY.md)
-- [Stress testing](docs/STRESS_TESTING.md)
-- [Prompts saúde — metodologia canônica](docs/agentes/prompts-saude/METODOLOGIA.md)
-- [Padrão PATCH parcial](docs/dev/PATCH_PATTERN.md)
-
----
+| Doc | Conteúdo |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Fluxo de dados completo + inventário de endpoints |
+| [docs/DATABASE.md](docs/DATABASE.md) | Schema + queries prontas de inspeção |
+| [docs/ADDING_AGENTS.md](docs/ADDING_AGENTS.md) | Contrato de agente (catálogo plug-in) |
+| [docs/EVOLUTION.md](docs/EVOLUTION.md) | Provider Evolution API |
+| [docs/WABA_SETUP.md](docs/WABA_SETUP.md) | App Meta + Embedded Signup passo a passo |
+| [docs/AUTH.md](docs/AUTH.md) | Better Auth, status de usuário, reset sem SMTP, SSO Google |
+| [docs/NPS.md](docs/NPS.md) | Pesquisa de satisfação: captura, relatórios, dashboard |
+| [docs/RLS_OPERATIONS.md](docs/RLS_OPERATIONS.md) | Runbook do Row-Level Security |
+| [docs/BACKUP.md](docs/BACKUP.md) | Backup do banco em 3 cópias |
+| [docs/DOKPLOY.md](docs/DOKPLOY.md) | Deploy via Dokploy |
+| [docs/STRESS_TESTING.md](docs/STRESS_TESTING.md) | Testes de carga com Locust |
 
 ## Licença
 
-[VSA Tech Community License](LICENSE) — uso restrito a membros da comunidade [VSA Tech](https://chat.vsanexus.com).
-
----
-
-**Mantido por** [VSA Tecnologia](https://chat.vsanexus.com) · Produção 24/7 em [chat.vsanexus.com](https://chat.vsanexus.com) · Issues e PRs no [GitHub](https://github.com/viniciusandradde/whatsapp-langchain-full)
+Uso restrito a membros da comunidade VSA Tech — veja [LICENSE](LICENSE).
