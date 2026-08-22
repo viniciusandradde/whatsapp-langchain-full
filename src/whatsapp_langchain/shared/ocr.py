@@ -18,11 +18,16 @@ from __future__ import annotations
 
 import base64
 import io
+import time
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
 
 from whatsapp_langchain.shared.config import settings
+
+if TYPE_CHECKING:
+    from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
 
@@ -91,10 +96,15 @@ async def ocr_image_bytes(
     mime_type: str = "image/png",
     *,
     model: str | None = None,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Transcreve texto da imagem via OpenRouter Vision.
 
     Retorna string vazia quando o LLM detecta `[SEM TEXTO]`.
+    Com `pool` + `empresa_id`, o custo é registrado na governança — OCR era
+    o mesmo gasto invisível ao ia_budget que a transcrição de áudio
+    (ver `registrar_custo_midia` em shared/midia_processing.py).
     """
     api_key = settings.openrouter_api_key
     if not api_key:
@@ -117,6 +127,7 @@ async def ocr_image_bytes(
         },
     ]
 
+    inicio = time.monotonic()
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
@@ -129,6 +140,8 @@ async def ocr_image_bytes(
                     "model": model or settings.openrouter_midia_model,
                     "messages": messages,
                     "temperature": 0.0,
+                    # Pede o custo REAL no `usage` da resposta (mig 139).
+                    "usage": {"include": True},
                 },
                 timeout=60.0,
             )
@@ -136,7 +149,22 @@ async def ocr_image_bytes(
         except httpx.HTTPError as e:
             raise OCRError(f"OpenRouter OCR falhou: {e}") from e
 
-    content = response.json()["choices"][0]["message"].get("content") or ""
+    result = response.json()
+    if pool is not None and empresa_id is not None:
+        # Best-effort (o helper engole a própria falha): OCR não pode quebrar
+        # por causa de registro de custo — contrato da mig 164.
+        from whatsapp_langchain.shared.midia_processing import registrar_custo_midia
+
+        await registrar_custo_midia(
+            pool,
+            empresa_id,
+            modelo=result.get("model") or model or settings.openrouter_midia_model,
+            usage=result.get("usage"),
+            generation_id=result.get("id"),
+            duracao_ms=int((time.monotonic() - inicio) * 1000),
+            finalidade="ocr",
+        )
+    content = result["choices"][0]["message"].get("content") or ""
     if isinstance(content, list):
         # Alguns modelos devolvem array de blocos
         content = "\n".join(
@@ -156,6 +184,8 @@ async def ocr_pdf_pages(
     max_pages: int = MAX_PDF_PAGES,
     dpi: int = PDF_RASTERIZE_DPI,
     model: str | None = None,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Aplica OCR em cada página do PDF, junta com `\\n\\n` entre páginas.
 
@@ -181,7 +211,11 @@ async def ocr_pdf_pages(
         page_img.save(buf, format="PNG")
         try:
             text = await ocr_image_bytes(
-                buf.getvalue(), mime_type="image/png", model=model
+                buf.getvalue(),
+                mime_type="image/png",
+                model=model,
+                pool=pool,
+                empresa_id=empresa_id,
             )
         except OCRError as e:
             logger.warning("ocr_page_failed", page=i, error=str(e))

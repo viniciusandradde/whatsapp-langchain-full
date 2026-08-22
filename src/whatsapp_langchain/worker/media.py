@@ -14,9 +14,13 @@ from __future__ import annotations
 
 import base64  # noqa: F401  — preservado caso outros call-sites legacy importem
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import structlog
 from langchain_core.messages import HumanMessage
+
+if TYPE_CHECKING:
+    from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.file_extractor import (
@@ -166,6 +170,9 @@ async def preprocess_incoming_message(
     aceita_audio: bool = True,
     aceita_documento: bool = True,
     transcricao_previa: str | None = None,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
 ) -> MediaPreprocessResult:
     """Normaliza entrada para texto antes da chamada ao agente.
 
@@ -192,6 +199,11 @@ async def preprocess_incoming_message(
         aceita_imagem/aceita_audio/aceita_documento: permissões do agente
                   (`agente_ia.aceita_*`). Combinam com o desligamento global por
                   env — basta um dos dois estar desligado pra não ler.
+        pool/empresa_id: quando presentes, o custo das chamadas multimodais
+                  (transcrição, visão, OCR) é registrado em ia_execucao e soma
+                  no ia_budget (mig 161) — antes esse gasto era invisível ao
+                  teto da empresa. Chamador sem empresa (aba Testar) continua
+                  funcionando sem registrar.
     """
     if not media_url and not media_type:
         return MediaPreprocessResult(
@@ -238,7 +250,11 @@ async def preprocess_incoming_message(
 
         if kind == "image":
             description = await _describe_image(
-                media_bytes, media_type, model=midia_model
+                media_bytes,
+                media_type,
+                model=midia_model,
+                pool=pool,
+                empresa_id=empresa_id,
             )
             parts = [
                 p for p in [body.strip(), f"[Descrição de imagem]: {description}"] if p
@@ -250,7 +266,11 @@ async def preprocess_incoming_message(
             # worker (mig 169) pode já ter transcrito este áudio pro painel —
             # reusar evita pagar a MESMA chamada de LLM duas vezes.
             transcription = transcricao_previa or await _transcribe_audio(
-                media_bytes, media_type, model=midia_model
+                media_bytes,
+                media_type,
+                model=midia_model,
+                pool=pool,
+                empresa_id=empresa_id,
             )
             parts = [
                 p
@@ -269,7 +289,11 @@ async def preprocess_incoming_message(
             # a inferência que mandava planilha pra `doc.bin` e a recusava.
             nome_arquivo = filename or filename_for_media_type(media_type)
 
-            doc_text = await extract_text(nome_arquivo, media_bytes)
+            # pool/empresa_id só importam quando o documento cai no OCR
+            # (Vision LLM) — texto nativo (pypdf/docx/xlsx) não custa nada.
+            doc_text = await extract_text(
+                nome_arquivo, media_bytes, pool=pool, empresa_id=empresa_id
+            )
             if not doc_text:
                 doc_text = "(documento sem texto extraível)"
             # Trunca em ~10k chars no input pro agente — ele pode chamar
