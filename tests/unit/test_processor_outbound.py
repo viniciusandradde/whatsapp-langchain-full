@@ -881,7 +881,13 @@ class TestVozDoAgente:
     nunca fica sem resposta porque a voz falhou.
     """
 
-    VOZ_CFG = {"voz_nome": "coral", "voz_estilo": "tom acolhedor"}
+    # `plano_tem_voz` (mig 177): voz é feature de plano (Pro/Enterprise) —
+    # get_empresa_voz_config traz a flag no mesmo SELECT da config.
+    VOZ_CFG = {
+        "voz_nome": "coral",
+        "voz_estilo": "tom acolhedor",
+        "plano_tem_voz": True,
+    }
     OGG_FAKE = b"OggS" + b"\x00" * 32
 
     @staticmethod
@@ -1005,6 +1011,34 @@ class TestVozDoAgente:
             "+5511999999999", "Resposta do agente"
         )
         r.done.assert_awaited_once()
+
+    async def test_plano_sem_feature_voz_cai_em_texto(self):
+        """Mig 177: downgrade de plano desliga a voz sem limpar a config.
+
+        `voz_ativa=true` na empresa, mas o plano perdeu a feature 'voz'
+        (ou a chave nem existe — seguro por default): pula a síntese,
+        responde em texto e loga `voz_sem_feature_plano` uma vez.
+        """
+        evo = self._outbound_com_audio()
+        cfg = {"voz_nome": "coral", "voz_estilo": "", "plano_tem_voz": False}
+        with patch("whatsapp_langchain.worker.processor.logger") as mock_log:
+            r = await self._roda(self._audio_message(), evo, cfg=cfg)
+
+        r.sintetizar.assert_not_awaited()
+        evo.send_audio.assert_not_awaited()
+        evo.send_message.assert_awaited_once_with(
+            "+5511999999999", "Resposta do agente"
+        )
+        r.done.assert_awaited_once()
+        r.failed.assert_not_awaited()
+        # Log info certo, UMA vez — sem erro/warning de voz.
+        chamadas = [
+            c
+            for c in mock_log.info.call_args_list
+            if c.args and c.args[0] == "voz_sem_feature_plano"
+        ]
+        assert len(chamadas) == 1
+        assert chamadas[0].kwargs["empresa_id"] == 1
 
     async def test_nao_dispara_para_mensagem_de_texto(self):
         """Quem escreve recebe texto — nem o SELECT da config é pago."""
