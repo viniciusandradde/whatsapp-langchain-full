@@ -52,7 +52,7 @@ async def transcrever_mensagem(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT media_url, media_type, transcricao
+            SELECT media_url, media_type, transcricao, empresa_id
               FROM message_queue
              WHERE {" AND ".join(where)}
             """,  # type: ignore[arg-type]  # noqa: S608 — colunas fixas; valores via placeholder
@@ -62,15 +62,23 @@ async def transcrever_mensagem(
 
     if row is None:
         raise MensagemSemAudioError("Mensagem não encontrada.")
-    media_url, media_type, existente = row
+    media_url, media_type, existente, empresa_da_linha = row
     if existente is not None:
         return existente
     if not media_url or not (media_type or "").startswith("audio/"):
         raise MensagemSemAudioError("Esta mensagem não tem áudio para transcrever.")
 
     media_bytes, mime_real = await download_media(media_url)
+    # Custo visível à governança: esta transcrição era um POST cru ao
+    # OpenRouter que não aparecia em ia_execucao nem somava no ia_budget
+    # (mig 161) — gasto invisível ao teto da empresa. O gancho automático do
+    # worker não passa `empresa_id`, então usamos o da própria linha.
     texto = await transcribe_audio_bytes(
-        media_bytes, mime_real or media_type, model=model
+        media_bytes,
+        mime_real or media_type,
+        model=model,
+        pool=pool,
+        empresa_id=empresa_id if empresa_id is not None else empresa_da_linha,
     )
 
     async with pool.connection() as conn:

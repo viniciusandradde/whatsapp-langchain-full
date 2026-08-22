@@ -12,13 +12,25 @@ import asyncio
 import base64
 import ipaddress
 import socket
-from typing import Any
+import time
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
 import structlog
 
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.governanca_ia import (
+    CUSTO_FONTE_OPENROUTER,
+    CUSTO_FONTE_TABELA,
+    acrescentar_consumo,
+    calc_custo,
+    get_custo_modelo,
+    registrar_execucao,
+)
+
+if TYPE_CHECKING:
+    from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
 
@@ -217,11 +229,109 @@ async def download_evolution_media_b64(
         return None
 
 
-async def chat_completion_media(messages: list[dict], model: str | None = None) -> str:
-    """Executa chamada multimodal no OpenRouter usando modelo de mídia."""
+async def registrar_custo_midia(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    *,
+    modelo: str,
+    usage: dict | None,
+    generation_id: str | None = None,
+    duracao_ms: int | None = None,
+    finalidade: str = "midia",
+) -> None:
+    """Registra em `ia_execucao`/`ia_budget` o custo de UMA chamada multimodal.
+
+    Transcrição de áudio, descrição de imagem e OCR sempre foram POSTs crus ao
+    OpenRouter: o gasto não aparecia em `ia_execucao` nem somava no teto mensal
+    `ia_budget` (mig 161) — só o caminho do agente, instrumentado pelo
+    `llm_callback`, era medido. Uma empresa em modo manual com
+    `transcrever_audio_sempre` ligado gastava todo mês sem que o teto visse um
+    centavo. Este helper fecha o buraco seguindo o MESMO padrão do callback:
+    `usage.cost` da OpenRouter é a verdade (mig 139); a tabela `modelo_llm`
+    fica de fallback, marcada como estimativa via `custo_fonte`.
+
+    Best-effort por contrato (mig 164): falha aqui loga warning e NUNCA
+    derruba o processamento da mídia.
+    """
+    try:
+        usage = usage or {}
+        tokens_input = usage.get("prompt_tokens", 0) or 0
+        tokens_output = usage.get("completion_tokens", 0) or 0
+        tokens_cached = (usage.get("prompt_tokens_details") or {}).get(
+            "cached_tokens", 0
+        ) or 0
+
+        # Convenção OpenRouter "provedor/nome" — mesmo split do llm_callback.
+        if "/" in modelo:
+            provedor, nome = modelo.split("/", 1)
+        else:
+            provedor, nome = "?", modelo
+
+        custo_openrouter = usage.get("cost")
+        custo_total: float | None
+        if custo_openrouter is not None and custo_openrouter > 0:
+            custo_total = float(custo_openrouter)
+            custo_fonte = CUSTO_FONTE_OPENROUTER
+        else:
+            custo_in, custo_out, custo_cache = await get_custo_modelo(
+                pool, empresa_id, provedor, nome
+            )
+            custo_total = calc_custo(
+                tokens_input,
+                tokens_output,
+                custo_in,
+                custo_out,
+                tokens_cached=tokens_cached,
+                custo_cache_mtok=custo_cache,
+            )
+            custo_fonte = CUSTO_FONTE_TABELA if custo_total is not None else None
+
+        await registrar_execucao(
+            pool,
+            empresa_id=empresa_id,
+            modelo_provedor=provedor,
+            modelo_nome=nome,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            tokens_cached=tokens_cached,
+            custo_total=custo_total,
+            duracao_ms=duracao_ms,
+            status="success",
+            metadata={"finalidade": finalidade},
+            custo_fonte=custo_fonte,
+            openrouter_generation_id=generation_id,
+        )
+        if custo_total is not None and custo_total > 0:
+            await acrescentar_consumo(pool, empresa_id, custo_total)
+    except Exception as exc:
+        logger.warning(
+            "custo_midia_registro_falhou",
+            empresa_id=empresa_id,
+            modelo=modelo,
+            finalidade=finalidade,
+            error=str(exc)[:200],
+        )
+
+
+async def chat_completion_media(
+    messages: list[dict],
+    model: str | None = None,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
+    finalidade: str = "midia",
+) -> str:
+    """Executa chamada multimodal no OpenRouter usando modelo de mídia.
+
+    Com `pool` + `empresa_id`, registra a execução na governança
+    (`ia_execucao` + `ia_budget`) — sem eles a chamada funciona igual, só não
+    registra (caminho da aba Testar e das tools do agente, que não carregam
+    pool). Ver `registrar_custo_midia`.
+    """
     api_key = settings.openrouter_api_key
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY não configurada")
+    inicio = time.monotonic()
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{settings.openrouter_base_url}/chat/completions",
@@ -232,6 +342,11 @@ async def chat_completion_media(messages: list[dict], model: str | None = None) 
             json={
                 "model": model or settings.openrouter_midia_model,
                 "messages": messages,
+                # Pede o custo REAL cobrado dentro do `usage` da resposta
+                # (mig 139: usage.cost é a verdade — a tabela local chegou a
+                # superestimar 91%). Sem isto o gasto de mídia seguia
+                # invisível ao ia_budget.
+                "usage": {"include": True},
             },
             timeout=60.0,
         )
@@ -248,6 +363,18 @@ async def chat_completion_media(messages: list[dict], model: str | None = None) 
             detalhe = erro.get("message") or str(result)[:200]
             raise RuntimeError(f"OpenRouter recusou a chamada de mídia: {detalhe}")
         content = result["choices"][0]["message"].get("content")
+        if pool is not None and empresa_id is not None:
+            await registrar_custo_midia(
+                pool,
+                empresa_id,
+                # `result["model"]` é o modelo que atendeu de fato (roteamento);
+                # cai pro solicitado se o campo não vier.
+                modelo=result.get("model") or model or settings.openrouter_midia_model,
+                usage=result.get("usage"),
+                generation_id=result.get("id"),
+                duracao_ms=int((time.monotonic() - inicio) * 1000),
+                finalidade=finalidade,
+            )
         return _extract_text(content).strip()
 
 
@@ -256,11 +383,15 @@ async def describe_image_bytes(
     media_type: str,
     model: str | None = None,
     focus: str | None = None,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
 ) -> str:
     """Descreve imagem (ou responde pergunta direcionada via `focus`).
 
     Sem `focus`: descrição seca em 1-3 frases.
     Com `focus`: responde pergunta específica olhando a imagem.
+    `pool` + `empresa_id` ligam o registro de custo na governança.
     """
     image_b64 = base64.b64encode(media_bytes).decode("utf-8")
     if focus:
@@ -296,13 +427,24 @@ async def describe_image_bytes(
             },
         ],
         model=model,
+        pool=pool,
+        empresa_id=empresa_id,
+        finalidade="visao_imagem",
     )
 
 
 async def transcribe_audio_bytes(
-    media_bytes: bytes, media_type: str, model: str | None = None
+    media_bytes: bytes,
+    media_type: str,
+    model: str | None = None,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
 ) -> str:
-    """Transcreve áudio literalmente em pt-BR."""
+    """Transcreve áudio literalmente em pt-BR.
+
+    `pool` + `empresa_id` ligam o registro de custo na governança.
+    """
     audio_b64 = base64.b64encode(media_bytes).decode("utf-8")
     audio_format = _audio_format_from_media_type(media_type)
     return await chat_completion_media(
@@ -335,6 +477,9 @@ async def transcribe_audio_bytes(
             },
         ],
         model=model,
+        pool=pool,
+        empresa_id=empresa_id,
+        finalidade="transcricao_audio",
     )
 
 

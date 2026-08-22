@@ -2418,6 +2418,12 @@ async def process_message(
                 agente_runtime.aceita_documento if agente_runtime else True
             ),
             transcricao_previa=transcricao_previa,
+            # Governança: transcrição/visão/OCR eram POSTs crus ao OpenRouter,
+            # invisíveis ao ia_execucao e ao teto ia_budget (mig 161) — só o
+            # caminho do agente (llm_callback) media custo. Com pool+empresa o
+            # preprocess registra cada chamada multimodal.
+            pool=pool,
+            empresa_id=message.empresa_id,
         )
 
         # Falha TRANSITÓRIA de mídia volta pra fila em vez de virar desculpa.

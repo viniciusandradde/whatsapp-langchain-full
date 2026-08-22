@@ -24,8 +24,12 @@ import io
 import shutil
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from psycopg_pool import AsyncConnectionPool
 
 logger = structlog.get_logger()
 
@@ -155,11 +159,22 @@ def filename_for_media_type(media_type: str | None, fallback: str = "doc.bin") -
     return fallback
 
 
-async def extract_text(filename: str, raw_bytes: bytes) -> str:
+async def extract_text(
+    filename: str,
+    raw_bytes: bytes,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
+) -> str:
     """Extrai texto plain do arquivo. Limpa whitespace excessivo no fim.
 
     M5.c.3: virou async porque PDF escaneado e imagens caem no OCR
     (Vision LLM async). MD/TXT/DOCX continuam sync internamente.
+
+    `pool` + `empresa_id`: só importam quando o arquivo cai no OCR (Vision
+    LLM) — aí o custo é registrado na governança (ia_execucao/ia_budget,
+    mig 161) em vez de seguir invisível ao teto da empresa. Parsers nativos
+    (pypdf/docx/xlsx) não chamam LLM e ignoram os dois.
     """
     if len(raw_bytes) > MAX_FILE_SIZE_BYTES:
         raise FileTooLargeError(
@@ -178,7 +193,7 @@ async def extract_text(filename: str, raw_bytes: bytes) -> str:
                 filename=filename,
                 pypdf_chars=len(text),
             )
-            text = await _ocr_pdf(raw_bytes)
+            text = await _ocr_pdf(raw_bytes, pool=pool, empresa_id=empresa_id)
             used_ocr = True
     elif kind == "docx":
         text = _extract_docx(raw_bytes)
@@ -189,7 +204,7 @@ async def extract_text(filename: str, raw_bytes: bytes) -> str:
     elif kind in ("md", "txt"):
         text = _extract_text_plain(raw_bytes)
     elif kind == "image":
-        text = await _ocr_image(filename, raw_bytes)
+        text = await _ocr_image(filename, raw_bytes, pool=pool, empresa_id=empresa_id)
         used_ocr = True
     else:  # pragma: no cover — detect_kind teria levantado
         raise UnsupportedFileTypeError(kind)
@@ -236,24 +251,37 @@ def _extract_pdf(raw: bytes) -> str:
     return "\n\n".join(p.strip() for p in parts if p.strip())
 
 
-async def _ocr_pdf(raw: bytes) -> str:
+async def _ocr_pdf(
+    raw: bytes,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
+) -> str:
     """Fallback pra PDFs escaneados — chama OCR via Vision LLM."""
     from whatsapp_langchain.shared.ocr import OCRError, ocr_pdf_pages
 
     try:
-        return await ocr_pdf_pages(raw)
+        return await ocr_pdf_pages(raw, pool=pool, empresa_id=empresa_id)
     except OCRError as e:
         raise FileExtractionError(f"OCR do PDF falhou: {e}") from e
 
 
-async def _ocr_image(filename: str, raw: bytes) -> str:
+async def _ocr_image(
+    filename: str,
+    raw: bytes,
+    *,
+    pool: AsyncConnectionPool | None = None,
+    empresa_id: int | None = None,
+) -> str:
     """OCR direto de upload PNG/JPG/JPEG/WebP."""
     from whatsapp_langchain.shared.ocr import OCRError, ocr_image_bytes
 
     ext = Path(filename).suffix.lower()
     mime = _IMAGE_MIME_BY_EXT.get(ext, "image/png")
     try:
-        return await ocr_image_bytes(raw, mime_type=mime)
+        return await ocr_image_bytes(
+            raw, mime_type=mime, pool=pool, empresa_id=empresa_id
+        )
     except OCRError as e:
         raise FileExtractionError(f"OCR da imagem falhou: {e}") from e
 
