@@ -371,9 +371,20 @@ def _extract_text_plain(raw: bytes) -> str:
 
 
 def _clean_whitespace(text: str) -> str:
-    """Colapsa espaços/linhas excessivas que pdf parser costuma deixar."""
+    """Colapsa espaços/linhas excessivas que pdf parser costuma deixar.
+
+    Também remove **NUL (0x00)**, que não é whitespace mas mata o fluxo do mesmo
+    jeito: o Postgres recusa NUL em campo `text`, e um PDF real de produção
+    ("Rosa Maria 2 18-08.pdf", 2026-08-21) extraiu 11 mil caracteres com sucesso
+    para depois derrubar o worker cinco vezes com `DataError` na hora de gravar.
+    O cliente ficou sem resposta por um byte invisível.
+
+    A limpeza fica aqui porque este é o funil por onde passam PDF, DOCX, XLSX e
+    DOC — corrigir no gravador resolveria um caminho e deixaria os outros.
+    """
     if not text:
         return ""
+    text = text.replace("\x00", "")
     lines = [line.rstrip() for line in text.splitlines()]
     out: list[str] = []
     blank_streak = 0

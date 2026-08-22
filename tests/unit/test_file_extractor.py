@@ -207,3 +207,33 @@ async def test_extract_truncates_at_max_text_chars(monkeypatch):
 async def test_extract_unsupported_extension_raises():
     with pytest.raises(UnsupportedFileTypeError):
         await extract_text("video.mp4", b"fake video bytes")
+
+
+class TestNulByte:
+    """NUL (0x00) no texto extraído derrubava a mensagem inteira.
+
+    Caso real de produção (2026-08-21): o PDF "Rosa Maria 2 18-08.pdf" extraiu
+    11 mil caracteres com sucesso e o worker morreu cinco vezes com
+    `DataError: PostgreSQL text fields cannot contain NUL (0x00) bytes` ao
+    gravar. O cliente ficou sem resposta por causa de um byte invisível.
+    """
+
+    def test_nul_e_removido(self) -> None:
+        from whatsapp_langchain.shared.file_extractor import _clean_whitespace
+
+        sujo = "RELATÓRIO\x00 DE PEDIDO\x00\x00 Nº 034728"
+        limpo = _clean_whitespace(sujo)
+        assert "\x00" not in limpo
+        assert limpo == "RELATÓRIO DE PEDIDO Nº 034728"
+
+    def test_texto_sem_nul_fica_intacto(self) -> None:
+        from whatsapp_langchain.shared.file_extractor import _clean_whitespace
+
+        assert _clean_whitespace("linha 1\n\nlinha 2") == "linha 1\n\nlinha 2"
+
+    def test_texto_so_de_nul_vira_vazio(self) -> None:
+        # Vira "sem texto extraído", que o chamador já trata — em vez de estourar
+        # no banco depois.
+        from whatsapp_langchain.shared.file_extractor import _clean_whitespace
+
+        assert _clean_whitespace("\x00\x00\x00") == ""
