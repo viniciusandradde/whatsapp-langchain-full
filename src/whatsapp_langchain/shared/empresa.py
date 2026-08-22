@@ -161,7 +161,8 @@ async def is_superadmin(pool: AsyncConnectionPool, user_id: str) -> bool:
 _EMPRESA_COLS = (
     "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
     "logo_path, nome_exibicao, cor_primaria, cor_secundaria, "
-    "anuncia_atendente_assumiu, onboarding_dispensado_at"
+    "anuncia_atendente_assumiu, onboarding_dispensado_at, "
+    "voz_ativa, voz_nome, voz_estilo"
 )
 
 
@@ -182,6 +183,9 @@ def _row_to_empresa(row) -> Empresa:
         cor_secundaria=row[12],
         anuncia_atendente_assumiu=bool(row[13]),
         onboarding_dispensado_at=row[14],
+        voz_ativa=bool(row[15]),
+        voz_nome=row[16] or "alloy",
+        voz_estilo=row[17] or "",
     )
 
 
@@ -227,6 +231,34 @@ async def get_empresa_csat_config(
         "pergunta": (row[1] or "").strip() or DEFAULT_CSAT_PERGUNTA,
         "agradecimento": (row[2] or "").strip() or DEFAULT_CSAT_AGRADECIMENTO,
         "solicita_comentario": bool(row[3]),
+    }
+
+
+async def get_empresa_voz_config(
+    pool: AsyncConnectionPool, empresa_id: int
+) -> dict | None:
+    """Retorna config de voz do agente (mig 176), ou None se desativada.
+
+    Mesmo contrato do `get_empresa_csat_config`: None = recurso OFF, o
+    worker segue em texto sem tocar no TTS. Fallbacks defensivos pra voz
+    vazia (não deveria acontecer — colunas NOT NULL — mas dado sujo não
+    pode calar a resposta).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT voz_ativa, voz_nome, voz_estilo
+              FROM empresa
+             WHERE id = %s
+            """,
+            (empresa_id,),
+        )
+        row = await cur.fetchone()
+    if not row or not row[0]:  # não existe ou voz_ativa=false
+        return None
+    return {
+        "voz_nome": (row[1] or "").strip() or "alloy",
+        "voz_estilo": (row[2] or "").strip(),
     }
 
 
@@ -364,6 +396,10 @@ async def update_empresa(
     cor_primaria: str | None = None,
     cor_secundaria: str | None = None,
     anuncia_atendente_assumiu: bool | None = None,
+    # Voz do agente (mig 176)
+    voz_ativa: bool | None = None,
+    voz_nome: str | None = None,
+    voz_estilo: str | None = None,
 ) -> Empresa | None:
     """Atualiza campos não-None. Retorna None se a empresa não existe."""
     fields: list[str] = []
@@ -388,6 +424,9 @@ async def update_empresa(
         ("cor_primaria", cor_primaria),
         ("cor_secundaria", cor_secundaria),
         ("anuncia_atendente_assumiu", anuncia_atendente_assumiu),
+        ("voz_ativa", voz_ativa),
+        ("voz_nome", voz_nome),
+        ("voz_estilo", voz_estilo),
     ):
         if value is not None:
             fields.append(f"{name} = %s")

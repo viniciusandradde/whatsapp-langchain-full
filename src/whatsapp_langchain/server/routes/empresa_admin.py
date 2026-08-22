@@ -6,6 +6,7 @@ genérico pra manter as regras (ex: "remover último admin" → 409) no
 lugar onde a operação acontece.
 """
 
+import base64
 import io
 import os
 from pathlib import Path
@@ -35,6 +36,7 @@ from whatsapp_langchain.shared.empresa import (
     update_member_role,
 )
 from whatsapp_langchain.shared.models import Empresa, EmpresaMembro
+from whatsapp_langchain.shared.voz import VOZES, VozError, sintetizar
 
 logger = structlog.get_logger()
 
@@ -84,6 +86,11 @@ class UpdateEmpresaInput(BaseModel):
     nome_exibicao: str | None = Field(default=None, max_length=80)
     cor_primaria: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     cor_secundaria: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    # Voz do agente (mig 176) — patch parcial: None = não mexe. voz_estilo=""
+    # limpa o estilo (a coluna é NOT NULL DEFAULT '').
+    voz_ativa: bool | None = None
+    voz_nome: str | None = None
+    voz_estilo: str | None = Field(default=None, max_length=200)
 
 
 class AddMemberInput(BaseModel):
@@ -155,6 +162,12 @@ async def update_empresa_endpoint(
     if not await is_admin_of(pool, empresa_id, user_id):
         raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
 
+    if body.voz_nome is not None and body.voz_nome not in VOZES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Voz inválida. Valores aceitos: {sorted(VOZES)}.",
+        )
+
     # Se slug enviado == slug atual, skipa pra não disparar UNIQUE check.
     if body.slug:
         from whatsapp_langchain.shared.empresa import get_empresa_by_id
@@ -184,6 +197,9 @@ async def update_empresa_endpoint(
             nome_exibicao=body.nome_exibicao,
             cor_primaria=body.cor_primaria,
             cor_secundaria=body.cor_secundaria,
+            voz_ativa=body.voz_ativa,
+            voz_nome=body.voz_nome,
+            voz_estilo=body.voz_estilo,
         )
     except Exception as e:
         msg = str(e).lower()
@@ -199,6 +215,58 @@ async def update_empresa_endpoint(
     if out is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
     return out
+
+
+# --- Voz do agente: preview (mig 176) ---
+
+# Frase fixa e curta de propósito: preview é pra escolher a voz, não pra
+# testar texto — e cada chamada custa TTS de verdade (registrado no budget).
+_VOZ_PREVIEW_FRASE = "Olá! Esta é uma amostra da voz do atendimento."
+
+
+class VozPreviewInput(BaseModel):
+    voz_nome: str = "alloy"
+    voz_estilo: str = Field(default="", max_length=200)
+
+
+@router.post("/{empresa_id}/voz/preview")
+async def preview_voz_endpoint(
+    empresa_id: int,
+    body: VozPreviewInput,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Sintetiza uma amostra curta da voz escolhida (sem persistir nada).
+
+    Mesmo gate dos vizinhos do arquivo: service token (router) + admin da
+    empresa. O custo entra em ia_execucao/ia_budget da própria empresa —
+    preview não é de graça.
+    """
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(status_code=403, detail="Só admin pode testar a voz.")
+    if body.voz_nome not in VOZES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Voz inválida. Valores aceitos: {sorted(VOZES)}.",
+        )
+    try:
+        ogg = await sintetizar(
+            _VOZ_PREVIEW_FRASE,
+            voz=body.voz_nome,
+            estilo=body.voz_estilo,
+            pool=pool,
+            empresa_id=empresa_id,
+        )
+    except VozError as e:
+        logger.warning("voz_preview_falhou", empresa_id=empresa_id, error=str(e))
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível gerar a amostra de voz agora. Tente de novo.",
+        ) from e
+    return {
+        "audio_base64": base64.b64encode(ogg).decode("ascii"),
+        "mime": "audio/ogg",
+    }
 
 
 # --- White-label: upload de logo (mig 115) ---

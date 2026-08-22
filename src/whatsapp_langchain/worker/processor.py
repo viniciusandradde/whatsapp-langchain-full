@@ -33,6 +33,7 @@ Uso:
     )
 """
 
+import base64
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -74,7 +75,10 @@ from whatsapp_langchain.shared.coleta import (
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.departamento import get_departamento_by_id
-from whatsapp_langchain.shared.empresa import get_empresa_csat_config
+from whatsapp_langchain.shared.empresa import (
+    get_empresa_csat_config,
+    get_empresa_voz_config,
+)
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.menu_chatbot import (
@@ -97,6 +101,7 @@ from whatsapp_langchain.shared.queue import (
     upsert_conversation,
 )
 from whatsapp_langchain.shared.transcricao import transcrever_mensagem
+from whatsapp_langchain.shared.voz import sintetizar
 from whatsapp_langchain.shared.whitelist import is_whitelisted
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
@@ -405,6 +410,109 @@ RESPOSTA_SUPERADA_MARKER = "[resposta superada — cliente escreveu de novo]"
 # fila do departamento sem produzir nada — diferente de `[modo manual` e
 # `[whitelist`, onde a IA nunca chegou a rodar.
 RESPOSTA_VAZIA_MARKER = "[resposta vazia — agente não gerou texto]"
+
+# Guarda do gatilho de voz (mig 176): marcador de sistema nunca vira áudio.
+# No caminho normal a resposta que chega ao envio não é marcador (os caminhos
+# de marker retornam antes), mas a guarda custa nada e protege refatoração.
+_MARKERS_SISTEMA = frozenset(
+    {
+        HANDOFF_HUMANO_MARKER,
+        MODO_MANUAL_MARKER,
+        WHITELIST_BYPASS_MARKER,
+        FILA_DEPARTAMENTO_MARKER,
+        RESPOSTA_SUPERADA_MARKER,
+        RESPOSTA_VAZIA_MARKER,
+    }
+)
+
+
+async def _tentar_resposta_em_voz(
+    pool: AsyncConnectionPool,
+    message: MessageQueue,
+    outbound: OutboundClient,
+    response_text: str,
+) -> str | None:
+    """Voz do agente (mig 176): quem fala recebe fala.
+
+    Sintetiza e envia a resposta como nota de voz quando (todas):
+    - a mensagem do cliente era áudio (`media_type` audio/*);
+    - o provedor sabe enviar nota de voz (duck-typing `send_audio` —
+      só Evolution tem, padrão de `send_outbound_manual_midia`);
+    - a empresa ligou `voz_ativa` (SELECT só acontece depois dos gates
+      baratos acima — não paga query em toda resposta de texto);
+    - a resposta não é marcador de sistema.
+
+    Retorna o base64 do OGG enviado, ou None = "siga em texto". Best-effort
+    como a transcrição: QUALQUER exceção (síntese ou envio) loga warning e
+    devolve None — o cliente nunca fica sem resposta porque a voz falhou.
+    """
+    if not (message.media_type or "").startswith("audio/"):
+        return None
+    send_audio = getattr(outbound, "send_audio", None)
+    if send_audio is None:
+        return None
+    if response_text in _MARKERS_SISTEMA:
+        return None
+    try:
+        voz_cfg = await get_empresa_voz_config(pool, message.empresa_id)
+        if not voz_cfg:
+            return None
+        ogg = await sintetizar(
+            response_text,
+            voz=voz_cfg["voz_nome"],
+            estilo=voz_cfg["voz_estilo"],
+            pool=pool,
+            empresa_id=message.empresa_id,
+        )
+        audio_b64 = base64.b64encode(ogg).decode("ascii")
+        await send_audio(message.phone_number, audio_b64)
+        logger.info(
+            "voz_resposta_enviada",
+            message_id=message.id,
+            empresa_id=message.empresa_id,
+            voz=voz_cfg["voz_nome"],
+            ogg_bytes=len(ogg),
+        )
+        return audio_b64
+    except Exception as exc:
+        logger.warning(
+            "voz_sintese_falhou_fallback_texto",
+            message_id=message.id,
+            empresa_id=message.empresa_id,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return None
+
+
+async def _gravar_response_media_audio(
+    pool: AsyncConnectionPool, message_id: int, audio_b64: str
+) -> None:
+    """Grava a nota de voz enviada em `response_media_*` (padrão mig 146).
+
+    Data-URL como `_persist_outbound_row` (shared/outbound.py): é o formato
+    que a timeline do painel e o app já leem — a bolha ganha player sem
+    caminho novo. Best-effort: a mensagem já foi entregue e o texto já está
+    em `response`; falha aqui só perde o player, não a resposta.
+    """
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                """
+                UPDATE message_queue
+                   SET response_media_url = %s,
+                       response_media_type = %s
+                 WHERE id = %s
+                """,
+                (f"data:audio/ogg;base64,{audio_b64}", "audio/ogg", message_id),
+            )
+            await conn.commit()
+    except Exception as exc:
+        logger.warning(
+            "voz_response_media_persist_failed",
+            message_id=message_id,
+            error=str(exc),
+        )
 
 
 def _texto_do_conteudo(content: Any) -> str:
@@ -3074,10 +3182,20 @@ async def process_message(
             )
             return
 
-        # 5. Enviar resposta outbound antes de mark_done
-        await outbound.send_message(message.phone_number, response_text)
+        # 5. Enviar resposta outbound antes de mark_done.
+        #
+        # Voz do agente (mig 176): se a empresa ligou `voz_ativa`, o cliente
+        # mandou áudio e a conexão sabe enviar nota de voz, a resposta sai
+        # falada (OGG/Opus) — e SÓ ela, sem duplicar em texto. Best-effort:
+        # falha na síntese cai no send_message de texto abaixo.
+        voz_audio_b64 = await _tentar_resposta_em_voz(
+            pool, message, outbound, response_text
+        )
+        if voz_audio_b64 is None:
+            await outbound.send_message(message.phone_number, response_text)
 
-        # 6. mark_done somente após envio confirmado
+        # 6. mark_done somente após envio confirmado. `response` continua o
+        # TEXTO mesmo quando saiu áudio — histórico/painel seguem legíveis.
         await mark_done(
             pool,
             message.id,
@@ -3087,6 +3205,10 @@ async def process_message(
             media_processing_error=pre.media_processing_error,
             origem_resposta="agente",
         )
+        if voz_audio_b64 is not None:
+            # Player na timeline (best-effort, depois do mark_done pra não
+            # competir com o UPDATE dele).
+            await _gravar_response_media_audio(pool, message.id, voz_audio_b64)
         await upsert_conversation(
             pool,
             phone_number=message.phone_number,

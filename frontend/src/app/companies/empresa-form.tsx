@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { AlertCircle, Building2, CheckCircle2, Loader2, MapPin } from "lucide-react";
+import {
+  AlertCircle,
+  Building2,
+  CheckCircle2,
+  Loader2,
+  MapPin,
+  Volume2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +19,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { Empresa, EmpresaCsatConfig, PlanoCatalogo } from "@/lib/api";
 import {
   formatCEP,
@@ -1032,6 +1049,179 @@ export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
           </Button>
         </div>
       </CardContent>
+    </Card>
+  );
+}
+
+// Voz do agente (mig 176) — rótulos pt-BR das 8 vozes do gpt-audio-mini.
+// Espelha o catálogo VOZES do backend (shared/voz.py), que é quem valida.
+const VOZ_OPCOES: { id: string; label: string }[] = [
+  { id: "alloy", label: "Alloy — Neutra" },
+  { id: "ash", label: "Ash — Masculina firme" },
+  { id: "ballad", label: "Ballad — Suave" },
+  { id: "coral", label: "Coral — Feminina calorosa" },
+  { id: "echo", label: "Echo — Masculina" },
+  { id: "sage", label: "Sage — Feminina serena" },
+  { id: "shimmer", label: "Shimmer — Feminina energética" },
+  { id: "verse", label: "Verse — Expressiva" },
+];
+
+export function VozDoAgenteSection({ empresa }: { empresa: Empresa }) {
+  const [vozAtiva, setVozAtiva] = useState(empresa.voz_ativa ?? false);
+  const [vozNome, setVozNome] = useState(empresa.voz_nome ?? "alloy");
+  const [vozEstilo, setVozEstilo] = useState(empresa.voz_estilo ?? "");
+  const [saving, startSaving] = useTransition();
+  const [gerando, startGerar] = useTransition();
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [amostraErro, setAmostraErro] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<
+    { kind: "ok" } | { kind: "err"; message: string } | null
+  >(null);
+
+  function handleSave() {
+    setFeedback(null);
+    startSaving(async () => {
+      const { saveEmpresaVozAction } = await import("./actions");
+      // PUT /api/empresas/{id} é patch parcial — só os 3 campos de voz.
+      const r = await saveEmpresaVozAction(empresa.id, {
+        voz_ativa: vozAtiva,
+        voz_nome: vozNome,
+        voz_estilo: vozEstilo.trim(),
+      });
+      if (r.ok) setFeedback({ kind: "ok" });
+      else setFeedback({ kind: "err", message: r.error });
+    });
+  }
+
+  function handleAmostra() {
+    setAmostraErro(null);
+    setAudioSrc(null);
+    startGerar(async () => {
+      const { previewEmpresaVozAction } = await import("./actions");
+      const r = await previewEmpresaVozAction(
+        empresa.id,
+        vozNome,
+        vozEstilo.trim()
+      );
+      if (r.ok) setAudioSrc(`data:${r.mime};base64,${r.audioBase64}`);
+      else setAmostraErro(r.error);
+    });
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="text-base">Voz do agente</CardTitle>
+        <CardDescription>
+          Escolha a voz e o jeito de falar das notas de voz do agente IA.
+          Ouça a amostra antes de salvar — cada geração custa uma chamada
+          de síntese, cobrada no orçamento de IA da empresa.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-start gap-2">
+          <Checkbox
+            id="voz_ativa"
+            checked={vozAtiva}
+            onCheckedChange={(v) => setVozAtiva(v === true)}
+            disabled={saving}
+            className="mt-0.5"
+          />
+          <Label htmlFor="voz_ativa" className="block text-sm font-normal">
+            <span className="font-medium">Responder áudio com áudio</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Quando o cliente manda áudio, o agente responde em nota de voz;
+              mensagem de texto continua respondida em texto. Só funciona em
+              conexão Evolution — WABA e Twilio não enviam nota de voz.
+            </span>
+          </Label>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Field label="Voz" htmlFor="voz_nome">
+            <Select
+              value={vozNome}
+              onValueChange={(v: string | null) => setVozNome(v ?? "alloy")}
+            >
+              <SelectTrigger
+                id="voz_nome"
+                className="w-full"
+                aria-label="Voz"
+                disabled={saving || gerando}
+              >
+                {/* Sem a função, o Base UI imprime o VALOR ("alloy"), não o
+                    rótulo. A função é o contrato pra formatar. */}
+                <SelectValue>
+                  {(v: string | null) =>
+                    VOZ_OPCOES.find((o) => o.id === v)?.label ?? v
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {VOZ_OPCOES.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field
+            label="Estilo de fala"
+            htmlFor="voz_estilo"
+            hint="Instrução livre pro tom da voz. Vazio = fala natural. Máx. 200 caracteres."
+          >
+            <Textarea
+              id="voz_estilo"
+              rows={2}
+              maxLength={200}
+              value={vozEstilo}
+              onChange={(e) => setVozEstilo(e.target.value)}
+              placeholder="ex.: fale com calma, tom acolhedor, ritmo natural"
+              disabled={saving || gerando}
+            />
+          </Field>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Amostra: frase fixa dita pelo backend — o botão serve pra
+              escolher a voz ouvindo, não pra testar texto (~5s pra gerar). */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleAmostra}
+            disabled={saving || gerando}
+          >
+            {gerando ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Volume2 className="mr-2 h-4 w-4" />
+            )}
+            {gerando ? "Gerando amostra…" : "Ouvir amostra"}
+          </Button>
+          {audioSrc && (
+            <audio controls autoPlay src={audioSrc} className="h-9" />
+          )}
+        </div>
+        {amostraErro && (
+          <p className="text-sm text-destructive">{amostraErro}</p>
+        )}
+      </CardContent>
+      <CardFooter className="flex items-center justify-between gap-2">
+        <div className="text-sm">
+          {feedback?.kind === "ok" && (
+            <span className="text-muted-foreground">Salvo.</span>
+          )}
+          {feedback?.kind === "err" && (
+            <span className="text-destructive">{feedback.message}</span>
+          )}
+        </div>
+        <Button onClick={handleSave} disabled={saving || gerando}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Salvar voz do agente
+        </Button>
+      </CardFooter>
     </Card>
   );
 }

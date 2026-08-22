@@ -84,7 +84,9 @@ def _patch_outbound_resolution(mock_twilio):
     com uma conexão em modo 'ia' (o gate de modo manual fica inerte e o
     fluxo segue pro agente — TestModoManual cobre o outro lado).
     """
-    conexao_ia = SimpleNamespace(id=77, tipo_atendimento="ia")
+    conexao_ia = SimpleNamespace(
+        id=77, tipo_atendimento="ia", transcrever_audio_sempre=False
+    )
     with patch(
         "whatsapp_langchain.worker.processor._resolve_outbound_client",
         new=AsyncMock(return_value=(mock_twilio, conexao_ia)),
@@ -339,13 +341,13 @@ class TestSendMessageMarkDone:
             mock_twilio.send_message.assert_awaited_once()
             # mark_done NÃO chamado
             mock_done.assert_not_awaited()
-            # mark_failed chamado com o erro SANITIZADO. O detalhe técnico
-            # (status 500, mensagem bruta) fica só no log; o que vai pra
-            # message_queue.error é "processing_failed:<TipoExcecao>" pra não
-            # vazar SQL/erro cru no drawer do operador.
+            # mark_failed chamado com o erro SANITIZADO. A mensagem bruta
+            # fica só no log; o que vai pra message_queue.error é
+            # "processing_failed:<TipoExcecao>:<status>" (o status HTTP entra
+            # junto quando a exception carrega um — diagnóstico sem log).
             mock_failed.assert_awaited_once()
             error_arg = mock_failed.call_args[0][2]
-            assert error_arg == "processing_failed:TwilioSendError"
+            assert error_arg == "processing_failed:TwilioSendError:500"
 
     async def test_mark_failed_on_generic_send_exception(
         self, message, mock_twilio, mock_clients
@@ -455,9 +457,11 @@ class TestAutoResponseTwilio:
             mock_twilio.send_message.assert_awaited_once()
             # mark_done NÃO chamado
             mock_done.assert_not_awaited()
-            # mark_failed chamado com erro sanitizado (tipo, não status bruto).
+            # mark_failed chamado com erro sanitizado (tipo + status HTTP).
             mock_failed.assert_awaited_once()
-            assert mock_failed.call_args[0][2] == "processing_failed:TwilioSendError"
+            assert (
+                mock_failed.call_args[0][2] == "processing_failed:TwilioSendError:503"
+            )
 
 
 # === Testes do handoff humano (M4.c) ===
@@ -627,7 +631,9 @@ class TestModoManual:
 
     @staticmethod
     def _resolve_manual(mock_twilio):
-        conexao_manual = SimpleNamespace(id=77, tipo_atendimento="manual")
+        conexao_manual = SimpleNamespace(
+            id=77, tipo_atendimento="manual", transcrever_audio_sempre=False
+        )
         return patch(
             "whatsapp_langchain.worker.processor._resolve_outbound_client",
             new=AsyncMock(return_value=(mock_twilio, conexao_manual)),
@@ -670,7 +676,9 @@ class TestModoManual:
 
     async def test_hibrido_segue_fluxo_ia(self, message, mock_twilio):
         """`hibrido` (por ora) se comporta como `ia`: agente responde."""
-        conexao_hibrido = SimpleNamespace(id=77, tipo_atendimento="hibrido")
+        conexao_hibrido = SimpleNamespace(
+            id=77, tipo_atendimento="hibrido", transcrever_audio_sempre=False
+        )
         patches = _patch_processor(TEXT_PREPROCESS)
         with (
             patches[0],
@@ -825,7 +833,9 @@ class TestWhitelist:
     async def test_modo_manual_ganha_da_whitelist(self, message, mock_twilio):
         """Ordem dos gates: conexão manual curto-circuita antes do SELECT da
         whitelist — marker gravado é o de modo manual (silêncio idêntico)."""
-        conexao_manual = SimpleNamespace(id=77, tipo_atendimento="manual")
+        conexao_manual = SimpleNamespace(
+            id=77, tipo_atendimento="manual", transcrever_audio_sempre=False
+        )
         patches = _patch_processor(TEXT_PREPROCESS)
         with (
             patches[0],
@@ -859,3 +869,199 @@ class TestWhitelist:
             mock_done.assert_awaited_once()
             assert mock_done.await_args.args[2] == MODO_MANUAL_MARKER
             mock_wl.assert_not_awaited()
+
+
+# === Gatilho de voz do agente (mig 176 — resposta em áudio) ===
+
+
+class TestVozDoAgente:
+    """Voz só dispara com voz_ativa + inbound áudio + provedor com send_audio.
+
+    E qualquer exceção na síntese cai no send_message de texto — o cliente
+    nunca fica sem resposta porque a voz falhou.
+    """
+
+    VOZ_CFG = {"voz_nome": "coral", "voz_estilo": "tom acolhedor"}
+    OGG_FAKE = b"OggS" + b"\x00" * 32
+
+    @staticmethod
+    def _audio_message():
+        return MessageQueue(
+            id=7,
+            message_id="AU789",
+            phone_number="+5511999999999",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
+            incoming_message="",
+            media_url="https://evo/media/nota.ogg",
+            media_type="audio/ogg",
+        )
+
+    @staticmethod
+    def _outbound_com_audio():
+        """Evolution-like: tem send_audio. `spec` evita o auto-atributo do
+        AsyncMock, que faria TODO mock 'ter' send_audio por acidente."""
+        evo = AsyncMock(spec=["send_message", "send_typing", "send_audio"])
+        evo.send_typing = AsyncMock(return_value=True)
+        evo.send_message = AsyncMock(return_value="EVO_MSG")
+        evo.send_audio = AsyncMock(return_value="EVO_AUDIO")
+        return evo
+
+    @staticmethod
+    def _outbound_sem_audio():
+        """Twilio/WABA-like: sem send_audio (getattr devolve None)."""
+        cli = AsyncMock(spec=["send_message", "send_typing"])
+        cli.send_typing = AsyncMock(return_value=True)
+        cli.send_message = AsyncMock(return_value="TW_MSG")
+        return cli
+
+    def _resolve(self, outbound):
+        conexao_ia = SimpleNamespace(
+            id=77, tipo_atendimento="ia", transcrever_audio_sempre=False
+        )
+        return patch(
+            "whatsapp_langchain.worker.processor._resolve_outbound_client",
+            new=AsyncMock(return_value=(outbound, conexao_ia)),
+        )
+
+    def _voz_patches(self, *, cfg, sintetizar_mock=None):
+        return (
+            patch(
+                "whatsapp_langchain.worker.processor.get_empresa_voz_config",
+                new=AsyncMock(return_value=cfg),
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor.sintetizar",
+                new=sintetizar_mock or AsyncMock(return_value=TestVozDoAgente.OGG_FAKE),
+            ),
+            patch(
+                "whatsapp_langchain.worker.processor._gravar_response_media_audio",
+                new_callable=AsyncMock,
+            ),
+        )
+
+    async def _roda(self, msg, outbound, *, cfg, sintetizar_mock=None):
+        import base64
+
+        patches = _patch_processor(TEXT_PREPROCESS)
+        voz_cfg_p, sint_p, grava_p = self._voz_patches(
+            cfg=cfg, sintetizar_mock=sintetizar_mock
+        )
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            self._resolve(outbound),
+            voz_cfg_p as mock_cfg,
+            sint_p as mock_sint,
+            grava_p as mock_grava,
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta do agente")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(msg, AsyncMock(), checkpointer=AsyncMock())
+        return SimpleNamespace(
+            done=mock_done,
+            failed=mock_failed,
+            cfg=mock_cfg,
+            sintetizar=mock_sint,
+            grava=mock_grava,
+            b64=base64.b64encode(self.OGG_FAKE).decode("ascii"),
+        )
+
+    async def test_dispara_com_voz_ativa_audio_e_send_audio(self):
+        evo = self._outbound_com_audio()
+        r = await self._roda(self._audio_message(), evo, cfg=self.VOZ_CFG)
+
+        # Áudio enviado (e SÓ o áudio — sem duplicar em texto).
+        evo.send_audio.assert_awaited_once_with("+5511999999999", r.b64)
+        evo.send_message.assert_not_awaited()
+        # Síntese recebeu voz/estilo da empresa.
+        assert r.sintetizar.await_args.kwargs["voz"] == "coral"
+        assert r.sintetizar.await_args.kwargs["estilo"] == "tom acolhedor"
+        # mark_done grava o TEXTO (histórico legível) e o player é persistido.
+        r.done.assert_awaited_once()
+        assert r.done.await_args.args[2] == "Resposta do agente"
+        r.grava.assert_awaited_once()
+        r.failed.assert_not_awaited()
+
+    async def test_nao_dispara_sem_voz_ativa(self):
+        evo = self._outbound_com_audio()
+        r = await self._roda(self._audio_message(), evo, cfg=None)
+
+        evo.send_audio.assert_not_awaited()
+        r.sintetizar.assert_not_awaited()
+        evo.send_message.assert_awaited_once_with(
+            "+5511999999999", "Resposta do agente"
+        )
+        r.done.assert_awaited_once()
+
+    async def test_nao_dispara_para_mensagem_de_texto(self):
+        """Quem escreve recebe texto — nem o SELECT da config é pago."""
+        evo = self._outbound_com_audio()
+        msg = MessageQueue(
+            id=8,
+            message_id="TX1",
+            phone_number="+5511999999999",
+            agent_id="vsa_tech",
+            thread_id="+5511999999999:vsa_tech",
+            incoming_message="Oi!",
+        )
+        r = await self._roda(msg, evo, cfg=self.VOZ_CFG)
+
+        r.cfg.assert_not_awaited()
+        evo.send_audio.assert_not_awaited()
+        evo.send_message.assert_awaited_once()
+
+    async def test_nao_dispara_sem_send_audio_no_provedor(self):
+        """WABA/Twilio: sem send_audio, segue texto sem sintetizar."""
+        cli = self._outbound_sem_audio()
+        r = await self._roda(self._audio_message(), cli, cfg=self.VOZ_CFG)
+
+        r.sintetizar.assert_not_awaited()
+        cli.send_message.assert_awaited_once_with(
+            "+5511999999999", "Resposta do agente"
+        )
+        r.done.assert_awaited_once()
+
+    async def test_excecao_na_sintese_cai_em_texto(self):
+        from whatsapp_langchain.shared.voz import VozError
+
+        evo = self._outbound_com_audio()
+        r = await self._roda(
+            self._audio_message(),
+            evo,
+            cfg=self.VOZ_CFG,
+            sintetizar_mock=AsyncMock(side_effect=VozError("provedor caiu")),
+        )
+
+        evo.send_audio.assert_not_awaited()
+        evo.send_message.assert_awaited_once_with(
+            "+5511999999999", "Resposta do agente"
+        )
+        r.grava.assert_not_awaited()
+        r.done.assert_awaited_once()
+        r.failed.assert_not_awaited()
+
+    async def test_falha_no_send_audio_cai_em_texto(self):
+        """Sintetizou mas o Evolution recusou: fallback igual — nada perdido."""
+        evo = self._outbound_com_audio()
+        evo.send_audio = AsyncMock(side_effect=Exception("instância off"))
+        r = await self._roda(self._audio_message(), evo, cfg=self.VOZ_CFG)
+
+        evo.send_message.assert_awaited_once_with(
+            "+5511999999999", "Resposta do agente"
+        )
+        r.grava.assert_not_awaited()
+        r.done.assert_awaited_once()
+        r.failed.assert_not_awaited()

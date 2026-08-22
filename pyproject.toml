@@ -27,6 +27,9 @@ dependencies = [
     # M5.c.3 — OCR de PDFs escaneados + imagens (PNG/JPG)
     "pdf2image==1.17.0",
     "Pillow==11.0.0",
+    # Voz do agente (mig 176) — PCM16 do TTS → OGG/Opus (nota de voz do
+    # WhatsApp). A wheel do PyAV traz FFmpeg embutido: roda sem apt.
+    "av>=15,<19",
     # Fase 0 enterprise — observabilidade.
     # OTel sem version pin pra evitar conflito protobuf (resolver acha mais
     # nova compatível com langgraph/grpc deps); pinned no uv.lock após resolve.
