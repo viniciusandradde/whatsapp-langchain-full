@@ -153,7 +153,15 @@ class TestProcessorMemoryFlag:
                     new=AsyncMock(
                         return_value=(
                             mock_twilio,
-                            SimpleNamespace(id=77, tipo_atendimento="ia"),
+                            # `transcrever_audio_sempre` é lido pelo gancho de
+                            # transcrição (mig 169) antes dos gates — sem o
+                            # campo, o processamento morre em AttributeError e
+                            # o teste falha por um motivo que não é o dele.
+                            SimpleNamespace(
+                                id=77,
+                                tipo_atendimento="ia",
+                                transcrever_audio_sempre=False,
+                            ),
                         )
                     ),
                 ),

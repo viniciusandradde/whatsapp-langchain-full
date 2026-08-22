@@ -440,10 +440,14 @@ async def transcribe_audio_bytes(
     *,
     pool: AsyncConnectionPool | None = None,
     empresa_id: int | None = None,
+    finalidade: str = "transcricao_audio",
 ) -> str:
     """Transcreve áudio literalmente em pt-BR.
 
-    `pool` + `empresa_id` ligam o registro de custo na governança.
+    `pool` + `empresa_id` ligam o registro de custo na governança. `finalidade`
+    separa esse custo por caminho no `ia_execucao` — a verificação de fidelidade
+    da voz (`shared/voz.py`) transcreve pra conferir e não é transcrição de
+    mensagem de cliente.
     """
     audio_b64 = base64.b64encode(media_bytes).decode("utf-8")
     audio_format = _audio_format_from_media_type(media_type)
@@ -479,7 +483,7 @@ async def transcribe_audio_bytes(
         model=model,
         pool=pool,
         empresa_id=empresa_id,
-        finalidade="transcricao_audio",
+        finalidade=finalidade,
     )
 
 
