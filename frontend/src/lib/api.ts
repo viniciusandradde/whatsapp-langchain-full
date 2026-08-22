@@ -120,6 +120,12 @@ export interface Empresa {
   // false = assume em silêncio, que é o modelo co-piloto (a IA responde e o
   // operador entra e sai). True faz sentido em fila clássica.
   anuncia_atendente_assumiu?: boolean;
+  // Voz do agente (mig 176): cliente manda áudio → agente responde em nota
+  // de voz (só conexão Evolution envia áudio). voz_nome vem do catálogo
+  // VOZES do backend; voz_estilo é instrução livre de tom (≤200 chars).
+  voz_ativa?: boolean;
+  voz_nome?: string;
+  voz_estilo?: string;
 }
 
 export interface EmpresaInput {
@@ -161,6 +167,12 @@ export interface EmpresaUpdateInput {
   // false = assume em silêncio, que é o modelo co-piloto (a IA responde e o
   // operador entra e sai). True faz sentido em fila clássica.
   anuncia_atendente_assumiu?: boolean;
+  // Voz do agente (mig 176) — patch parcial: campo omitido não mexe.
+  // voz_nome é validado contra o catálogo VOZES no backend (fora → 400);
+  // voz_estilo "" limpa o estilo.
+  voz_ativa?: boolean;
+  voz_nome?: string;
+  voz_estilo?: string;
 }
 
 export type UserStatus = "active" | "disabled";
@@ -4884,6 +4896,21 @@ export async function getEmpresaCsat(
   empresaId: number
 ): Promise<EmpresaCsatConfig> {
   return apiFetch<EmpresaCsatConfig>(`/api/empresas/${empresaId}/csat`);
+}
+
+// --- Voz do agente (mig 176) ---
+
+/** Amostra da voz escolhida: sintetiza uma frase fixa e devolve OGG/Opus em
+ * base64 (nada é persistido). Custa TTS de verdade — o gasto entra em
+ * ia_execucao/ia_budget da empresa, então é chamada de botão, não de render. */
+export async function previewEmpresaVoz(
+  empresaId: number,
+  body: { voz_nome: string; voz_estilo: string }
+): Promise<{ audio_base64: string; mime: string }> {
+  return apiFetch<{ audio_base64: string; mime: string }>(
+    `/api/empresas/${empresaId}/voz/preview`,
+    { method: "POST", body }
+  );
 }
 
 // Sprint Q.4 — quota snapshot do plano

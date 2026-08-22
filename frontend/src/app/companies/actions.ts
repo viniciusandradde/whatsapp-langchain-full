@@ -218,6 +218,48 @@ export async function uploadEmpresaLogoAction(
   }
 }
 
+// --- Voz do agente (mig 176) ---
+
+/** Salva só os 3 campos de voz — o PUT /api/empresas/{id} é patch parcial,
+ * então nada além da voz é tocado. */
+export async function saveEmpresaVozAction(
+  empresaId: number,
+  body: Pick<EmpresaUpdateInput, "voz_ativa" | "voz_nome" | "voz_estilo">
+): Promise<Result> {
+  try {
+    await updateEmpresa(empresaId, body);
+    revalidatePath("/companies");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+/** Gera a amostra de áudio da voz escolhida (sem persistir nada). */
+export async function previewEmpresaVozAction(
+  empresaId: number,
+  vozNome: string,
+  vozEstilo: string
+): Promise<
+  | { ok: true; audioBase64: string; mime: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const { previewEmpresaVoz } = await import("@/lib/api");
+    const r = await previewEmpresaVoz(empresaId, {
+      voz_nome: vozNome,
+      voz_estilo: vozEstilo,
+    });
+    return { ok: true, audioBase64: r.audio_base64, mime: r.mime };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error ? e.message : "Erro ao gerar a amostra de voz.",
+    };
+  }
+}
+
 export async function loadEmpresaCsatAction(
   empresaId: number
 ): Promise<CsatResult> {

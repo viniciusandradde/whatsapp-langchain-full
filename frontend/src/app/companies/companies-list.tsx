@@ -30,6 +30,7 @@ import {
   CsatConfigSection,
   EmpresaForm,
   ResumoDiarioSection,
+  VozDoAgenteSection,
 } from "./empresa-form";
 
 interface Props {
@@ -59,6 +60,9 @@ export function CompaniesList({ empresas }: Props) {
           <EmpresaForm initial={editing} onDone={() => setEditing(null)} />
           <CsatConfigSection empresaId={editing.id} />
           <ResumoDiarioSection empresaId={editing.id} />
+          {/* key: o estado inicial vem das props — trocar de empresa sem
+              desmontar deixaria a voz da anterior na tela. */}
+          <VozDoAgenteSection key={editing.id} empresa={editing} />
         </>
       )}
 
