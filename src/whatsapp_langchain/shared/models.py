@@ -231,6 +231,11 @@ class Empresa(BaseModel):
     # Mig 160: quando alguém clicou em "Pular" no wizard de onboarding.
     # Preenchido faz a raiz "/" ir direto pro painel; None mantém o guiado.
     onboarding_dispensado_at: datetime | None = None
+    # Voz do agente (mig 176): responder em nota de voz quando o cliente
+    # mandou áudio. Default OFF — cada resposta falada custa chamada de TTS.
+    voz_ativa: bool = False
+    voz_nome: str = "alloy"
+    voz_estilo: str = ""
 
 
 class EmpresaMembro(BaseModel):

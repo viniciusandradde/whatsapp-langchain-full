@@ -232,6 +232,15 @@ class Settings(BaseSettings):
     # Modelo dedicado ao pré-processamento de mídia (imagem/áudio)
     openrouter_midia_model: str = "google/gemini-2.5-flash-lite"
 
+    # --- Voz do agente (TTS, mig 176) ---
+    # Chave OpenRouter dedicada ao TTS (opcional). Ausente, cai na
+    # openrouter_api_key — ver `resolved_tts_api_key`.
+    openrouter_tts_api_key: SecretStr | None = None
+    # Modelo de síntese de voz. gpt-audio-mini exige stream=true e só
+    # entrega pcm16 via OpenRouter; a conversão pra OGG/Opus (o único
+    # formato que o WhatsApp aceita como nota de voz) é do shared/voz.py.
+    tts_model: str = "openai/gpt-audio-mini"
+
     # --- LLM Rate Limit ---
     llm_rate_limit_requests_per_second: float = 0.5
     llm_rate_limit_max_burst: int = 10
@@ -374,6 +383,15 @@ class Settings(BaseSettings):
             and self.meta_config_id
             and self.waba_webhook_verify_token
         )
+
+    @property
+    def resolved_tts_api_key(self) -> SecretStr | None:
+        """Fallback: usa OPENROUTER_API_KEY se OPENROUTER_TTS_API_KEY não setada.
+
+        Uma chave só serve pra maioria dos deploys; a dedicada existe pra quem
+        quer rate limit/creditos separados pro TTS.
+        """
+        return self.openrouter_tts_api_key or self.openrouter_api_key
 
     @property
     def resolved_evolution_global_api_key(self) -> SecretStr | None:
