@@ -101,7 +101,7 @@ from whatsapp_langchain.shared.queue import (
     upsert_conversation,
 )
 from whatsapp_langchain.shared.transcricao import transcrever_mensagem
-from whatsapp_langchain.shared.voz import sintetizar
+from whatsapp_langchain.shared.voz import VozInfielError, sintetizar
 from whatsapp_langchain.shared.whitelist import is_whitelisted
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
@@ -477,6 +477,10 @@ async def _tentar_resposta_em_voz(
             estilo=voz_cfg["voz_estilo"],
             pool=pool,
             empresa_id=message.empresa_id,
+            # A nota de voz SUBSTITUI o texto (o cliente não recebe os dois),
+            # então áudio divergente é resposta perdida: aqui a conferência
+            # não é opcional. Ver `shared/voz.py`.
+            verificar_fidelidade=True,
         )
         audio_b64 = base64.b64encode(ogg).decode("ascii")
         await send_audio(message.phone_number, audio_b64)
@@ -488,6 +492,17 @@ async def _tentar_resposta_em_voz(
             ogg_bytes=len(ogg),
         )
         return audio_b64
+    except VozInfielError as exc:
+        # Não é falha de provedor: a síntese funcionou e o áudio foi RECUSADO
+        # por dizer outra coisa (incidente do atendimento 63). Log próprio pra
+        # não se confundir com indisponibilidade nos alertas.
+        logger.warning(
+            "voz_recusada_por_infidelidade",
+            message_id=message.id,
+            empresa_id=message.empresa_id,
+            motivo=str(exc),
+        )
+        return None
     except Exception as exc:
         logger.warning(
             "voz_sintese_falhou_fallback_texto",

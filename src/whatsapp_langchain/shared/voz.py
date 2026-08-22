@@ -7,6 +7,27 @@ mono (o único formato que o WhatsApp aceita como nota de voz, ver
 `worker/evolution_client.py::send_audio`) é feita aqui com PyAV, cuja wheel
 traz FFmpeg embutido e roda sem apt.
 
+**O gpt-audio-mini NÃO é um TTS — é um modelo de chat que fala**, e o catálogo
+do OpenRouter não tem TTS de verdade (`/audio/speech` dá 400; só `gpt-audio*`
+e o Lyria, de música, emitem áudio). Isso custou um incidente em produção: no
+atendimento 63 o cliente perguntou "quem é você?" e recebeu uma nota de voz
+que **não respondia a pergunta** — o modelo tratou o texto do agente como uma
+mensagem dirigida a ele e RESPONDEU em vez de LER. O painel mostrava o texto
+certo, então a falha era invisível de dentro. Em 8 reproduções com os textos
+reais a fidelidade média foi 0,63, com 5 saídas erradas (pior caso: 0,04).
+
+Daí as duas defesas deste módulo, nesta ordem:
+
+1. **O texto a falar vai na mensagem `system`**, dentro de `<texto>`, e o
+   `user` carrega só a ordem de ler. Texto solto no papel de `user` é lido
+   como fala dirigida ao modelo — é o que disparava a paráfrase. Medido nos
+   mesmos textos: fidelidade média sobe de 0,63 pra 0,972 (11 de 12 ≥ 0,90).
+2. **`verificar_fidelidade=True` confere o áudio antes de ele sair**: a nota
+   de voz é transcrita de volta e comparada com o texto original. Divergiu (ou
+   ganhou preâmbulo de conversa), levanta `VozInfielError` e quem chama manda
+   o texto. Como (1) é um modelo generativo e não dá garantia formal, é esta
+   rede que sustenta a promessa de que o cliente nunca ouve outra coisa.
+
 Custo visível desde o primeiro dia: quando `pool`+`empresa_id` são passados,
 o `usage.cost` do último evento SSE entra em `ia_execucao` + `ia_budget`
 (`shared/governanca_ia.py`) — a transcrição nasceu como gasto invisível e é o
@@ -18,8 +39,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import difflib
 import io
 import json
+import re
 import time
 
 import httpx
@@ -32,6 +55,7 @@ from whatsapp_langchain.shared.governanca_ia import (
     acrescentar_consumo,
     registrar_execucao,
 )
+from whatsapp_langchain.shared.midia_processing import transcribe_audio_bytes
 from whatsapp_langchain.shared.outbound import MIDIA_MAX_BYTES
 
 logger = structlog.get_logger()
@@ -54,11 +78,41 @@ VOZ_DEFAULT = "alloy"
 # Acima disto não sintetiza: áudio longo é ruim de ouvir e caro.
 VOZ_TEXTO_MAX_CHARS = 1500
 
-# Anti-comentário: no teste real o modelo disse "Claro! Vou ler o texto
-# agora:" antes de ler. A instrução é imperativa de propósito.
+# O texto a falar entra AQUI, no system, não na mensagem do usuário — ver a
+# defesa (1) no topo do módulo. A instrução é imperativa de propósito: no teste
+# real o modelo chegou a dizer "Claro! Vou ler o texto agora:" antes de ler.
 SYSTEM_PROMPT_VOZ = (
-    "Você é um sintetizador de voz. Fale EXATAMENTE o texto enviado pelo "
-    "usuário, em português do Brasil, sem adicionar, comentar ou responder nada."
+    "Você é um leitor de texto em voz alta. O TEXTO A LER, delimitado por "
+    "<texto>, deve ser vocalizado palavra por palavra, do início ao fim, em "
+    "português do Brasil, sem responder, sem resumir, sem comentar e sem "
+    "acrescentar nada."
+)
+
+# A mensagem do usuário carrega só a ordem — nunca o conteúdo a falar.
+USER_PROMPT_VOZ = "Leia o texto acima em voz alta agora."
+
+# Abaixo disto o áudio não sai: a nota de voz substitui o texto (o cliente não
+# recebe os dois), então áudio divergente é resposta perdida, não enfeite.
+# Calibrado nos textos reais do incidente: as reescritas mediram 0,04 / 0,47 /
+# 0,68 e as leituras boas nunca caíram abaixo de 0,88.
+VOZ_FIDELIDADE_MINIMA = 0.85
+
+# Muleta de conversa que o modelo prega na frente quando escorrega de volta pro
+# papel de assistente ("Claro, vou repetir o que você disse: …"). Só conta como
+# defeito quando o próprio texto não começa assim.
+_PREAMBULOS_DE_CONVERSA = (
+    "claro",
+    "ok",
+    "certo",
+    "entendi",
+    "entendido",
+    "perfeito",
+    "beleza",
+    "com certeza",
+    "tudo bem",
+    "sem problema",
+    "vou repetir",
+    "vou ler",
 )
 
 # O gpt-audio-mini entrega PCM16 a 24kHz mono; o WhatsApp quer Opus 48kHz.
@@ -73,6 +127,14 @@ class VozError(Exception):
 
 class VozTextoLongoError(VozError):
     """Texto acima de VOZ_TEXTO_MAX_CHARS — não sintetiza."""
+
+
+class VozInfielError(VozError):
+    """O áudio não diz o que o texto manda — não pode ser enviado.
+
+    Não é falha de provedor: a síntese funcionou, mas o modelo reescreveu,
+    resumiu ou respondeu ao texto. Quem chama cai pro texto.
+    """
 
 
 def _pcm16_para_ogg_opus(pcm: bytes) -> bytes:
@@ -100,6 +162,91 @@ def _pcm16_para_ogg_opus(pcm: bytes) -> bytes:
     saida.close()
     entrada.close()
     return buf.getvalue()
+
+
+def _montar_mensagens(texto: str, estilo: str) -> list[dict]:
+    """Mensagens do TTS: o texto vai no system, a ordem de ler vai no user.
+
+    Inverter isso é o bug do incidente — ver defesa (1) no topo do módulo.
+    """
+    system = SYSTEM_PROMPT_VOZ
+    if estilo:
+        system = f"{system} Estilo de fala: {estilo}"
+    return [
+        {"role": "system", "content": f"{system}\n<texto>\n{texto}\n</texto>"},
+        {"role": "user", "content": USER_PROMPT_VOZ},
+    ]
+
+
+def _normalizar_para_comparar(texto: str) -> str:
+    """Reduz texto e transcrição ao que dá pra comparar: as palavras faladas.
+
+    Some com o que nunca vira som (markdown, numeração de lista, pontuação) e
+    com o que varia entre grafia e fala (caixa, espaços), pra que a diferença
+    que sobrar seja de conteúdo — não de formatação.
+    """
+    t = re.sub(r"[*_`#~]+", " ", texto.lower())
+    t = re.sub(r"\d+\s*[.)]", " ", t)  # "1." de lista não é falado como texto
+    t = re.sub(r"[^0-9a-zà-ÿ ]+", " ", t)
+    return " ".join(t.split())
+
+
+def _preambulo_inventado(alvo_norm: str, ouvido_norm: str) -> str | None:
+    """Muleta de conversa no começo do áudio que não existe no texto."""
+    primeira_do_alvo = alvo_norm.split(" ", 1)[0] if alvo_norm else ""
+    for p in _PREAMBULOS_DE_CONVERSA:
+        if ouvido_norm.startswith(f"{p} ") and not primeira_do_alvo.startswith(p):
+            return p
+    return None
+
+
+async def _verificar_fidelidade(
+    ogg: bytes,
+    texto: str,
+    pool: AsyncConnectionPool | None,
+    empresa_id: int | None,
+) -> None:
+    """Ouve o áudio gerado e recusa se ele não disser o que o texto manda.
+
+    Defesa (2) do módulo: transcreve a nota de voz de volta e compara com o
+    original. É a única garantia possível com um modelo generativo no meio —
+    e ela é barata perto do estrago (uma transcrição, ~US$0,0002).
+
+    Raises:
+        VozInfielError: divergência de conteúdo ou preâmbulo inventado.
+    """
+    ouvido = await transcribe_audio_bytes(
+        ogg,
+        "audio/ogg",
+        pool=pool,
+        empresa_id=empresa_id,
+        finalidade="voz_verificacao",
+    )
+    alvo_norm = _normalizar_para_comparar(texto)
+    ouvido_norm = _normalizar_para_comparar(ouvido)
+    if not ouvido_norm:
+        raise VozInfielError("Verificação não conseguiu ouvir o áudio gerado.")
+
+    similaridade = difflib.SequenceMatcher(None, alvo_norm, ouvido_norm).ratio()
+    preambulo = _preambulo_inventado(alvo_norm, ouvido_norm)
+    if similaridade < VOZ_FIDELIDADE_MINIMA or preambulo:
+        logger.warning(
+            "voz_infiel_ao_texto",
+            similaridade=round(similaridade, 3),
+            preambulo=preambulo,
+            chars_texto=len(texto),
+            # O que o cliente OUVIRIA — é o que permite entender a falha
+            # depois, já que o áudio recusado não fica em lugar nenhum.
+            ouvido=ouvido[:300],
+        )
+        motivo = (
+            f"preâmbulo inventado ({preambulo!r})"
+            if preambulo
+            else f"similaridade {similaridade:.2f} < {VOZ_FIDELIDADE_MINIMA}"
+        )
+        raise VozInfielError(f"Áudio não corresponde ao texto: {motivo}.")
+
+    logger.info("voz_fidelidade_ok", similaridade=round(similaridade, 3))
 
 
 async def _registrar_custo(
@@ -145,6 +292,7 @@ async def sintetizar(
     estilo: str = "",
     pool: AsyncConnectionPool | None = None,
     empresa_id: int | None = None,
+    verificar_fidelidade: bool = False,
 ) -> bytes:
     """Sintetiza `texto` e devolve OGG/Opus pronto pra `send_audio`.
 
@@ -156,9 +304,15 @@ async def sintetizar(
       system prompt do sintetizador.
     - Com `pool`+`empresa_id`, o custo medido (`usage.cost` do SSE) entra em
       ia_execucao/ia_budget — best-effort, nunca propaga.
+    - `verificar_fidelidade=True` ouve o áudio antes de devolvê-lo e recusa o
+      que não corresponde ao texto (defesa (2) do módulo). Ligue sempre que o
+      áudio for falar com um cliente; desligado, a amostra da UI economiza a
+      transcrição e os ~2s dela.
 
     Raises:
         VozTextoLongoError: texto longo demais.
+        VozInfielError: com `verificar_fidelidade`, o áudio saiu dizendo outra
+            coisa — o custo da síntese já foi registrado quando isso acontece.
         VozError: falha de provedor, resposta sem áudio, formato inesperado
             ou áudio acima de MIDIA_MAX_BYTES.
     """
@@ -175,20 +329,12 @@ async def sintetizar(
     if api_key is None:
         raise VozError("OPENROUTER_API_KEY/OPENROUTER_TTS_API_KEY não configurada.")
 
-    system = SYSTEM_PROMPT_VOZ
-    estilo = (estilo or "").strip()
-    if estilo:
-        system = f"{system} Estilo de fala: {estilo}"
-
     payload = {
         "model": settings.tts_model,
         "modalities": ["text", "audio"],
         "audio": {"voice": voz, "format": "pcm16"},
         "stream": True,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": texto},
-        ],
+        "messages": _montar_mensagens(texto, (estilo or "").strip()),
     }
     url = f"{settings.openrouter_base_url}/chat/completions"
     headers = {
@@ -259,5 +405,10 @@ async def sintetizar(
 
     if pool is not None and empresa_id is not None:
         await _registrar_custo(pool, empresa_id, usage, duracao_ms)
+
+    # Depois do custo de propósito: a síntese foi cobrada mesmo quando o áudio
+    # é recusado logo abaixo, e esconder isso do ia_budget seria gasto invisível.
+    if verificar_fidelidade:
+        await _verificar_fidelidade(ogg, texto, pool, empresa_id)
 
     return ogg
