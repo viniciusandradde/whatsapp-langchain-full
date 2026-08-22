@@ -65,8 +65,8 @@ Qualidade e testes:
 
 ```bash
 make check      # ruff + pyright
-make ci         # check + pytest (o que o CI roda)
-make test       # suite completa (sem marker docker_demo)
+make ci         # check + pytest com gate de coverage 50% (o CI de PR roda só o check)
+make test       # suite completa (sem markers docker_demo/twilio_real)
 ```
 
 Configuração via `.env` (documentada em `.env.example`); `INTERNAL_SERVICE_TOKEN` e `BETTER_AUTH_SECRET` são obrigatórios mesmo em dev.
@@ -101,7 +101,7 @@ patch/        # drop-ins por fase (origem didática, ver abaixo)
 
 ## Origem didática
 
-O repositório nasceu como harness de ensino de agentes WhatsApp em fases (`Fase_1` → `Fase_4`), e essa estrutura continua no histórico e nas branches — os drop-ins por fase estão em [`patch/`](patch/README.md).
+O repositório nasceu como harness de ensino de agentes WhatsApp em fases (`Fase_1` → `Fase_4`); essa origem continua registrada no histórico e nos drop-ins por fase em [`patch/`](patch/README.md).
 
 ## Documentação
 
