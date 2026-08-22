@@ -118,9 +118,16 @@ async def assert_plano_feature(
 
     Raises:
         HTTPException 402: feature não disponível no plano atual.
+        HTTPException 404: empresa não existe. Sem isto, superadmin (que
+            passa em `is_admin_of` pra QUALQUER id) apontando pra empresa
+            inexistente viraria 500 técnico — o `ValueError` do
+            `get_plano_info` estourava antes do 404 que o endpoint dava.
     """
     pool = await get_pool()
-    plano = await get_plano_info(pool, empresa_id)
+    try:
+        plano = await get_plano_info(pool, empresa_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.") from e
 
     if plano.tem_feature(feature):
         return

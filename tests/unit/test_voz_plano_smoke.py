@@ -180,3 +180,29 @@ class TestAssertPlanoFeature:
         assert exc.value.status_code == 402
         assert exc.value.detail["message"] == _MSG_PT
         assert exc.value.detail["upgrade_to"] == "pro"
+
+    async def test_empresa_inexistente_404_nao_500(self) -> None:
+        """Superadmin passa em `is_admin_of` pra QUALQUER empresa_id — se a
+        empresa do path não existe, o `ValueError` do get_plano_info não
+        pode virar 500 técnico: o contrato do endpoint sempre foi 404
+        amigável ("Empresa não encontrada.")."""
+        from fastapi import HTTPException
+
+        from whatsapp_langchain.server.dependencies_plano import (
+            assert_plano_feature,
+        )
+
+        with (
+            patch(
+                "whatsapp_langchain.server.dependencies_plano.get_pool",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "whatsapp_langchain.server.dependencies_plano.get_plano_info",
+                new=AsyncMock(side_effect=ValueError("Empresa 999999 não existe")),
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
+            await assert_plano_feature(999999, "voz", mensagem=_MSG_PT)
+        assert exc.value.status_code == 404
+        assert exc.value.detail == "Empresa não encontrada."
