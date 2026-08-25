@@ -108,6 +108,17 @@ def _contact_fields(c: CapturedContact) -> dict:
     }
 
 
+def _descrever_excecao(exc: BaseException) -> str:
+    """Mensagem legível de uma exceção — inclusive das que não têm nenhuma.
+
+    `str(httpx.ReadTimeout())` é string VAZIA, e foi assim que o lote 4 de
+    produção terminou com status `erro` e o campo `erro` em branco: o operador
+    via "falhou" sem uma linha sequer dizendo por quê. Mesmo padrão de
+    `worker/processor.py`, que já resolvia isto no caminho da fila.
+    """
+    return str(exc) or f"{type(exc).__name__}: <sem mensagem>"
+
+
 async def upsert_contato_capturado(
     conn, empresa_id: int, c: CapturedContact, lote_id: int | None, origem: str
 ) -> bool:
@@ -246,8 +257,9 @@ async def capturar_contatos_evolution(
             atualizados=atualizados,
         )
     except Exception as exc:  # noqa: BLE001 — registra falha no lote
-        logger.error("captura_contatos_erro", lote_id=lote_id, error=str(exc))
-        await finalizar_lote(pool, lote_id, status="erro", erro=str(exc)[:500])
+        motivo = _descrever_excecao(exc)
+        logger.error("captura_contatos_erro", lote_id=lote_id, error=motivo)
+        await finalizar_lote(pool, lote_id, status="erro", erro=motivo[:500])
 
 
 async def capturar_grupos_evolution(
@@ -279,7 +291,7 @@ async def capturar_grupos_evolution(
                     logger.warning(
                         "captura_membros_grupo_falhou",
                         grupo=g["wa_group_id"],
-                        error=str(exc),
+                        error=_descrever_excecao(exc),
                     )
                     parcial = True
                     continue
@@ -305,8 +317,9 @@ async def capturar_grupos_evolution(
             membros_novos=membros_novos,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.error("captura_grupos_erro", lote_id=lote_id, error=str(exc))
-        await finalizar_lote(pool, lote_id, status="erro", erro=str(exc)[:500])
+        motivo = _descrever_excecao(exc)
+        logger.error("captura_grupos_erro", lote_id=lote_id, error=motivo)
+        await finalizar_lote(pool, lote_id, status="erro", erro=motivo[:500])
 
 
 # ---------------------------------------------------------------------------
