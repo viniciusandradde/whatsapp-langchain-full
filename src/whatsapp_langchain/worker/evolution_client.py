@@ -56,6 +56,16 @@ EVOLUTION_DELETE_MESSAGE_PATH = "/chat/deleteMessageForEveryone/{instance}"
 # Captura (Task 4) — endpoints REST da Evolution usados server-side.
 EVOLUTION_CHECK_NUMBERS_PATH = "/chat/whatsappNumbers/{instance}"
 EVOLUTION_FIND_CONTACTS_PATH = "/chat/findContacts/{instance}"
+
+# Listar grupos NÃO sai do cache: o Baileys consulta o servidor do WhatsApp ao
+# vivo, enquanto `findContacts` lê o banco local da Evolution — por isso um
+# devolve 2.463 contatos em segundos e o outro leva minutos. Medido em produção
+# na instância do Luis: 456 grupos em **149,7s** já SEM participantes (com eles
+# é mais). Nos 60s que valiam antes, a captura de grupos daquela conta morria
+# 100% das vezes em ReadTimeout (lotes 4, 6 e 7). O teto abaixo dá ~2x de folga
+# sobre a medição; a captura roda em background, então esperar não segura
+# ninguém. NÃO usar isto em envio — lá 60s já é generoso.
+EVOLUTION_GROUP_TIMEOUT = 300.0
 EVOLUTION_FETCH_GROUPS_PATH = "/group/fetchAllGroups/{instance}"
 EVOLUTION_GROUP_PARTICIPANTS_PATH = "/group/participants/{instance}"
 EVOLUTION_CONNECTION_STATE_PATH = "/instance/connectionState/{instance}"
@@ -705,7 +715,7 @@ class EvolutionClient:
                 self._capture_url(EVOLUTION_FETCH_GROUPS_PATH),
                 headers={"apikey": self.api_key},
                 params=params,
-                timeout=60.0,
+                timeout=EVOLUTION_GROUP_TIMEOUT,
             )
             if not resp.is_success:
                 raise EvolutionSendError(resp.status_code, resp.text[:500])
@@ -744,7 +754,7 @@ class EvolutionClient:
                 self._capture_url(EVOLUTION_GROUP_PARTICIPANTS_PATH),
                 headers={"apikey": self.api_key},
                 params={"groupJid": group_jid},
-                timeout=60.0,
+                timeout=EVOLUTION_GROUP_TIMEOUT,
             )
             if not resp.is_success:
                 raise EvolutionSendError(resp.status_code, resp.text[:500])
