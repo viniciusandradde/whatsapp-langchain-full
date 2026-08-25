@@ -226,3 +226,43 @@ class TestHealth:
     async def test_mock(self):
         h = await _mock_client().health()
         assert h["state"] == "open"
+
+
+class TestTimeoutDeGrupo:
+    """Listar grupos precisa de MUITO mais tempo que o resto.
+
+    Medido em produção (instância do Luis, 2026-08-25): `fetchAllGroups`
+    devolveu 456 grupos em **149,7s** já sem participantes, enquanto
+    `findContacts` traz 2.463 contatos em segundos — o Baileys consulta o
+    servidor do WhatsApp ao vivo pra grupos e lê cache local pra contatos.
+    Nos 60s antigos a captura de grupos daquela conta falhava sempre
+    (lotes 4, 6 e 7, todos ReadTimeout em 60,03s).
+    """
+
+    async def test_fetch_groups_usa_o_teto_de_grupo(self, monkeypatch):
+        fake = _patch_httpx(monkeypatch, _FakeResp([]))
+        await _real_client().fetch_groups()
+        assert fake.calls[0][2]["timeout"] == ec.EVOLUTION_GROUP_TIMEOUT
+
+    async def test_fetch_group_participants_usa_o_teto_de_grupo(self, monkeypatch):
+        fake = _patch_httpx(monkeypatch, _FakeResp({"participants": []}))
+        await _real_client().fetch_group_participants("123@g.us")
+        assert fake.calls[0][2]["timeout"] == ec.EVOLUTION_GROUP_TIMEOUT
+
+    async def test_teto_com_folga_sobre_a_medicao(self):
+        assert ec.EVOLUTION_GROUP_TIMEOUT >= 2 * 149.7
+
+    async def test_envio_NAO_herda_o_teto_de_grupo(self, monkeypatch):
+        """Guarda do erro cometido ao aplicar esta mudança.
+
+        Uma primeira tentativa trocou o timeout de `send_media`/`send_audio`
+        por engano: mensagem presa 5 minutos num provedor mudo é o oposto do
+        que se quer no caminho de envio.
+        """
+        for enviar in (
+            lambda c: c.send_media("+5511999999999", "https://x/f.jpg"),
+            lambda c: c.send_audio("+5511999999999", "YmFzZTY0"),
+        ):
+            fake = _patch_httpx(monkeypatch, _FakeResp({"key": {"id": "m1"}}))
+            await enviar(_real_client())
+            assert fake.calls[0][2]["timeout"] < ec.EVOLUTION_GROUP_TIMEOUT
