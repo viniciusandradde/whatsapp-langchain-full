@@ -300,6 +300,28 @@ def checar_migrations(arquivos, aplicadas):
     )
 
 
+def checar_ia_alertas(alertas_ativos, alertas_resumo=None):
+    """Alertas de degradação de IA abertos (mig 180).
+
+    A detecção mora no worker (shared/ia_alertas.py) e já notificou na hora;
+    aqui o alerta VIVO entra no resumo do dia para não morrer esquecido —
+    mesmo papel da linha de backup: falha que só se descobre quando dói.
+    """
+    if alertas_ativos is None or alertas_ativos <= 0:
+        return None
+    return Achado(
+        chave="ia_alertas",
+        severidade=ATENCAO,
+        titulo="{0} alerta(s) de degradacao de IA ativo(s)".format(alertas_ativos),
+        evidencia=alertas_resumo or "ver a Visao geral do Catalogo OpenRouter",
+        acao=(
+            "Abrir /catalog/openrouter no painel. O alerta resolve sozinho "
+            "quando a condicao normaliza; ativo ha horas = provedor degradado "
+            "de verdade — considerar trocar o modelo do agente."
+        ),
+    )
+
+
 def rodar_checagens(dados):
     """Roda todas as checagens sobre os dados coletados.
 
@@ -319,6 +341,9 @@ def rodar_checagens(dados):
         checar_migrations(
             dados.get("migrations_arquivos") or [],
             dados.get("migrations_aplicadas") or [],
+        ),
+        checar_ia_alertas(
+            dados.get("ia_alertas_ativos"), dados.get("ia_alertas_resumo")
         ),
     ):
         if achado is not None:

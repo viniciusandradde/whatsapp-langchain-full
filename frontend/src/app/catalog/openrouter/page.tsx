@@ -3,6 +3,7 @@ import { Globe } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { ApiError } from "@/components/ui/api-error";
 import {
+  getOpenRouterAlertas,
   getOpenRouterModelos,
   getOpenRouterRankings,
   getOpenRouterSaude,
@@ -58,20 +59,23 @@ export default async function CatalogoOpenRouterPage() {
   let provedores: OpenRouterProvedor[] = [];
   let saude: Awaited<ReturnType<typeof getOpenRouterSaude>> | null = null;
   let rankings: Awaited<ReturnType<typeof getOpenRouterRankings>> | null = null;
+  let alertas: Awaited<ReturnType<typeof getOpenRouterAlertas>> | null = null;
   let error: unknown = null;
   try {
-    const [s, m, p, sa, rk] = await Promise.all([
+    const [s, m, p, sa, rk, al] = await Promise.all([
       getOpenRouterStatus(),
       getOpenRouterModelos(),
       getOpenRouterProvedores(),
       getOpenRouterSaude(),
       getOpenRouterRankings(),
+      getOpenRouterAlertas(),
     ]);
     status = s;
     modelos = m.items;
     provedores = p.items;
     saude = sa;
     rankings = rk;
+    alertas = al;
   } catch (e) {
     error = e;
   }
@@ -92,6 +96,7 @@ export default async function CatalogoOpenRouterPage() {
           provedores={provedores}
           saude={saude}
           rankings={rankings}
+          alertas={alertas}
         />
       )}
     </div>

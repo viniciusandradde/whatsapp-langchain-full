@@ -1,6 +1,13 @@
 "use client";
 
-import { FileText, Image as ImageIcon, MessageSquare, Mic } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  Image as ImageIcon,
+  MessageSquare,
+  Mic,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type {
+  IaAlerta,
   OpenRouterModelo,
   RankingModelo,
   SaudeFuncao,
@@ -24,6 +32,21 @@ import type {
  * REALMENTE em uso, cruzando OpenRouter (uptime/latência) com a nossa
  * operação (ia_execucao 24h) — + comparativo de benchmarks dos curados.
  */
+
+const ALERTA_LABEL: Record<string, string> = {
+  uptime: "Uptime baixo",
+  latencia: "Latência alta",
+  throughput: "Throughput baixo",
+  erros_proprios: "Erros na nossa operação",
+  modelo_sumiu: "Modelo sem endpoints",
+};
+
+function quandoCurto(iso: string): string {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (min < 60) return `há ${Math.max(min, 1)} min`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `há ${h} h` : `há ${Math.round(h / 24)} dias`;
+}
 
 const FUNCOES_META = {
   texto: { label: "Texto (agentes)", icon: MessageSquare },
@@ -58,11 +81,13 @@ export function VisaoGeral({
   saude,
   modelos,
   rankings,
+  alertas,
 }: {
   funcoes: SaudeFuncao[];
   saude: Record<string, SaudeModelo>;
   modelos: OpenRouterModelo[];
   rankings: { ultimo_dia: string | null; items: RankingModelo[] } | null;
+  alertas: { ativos: IaAlerta[]; resolvidos: IaAlerta[] } | null;
 }) {
   const curados = modelos
     .filter((m) => m.promovido)
@@ -77,6 +102,47 @@ export function VisaoGeral({
 
   return (
     <div className="space-y-4">
+      {alertas && alertas.ativos.length > 0 ? (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm text-destructive">
+              <AlertTriangle className="size-4" />
+              Degradação detectada ({alertas.ativos.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {alertas.ativos.map((a) => (
+              <p key={a.id} className="text-sm">
+                <span className="font-medium">
+                  {ALERTA_LABEL[a.tipo] ?? a.tipo}
+                </span>{" "}
+                — <span className="font-mono text-xs">{a.modelo_slug}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  · desde {quandoCurto(a.criado_em)}
+                </span>
+              </p>
+            ))}
+            <p className="pt-1 text-xs text-muted-foreground">
+              O alerta resolve sozinho quando a condição normaliza. Aviso
+              enviado no WhatsApp da VSA{" "}
+              {"\u2014"} limiares: uptime &lt;97%, latência &gt;2× o normal,
+              throughput &lt;50%, erros próprios &gt;20%.
+            </p>
+          </CardContent>
+        </Card>
+      ) : alertas ? (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CheckCircle2 className="size-3.5 text-success" />
+          Nenhuma degradação detectada nos modelos em uso
+          {alertas.resolvidos.length > 0
+            ? ` \u00b7 \u00faltimo alerta resolvido ${quandoCurto(
+                alertas.resolvidos[0].resolvido_em ?? alertas.resolvidos[0].criado_em
+              )}`
+            : ""}
+        </p>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {funcoes.map((f) => {
           const meta = FUNCOES_META[f.funcao];

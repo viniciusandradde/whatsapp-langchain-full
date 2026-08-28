@@ -198,12 +198,16 @@ def _json(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def modelos_em_uso(pool: AsyncConnectionPool) -> list[str]:
+async def modelos_em_uso(
+    pool: AsyncConnectionPool, incluir_curados: bool = True
+) -> list[str]:
     """Slugs cuja saúde importa ao Nexus, deduplicados e ordenados.
 
     Em uso de verdade (settings + `agente_ia.modelo` de agentes ativos) vem
     primeiro — são os que dirigem alertas; os curados completam a lista pro
-    dashboard comparativo.
+    dashboard comparativo. `incluir_curados=False` devolve só os em uso —
+    é o escopo dos alertas (mig 180): modelo curado que ninguém usa não
+    acorda ninguém.
     """
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -219,7 +223,7 @@ async def modelos_em_uso(pool: AsyncConnectionPool) -> list[str]:
                 "WHERE ativo AND modelo IS NOT NULL AND modelo <> ''"
             )
             em_uso.extend(str(r[0]) for r in await cur.fetchall())
-    curados = [str(m["id"]) for m in CURATED_MODELS]
+    curados = [str(m["id"]) for m in CURATED_MODELS] if incluir_curados else []
     vistos: set[str] = set()
     out: list[str] = []
     for slug in em_uso + curados:
@@ -428,3 +432,11 @@ async def run_openrouter_sync(pool: AsyncConnectionPool) -> None:
                 )
                 await conn.commit()
     await coletar_metricas(pool)
+    # F4 (mig 180): a avaliação roda TODO tick, logo depois da coleta —
+    # é ela que abre/resolve episódios e aciona WhatsApp/Telegram/banner.
+    from whatsapp_langchain.shared.ia_alertas import avaliar_alertas
+
+    try:
+        await avaliar_alertas(pool)
+    except Exception as exc:  # noqa: BLE001 — alerta não pode derrubar o sync
+        logger.warning("ia_alertas_falhou", error=str(exc)[:300])

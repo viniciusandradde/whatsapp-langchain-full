@@ -413,6 +413,51 @@ async def analise_modelo(
     }
 
 
+@router.get("/alertas")
+async def listar_alertas(
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Alertas de degradação (mig 180): ativos + últimos resolvidos.
+
+    O banner da Visão geral consome os ativos; o histórico dá contexto
+    ("resolveu sozinho há 2h") sem precisar de outra tela.
+    """
+    await _exigir_superadmin(user_id)
+    pool = await get_pool()
+
+    def _row(r) -> dict:
+        return {
+            "id": int(r[0]),
+            "tipo": r[1],
+            "modelo_slug": r[2],
+            "detalhe": r[3],
+            "criado_em": r[4].isoformat(),
+            "atualizado_em": r[5].isoformat(),
+            "resolvido_em": r[6].isoformat() if r[6] else None,
+        }
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, tipo, modelo_slug, detalhe, criado_em,
+                   atualizado_em, resolvido_em
+              FROM ia_alerta WHERE resolvido_em IS NULL
+             ORDER BY criado_em DESC
+            """
+        )
+        ativos = [_row(r) for r in await cur.fetchall()]
+        cur = await conn.execute(
+            """
+            SELECT id, tipo, modelo_slug, detalhe, criado_em,
+                   atualizado_em, resolvido_em
+              FROM ia_alerta WHERE resolvido_em IS NOT NULL
+             ORDER BY resolvido_em DESC LIMIT 20
+            """
+        )
+        resolvidos = [_row(r) for r in await cur.fetchall()]
+    return {"ativos": ativos, "resolvidos": resolvidos}
+
+
 @router.get("/rankings")
 async def rankings(
     dias: int = 30,

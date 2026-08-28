@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
+  IaAlerta,
   OpenRouterModelo,
   OpenRouterProvedor,
   OpenRouterStatus,
@@ -62,12 +63,14 @@ export function CatalogoClient({
   provedores,
   saude,
   rankings,
+  alertas,
 }: {
   status: OpenRouterStatus | null;
   modelosIniciais: OpenRouterModelo[];
   provedores: OpenRouterProvedor[];
   saude: { funcoes: SaudeFuncao[]; saude: Record<string, SaudeModelo> } | null;
   rankings: { ultimo_dia: string | null; items: RankingModelo[] } | null;
+  alertas: { ativos: IaAlerta[]; resolvidos: IaAlerta[] } | null;
 }) {
   const [st, setSt] = useState(status);
   const [modelos, setModelos] = useState(modelosIniciais);
@@ -186,6 +189,7 @@ export function CatalogoClient({
               saude={saude.saude}
               modelos={modelos}
               rankings={rankings}
+              alertas={alertas}
             />
           </TabsContent>
         ) : null}

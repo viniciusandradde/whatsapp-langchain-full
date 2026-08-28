@@ -5500,3 +5500,19 @@ export async function getOpenRouterRankings(): Promise<{
 }> {
   return apiFetch(`/api/openrouter/rankings`);
 }
+
+export interface IaAlerta {
+  id: number;
+  tipo: string;
+  modelo_slug: string;
+  detalhe: Record<string, unknown>;
+  criado_em: string;
+  atualizado_em: string;
+  resolvido_em: string | null;
+}
+export async function getOpenRouterAlertas(): Promise<{
+  ativos: IaAlerta[];
+  resolvidos: IaAlerta[];
+}> {
+  return apiFetch(`/api/openrouter/alertas`);
+}
