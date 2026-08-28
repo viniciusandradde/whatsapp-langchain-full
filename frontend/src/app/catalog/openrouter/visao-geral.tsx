@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -7,6 +9,9 @@ import {
   Image as ImageIcon,
   MessageSquare,
   Mic,
+  Rocket,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +94,17 @@ export function VisaoGeral({
   rankings: { ultimo_dia: string | null; items: RankingModelo[] } | null;
   alertas: { ativos: IaAlerta[]; resolvidos: IaAlerta[] } | null;
 }) {
+  // useState lazy: Date.now() é impuro pro lint do React Compiler — congela
+  // o corte no primeiro render, que é o que queremos mesmo.
+  const [corte30d] = useState(() => Date.now() - 30 * 24 * 3600_000);
+  const lancamentos = modelos
+    .filter((m) => m.criado_no_or && new Date(m.criado_no_or).getTime() > corte30d)
+    .sort(
+      (a, b) =>
+        new Date(b.criado_no_or!).getTime() - new Date(a.criado_no_or!).getTime()
+    )
+    .slice(0, 5);
+
   const curados = modelos
     .filter((m) => m.promovido)
     .map((m) => ({
@@ -211,7 +227,12 @@ export function VisaoGeral({
                     {i + 1}.
                   </span>
                   <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <span className="break-all font-mono text-xs">{r.slug}</span>
+                    <Link
+                      href={`/catalog/openrouter/modelo/${r.slug}`}
+                      className="break-all font-mono text-xs underline-offset-2 hover:underline"
+                    >
+                      {r.slug}
+                    </Link>
                     {r.promovido ? (
                       <Badge variant="success" className="shrink-0">
                         curado
@@ -252,6 +273,91 @@ export function VisaoGeral({
             </p>
           </CardContent>
         </Card>
+      ) : null}
+
+      {rankings && rankings.items.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <TrendingUp className="size-4 text-success" /> Em alta (7d)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {[...rankings.items]
+                .filter((r) => (r.delta_7d_pct ?? 0) > 0)
+                .sort((a, b) => (b.delta_7d_pct ?? 0) - (a.delta_7d_pct ?? 0))
+                .slice(0, 5)
+                .map((r) => (
+                  <p key={r.slug} className="flex items-baseline justify-between gap-2 text-sm">
+                    <Link
+                      href={`/catalog/openrouter/modelo/${r.slug}`}
+                      className="min-w-0 break-all font-mono text-xs underline-offset-2 hover:underline"
+                    >
+                      {r.slug}
+                    </Link>
+                    <span className="shrink-0 text-xs text-success">
+                      ▲{Math.abs(r.delta_7d_pct ?? 0).toFixed(0)}%
+                    </span>
+                  </p>
+                ))}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <TrendingDown className="size-4 text-destructive" /> Em queda (7d)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {[...rankings.items]
+                .filter((r) => (r.delta_7d_pct ?? 0) < 0)
+                .sort((a, b) => (a.delta_7d_pct ?? 0) - (b.delta_7d_pct ?? 0))
+                .slice(0, 5)
+                .map((r) => (
+                  <p key={r.slug} className="flex items-baseline justify-between gap-2 text-sm">
+                    <Link
+                      href={`/catalog/openrouter/modelo/${r.slug}`}
+                      className="min-w-0 break-all font-mono text-xs underline-offset-2 hover:underline"
+                    >
+                      {r.slug}
+                    </Link>
+                    <span className="shrink-0 text-xs text-destructive">
+                      ▼{Math.abs(r.delta_7d_pct ?? 0).toFixed(0)}%
+                    </span>
+                  </p>
+                ))}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Rocket className="size-4 text-chart-1" /> Lançamentos (30d)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {lancamentos.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Nenhum modelo lançado nos últimos 30 dias.
+                </p>
+              ) : (
+                lancamentos.map((m) => (
+                  <p key={m.slug} className="flex items-baseline justify-between gap-2 text-sm">
+                    <Link
+                      href={`/catalog/openrouter/modelo/${m.slug}`}
+                      className="min-w-0 break-all font-mono text-xs underline-offset-2 hover:underline"
+                    >
+                      {m.slug}
+                    </Link>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {new Date(m.criado_no_or!).toLocaleDateString("pt-BR")}
+                    </span>
+                  </p>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
 
       <Card>

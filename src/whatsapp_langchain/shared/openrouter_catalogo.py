@@ -63,6 +63,100 @@ async def _get_json(client: httpx.AsyncClient, url: str, *, com_chave: bool) -> 
 
 
 # ---------------------------------------------------------------------------
+# Feed de novidades por DIFF (mig 181) — o OpenRouter não tem API de notícias
+# oficial; o que muda entre syncs É a notícia, e sai auditável.
+# ---------------------------------------------------------------------------
+
+
+def diff_catalogo(
+    anterior: dict[str, dict[str, Any]], atuais: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Função PURA: compara o estado gravado com o payload novo e devolve os
+    eventos. `anterior` vazio = primeira carga — catálogo inteiro não é
+    notícia, devolve [].
+
+    `anterior`: {slug: {prompt, completion, context_length, ativo}}.
+    """
+    if not anterior:
+        return []
+    eventos: list[dict[str, Any]] = []
+    vistos: set[str] = set()
+    for m in atuais:
+        slug = m.get("id")
+        if not slug:
+            continue
+        vistos.add(slug)
+        pricing = m.get("pricing") or {}
+        ant = anterior.get(slug)
+        if ant is None:
+            eventos.append(
+                {
+                    "tipo": "modelo_novo",
+                    "slug": slug,
+                    "detalhe": {
+                        "nome": m.get("name") or slug,
+                        "prompt": pricing.get("prompt"),
+                        "completion": pricing.get("completion"),
+                        "context_length": m.get("context_length"),
+                    },
+                }
+            )
+            continue
+        if not ant.get("ativo", True):
+            eventos.append({"tipo": "modelo_voltou", "slug": slug, "detalhe": {}})
+
+        def _f(v: Any) -> float | None:
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        p_ant, p_novo = _f(ant.get("prompt")), _f(pricing.get("prompt"))
+        c_ant, c_novo = _f(ant.get("completion")), _f(pricing.get("completion"))
+        mudou_prompt = p_ant is not None and p_novo is not None and p_novo != p_ant
+        mudou_compl = c_ant is not None and c_novo is not None and c_novo != c_ant
+        if mudou_prompt or mudou_compl:
+            ref_ant, ref_novo = (p_ant, p_novo) if mudou_prompt else (c_ant, c_novo)
+            eventos.append(
+                {
+                    "tipo": "preco_mudou",
+                    "slug": slug,
+                    "detalhe": {
+                        "prompt_antes": ant.get("prompt"),
+                        "prompt_depois": pricing.get("prompt"),
+                        "completion_antes": ant.get("completion"),
+                        "completion_depois": pricing.get("completion"),
+                        "pct": round((ref_novo - ref_ant) * 100 / ref_ant, 1)
+                        if ref_ant
+                        else None,
+                    },
+                }
+            )
+        ctx_ant, ctx_novo = ant.get("context_length"), m.get("context_length")
+        if ctx_ant and ctx_novo and ctx_ant != ctx_novo:
+            eventos.append(
+                {
+                    "tipo": "contexto_mudou",
+                    "slug": slug,
+                    "detalhe": {"antes": ctx_ant, "depois": ctx_novo},
+                }
+            )
+    for slug, ant in anterior.items():
+        if slug not in vistos and ant.get("ativo", True):
+            eventos.append({"tipo": "modelo_removido", "slug": slug, "detalhe": {}})
+    return eventos
+
+
+async def _gravar_eventos(conn: Any, eventos: list[dict[str, Any]]) -> None:
+    for e in eventos:
+        await conn.execute(
+            "INSERT INTO openrouter_evento (tipo, modelo_slug, detalhe) "
+            "VALUES (%s, %s, %s::jsonb)",
+            (e["tipo"], e["slug"], _json(e.get("detalhe") or {})),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Sync do catálogo (provedores + modelos) — 1x/dia ou sob demanda pelo botão.
 # ---------------------------------------------------------------------------
 
@@ -85,6 +179,20 @@ async def sync_catalogo(pool: AsyncConnectionPool) -> dict[str, int]:
 
     n_provs = n_modelos = 0
     async with pool.connection() as conn:
+        # Estado anterior pro diff de novidades (mig 181) — 388 rows, barato.
+        cur = await conn.execute(
+            "SELECT slug, pricing->>'prompt', pricing->>'completion', "
+            "context_length, ativo FROM openrouter_modelo"
+        )
+        anterior = {
+            str(r[0]): {
+                "prompt": r[1],
+                "completion": r[2],
+                "context_length": r[3],
+                "ativo": bool(r[4]),
+            }
+            for r in await cur.fetchall()
+        }
         for p in provs:
             try:
                 await conn.execute(
@@ -140,6 +248,7 @@ async def sync_catalogo(pool: AsyncConnectionPool) -> dict[str, int]:
                         pricing = EXCLUDED.pricing,
                         benchmarks = EXCLUDED.benchmarks,
                         criado_no_or = EXCLUDED.criado_no_or,
+                        ativo = TRUE,
                         atualizado_em = NOW()
                     """,
                     (
@@ -161,6 +270,15 @@ async def sync_catalogo(pool: AsyncConnectionPool) -> dict[str, int]:
                 logger.warning(
                     "or_sync_modelo_falhou", slug=m.get("id"), error=str(exc)[:200]
                 )
+        eventos = diff_catalogo(anterior, modelos)
+        await _gravar_eventos(conn, eventos)
+        removidos = [e["slug"] for e in eventos if e["tipo"] == "modelo_removido"]
+        if removidos:
+            await conn.execute(
+                "UPDATE openrouter_modelo SET ativo = FALSE, "
+                "atualizado_em = NOW() WHERE slug = ANY(%s)",
+                (removidos,),
+            )
         await conn.execute(
             """
             UPDATE openrouter_sync_estado
@@ -360,6 +478,51 @@ async def sync_rankings(pool: AsyncConnectionPool) -> int:
                 logger.warning(
                     "or_sync_ranking_falhou", row=str(r)[:120], error=str(exc)[:200]
                 )
+        # Eventos de top 20 (mig 181): quem entrou/saiu entre o último dia e
+        # o anterior. Determinístico dos DADOS (não do momento do sync) — o
+        # NOT EXISTS por dia torna o re-run idempotente.
+        await conn.execute(
+            """
+            WITH dias AS (
+              SELECT max(data) AS hoje,
+                     (SELECT max(data) FROM openrouter_ranking_diario
+                       WHERE data < (SELECT max(data)
+                                       FROM openrouter_ranking_diario)) AS ontem
+                FROM openrouter_ranking_diario
+            ), por_slug AS (
+              SELECT r.slug, r.data, sum(r.total_tokens) AS tokens
+                FROM openrouter_ranking_diario r, dias d
+               WHERE r.data IN (d.hoje, d.ontem) AND r.slug <> 'other'
+               GROUP BY r.slug, r.data
+            ), ranked AS (
+              SELECT slug, data,
+                     rank() OVER (PARTITION BY data ORDER BY tokens DESC) AS pos
+                FROM por_slug
+            ), hoje AS (
+              SELECT slug, pos FROM ranked, dias WHERE data = hoje AND pos <= 20
+            ), ontem AS (
+              SELECT slug, pos FROM ranked, dias WHERE data = ontem AND pos <= 20
+            ), mudancas AS (
+              SELECT 'entrou_top' AS tipo, h.slug, h.pos
+                FROM hoje h LEFT JOIN ontem o USING (slug)
+               WHERE o.slug IS NULL AND (SELECT ontem FROM dias) IS NOT NULL
+              UNION ALL
+              SELECT 'saiu_top', o.slug, o.pos
+                FROM ontem o LEFT JOIN hoje h USING (slug)
+               WHERE h.slug IS NULL
+            )
+            INSERT INTO openrouter_evento (tipo, modelo_slug, detalhe)
+            SELECT m.tipo, m.slug,
+                   jsonb_build_object('pos', m.pos,
+                                      'dia', (SELECT hoje::text FROM dias))
+              FROM mudancas m
+             WHERE NOT EXISTS (
+               SELECT 1 FROM openrouter_evento e
+                WHERE e.tipo = m.tipo AND e.modelo_slug = m.slug
+                  AND e.detalhe->>'dia' = (SELECT hoje::text FROM dias)
+             )
+            """
+        )
         await conn.execute(
             "UPDATE openrouter_sync_estado SET rankings_sync_at = NOW() WHERE id = 1"
         )

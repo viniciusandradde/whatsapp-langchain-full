@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { ArrowUpDown, CheckCircle2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
   IaAlerta,
+  OpenRouterEvento,
   OpenRouterModelo,
   OpenRouterProvedor,
   OpenRouterStatus,
@@ -28,6 +30,7 @@ import type {
   SaudeModelo,
 } from "@/lib/api";
 
+import { EventosFeed } from "./eventos-feed";
 import { VisaoGeral } from "./visao-geral";
 
 import { promoverAction, sincronizarAction, statusAction } from "./actions";
@@ -64,6 +67,7 @@ export function CatalogoClient({
   saude,
   rankings,
   alertas,
+  eventos,
 }: {
   status: OpenRouterStatus | null;
   modelosIniciais: OpenRouterModelo[];
@@ -71,6 +75,7 @@ export function CatalogoClient({
   saude: { funcoes: SaudeFuncao[]; saude: Record<string, SaudeModelo> } | null;
   rankings: { ultimo_dia: string | null; items: RankingModelo[] } | null;
   alertas: { ativos: IaAlerta[]; resolvidos: IaAlerta[] } | null;
+  eventos: OpenRouterEvento[];
 }) {
   const [st, setSt] = useState(status);
   const [modelos, setModelos] = useState(modelosIniciais);
@@ -174,6 +179,9 @@ export function CatalogoClient({
       <Tabs defaultValue={saude ? "visao" : "modelos"}>
         <TabsList>
           {saude ? <TabsTrigger value="visao">Visão geral</TabsTrigger> : null}
+          <TabsTrigger value="novidades">
+            Novidades{eventos.length > 0 ? ` (${eventos.length})` : ""}
+          </TabsTrigger>
           <TabsTrigger value="modelos">
             Modelos ({modelos.length})
           </TabsTrigger>
@@ -193,6 +201,18 @@ export function CatalogoClient({
             />
           </TabsContent>
         ) : null}
+
+        <TabsContent value="novidades">
+          <Card>
+            <CardContent className="pt-4">
+              <EventosFeed eventos={eventos} />
+              <p className="mt-3 text-xs text-muted-foreground">
+                Gerado por diff entre sincronizações do catálogo e dos
+                rankings — o OpenRouter não publica notícias por API oficial.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="modelos" className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +301,12 @@ export function CatalogoClient({
                         return (
                           <TableRow key={m.slug}>
                             <TableCell>
-                              <div className="font-medium">{m.slug}</div>
+                              <Link
+                                href={`/catalog/openrouter/modelo/${m.slug}`}
+                                className="font-medium underline-offset-2 hover:underline"
+                              >
+                                {m.slug}
+                              </Link>
                               <div className="text-xs text-muted-foreground">
                                 {m.nome}
                               </div>

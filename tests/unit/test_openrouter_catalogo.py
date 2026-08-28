@@ -15,6 +15,7 @@ import respx
 from whatsapp_langchain.shared.openrouter_catalogo import (
     _slug_base,
     coletar_metricas,
+    diff_catalogo,
     modelos_em_uso,
     sync_catalogo,
     sync_rankings,
@@ -114,11 +115,14 @@ class TestSyncCatalogo:
         )
         pool, conn = _pool_mock()
 
-        # o execute do item ruim explode; o do bom passa
+        # o execute do item ruim explode; o do bom passa. SELECTs (estado
+        # anterior do diff) devolvem cursor com fetchall async vazio.
         async def _execute(sql, *a, **kw):
             if "openrouter_modelo" in str(sql) and a and a[0][0] is None:
                 raise RuntimeError("slug nulo")
-            return MagicMock()
+            cur = MagicMock()
+            cur.fetchall = AsyncMock(return_value=[])
+            return cur
 
         conn.execute = AsyncMock(side_effect=_execute)
         out = await sync_catalogo(pool)
@@ -262,3 +266,73 @@ class TestSyncRankings:
         pool, _ = _pool_mock()
         n = await sync_rankings(pool)
         assert n == 2  # só as válidas contaram
+
+
+class TestDiffCatalogo:
+    """O feed de novidades (mig 181) nasce deste diff — cada tipo tem teste."""
+
+    _ANT = {
+        "google/gemini-2.5-flash": {
+            "prompt": "0.0000003",
+            "completion": "0.0000025",
+            "context_length": 1048576,
+            "ativo": True,
+        }
+    }
+
+    def _atual(self, **override):
+        m = {
+            "id": "google/gemini-2.5-flash",
+            "name": "Google: Gemini 2.5 Flash",
+            "pricing": {"prompt": "0.0000003", "completion": "0.0000025"},
+            "context_length": 1048576,
+        }
+        m.update(override)
+        return m
+
+    def test_primeira_carga_nao_e_noticia(self):
+        assert diff_catalogo({}, [self._atual()]) == []
+
+    def test_sem_mudanca_sem_evento(self):
+        assert diff_catalogo(self._ANT, [self._atual()]) == []
+
+    def test_modelo_novo(self):
+        novo = self._atual(id="z-ai/glm-6", name="GLM 6")
+        eventos = diff_catalogo(self._ANT, [self._atual(), novo])
+        assert [e["tipo"] for e in eventos] == ["modelo_novo"]
+        assert eventos[0]["slug"] == "z-ai/glm-6"
+        assert eventos[0]["detalhe"]["nome"] == "GLM 6"
+
+    def test_preco_mudou_com_pct(self):
+        caro = self._atual(pricing={"prompt": "0.0000006", "completion": "0.0000025"})
+        eventos = diff_catalogo(self._ANT, [caro])
+        assert [e["tipo"] for e in eventos] == ["preco_mudou"]
+        assert eventos[0]["detalhe"]["pct"] == 100.0  # dobrou a entrada
+
+    def test_contexto_mudou(self):
+        maior = self._atual(context_length=2097152)
+        eventos = diff_catalogo(self._ANT, [maior])
+        assert [e["tipo"] for e in eventos] == ["contexto_mudou"]
+        assert eventos[0]["detalhe"]["depois"] == 2097152
+
+    def test_modelo_removido_so_quando_ativo(self):
+        eventos = diff_catalogo(self._ANT, [])
+        assert [e["tipo"] for e in eventos] == ["modelo_removido"]
+        # já desativado = silêncio (é isso que evita o alarme diário)
+        ant = {
+            "google/gemini-2.5-flash": {
+                **self._ANT["google/gemini-2.5-flash"],
+                "ativo": False,
+            }
+        }
+        assert diff_catalogo(ant, []) == []
+
+    def test_modelo_voltou(self):
+        ant = {
+            "google/gemini-2.5-flash": {
+                **self._ANT["google/gemini-2.5-flash"],
+                "ativo": False,
+            }
+        }
+        eventos = diff_catalogo(ant, [self._atual()])
+        assert [e["tipo"] for e in eventos] == ["modelo_voltou"]

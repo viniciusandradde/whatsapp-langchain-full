@@ -54,3 +54,10 @@ class TestSmoke:
 
     def test_alertas_sem_auth_401(self) -> None:
         assert _client().get("/api/openrouter/alertas").status_code == 401
+
+    def test_eventos_sem_auth_401(self) -> None:
+        assert _client().get("/api/openrouter/eventos").status_code == 401
+
+    def test_historico_sem_auth_401(self) -> None:
+        r = _client().get("/api/openrouter/modelos/google/gemini-2.5-flash/historico")
+        assert r.status_code == 401

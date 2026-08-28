@@ -5516,3 +5516,30 @@ export async function getOpenRouterAlertas(): Promise<{
 }> {
   return apiFetch(`/api/openrouter/alertas`);
 }
+
+export interface OpenRouterEvento {
+  id: number;
+  tipo: string;
+  modelo_slug: string;
+  detalhe: Record<string, unknown>;
+  criado_em: string;
+}
+export async function getOpenRouterEventos(params?: {
+  modelo?: string;
+}): Promise<{ items: OpenRouterEvento[] }> {
+  const qs = params?.modelo ? `?modelo=${encodeURIComponent(params.modelo)}` : "";
+  return apiFetch(`/api/openrouter/eventos${qs}`);
+}
+
+export interface HistoricoModelo {
+  modelo: string;
+  metricas: { hora: string; uptime: number | null; latencia_p50: number | null }[];
+  ranking: { data: string; tokens: number; pos: number }[];
+  eventos: OpenRouterEvento[];
+}
+export async function getOpenRouterHistorico(
+  slug: string,
+  dias = 7
+): Promise<HistoricoModelo> {
+  return apiFetch(`/api/openrouter/modelos/${slug}/historico?dias=${dias}`);
+}

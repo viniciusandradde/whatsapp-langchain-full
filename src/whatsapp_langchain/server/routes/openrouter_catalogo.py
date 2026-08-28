@@ -127,7 +127,7 @@ async def listar_modelos(
     await _exigir_superadmin(user_id)
     limit = max(1, min(limit, 1000))
     pool = await get_pool()
-    where = "TRUE"
+    where = "m.ativo"
     params: list = []
     if q:
         where += " AND (m.slug ILIKE %s OR m.nome ILIKE %s)"
@@ -456,6 +456,130 @@ async def listar_alertas(
         )
         resolvidos = [_row(r) for r in await cur.fetchall()]
     return {"ativos": ativos, "resolvidos": resolvidos}
+
+
+@router.get("/eventos")
+async def listar_eventos(
+    limit: int = 60,
+    modelo: str | None = None,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Feed de novidades do ecossistema (mig 181): lançamentos, preços,
+    remoções e movimentos de top — gerado por diff entre syncs, porque o
+    OpenRouter não tem API oficial de notícias (provado 2026-08-28)."""
+    await _exigir_superadmin(user_id)
+    limit = max(1, min(limit, 200))
+    pool = await get_pool()
+    where = "TRUE"
+    params: list = []
+    if modelo:
+        where = "modelo_slug = %s"
+        params.append(modelo)
+    params.append(limit)
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT id, tipo, modelo_slug, detalhe, criado_em
+              FROM openrouter_evento
+             WHERE {where}
+             ORDER BY criado_em DESC, id DESC
+             LIMIT %s
+            """,
+            tuple(params),
+        )
+        rows = await cur.fetchall()
+    return {
+        "items": [
+            {
+                "id": int(r[0]),
+                "tipo": r[1],
+                "modelo_slug": r[2],
+                "detalhe": r[3],
+                "criado_em": r[4].isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/modelos/{author}/{slug}/historico")
+async def historico_modelo(
+    author: str,
+    slug: str,
+    dias: int = 7,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Série histórica pro gráfico da página de análise do modelo:
+    saúde por hora (melhor uptime / menor p50 entre endpoints), posição e
+    tokens por dia no ranking do mercado, e os eventos do modelo."""
+    await _exigir_superadmin(user_id)
+    dias = max(1, min(dias, 90))
+    modelo_slug = f"{author}/{slug}"
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT date_trunc('hour', coletado_em) AS h,
+                   max(uptime_30m),
+                   min((latencia->>'p50')::numeric)
+              FROM openrouter_endpoint_metrica
+             WHERE modelo_slug = %s
+               AND coletado_em > NOW() - make_interval(days => %s)
+             GROUP BY h ORDER BY h
+            """,
+            (modelo_slug, dias),
+        )
+        metricas = [
+            {
+                "hora": r[0].isoformat(),
+                "uptime": float(r[1]) if r[1] is not None else None,
+                "latencia_p50": float(r[2]) if r[2] is not None else None,
+            }
+            for r in await cur.fetchall()
+        ]
+        cur = await conn.execute(
+            """
+            WITH por_slug AS (
+              SELECT slug, data, sum(total_tokens) AS tokens
+                FROM openrouter_ranking_diario
+               WHERE slug <> 'other'
+               GROUP BY slug, data
+            ), ranked AS (
+              SELECT slug, data, tokens,
+                     rank() OVER (PARTITION BY data ORDER BY tokens DESC) AS pos
+                FROM por_slug
+            )
+            SELECT data, tokens, pos FROM ranked
+             WHERE slug = %s ORDER BY data
+            """,
+            (modelo_slug,),
+        )
+        ranking = [
+            {"data": r[0].isoformat(), "tokens": int(r[1]), "pos": int(r[2])}
+            for r in await cur.fetchall()
+        ]
+        cur = await conn.execute(
+            """
+            SELECT id, tipo, detalhe, criado_em FROM openrouter_evento
+             WHERE modelo_slug = %s ORDER BY criado_em DESC LIMIT 20
+            """,
+            (modelo_slug,),
+        )
+        eventos = [
+            {
+                "id": int(r[0]),
+                "tipo": r[1],
+                "detalhe": r[2],
+                "criado_em": r[3].isoformat(),
+            }
+            for r in await cur.fetchall()
+        ]
+    return {
+        "modelo": modelo_slug,
+        "metricas": metricas,
+        "ranking": ranking,
+        "eventos": eventos,
+    }
 
 
 @router.get("/rankings")
