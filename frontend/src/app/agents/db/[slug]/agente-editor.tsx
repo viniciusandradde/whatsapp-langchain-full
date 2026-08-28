@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { AjudaCampo } from "@/components/ajuda-campo";
+import { AnaliseModelo } from "@/components/analise-modelo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,8 @@ import {
   deleteAgenteAction,
   setDefaultAgenteAction,
   updateAgenteAction,
+  analiseModeloAction,
+  buscarCatalogoCompletoAction,
 } from "./actions";
 import { PromptHistorico } from "./prompt-historico";
 
@@ -87,6 +90,9 @@ interface Props {
   templates?: AgenteTemplate[];
   departamentos?: Departamento[];
   pastas?: Pasta[];
+  /** Saúde de IA (F2): habilita o picker do catálogo COMPLETO na aba modelo.
+   *  Empresas ficam no curado — decisão do dono, 2026-08-28. */
+  superadmin?: boolean;
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp" | "testar";
@@ -159,6 +165,7 @@ export function AgenteEditor({
   templates = [],
   departamentos = [],
   pastas = [],
+  superadmin = false,
 }: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
@@ -408,6 +415,7 @@ export function AgenteEditor({
               a={a}
               modelosChat={modelosChat}
               menusAtivos={menusAtivos}
+              superadmin={superadmin}
             />
           )}
           {tab === "prompt" && (
@@ -549,15 +557,162 @@ function TabIdentidade({
   );
 }
 
+// ---- Saúde de IA (F2): picker do catálogo COMPLETO (superadmin) ----------
+//
+// Busca sobre os 388 modelos sincronizados (mig 178) e, ao focar um, carrega
+// a ficha de análise: preço, benchmark, contexto e a tabela de provedores
+// (uptime/latência/throughput/quantização — coletada NA HORA se o modelo
+// ainda não tem snapshot). "Usar este modelo" injeta a escolha no form via
+// hidden inputs. Empresas não veem este bloco — seleção delas é o curado.
+function PickerCatalogoCompleto({
+  onEscolher,
+}: {
+  onEscolher: (slug: string) => void;
+}) {
+  const [busca, setBusca] = useState("");
+  const [resultados, setResultados] = useState<
+    { slug: string; nome: string; promovido: boolean }[]
+  >([]);
+  const [analise, setAnalise] = useState<
+    import("@/components/analise-modelo").AnaliseModeloData | null
+  >(null);
+  const [carregando, setCarregando] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function buscar() {
+    setErro(null);
+    setCarregando("busca");
+    try {
+      const r = await buscarCatalogoCompletoAction(busca.trim());
+      if (!r.ok) {
+        setErro(r.error);
+        return;
+      }
+      setResultados(
+        r.data
+          .slice(0, 12)
+          .map((m) => ({ slug: m.slug, nome: m.nome, promovido: m.promovido }))
+      );
+    } finally {
+      setCarregando(null);
+    }
+  }
+
+  async function analisar(slug: string) {
+    setErro(null);
+    setCarregando(slug);
+    try {
+      const r = await analiseModeloAction(slug);
+      if (!r.ok) {
+        setErro(r.error);
+        return;
+      }
+      setAnalise(r.data);
+    } finally {
+      setCarregando(null);
+    }
+  }
+
+  return (
+    <div className="md:col-span-2 space-y-3 rounded-md border border-foreground/[0.06] p-3">
+      <div className="flex items-center gap-1.5">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Catálogo completo (análise) — superadmin
+        </p>
+        <AjudaCampo titulo="Catálogo completo">
+          <p>
+            Todos os modelos do OpenRouter, com preço, benchmark e a saúde de
+            cada provedor (uptime, latência, velocidade) medidas de verdade.
+          </p>
+          <p>
+            <b>Modelo fora do curado não passou pela validação da
+            plataforma:</b> antes de usar em agente que atende cliente, rode o
+            golden (aba Testar compara até 4 modelos com casos reais) — foi
+            esse teste que reprovou modelos mais baratos que respondiam fora
+            do padrão.
+          </p>
+        </AjudaCampo>
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void buscar();
+            }
+          }}
+          placeholder="Buscar nos 388 modelos… (ex: claude, deepseek, grok)"
+          className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+        />
+        <button
+          type="button"
+          onClick={() => void buscar()}
+          disabled={carregando === "busca"}
+          className="rounded-md border border-input px-3 text-sm disabled:opacity-50"
+        >
+          Buscar
+        </button>
+      </div>
+      {erro ? <p className="text-sm text-destructive">{erro}</p> : null}
+      {resultados.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {resultados.map((m) => (
+            <button
+              key={m.slug}
+              type="button"
+              onClick={() => void analisar(m.slug)}
+              disabled={carregando === m.slug}
+              className={`rounded-full border px-2.5 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
+                analise?.modelo === m.slug
+                  ? "border-primary bg-primary/10"
+                  : "border-input hover:bg-foreground/[0.04]"
+              }`}
+            >
+              {m.slug}
+              {m.promovido ? " ✓" : ""}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {carregando && carregando !== "busca" ? (
+        <p className="text-sm text-muted-foreground">
+          Coletando métricas do modelo…
+        </p>
+      ) : null}
+      {analise ? (
+        <>
+          <AnaliseModelo data={analise} />
+          <button
+            type="button"
+            onClick={() => onEscolher(analise.modelo)}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+          >
+            Usar este modelo no agente
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+
 function TabModelo({
   a,
   modelosChat,
   menusAtivos,
+  superadmin = false,
 }: {
   a: AgenteIA;
   modelosChat: ModeloLLM[];
   menusAtivos: MenuChatbot[];
+  superadmin?: boolean;
 }) {
+  // Saúde de IA (F2): escolha vinda do catálogo COMPLETO (superadmin). Quando
+  // setada, os selects do curado saem do form e entram hidden inputs — os
+  // names não podem duplicar, o save lê o primeiro valor do FormData.
+  const [escolhaLivre, setEscolhaLivre] = useState<string | null>(null);
   // Provedor inicial: prefere modelo_provedor da mig 043; cai pro split do
   // modelo único legacy.
   const provedorInicial =
@@ -599,6 +754,35 @@ function TabModelo({
           defaultValue={a.modelo}
           placeholder="google/gemini-2.5-flash"
         />
+      ) : escolhaLivre ? (
+        // Escolha do catálogo completo: hidden inputs carregam o slug e um
+        // chip mostra o que vai ser salvo.
+        <div className="md:col-span-2">
+          <input
+            type="hidden"
+            name="modelo_provedor"
+            value={escolhaLivre.split("/")[0]}
+          />
+          <input
+            type="hidden"
+            name="modelo_nome"
+            value={escolhaLivre.split("/").slice(1).join("/")}
+          />
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+              Modelo (catálogo completo)
+            </span>
+            <span className="font-mono text-sm">{escolhaLivre}</span>
+            <Badge variant="warning">fora do curado</Badge>
+            <button
+              type="button"
+              className="text-xs underline"
+              onClick={() => setEscolhaLivre(null)}
+            >
+              voltar ao curado
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           <FieldSelect
@@ -758,6 +942,10 @@ function TabModelo({
           })),
         ]}
       />
+
+      {superadmin ? (
+        <PickerCatalogoCompleto onEscolher={(slug) => setEscolhaLivre(slug)} />
+      ) : null}
 
       <div className="rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3 text-xs">
         <p className="font-medium">Valores efetivos:</p>

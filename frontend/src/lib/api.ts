@@ -5459,3 +5459,9 @@ export async function promoverModeloOpenRouter(
     body: { tipo },
   });
 }
+
+export async function getOpenRouterAnalise(
+  slug: string
+): Promise<import("@/components/analise-modelo").AnaliseModeloData> {
+  return apiFetch(`/api/openrouter/modelos/${slug}/analise`);
+}

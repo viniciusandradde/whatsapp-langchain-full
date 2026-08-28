@@ -41,3 +41,7 @@ class TestSmoke:
             json={"tipo": "chat"},
         )
         assert r.status_code == 401
+
+    def test_analise_sem_auth_401(self) -> None:
+        r = _client().get("/api/openrouter/modelos/google/gemini-2.5-flash/analise")
+        assert r.status_code == 401

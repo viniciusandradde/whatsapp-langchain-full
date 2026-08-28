@@ -218,6 +218,100 @@ async def metricas_modelo(
     }
 
 
+@router.get("/modelos/{author}/{slug}/analise")
+async def analise_modelo(
+    author: str,
+    slug: str,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Ficha de análise do modelo pro construtor de agente e pra página de
+    comparação: dados do catálogo + o ÚLTIMO snapshot de cada endpoint.
+
+    Modelo fora da lista coletada (só ~25 têm coleta periódica) ganha snapshot
+    NA HORA via `coletar_metricas` — a análise nasce sob demanda e o modelo
+    passa a ter histórico dali em diante.
+    """
+    await _exigir_superadmin(user_id)
+    modelo_slug = f"{author}/{slug}"
+    pool = await get_pool()
+
+    async def _snapshot() -> list[tuple]:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT DISTINCT ON (provider_tag)
+                       provider_tag, provider_nome, quantization, status,
+                       uptime_5m, uptime_30m, uptime_1d, latencia, throughput,
+                       pricing, coletado_em
+                  FROM openrouter_endpoint_metrica
+                 WHERE modelo_slug = %s
+                   AND coletado_em > NOW() - interval '2 hours'
+                 ORDER BY provider_tag, coletado_em DESC
+                """,
+                (modelo_slug,),
+            )
+            return await cur.fetchall()
+
+    rows = await _snapshot()
+    coletado_agora = False
+    if not rows:
+        await coletar_metricas(pool, [modelo_slug])
+        rows = await _snapshot()
+        coletado_agora = True
+
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT nome, descricao, context_length, input_modalities,
+                   output_modalities, pricing, benchmarks, supported_parameters
+              FROM openrouter_modelo WHERE slug = %s
+            """,
+            (modelo_slug,),
+        )
+        m = await cur.fetchone()
+    if m is None and not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="Modelo não está no catálogo sincronizado nem respondeu "
+            "no OpenRouter. Rode o sync e confira o slug.",
+        )
+
+    return {
+        "modelo": modelo_slug,
+        "coletado_agora": coletado_agora,
+        "catalogo": (
+            {
+                "nome": m[0],
+                "descricao": m[1],
+                "context_length": m[2],
+                "input_modalities": m[3],
+                "output_modalities": m[4],
+                "pricing": m[5],
+                "benchmarks": m[6],
+                "supported_parameters": m[7],
+            }
+            if m
+            else None
+        ),
+        "endpoints": [
+            {
+                "provider_tag": r[0],
+                "provider_nome": r[1],
+                "quantization": r[2],
+                "status": r[3],
+                "uptime_5m": float(r[4]) if r[4] is not None else None,
+                "uptime_30m": float(r[5]) if r[5] is not None else None,
+                "uptime_1d": float(r[6]) if r[6] is not None else None,
+                "latencia": r[7],
+                "throughput": r[8],
+                "pricing": r[9],
+                "coletado_em": r[10].isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.post("/sync", status_code=202)
 async def sync_endpoint(
     background_tasks: BackgroundTasks,

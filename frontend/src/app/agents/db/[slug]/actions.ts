@@ -164,3 +164,32 @@ export async function resetarTesteAgenteAction(
     return { ok: false };
   }
 }
+
+/**
+ * Saúde de IA (F2) — pontes do picker de catálogo completo da aba Modelo &
+ * Estilo (superadmin). Server actions porque `lib/api` é server-only.
+ */
+export async function buscarCatalogoCompletoAction(q: string) {
+  try {
+    const { getOpenRouterModelos } = await import("@/lib/api");
+    const r = await getOpenRouterModelos({ q });
+    return { ok: true as const, data: r.items };
+  } catch (e) {
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "Falha ao buscar o catálogo.",
+    };
+  }
+}
+
+export async function analiseModeloAction(slug: string) {
+  try {
+    const { getOpenRouterAnalise } = await import("@/lib/api");
+    return { ok: true as const, data: await getOpenRouterAnalise(slug) };
+  } catch (e) {
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "Falha ao analisar o modelo.",
+    };
+  }
+}
