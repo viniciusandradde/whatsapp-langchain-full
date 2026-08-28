@@ -22,6 +22,7 @@ import {
   Paperclip,
 } from "lucide-react";
 
+import { AjudaCampo } from "@/components/ajuda-campo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -603,6 +604,12 @@ function TabModelo({
           <FieldSelect
             label="Provedor"
             name="modelo_provedor"
+            ajuda={
+              <>
+                <p>Quem fabrica o modelo de IA (Google, OpenAI, DeepSeek…). Escolha primeiro o provedor; a lista de modelos ao lado é filtrada por ele.</p>
+                <p><b>Como decidir:</b> os modelos curados aqui já foram validados pela plataforma. Trocar de provedor muda preço, velocidade e o jeito de responder — modelo de chat novo passa pelo teste do golden antes de atender cliente (aba Testar).</p>
+              </>
+            }
             defaultValue={provedor}
             onChange={(v: string) => {
               setProvedor(v);
@@ -616,6 +623,12 @@ function TabModelo({
           <FieldSelect
             label="Modelo"
             name="modelo_nome"
+            ajuda={
+              <>
+                <p>O cérebro do agente: é este modelo que lê a conversa e escreve as respostas de texto. Mídia (foto, áudio, documento) é processada por um modelo próprio, configurado pela plataforma.</p>
+                <p><b>Custo:</b> cobrado por tokens de entrada e saída — os valores /Mtok aparecem abaixo ao selecionar. <b>Não troque no escuro:</b> valide na aba Testar (compare até 4 modelos com casos reais) antes de salvar em agente que atende cliente.</p>
+              </>
+            }
             defaultValue={nome}
             onChange={(v: string) => setNome(v)}
             options={[
@@ -632,6 +645,12 @@ function TabModelo({
       <FieldSelect
         label="Estilo de respostas"
         name="estilo_resposta"
+        ajuda={
+          <>
+            <p>Predefinição de temperatura pronta: <b>Preciso</b> (0.1) responde sempre igual, ideal pra informação factual (preços, horários, regras); <b>Equilibrado</b> varia um pouco e soa mais natural; <b>Criativo</b> improvisa mais — bom pra venda, arriscado pra suporte.</p>
+            <p>É o jeito simples de calibrar. Só use o override de temperatura abaixo se souber exatamente por quê.</p>
+          </>
+        }
         defaultValue={a.estilo_resposta}
         options={ESTILO_OPTIONS.map((o) => ({
           v: o.v,
@@ -641,6 +660,12 @@ function TabModelo({
       <Field
         label="Temperatura (override fino opcional)"
         name="temperatura_override"
+        ajuda={
+          <>
+            <p>Controle fino da aleatoriedade, de 0 a 2. <b>Baixa (0–0.3)</b>: respostas consistentes e repetíveis. <b>Alta (0.8+)</b>: mais variedade e criatividade, mais chance de fugir do roteiro.</p>
+            <p><b>Vazio = usa o Estilo acima</b> (o placeholder mostra o valor efetivo). Preencher aqui VENCE o estilo — deixe vazio a menos que um caso concreto peça um número específico.</p>
+          </>
+        }
         defaultValue={a.temperatura_override?.toString() ?? null}
         type="number"
         placeholder={`auto: ${a.temperatura_efetiva.toFixed(2)}`}
@@ -648,6 +673,12 @@ function TabModelo({
       <Field
         label="Top-p (override fino opcional)"
         name="top_p_override"
+        ajuda={
+          <>
+            <p>Limita o vocabulário do modelo às palavras mais prováveis (0 a 1). <b>0.6</b>: conservador, vocabulário enxuto. <b>0.95+</b>: solta o vocabulário inteiro.</p>
+            <p>Ajuste temperatura OU top-p, não os dois ao mesmo tempo — mexer nos dois torna o comportamento imprevisível. <b>Vazio = automático</b>, que serve pra quase todo caso.</p>
+          </>
+        }
         defaultValue={a.top_p_override?.toString() ?? null}
         type="number"
         placeholder={`auto: ${a.top_p_efetivo.toFixed(2)}`}
@@ -655,6 +686,12 @@ function TabModelo({
       <Field
         label="Max tokens (limite de saída)"
         name="max_tokens"
+        ajuda={
+          <>
+            <p>Teto de tamanho de cada resposta (≈ 1 token = ¾ de palavra). <b>350</b> ≈ um parágrafo bom de WhatsApp — segura custo e evita textão.</p>
+            <p><b>Cuidado com valor baixo demais:</b> a resposta é CORTADA no meio ao bater o teto, não resumida. Se o agente precisa listar itens longos (tabela de preços, passo a passo), suba pra 600–800. Vazio = sem limite (o modelo decide).</p>
+          </>
+        }
         defaultValue={a.max_tokens?.toString() ?? null}
         type="number"
       />
@@ -663,6 +700,12 @@ function TabModelo({
       <FieldSelect
         label="Tipo de memória"
         name="tipo_memoria"
+        ajuda={
+          <>
+            <p>O que o agente lembra DENTRO da conversa: <b>Window</b> (default) relê só as últimas N mensagens — barato e suficiente pra atendimento. <b>Buffer</b> relê a conversa inteira — memória perfeita, custo cresce a cada turno. <b>Summary</b> resume o passado e mantém janela curta — conversas muito longas. <b>Sem memória</b> trata cada mensagem isolada — só pra FAQ pura.</p>
+            <p>Cada mensagem relida é cobrada de novo como entrada — memória maior = custo maior por turno.</p>
+          </>
+        }
         defaultValue={a.tipo_memoria ?? "window"}
         options={[
           { v: "window", l: "Window — últimas N msgs (default)" },
@@ -674,6 +717,12 @@ function TabModelo({
       <Field
         label="Janela de memória (msgs)"
         name="janela_memoria"
+        ajuda={
+          <>
+            <p>Quantas mensagens recentes o agente relê a cada resposta. <b>Só vale com Tipo = Window.</b></p>
+            <p><b>20</b> (≈10 idas e voltas) atende a maioria. Menos que 10: o agente “esquece” o que o cliente disse há pouco e repete perguntas. Mais que 40: custo sobe sem ganho perceptível.</p>
+          </>
+        }
         defaultValue={a.janela_memoria?.toString() ?? null}
         type="number"
         placeholder="ex: 20 (só se tipo=window)"
@@ -681,6 +730,12 @@ function TabModelo({
       <Field
         label="Timeout conversa (min)"
         name="timeout_minutos"
+        ajuda={
+          <>
+            <p>Minutos de silêncio do cliente até a conversa ser considerada encerrada. Quando ele voltar depois disso, o agente começa contexto novo (sem carregar o assunto antigo).</p>
+            <p><b>30</b> funciona bem para atendimento. <b>Vazio = nunca expira</b> — o agente carrega o histórico pra sempre, o que pode misturar assuntos de dias diferentes.</p>
+          </>
+        }
         defaultValue={a.timeout_minutos?.toString() ?? null}
         type="number"
         placeholder="ex: 30 — vazio = sem timeout"
@@ -688,6 +743,12 @@ function TabModelo({
       <FieldSelect
         label="Limite custo → menu"
         name="acao_limite_menu_id"
+        ajuda={
+          <>
+            <p>Rede de segurança de gasto: quando a empresa estoura o teto de custo de IA do mês (Governança → Budget IA), o agente para de gastar e este menu do chatbot assume o atendimento no lugar dele.</p>
+            <p><b>Nenhum</b> = usa a ação padrão configurada no budget (avisar ou bloquear). Escolher um menu aqui mantém o cliente atendido — por botões, sem IA — mesmo com o budget estourado.</p>
+          </>
+        }
         defaultValue={a.acao_limite_menu_id?.toString() ?? ""}
         options={[
           { v: "", l: "— nenhum (usa limite_custo_acao) —" },
@@ -1162,6 +1223,7 @@ function Field({
   type = "text",
   placeholder,
   maxLength,
+  ajuda,
 }: {
   label: string;
   name: string;
@@ -1169,15 +1231,19 @@ function Field({
   type?: string;
   placeholder?: string;
   maxLength?: number;
+  ajuda?: React.ReactNode;
 }) {
   return (
     <div>
-      <label
-        htmlFor={name}
-        className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-      >
-        {label}
-      </label>
+      <div className="mb-1 flex items-center gap-1.5">
+        <label
+          htmlFor={name}
+          className="block text-xs uppercase tracking-wide text-muted-foreground"
+        >
+          {label}
+        </label>
+        {ajuda ? <AjudaCampo titulo={label}>{ajuda}</AjudaCampo> : null}
+      </div>
       <input
         id={name}
         name={name}
@@ -1243,6 +1309,7 @@ function FieldSelect({
   options,
   onChange,
   disabled,
+  ajuda,
 }: {
   label: string;
   name: string;
@@ -1250,18 +1317,22 @@ function FieldSelect({
   options: { v: string; l: string }[];
   onChange?: (v: string) => void;
   disabled?: boolean;
+  ajuda?: React.ReactNode;
 }) {
   // Quando onChange é passado, vira controlled (necessário pra dropdowns
   // dependentes como provedor → modelo).
   const isControlled = onChange !== undefined;
   return (
     <div>
-      <label
-        htmlFor={name}
-        className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground"
-      >
-        {label}
-      </label>
+      <div className="mb-1 flex items-center gap-1.5">
+        <label
+          htmlFor={name}
+          className="block text-xs uppercase tracking-wide text-muted-foreground"
+        >
+          {label}
+        </label>
+        {ajuda ? <AjudaCampo titulo={label}>{ajuda}</AjudaCampo> : null}
+      </div>
       <select
         id={name}
         name={name}
