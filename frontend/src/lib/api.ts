@@ -5379,3 +5379,83 @@ export async function saveConfigProducao(
 ): Promise<{ ok: boolean }> {
   return apiFetch("/api/relatorios/producao/config", { method: "PUT", body });
 }
+
+// ---------------------------------------------------------------------------
+// Catálogo OpenRouter (mig 178) — módulo Saúde de IA. Superadmin-only no
+// servidor; o catálogo completo é observabilidade, a seleção continua curada.
+// ---------------------------------------------------------------------------
+
+export interface OpenRouterStatus {
+  catalogo_sync_at: string | null;
+  total_modelos?: number | null;
+  total_provedores?: number | null;
+  metricas_sync_at?: string | null;
+  erro?: string | null;
+}
+
+export interface OpenRouterProvedor {
+  slug: string;
+  nome: string;
+  privacy_policy_url: string | null;
+  tos_url: string | null;
+  status_page_url: string | null;
+  hq: string | null;
+  datacenters: unknown[];
+  atualizado_em: string | null;
+}
+
+export interface OpenRouterModelo {
+  slug: string;
+  nome: string;
+  context_length: number | null;
+  input_modalities: string[];
+  output_modalities: string[];
+  // USD por TOKEN (formato do OpenRouter) — a promoção converte pra /Mtok.
+  pricing: Record<string, string | null>;
+  benchmarks: {
+    artificial_analysis?: {
+      intelligence_index?: number;
+      coding_index?: number;
+      agentic_index?: number;
+    };
+  };
+  criado_no_or: string | null;
+  atualizado_em: string | null;
+  promovido: boolean;
+}
+
+export async function getOpenRouterStatus(): Promise<OpenRouterStatus> {
+  return apiFetch<OpenRouterStatus>(`/api/openrouter/status`);
+}
+
+export async function getOpenRouterProvedores(): Promise<{
+  items: OpenRouterProvedor[];
+}> {
+  return apiFetch(`/api/openrouter/provedores`);
+}
+
+export async function getOpenRouterModelos(params?: {
+  q?: string;
+  modalidade?: string;
+}): Promise<{ items: OpenRouterModelo[] }> {
+  const qs = new URLSearchParams();
+  if (params?.q) qs.set("q", params.q);
+  if (params?.modalidade) qs.set("modalidade", params.modalidade);
+  const suffix = qs.size ? `?${qs}` : "";
+  return apiFetch(`/api/openrouter/modelos${suffix}`);
+}
+
+/** 202 — o sync roda em background; o /status conta o resultado. */
+export async function syncOpenRouter(): Promise<{ status: string }> {
+  return apiFetch(`/api/openrouter/sync`, { method: "POST" });
+}
+
+export async function promoverModeloOpenRouter(
+  slug: string,
+  tipo: string
+): Promise<ModeloLLM> {
+  return apiFetch(`/api/openrouter/modelos/${slug}/promover`, {
+    method: "POST",
+    body: { tipo },
+  });
+}

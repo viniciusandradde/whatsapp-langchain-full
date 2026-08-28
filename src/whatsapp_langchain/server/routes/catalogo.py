@@ -49,6 +49,7 @@ class CreateModeloLLMInput(BaseModel):
     descricao: str | None = Field(default=None, max_length=500)
     custo_input_mtok: float | None = Field(default=None, ge=0)
     custo_output_mtok: float | None = Field(default=None, ge=0)
+    custo_cache_mtok: float | None = Field(default=None, ge=0)
     janela_contexto: int | None = Field(default=None, ge=1)
 
     @field_validator("tipo")
@@ -64,6 +65,7 @@ class UpdateModeloLLMInput(BaseModel):
     descricao: str | None = Field(default=None, max_length=500)
     custo_input_mtok: float | None = Field(default=None, ge=0)
     custo_output_mtok: float | None = Field(default=None, ge=0)
+    custo_cache_mtok: float | None = Field(default=None, ge=0)
     janela_contexto: int | None = Field(default=None, ge=1)
     ativo: bool | None = None
 
@@ -111,6 +113,7 @@ async def create_modelo_endpoint(
         descricao=body.descricao,
         custo_input_mtok=body.custo_input_mtok,
         custo_output_mtok=body.custo_output_mtok,
+        custo_cache_mtok=body.custo_cache_mtok,
         janela_contexto=body.janela_contexto,
     )
     await record_audit(

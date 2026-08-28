@@ -142,6 +142,9 @@ async def main() -> None:
     # Relatório mensal de uso (mig 165) — PDF para o cliente, no dia marcado
     relatorio_task = asyncio.create_task(_relatorio_uso_loop(pool))
 
+    # Saúde de IA (mig 178): catálogo OpenRouter + métricas de endpoint
+    openrouter_task = asyncio.create_task(_openrouter_sync_loop(pool))
+
     # Push FCM (mig 168): LISTEN no mesmo canal do SSE → notifica os
     # dispositivos da empresa em mensagem nova de cliente. No-op sem a
     # credencial no env.
@@ -229,6 +232,7 @@ async def main() -> None:
         cleanup_task.cancel()
         resumo_task.cancel()
         relatorio_task.cancel()
+        openrouter_task.cancel()
         push_task.cancel()
         for t in (
             sync_task,
@@ -236,6 +240,7 @@ async def main() -> None:
             cleanup_task,
             resumo_task,
             relatorio_task,
+            openrouter_task,
             push_task,
         ):
             try:
@@ -413,6 +418,32 @@ async def _relatorio_uso_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("relatorio_uso_loop_error", error=str(e))
         await asyncio.sleep(300)
+
+
+# Saúde de IA (mig 178): 10 min equilibra frescor do alerta de degradação
+# (janelas do OpenRouter são de 30m — colher mais rápido não traz dado novo)
+# com volume de chamadas (~25 modelos/tick, bem abaixo dos rate limits).
+OPENROUTER_SYNC_INTERVAL_SECONDS = 600
+
+
+async def _openrouter_sync_loop(pool) -> None:
+    """Coleta saúde dos modelos em uso + sincroniza o catálogo 1x/dia.
+
+    Métricas por endpoint (uptime/latência/throughput) a cada tick; o catálogo
+    completo (388 modelos, 103 provedores) roda uma vez por dia via claim
+    atômico em `openrouter_sync_estado` — seguro com múltiplos workers.
+    """
+    from whatsapp_langchain.shared.openrouter_catalogo import run_openrouter_sync
+
+    # Aguarda o boot estabilizar (migrations/bootstrap)
+    await asyncio.sleep(180)
+
+    while True:
+        try:
+            await run_openrouter_sync(pool)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("openrouter_sync_loop_error", error=str(e))
+        await asyncio.sleep(OPENROUTER_SYNC_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

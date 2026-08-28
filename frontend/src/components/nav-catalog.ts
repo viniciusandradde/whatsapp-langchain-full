@@ -109,6 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { secao: "Conhecimento", label: "Variáveis", href: "/settings/variaveis", requires: "variavel.read" },
       // Com o que ela roda
       { secao: "Modelos e ferramentas", label: "Catálogo de modelos", href: "/catalog/models", requires: "agente.config" },
+      { secao: "Modelos e ferramentas", label: "Catálogo OpenRouter", href: "/catalog/openrouter", requiresSuperadmin: true },
       { secao: "Modelos e ferramentas", label: "Modelo por agente", href: "/models", requires: "agente.config" },
       { secao: "Modelos e ferramentas", label: "Servidores MCP", href: "/catalog/mcp", requires: "agente.config" },
     ],
