@@ -205,20 +205,20 @@ export function VisaoGeral({
               return (
                 <div
                   key={r.slug}
-                  className="grid grid-cols-[1.5rem_minmax(8rem,14rem)_1fr_auto] items-center gap-2 text-sm"
+                  className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-sm sm:grid-cols-[1.5rem_minmax(8rem,20rem)_1fr_auto]"
                 >
                   <span className="text-xs text-muted-foreground">
                     {i + 1}.
                   </span>
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate font-mono text-xs">{r.slug}</span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="break-all font-mono text-xs">{r.slug}</span>
                     {r.promovido ? (
                       <Badge variant="success" className="shrink-0">
                         curado
                       </Badge>
                     ) : null}
                   </span>
-                  <div className="h-2 rounded-full bg-muted">
+                  <div className="order-last col-span-full h-2 rounded-full bg-muted sm:order-none sm:col-span-1">
                     <div
                       className="h-full rounded-full bg-chart-2"
                       style={{
