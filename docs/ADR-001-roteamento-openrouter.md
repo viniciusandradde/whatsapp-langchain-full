@@ -95,3 +95,22 @@ respeitou.
   fila assume (contrato mig 164).
 - A política mora num único lugar; quem adicionar modelo ao catálogo herda a
   regra sem pensar nela.
+
+## Adendo — eval do modelo de texto (2026-08-28)
+
+Candidato `deepseek/deepseek-v4-flash` (US$0,087/0,174 por Mtok, ~62% mais
+barato) contra o titular `google/gemini-3.1-flash-lite`, no dev:
+
+| | gemini-3.1 | v4-flash |
+|---|---|---|
+| golden (50 conversas reais, mesmo judge) | **10/50** | **1/50** |
+| bateria (12 cenários + injection) | 0 erros, 0 vazamentos | 0 erros, 0 vazamentos |
+| latência mediana/turno | 5,2s | 11,4s |
+
+**Veredito do dono: gemini mantido.** A falha do candidato não é segurança
+nem pt-BR — é obediência ao comportamento canônico do prompt (encaminhar em
+vez de interrogar, saudação padrão), a mesma família do deepseek-v3.2.
+Economia recusada: US$0,96/mês. Procedimento reproduzível:
+`scripts/eval_langsmith.py --model <slug> --dataset luis-fernando-gold-prod
+--empresa-id 1018` + bateria da aba Testar. A alavanca de custo que resta é
+o prompt (~5k tokens/mensagem; workload 99,5% input).
