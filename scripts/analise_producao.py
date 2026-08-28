@@ -467,6 +467,16 @@ def coletar_para_checagens():
         "ls %s/db/migrations/*.sql 2>/dev/null | xargs -n1 basename" % DIR_REPO
     )
 
+    # Alertas de degradacao de IA vivos (mig 180). Antes da migration existir
+    # em producao a query falha e o num() devolve None — a checagem pula.
+    ia_ativos, _ = sql_stdin(
+        "SELECT count(*) FROM ia_alerta WHERE resolvido_em IS NULL;"
+    )
+    ia_resumo, _ = sql_stdin(
+        "SELECT string_agg(tipo || ' ' || modelo_slug, '; ') "
+        "FROM ia_alerta WHERE resolvido_em IS NULL;"
+    )
+
     m = num(minutos, None)
     return {
         # -1 é o "nunca processou nada" do COALESCE; vira None para a checagem
@@ -487,6 +497,8 @@ def coletar_para_checagens():
             % PREFIXO_PROD
         ).strip(),
         "hoje": sh("date +%F").strip(),
+        "ia_alertas_ativos": num(ia_ativos, None),
+        "ia_alertas_resumo": str(ia_resumo).strip() or None,
         "migrations_arquivos": [x for x in arquivos.splitlines() if x.endswith(".sql")],
         "migrations_aplicadas": [
             x.strip() for x in aplicadas.splitlines() if x.strip().endswith(".sql")

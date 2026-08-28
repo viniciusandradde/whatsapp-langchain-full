@@ -5379,3 +5379,167 @@ export async function saveConfigProducao(
 ): Promise<{ ok: boolean }> {
   return apiFetch("/api/relatorios/producao/config", { method: "PUT", body });
 }
+
+// ---------------------------------------------------------------------------
+// Catálogo OpenRouter (mig 178) — módulo Saúde de IA. Superadmin-only no
+// servidor; o catálogo completo é observabilidade, a seleção continua curada.
+// ---------------------------------------------------------------------------
+
+export interface OpenRouterStatus {
+  catalogo_sync_at: string | null;
+  total_modelos?: number | null;
+  total_provedores?: number | null;
+  metricas_sync_at?: string | null;
+  erro?: string | null;
+  rankings_sync_at?: string | null;
+}
+
+export interface OpenRouterProvedor {
+  slug: string;
+  nome: string;
+  privacy_policy_url: string | null;
+  tos_url: string | null;
+  status_page_url: string | null;
+  hq: string | null;
+  datacenters: unknown[];
+  atualizado_em: string | null;
+}
+
+export interface OpenRouterModelo {
+  slug: string;
+  nome: string;
+  context_length: number | null;
+  input_modalities: string[];
+  output_modalities: string[];
+  // USD por TOKEN (formato do OpenRouter) — a promoção converte pra /Mtok.
+  pricing: Record<string, string | null>;
+  benchmarks: {
+    artificial_analysis?: {
+      intelligence_index?: number;
+      coding_index?: number;
+      agentic_index?: number;
+    };
+  };
+  criado_no_or: string | null;
+  atualizado_em: string | null;
+  promovido: boolean;
+}
+
+export async function getOpenRouterStatus(): Promise<OpenRouterStatus> {
+  return apiFetch<OpenRouterStatus>(`/api/openrouter/status`);
+}
+
+export async function getOpenRouterProvedores(): Promise<{
+  items: OpenRouterProvedor[];
+}> {
+  return apiFetch(`/api/openrouter/provedores`);
+}
+
+export async function getOpenRouterModelos(params?: {
+  q?: string;
+  modalidade?: string;
+}): Promise<{ items: OpenRouterModelo[] }> {
+  const qs = new URLSearchParams();
+  if (params?.q) qs.set("q", params.q);
+  if (params?.modalidade) qs.set("modalidade", params.modalidade);
+  const suffix = qs.size ? `?${qs}` : "";
+  return apiFetch(`/api/openrouter/modelos${suffix}`);
+}
+
+/** 202 — o sync roda em background; o /status conta o resultado. */
+export async function syncOpenRouter(): Promise<{ status: string }> {
+  return apiFetch(`/api/openrouter/sync`, { method: "POST" });
+}
+
+export async function promoverModeloOpenRouter(
+  slug: string,
+  tipo: string
+): Promise<ModeloLLM> {
+  return apiFetch(`/api/openrouter/modelos/${slug}/promover`, {
+    method: "POST",
+    body: { tipo },
+  });
+}
+
+export async function getOpenRouterAnalise(
+  slug: string
+): Promise<import("@/components/analise-modelo").AnaliseModeloData> {
+  return apiFetch(`/api/openrouter/modelos/${slug}/analise`);
+}
+
+export interface SaudeFuncao {
+  funcao: "texto" | "imagem" | "audio" | "documentos";
+  modelos: string[];
+}
+export interface SaudeModelo {
+  uptime_30m: number | null;
+  latencia_p50_ms: number | null;
+  endpoints: number;
+  chamadas_24h: number;
+  erros_24h: number;
+  nossa_p50_ms: number | null;
+  custo_24h_usd: number;
+}
+export async function getOpenRouterSaude(): Promise<{
+  funcoes: SaudeFuncao[];
+  saude: Record<string, SaudeModelo>;
+}> {
+  return apiFetch(`/api/openrouter/saude`);
+}
+
+export interface RankingModelo {
+  slug: string;
+  total_tokens: number;
+  share_pct: number;
+  delta_7d_pct: number | null;
+  promovido: boolean;
+}
+export async function getOpenRouterRankings(): Promise<{
+  ultimo_dia: string | null;
+  items: RankingModelo[];
+}> {
+  return apiFetch(`/api/openrouter/rankings`);
+}
+
+export interface IaAlerta {
+  id: number;
+  tipo: string;
+  modelo_slug: string;
+  detalhe: Record<string, unknown>;
+  criado_em: string;
+  atualizado_em: string;
+  resolvido_em: string | null;
+}
+export async function getOpenRouterAlertas(): Promise<{
+  ativos: IaAlerta[];
+  resolvidos: IaAlerta[];
+}> {
+  return apiFetch(`/api/openrouter/alertas`);
+}
+
+export interface OpenRouterEvento {
+  id: number;
+  tipo: string;
+  modelo_slug: string;
+  detalhe: Record<string, unknown>;
+  criado_em: string;
+}
+export async function getOpenRouterEventos(params?: {
+  modelo?: string;
+}): Promise<{ items: OpenRouterEvento[] }> {
+  const qs = params?.modelo ? `?modelo=${encodeURIComponent(params.modelo)}` : "";
+  return apiFetch(`/api/openrouter/eventos${qs}`);
+}
+
+export interface HistoricoModelo {
+  modelo: string;
+  metricas: { hora: string; uptime: number | null; latencia_p50: number | null }[];
+  ranking: { data: string; tokens: number; pos: number }[];
+  eventos: OpenRouterEvento[];
+}
+export async function getOpenRouterHistorico(
+  slug: string,
+  dias = 7
+): Promise<HistoricoModelo> {
+  return apiFetch(`/api/openrouter/modelos/${slug}/historico?dias=${dias}`);
+}

@@ -115,6 +115,9 @@ from whatsapp_langchain.server.routes.menu_chatbot import (
 from whatsapp_langchain.server.routes.modelo_mensagem import (
     router as modelo_mensagem_router,
 )
+from whatsapp_langchain.server.routes.openrouter_catalogo import (
+    router as openrouter_catalogo_router,
+)
 from whatsapp_langchain.server.routes.pasta import router as pasta_router
 from whatsapp_langchain.server.routes.perfil import router as perfil_router
 from whatsapp_langchain.server.routes.push import router as push_router
@@ -498,6 +501,7 @@ app.include_router(test_runner_router)
 app.include_router(rag_stats_router)
 app.include_router(relatorios_nps_router)
 app.include_router(relatorio_uso_router)
+app.include_router(openrouter_catalogo_router)
 app.include_router(relatorio_producao_router)
 app.include_router(rag_dataset_router)
 app.include_router(hitl_router)

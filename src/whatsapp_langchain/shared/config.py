@@ -241,6 +241,12 @@ class Settings(BaseSettings):
     # formato que o WhatsApp aceita como nota de voz) é do shared/voz.py.
     tts_model: str = "openai/gpt-audio-mini"
 
+    # --- Alertas de IA (mig 180) ---
+    # Telegram é opcional: os dois vazios = canal desligado (WhatsApp da
+    # empresa 1 e o banner do painel continuam funcionando sem ele).
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
+
     # --- LLM Rate Limit ---
     llm_rate_limit_requests_per_second: float = 0.5
     llm_rate_limit_max_burst: int = 10

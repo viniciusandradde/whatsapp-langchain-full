@@ -26,6 +26,7 @@ from producao_checks import (  # noqa: E402
     checar_backup_offsite,
     checar_disco,
     checar_graph_api_version,
+    checar_ia_alertas,
     checar_migrations,
     checar_worker_mudo,
     linha_backup,
@@ -309,3 +310,27 @@ class TestLinhaBackup:
 
     def test_sem_arquivo_nenhum_e_explicito(self) -> None:
         assert "sem arquivo" in linha_backup({})
+
+
+class TestChecarIaAlertas:
+    def test_sem_alertas_nao_acha_nada(self) -> None:
+        assert checar_ia_alertas(0) is None
+        assert checar_ia_alertas(None) is None
+
+    def test_alerta_vivo_vira_achado_atencao(self) -> None:
+        achado = checar_ia_alertas(
+            2, "uptime google/gemini-2.5-flash; latencia openai/gpt-audio-mini"
+        )
+        assert achado is not None
+        assert achado.severidade == ATENCAO
+        assert "2" in achado.titulo
+        assert "uptime google/gemini-2.5-flash" in achado.evidencia
+
+    def test_sem_resumo_aponta_o_painel(self) -> None:
+        achado = checar_ia_alertas(1, None)
+        assert achado is not None
+        assert "Catalogo OpenRouter" in achado.evidencia
+
+    def test_entra_no_rodar_checagens(self) -> None:
+        achados = rodar_checagens({"ia_alertas_ativos": 1})
+        assert any(a.chave == "ia_alertas" for a in achados)

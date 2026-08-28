@@ -30,6 +30,9 @@ class ModeloLLM:
     tipo: str
     custo_input_mtok: float | None
     custo_output_mtok: float | None
+    # Mig 139 criou a coluna; ela era lida por governanca_ia.get_custo_modelo
+    # mas invisível no painel/API — preço de cache só entrava por SQL manual.
+    custo_cache_mtok: float | None
     janela_contexto: int | None
     ativo: bool
     created_at: Any
@@ -53,6 +56,11 @@ class ModeloLLM:
                 if self.custo_output_mtok is not None
                 else None
             ),
+            "custo_cache_mtok": (
+                float(self.custo_cache_mtok)
+                if self.custo_cache_mtok is not None
+                else None
+            ),
             "janela_contexto": self.janela_contexto,
             "ativo": self.ativo,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -62,7 +70,7 @@ class ModeloLLM:
 
 _MODELO_COLS = (
     "id, empresa_id, provedor, nome, descricao, tipo, "
-    "custo_input_mtok, custo_output_mtok, janela_contexto, "
+    "custo_input_mtok, custo_output_mtok, custo_cache_mtok, janela_contexto, "
     "ativo, created_at, updated_at"
 )
 
@@ -116,6 +124,7 @@ async def create_modelo_llm(
     descricao: str | None = None,
     custo_input_mtok: float | None = None,
     custo_output_mtok: float | None = None,
+    custo_cache_mtok: float | None = None,
     janela_contexto: int | None = None,
 ) -> ModeloLLM:
     async with pool.connection() as conn:
@@ -123,8 +132,9 @@ async def create_modelo_llm(
             f"""
             INSERT INTO modelo_llm
                 (empresa_id, provedor, nome, descricao, tipo,
-                 custo_input_mtok, custo_output_mtok, janela_contexto)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 custo_input_mtok, custo_output_mtok, custo_cache_mtok,
+                 janela_contexto)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING {_MODELO_COLS}
             """,
             (
@@ -135,6 +145,7 @@ async def create_modelo_llm(
                 tipo,
                 custo_input_mtok,
                 custo_output_mtok,
+                custo_cache_mtok,
                 janela_contexto,
             ),
         )

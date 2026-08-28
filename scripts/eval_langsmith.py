@@ -50,6 +50,16 @@ async def main() -> int:
         default=999,
         help="Empresa dona do agente avaliado (default 999 = sandbox)",
     )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "Override do modelo de CHAT do agente (slug OpenRouter, ex. "
+            "deepseek/deepseek-v4-flash). Serve pra comparar candidatos contra "
+            "o golden ANTES de trocar em produção (ADR-001, decisão 4) — sem "
+            "isto o eval usa o modelo gravado no agente."
+        ),
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("LANGCHAIN_API_KEY") or os.environ.get("LANGSMITH_API_KEY")
@@ -96,6 +106,8 @@ async def main() -> int:
         agente_slug = inputs.get("agente_slug", "atendimento")
         try:
             runtime = await resolve_agente_runtime(pool, EMPRESA_ID, agente_slug)
+            if args.model:
+                runtime.modelo = args.model
             graph = await load_graph(
                 agente_slug,
                 checkpointer=None,

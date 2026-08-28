@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import {
+  isMyAdmin,
   getAgenteTemplates,
   getAgenteIA,
   getDepartamentos,
@@ -39,6 +40,15 @@ export default async function AgenteDbEditPage({ params }: Props) {
   }
 
   // Modelos LLM (chat) — opcional, fallback pra lista vazia se falhar
+  // Saúde de IA (F2): o picker do catálogo completo é superadmin-only —
+  // decisão do dono (2026-08-28); empresas seguem no curado.
+  let superadmin = false;
+  try {
+    superadmin = (await isMyAdmin()).is_superadmin;
+  } catch {
+    superadmin = false;
+  }
+
   let modelosChat: ModeloLLM[] = [];
   try {
     const r = await getModelosLLM({ tipo: "chat", onlyActive: true });
@@ -104,6 +114,7 @@ export default async function AgenteDbEditPage({ params }: Props) {
       ) : (
         <AgenteEditor
           initialAgente={agente!}
+          superadmin={superadmin}
           modelosChat={modelosChat}
           menusAtivos={menusAtivos}
           templates={templates}
