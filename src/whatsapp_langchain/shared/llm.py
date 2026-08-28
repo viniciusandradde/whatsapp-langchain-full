@@ -21,6 +21,39 @@ from whatsapp_langchain.shared.config import settings
 
 _RATE_LIMITERS: dict[tuple[float, int], InMemoryRateLimiter] = {}
 
+# ---------------------------------------------------------------------------
+# Política de roteamento OpenRouter (ADR-001, docs/ADR-001-roteamento-openrouter.md)
+#
+# Modelo de peso aberto no OpenRouter é servido por MUITOS hosts terceiros
+# (deepseek-v3.2: 14 provedores, alguns em fp4) e o roteador padrão escolhe
+# pelo preço — a request de um cliente pode cair calada num host quantizado
+# degradado. O piso abaixo barra isso sem manter lista nominal de provedores,
+# que envelhece e ainda não tem tráfego real pra ser calibrada.
+#
+# Modelo proprietário fica SEM bloco `provider` de propósito: Gemini/GPT/
+# Claude/Grok só têm endpoints 1st-party (Gemini: 2, ambos da própria Google)
+# e o load-balance padrão do OpenRouter já faz o failover entre eles —
+# qualquer preferência explícita DESLIGA esse balanceamento. Não "melhorar".
+# ---------------------------------------------------------------------------
+
+QUANTIZACOES_ACEITAS = ["fp8", "bf16", "fp16", "fp32"]
+
+_PREFIXOS_PROPRIETARIOS = ("google/", "openai/", "anthropic/", "x-ai/")
+
+
+def provider_preferences(model: str) -> dict | None:
+    """Bloco `provider` do OpenRouter pra este modelo, ou None.
+
+    None = não enviar bloco nenhum (proprietário; o default do OpenRouter já
+    é o ótimo). Dict = piso de quantização pra peso aberto; `allow_fallbacks`
+    continua no default (true) — a redundância entre hosts é o motivo de usar
+    OpenRouter, restringir demais a derruba.
+    """
+    if model.startswith(_PREFIXOS_PROPRIETARIOS):
+        return None
+    return {"quantizations": QUANTIZACOES_ACEITAS}
+
+
 # Catálogo curado de modelos disponíveis no painel para swap por agente.
 # Mantenha em sincronia com o frontend (/models) — qualquer string é aceita
 # pelo backend, mas só essas aparecem no select.
@@ -142,6 +175,11 @@ def create_chat_model(
         kwargs["top_p"] = top_p
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
+
+    prefs = provider_preferences(kwargs["model"])
+    if prefs is not None:
+        # ChatOpenAI repassa `extra_body` verbatim no JSON da request.
+        kwargs["extra_body"] = {"provider": prefs}
 
     return ChatOpenAI(**kwargs)
 

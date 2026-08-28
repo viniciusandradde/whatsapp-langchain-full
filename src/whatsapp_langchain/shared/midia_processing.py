@@ -28,6 +28,7 @@ from whatsapp_langchain.shared.governanca_ia import (
     get_custo_modelo,
     registrar_execucao,
 )
+from whatsapp_langchain.shared.llm import provider_preferences
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -331,6 +332,21 @@ async def chat_completion_media(
     api_key = settings.openrouter_api_key
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY não configurada")
+    modelo_alvo = model or settings.openrouter_midia_model
+    payload: dict = {
+        "model": modelo_alvo,
+        "messages": messages,
+        # Pede o custo REAL cobrado dentro do `usage` da resposta
+        # (mig 139: usage.cost é a verdade — a tabela local chegou a
+        # superestimar 91%). Sem isto o gasto de mídia seguia
+        # invisível ao ia_budget.
+        "usage": {"include": True},
+    }
+    # ADR-001: modelo de peso aberto ganha piso de quantização; proprietário
+    # segue sem bloco `provider` (o default do OpenRouter já é o ótimo).
+    prefs = provider_preferences(modelo_alvo)
+    if prefs is not None:
+        payload["provider"] = prefs
     inicio = time.monotonic()
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -339,15 +355,7 @@ async def chat_completion_media(
                 "Authorization": f"Bearer {api_key.get_secret_value()}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": model or settings.openrouter_midia_model,
-                "messages": messages,
-                # Pede o custo REAL cobrado dentro do `usage` da resposta
-                # (mig 139: usage.cost é a verdade — a tabela local chegou a
-                # superestimar 91%). Sem isto o gasto de mídia seguia
-                # invisível ao ia_budget.
-                "usage": {"include": True},
-            },
+            json=payload,
             timeout=60.0,
         )
         response.raise_for_status()
@@ -362,7 +370,19 @@ async def chat_completion_media(
             erro = result.get("error") or {}
             detalhe = erro.get("message") or str(result)[:200]
             raise RuntimeError(f"OpenRouter recusou a chamada de mídia: {detalhe}")
-        content = result["choices"][0]["message"].get("content")
+        # Variante do mesmo gotcha (API reference): o erro também pode vir
+        # DENTRO de `choices[0].error` num HTTP 200 — sem esta checagem ele
+        # viraria content vazio silencioso, o mesmo destino do atendimento 574.
+        primeira = result["choices"][0]
+        erro_choice = primeira.get("error")
+        if erro_choice:
+            detalhe = (
+                erro_choice.get("message")
+                if isinstance(erro_choice, dict)
+                else str(erro_choice)
+            ) or str(erro_choice)[:200]
+            raise RuntimeError(f"OpenRouter recusou a chamada de mídia: {detalhe}")
+        content = primeira["message"].get("content")
         if pool is not None and empresa_id is not None:
             await registrar_custo_midia(
                 pool,

@@ -173,6 +173,7 @@ When in doubt, prefer these over inferring from code:
 - `docs/AUTH.md` — Better Auth + user status + reset sem SMTP + login history + SSO Google + rate limits
 - `docs/NPS.md` — módulo de pesquisa de satisfação: schema, fluxo de captura, endpoints de relatório, dashboard
 - `docs/LANGSMITH.md` — datasets + LLM-as-judge + sync sandbox 999
+- `docs/ADR-001-roteamento-openrouter.md` — política de roteamento de provedores: peso aberto ganha piso de quantização (`shared/llm.py::provider_preferences`); proprietário fica SEM bloco `provider` de propósito (preferência explícita desliga o failover do OpenRouter); por que NÃO usamos `data_collection: deny` nem fallback de modelo
 - `docs/DOKPLOY.md` — passo a passo completo Dokploy (Project + Compose service + Domains + envs); inclui caveat do bug do `addPrefix` quando usa `path != "/"`
 - `docs/DEPLOY.md` / `docs/RAILWAY.md` — alternative deploy targets
 - `docs/STRESS_TESTING.md` — Locust setup (`stress/` profile in compose)
