@@ -6,6 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Educational, production-ready harness around WhatsApp agents built with LangGraph. The repo's pedagogy is the *harness around the agent*, not the agent itself: reliable inbound, async processing, durable context/memory, retries, rate limits, and operability. README and docs are in Portuguese (pt-BR); keep new docs/comments in pt-BR to match.
 
+## ⛳ Contrato de entrega: feature nova passa pelo DEV antes de produção
+
+**Merge no master auto-deploya em produção** (CI/CD com filtro por caminho) — mergear É deployar. Por decisão do dono (2026-08-25), **toda feature nova é validada no ambiente de desenvolvimento ANTES do merge**:
+
+1. Feature em branch.
+2. Subir no dev: `docker compose -p chatnexus-dev -f docker-compose.yml -f docker-compose.override.yml up -d --build` (rebuild obrigatório — restart não pega edits). Painel dev: `https://chatnexus.hospitalevangelico.com.br` (login `admin@dev.local`).
+3. Validar no dev: testes dirigidos + fumaça real pela tela/API (UI ganha captura de tela).
+4. Mostrar ao dono no dev **antes** do merge.
+5. Só então PR → CI verde → merge (= produção). Depois do deploy, conferir o container NOVO (deploy verde ≠ código novo servindo).
+
+Exceção: hotfix de incidente em produção, somente com ordem explícita do dono. Mudança docs-only (CLAUDE.md, docs/) fica fora do filtro de build e pode ir direto.
+
 ## Common commands
 
 All Python work goes through `uv` (locked via `uv.lock`). The Makefile is the canonical entry point — prefer `make <target>` over raw commands so behavior matches CI.
