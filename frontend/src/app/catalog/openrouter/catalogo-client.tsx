@@ -22,7 +22,11 @@ import type {
   OpenRouterModelo,
   OpenRouterProvedor,
   OpenRouterStatus,
+  SaudeFuncao,
+  SaudeModelo,
 } from "@/lib/api";
+
+import { VisaoGeral } from "./visao-geral";
 
 import { promoverAction, sincronizarAction, statusAction } from "./actions";
 
@@ -55,10 +59,12 @@ export function CatalogoClient({
   status,
   modelosIniciais,
   provedores,
+  saude,
 }: {
   status: OpenRouterStatus | null;
   modelosIniciais: OpenRouterModelo[];
   provedores: OpenRouterProvedor[];
+  saude: { funcoes: SaudeFuncao[]; saude: Record<string, SaudeModelo> } | null;
 }) {
   const [st, setSt] = useState(status);
   const [modelos, setModelos] = useState(modelosIniciais);
@@ -159,8 +165,9 @@ export function CatalogoClient({
         </Button>
       </div>
 
-      <Tabs defaultValue="modelos">
+      <Tabs defaultValue={saude ? "visao" : "modelos"}>
         <TabsList>
+          {saude ? <TabsTrigger value="visao">Visão geral</TabsTrigger> : null}
           <TabsTrigger value="modelos">
             Modelos ({modelos.length})
           </TabsTrigger>
@@ -168,6 +175,16 @@ export function CatalogoClient({
             Provedores ({provedores.length})
           </TabsTrigger>
         </TabsList>
+
+        {saude ? (
+          <TabsContent value="visao">
+            <VisaoGeral
+              funcoes={saude.funcoes}
+              saude={saude.saude}
+              modelos={modelos}
+            />
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="modelos" className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">

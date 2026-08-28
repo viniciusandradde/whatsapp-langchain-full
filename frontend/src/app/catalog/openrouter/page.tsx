@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { ApiError } from "@/components/ui/api-error";
 import {
   getOpenRouterModelos,
+  getOpenRouterSaude,
   getOpenRouterProvedores,
   getOpenRouterStatus,
   isMyAdmin,
@@ -54,16 +55,19 @@ export default async function CatalogoOpenRouterPage() {
   let status: OpenRouterStatus | null = null;
   let modelos: OpenRouterModelo[] = [];
   let provedores: OpenRouterProvedor[] = [];
+  let saude: Awaited<ReturnType<typeof getOpenRouterSaude>> | null = null;
   let error: unknown = null;
   try {
-    const [s, m, p] = await Promise.all([
+    const [s, m, p, sa] = await Promise.all([
       getOpenRouterStatus(),
       getOpenRouterModelos(),
       getOpenRouterProvedores(),
+      getOpenRouterSaude(),
     ]);
     status = s;
     modelos = m.items;
     provedores = p.items;
+    saude = sa;
   } catch (e) {
     error = e;
   }
@@ -82,6 +86,7 @@ export default async function CatalogoOpenRouterPage() {
           status={status}
           modelosIniciais={modelos}
           provedores={provedores}
+          saude={saude}
         />
       )}
     </div>

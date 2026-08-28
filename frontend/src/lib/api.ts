@@ -5465,3 +5465,23 @@ export async function getOpenRouterAnalise(
 ): Promise<import("@/components/analise-modelo").AnaliseModeloData> {
   return apiFetch(`/api/openrouter/modelos/${slug}/analise`);
 }
+
+export interface SaudeFuncao {
+  funcao: "texto" | "imagem" | "audio" | "documentos";
+  modelos: string[];
+}
+export interface SaudeModelo {
+  uptime_30m: number | null;
+  latencia_p50_ms: number | null;
+  endpoints: number;
+  chamadas_24h: number;
+  erros_24h: number;
+  nossa_p50_ms: number | null;
+  custo_24h_usd: number;
+}
+export async function getOpenRouterSaude(): Promise<{
+  funcoes: SaudeFuncao[];
+  saude: Record<string, SaudeModelo>;
+}> {
+  return apiFetch(`/api/openrouter/saude`);
+}

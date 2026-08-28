@@ -218,6 +218,104 @@ async def metricas_modelo(
     }
 
 
+@router.get("/saude")
+async def saude_funcoes(
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Visão geral do Saúde de IA (F3): as 4 funções do Nexus com o modelo
+    REALMENTE em uso, cruzando o OpenRouter (uptime/latência do último
+    snapshot) com a NOSSA operação (`ia_execucao`, 24h).
+
+    Plataforma inteira, não tenant — por isso o bypass de RLS (rota já é
+    superadmin-only).
+    """
+    await _exigir_superadmin(user_id)
+    pool = await get_pool()
+    from whatsapp_langchain.shared.config import settings
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT DISTINCT modelo FROM agente_ia "
+                "WHERE ativo AND modelo IS NOT NULL AND modelo <> ''"
+            )
+            modelos_agentes = [str(r[0]) for r in await cur.fetchall()]
+
+    # As 4 funções e quem as serve de fato. Documentos = OCR usa o modelo de
+    # mídia; PDF/DOCX/XLSX são extraídos localmente sem LLM (mig 164).
+    funcoes = [
+        {
+            "funcao": "texto",
+            "modelos": sorted({*modelos_agentes, settings.openrouter_model}),
+        },
+        {"funcao": "imagem", "modelos": [settings.openrouter_midia_model]},
+        {
+            "funcao": "audio",
+            "modelos": sorted({settings.openrouter_midia_model, settings.tts_model}),
+        },
+        {"funcao": "documentos", "modelos": [settings.openrouter_midia_model]},
+    ]
+
+    todos = sorted({m for f in funcoes for m in f["modelos"]})
+    saude: dict[str, dict] = {}
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            for slug in todos:
+                provedor, _, nome = slug.partition("/")
+                # OpenRouter: melhor uptime e menor p50 entre os endpoints do
+                # último snapshot (o roteador escolhe o melhor caminho).
+                cur = await conn.execute(
+                    """
+                    SELECT max(uptime_30m),
+                           min((latencia->>'p50')::numeric),
+                           count(*)
+                      FROM (
+                        SELECT DISTINCT ON (provider_tag)
+                               uptime_30m, latencia
+                          FROM openrouter_endpoint_metrica
+                         WHERE modelo_slug = %s
+                           AND coletado_em > NOW() - interval '2 hours'
+                         ORDER BY provider_tag, coletado_em DESC
+                      ) ult
+                    """,
+                    (slug,),
+                )
+                orow = await cur.fetchone()
+                # Nossa operação, 24h.
+                cur = await conn.execute(
+                    """
+                    SELECT count(*),
+                           count(*) FILTER (WHERE status <> 'success'),
+                           percentile_cont(0.5)
+                             WITHIN GROUP (ORDER BY duracao_ms),
+                           coalesce(sum(custo_total), 0)
+                      FROM ia_execucao
+                     WHERE modelo_provedor = %s AND modelo_nome = %s
+                       AND created_at > NOW() - interval '24 hours'
+                    """,
+                    (provedor, nome),
+                )
+                nrow = await cur.fetchone()
+                saude[slug] = {
+                    "uptime_30m": float(orow[0])
+                    if orow and orow[0] is not None
+                    else None,
+                    "latencia_p50_ms": float(orow[1])
+                    if orow and orow[1] is not None
+                    else None,
+                    "endpoints": int(orow[2]) if orow else 0,
+                    "chamadas_24h": int(nrow[0]) if nrow else 0,
+                    "erros_24h": int(nrow[1]) if nrow else 0,
+                    "nossa_p50_ms": float(nrow[2])
+                    if nrow and nrow[2] is not None
+                    else None,
+                    "custo_24h_usd": float(nrow[3]) if nrow else 0.0,
+                }
+
+    return {"funcoes": funcoes, "saude": saude}
+
+
 @router.get("/modelos/{author}/{slug}/analise")
 async def analise_modelo(
     author: str,
