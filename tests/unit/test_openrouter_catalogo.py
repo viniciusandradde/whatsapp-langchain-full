@@ -13,9 +13,11 @@ import httpx
 import respx
 
 from whatsapp_langchain.shared.openrouter_catalogo import (
+    _slug_base,
     coletar_metricas,
     modelos_em_uso,
     sync_catalogo,
+    sync_rankings,
 )
 
 _PROVIDERS = {
@@ -186,3 +188,77 @@ class TestModelosEmUso:
         assert "openai/gpt-audio-mini" in slugs
         assert "google/gemini-3.1-flash-lite" in slugs  # do agente_ia
         assert len(slugs) == len(set(slugs))  # sem duplicatas
+
+
+_RANKINGS = {
+    "data": [
+        # permaslug DATADO — formato real do dataset (capturado 2026-08-28)
+        {
+            "date": "2026-08-27",
+            "model_permaslug": "deepseek/deepseek-v4-flash-20260731",
+            "total_tokens": "2001400000000",
+        },
+        {
+            "date": "2026-08-27",
+            "model_permaslug": "xiaomi/mimo-v2.5-20260422",
+            "total_tokens": "1921600000000",
+        },
+    ]
+}
+
+
+class TestSlugBase:
+    def test_remove_sufixo_datado(self):
+        assert (
+            _slug_base("deepseek/deepseek-v4-flash-20260731")
+            == "deepseek/deepseek-v4-flash"
+        )
+
+    def test_slug_sem_sufixo_fica_intacto(self):
+        assert _slug_base("google/gemini-2.5-flash") == "google/gemini-2.5-flash"
+
+    def test_data_antes_da_variante_free(self):
+        # visto nos dados reais: a data fica ANTES do :free
+        assert (
+            _slug_base("minimax/minimax-m3-20260531:free") == "minimax/minimax-m3:free"
+        )
+
+    def test_numero_no_meio_nao_e_sufixo(self):
+        # só o -YYYYMMDD FINAL é versão; dígitos no nome fazem parte do slug
+        assert (
+            _slug_base("tencent/hy3-20260706-preview") == "tencent/hy3-20260706-preview"
+        )
+
+
+class TestSyncRankings:
+    @respx.mock
+    async def test_upsert_com_slug_base_e_carimbo(self, respx_mock):
+        respx_mock.get(url__regex=r".*/datasets/rankings-daily").mock(
+            return_value=httpx.Response(200, json=_RANKINGS)
+        )
+        pool, conn = _pool_mock()
+        n = await sync_rankings(pool)
+        assert n == 2
+        inserts = [
+            c
+            for c in conn.execute.await_args_list
+            if "openrouter_ranking_diario" in str(c.args[0])
+        ]
+        params = inserts[0].args[1]
+        assert params[1] == "deepseek/deepseek-v4-flash-20260731"  # permaslug cru
+        assert params[2] == "deepseek/deepseek-v4-flash"  # base derivada
+        assert params[3] == 2001400000000  # BIGINT, não string
+        sqls = " ".join(str(c.args[0]) for c in conn.execute.await_args_list)
+        assert "rankings_sync_at = NOW()" in sqls
+
+    @respx.mock
+    async def test_linha_quebrada_nao_derruba_o_lote(self, respx_mock):
+        quebrado = {
+            "data": _RANKINGS["data"] + [{"date": "2026-08-27"}]  # sem permaslug
+        }
+        respx_mock.get(url__regex=r".*/datasets/rankings-daily").mock(
+            return_value=httpx.Response(200, json=quebrado)
+        )
+        pool, _ = _pool_mock()
+        n = await sync_rankings(pool)
+        assert n == 2  # só as válidas contaram

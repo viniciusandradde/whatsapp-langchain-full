@@ -22,6 +22,7 @@ protegem com `is_superadmin`.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -303,6 +304,67 @@ async def coletar_metricas(
 
 
 # ---------------------------------------------------------------------------
+# Rankings diários (GET /datasets/rankings-daily — COM chave; mig 179).
+# ---------------------------------------------------------------------------
+
+# O permaslug do dataset vem DATADO (deepseek/deepseek-v4-flash-20260731);
+# a base sem o -YYYYMMDD é o que casa com openrouter_modelo e com o curado.
+# A data vem ANTES da variante quando há uma (minimax-m3-20260531:free →
+# minimax/minimax-m3:free) — visto nos dados reais em 2026-08-28.
+_SUFIXO_VERSAO = re.compile(r"-\d{8}(?=$|:)")
+
+
+def _slug_base(permaslug: str) -> str:
+    return _SUFIXO_VERSAO.sub("", permaslug)
+
+
+async def sync_rankings(pool: AsyncConnectionPool) -> int:
+    """Baixa o dataset de rankings (tokens/dia, ~51 modelos × 30 dias) e faz
+    UPSERT. A janela da API é móvel; a tabela local ACUMULA — sem retenção de
+    propósito (51 rows/dia ≈ 18k/ano, e histórico além de 30d é o valor).
+    """
+    async with httpx.AsyncClient() as client:
+        rows = (
+            await _get_json(
+                client, f"{_base()}/datasets/rankings-daily", com_chave=True
+            )
+        ).get("data") or []
+    gravadas = 0
+    async with pool.connection() as conn:
+        for r in rows:
+            try:
+                permaslug = str(r["model_permaslug"])
+                await conn.execute(
+                    """
+                    INSERT INTO openrouter_ranking_diario
+                        (data, model_permaslug, slug, total_tokens, coletado_em)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (data, model_permaslug) DO UPDATE SET
+                        slug = EXCLUDED.slug,
+                        total_tokens = EXCLUDED.total_tokens,
+                        coletado_em = NOW()
+                    """,
+                    (
+                        r["date"],
+                        permaslug,
+                        _slug_base(permaslug),
+                        int(r["total_tokens"]),
+                    ),
+                )
+                gravadas += 1
+            except Exception as exc:  # noqa: BLE001 — item isolado não derruba o lote
+                logger.warning(
+                    "or_sync_ranking_falhou", row=str(r)[:120], error=str(exc)[:200]
+                )
+        await conn.execute(
+            "UPDATE openrouter_sync_estado SET rankings_sync_at = NOW() WHERE id = 1"
+        )
+        await conn.commit()
+    logger.info("or_sync_rankings_ok", linhas=gravadas)
+    return gravadas
+
+
+# ---------------------------------------------------------------------------
 # Claim do sync diário (padrão resumo_diario) + entrypoint do loop do worker.
 # ---------------------------------------------------------------------------
 
@@ -323,8 +385,25 @@ async def _claim_catalogo_hoje(pool: AsyncConnectionPool) -> bool:
         return bool(cur.rowcount)
 
 
+async def _claim_rankings_hoje(pool: AsyncConnectionPool) -> bool:
+    """True = este worker ganhou o direito de sincronizar os rankings hoje."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE openrouter_sync_estado
+               SET rankings_sync_date = CURRENT_DATE
+             WHERE id = 1
+               AND (rankings_sync_date IS NULL
+                    OR rankings_sync_date < CURRENT_DATE)
+            """
+        )
+        await conn.commit()
+        return bool(cur.rowcount)
+
+
 async def run_openrouter_sync(pool: AsyncConnectionPool) -> None:
-    """Um tick do loop: métricas sempre; catálogo completo 1x/dia (claim)."""
+    """Um tick do loop: métricas sempre; catálogo e rankings 1x/dia (claims
+    independentes — falha num não segura o outro)."""
     if await _claim_catalogo_hoje(pool):
         try:
             await sync_catalogo(pool)
@@ -335,6 +414,17 @@ async def run_openrouter_sync(pool: AsyncConnectionPool) -> None:
                     "UPDATE openrouter_sync_estado "
                     "SET catalogo_sync_date = NULL, erro = %s WHERE id = 1",
                     (str(exc)[:500],),
+                )
+                await conn.commit()
+    if await _claim_rankings_hoje(pool):
+        try:
+            await sync_rankings(pool)
+        except Exception as exc:  # noqa: BLE001 — devolve o dia pra retentar no próximo tick
+            logger.warning("or_sync_rankings_falhou", error=str(exc)[:300])
+            async with pool.connection() as conn:
+                await conn.execute(
+                    "UPDATE openrouter_sync_estado "
+                    "SET rankings_sync_date = NULL WHERE id = 1"
                 )
                 await conn.commit()
     await coletar_metricas(pool)

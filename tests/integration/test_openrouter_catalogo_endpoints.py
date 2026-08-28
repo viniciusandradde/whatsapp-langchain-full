@@ -48,3 +48,6 @@ class TestSmoke:
 
     def test_saude_sem_auth_401(self) -> None:
         assert _client().get("/api/openrouter/saude").status_code == 401
+
+    def test_rankings_sem_auth_401(self) -> None:
+        assert _client().get("/api/openrouter/rankings").status_code == 401

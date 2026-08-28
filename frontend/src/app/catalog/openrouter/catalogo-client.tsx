@@ -22,6 +22,7 @@ import type {
   OpenRouterModelo,
   OpenRouterProvedor,
   OpenRouterStatus,
+  RankingModelo,
   SaudeFuncao,
   SaudeModelo,
 } from "@/lib/api";
@@ -60,11 +61,13 @@ export function CatalogoClient({
   modelosIniciais,
   provedores,
   saude,
+  rankings,
 }: {
   status: OpenRouterStatus | null;
   modelosIniciais: OpenRouterModelo[];
   provedores: OpenRouterProvedor[];
   saude: { funcoes: SaudeFuncao[]; saude: Record<string, SaudeModelo> } | null;
+  rankings: { ultimo_dia: string | null; items: RankingModelo[] } | null;
 }) {
   const [st, setSt] = useState(status);
   const [modelos, setModelos] = useState(modelosIniciais);
@@ -182,6 +185,7 @@ export function CatalogoClient({
               funcoes={saude.funcoes}
               saude={saude.saude}
               modelos={modelos}
+              rankings={rankings}
             />
           </TabsContent>
         ) : null}

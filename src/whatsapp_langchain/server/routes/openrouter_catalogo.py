@@ -32,6 +32,7 @@ from whatsapp_langchain.shared.empresa import is_superadmin
 from whatsapp_langchain.shared.openrouter_catalogo import (
     coletar_metricas,
     sync_catalogo,
+    sync_rankings,
 )
 from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -61,7 +62,8 @@ async def status_endpoint(
         cur = await conn.execute(
             """
             SELECT catalogo_sync_at, catalogo_total_modelos,
-                   catalogo_total_provs, metricas_sync_at, erro
+                   catalogo_total_provs, metricas_sync_at, erro,
+                   rankings_sync_at
               FROM openrouter_sync_estado WHERE id = 1
             """
         )
@@ -74,6 +76,7 @@ async def status_endpoint(
         "total_provedores": row[2],
         "metricas_sync_at": row[3].isoformat() if row[3] else None,
         "erro": row[4],
+        "rankings_sync_at": row[5].isoformat() if row[5] else None,
     }
 
 
@@ -410,6 +413,83 @@ async def analise_modelo(
     }
 
 
+@router.get("/rankings")
+async def rankings(
+    dias: int = 30,
+    top: int = 20,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Rankings do mercado (mig 179): tokens/dia dos modelos mais usados do
+    OpenRouter, agregados por slug base (versões datadas do mesmo modelo
+    somam). `delta_7d_pct` compara o último dia com 7 dias antes — a
+    tendência resumida que o dashboard mostra sem precisar de série.
+
+    A linha `other` do dataset (resto do mercado agregado) fica fora dos
+    itens — não é um modelo — mas ENTRA no denominador do share, senão o
+    percentual mentiria pra cima.
+    """
+    await _exigir_superadmin(user_id)
+    dias = max(1, min(dias, 366))
+    top = max(1, min(top, 51))
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute("SELECT max(data) FROM openrouter_ranking_diario")
+        row = await cur.fetchone()
+        ultimo_dia = row[0] if row else None
+        if ultimo_dia is None:
+            return {"ultimo_dia": None, "items": []}
+        cur = await conn.execute(
+            """
+            WITH por_slug AS (
+              SELECT slug, data, sum(total_tokens) AS tokens
+                FROM openrouter_ranking_diario
+               WHERE data > %s::date - make_interval(days => %s)
+               GROUP BY slug, data
+            ), ultimo AS (
+              SELECT slug, tokens FROM por_slug WHERE data = %s
+            ), total AS (
+              SELECT sum(tokens) AS tokens_dia FROM ultimo
+            ), semana_atras AS (
+              SELECT slug, tokens FROM por_slug
+               WHERE data = %s::date - interval '7 days'
+            )
+            SELECT u.slug, u.tokens, s.tokens AS tokens_7d,
+                   EXISTS (
+                     SELECT 1 FROM modelo_llm ml
+                      WHERE ml.empresa_id IS NULL
+                        AND ml.provedor || '/' || ml.nome = u.slug
+                   ) AS promovido,
+                   t.tokens_dia
+              FROM ultimo u
+              CROSS JOIN total t
+              LEFT JOIN semana_atras s USING (slug)
+             WHERE u.slug <> 'other'
+             ORDER BY u.tokens DESC
+             LIMIT %s
+            """,
+            (ultimo_dia, dias, ultimo_dia, ultimo_dia, top),
+        )
+        rows = await cur.fetchall()
+    total_dia = int(rows[0][4]) if rows else 1
+    return {
+        "ultimo_dia": ultimo_dia.isoformat(),
+        "items": [
+            {
+                "slug": r[0],
+                "total_tokens": int(r[1]),
+                "share_pct": round(int(r[1]) * 100 / total_dia, 1),
+                "delta_7d_pct": (
+                    round((int(r[1]) - int(r[2])) * 100 / int(r[2]), 1)
+                    if r[2]
+                    else None
+                ),
+                "promovido": bool(r[3]),
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.post("/sync", status_code=202)
 async def sync_endpoint(
     background_tasks: BackgroundTasks,
@@ -426,6 +506,7 @@ async def sync_endpoint(
     async def _rodar() -> None:
         try:
             await sync_catalogo(pool)
+            await sync_rankings(pool)
             await coletar_metricas(pool)
         except Exception as exc:  # noqa: BLE001 — background: registra e o /status expõe
             logger.warning("or_sync_manual_falhou", error=str(exc)[:300])

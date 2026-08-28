@@ -12,7 +12,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { OpenRouterModelo, SaudeFuncao, SaudeModelo } from "@/lib/api";
+import type {
+  OpenRouterModelo,
+  RankingModelo,
+  SaudeFuncao,
+  SaudeModelo,
+} from "@/lib/api";
 
 /**
  * Aba "Visão geral" do Saúde de IA (F3): as 4 funções do Nexus com o modelo
@@ -37,14 +42,27 @@ function ms(v: number | null): string {
   return v == null ? "—" : `${Math.round(v)}ms`;
 }
 
+/** 2,0e12 tokens → "2,0 tri" — a escala do mercado, não a nossa. */
+function tokensFmt(n: number): string {
+  if (n >= 1e12)
+    return `${(n / 1e12).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} tri`;
+  if (n >= 1e9)
+    return `${(n / 1e9).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} bi`;
+  if (n >= 1e6)
+    return `${(n / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  return n.toLocaleString("pt-BR");
+}
+
 export function VisaoGeral({
   funcoes,
   saude,
   modelos,
+  rankings,
 }: {
   funcoes: SaudeFuncao[];
   saude: Record<string, SaudeModelo>;
   modelos: OpenRouterModelo[];
+  rankings: { ultimo_dia: string | null; items: RankingModelo[] } | null;
 }) {
   const curados = modelos
     .filter((m) => m.promovido)
@@ -106,6 +124,69 @@ export function VisaoGeral({
           );
         })}
       </div>
+
+      {rankings && rankings.items.length > 0 ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">
+              Rankings do mercado — tokens/dia no OpenRouter (
+              {rankings.ultimo_dia})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {rankings.items.map((r, i) => {
+              const max = rankings.items[0]?.total_tokens || 1;
+              return (
+                <div
+                  key={r.slug}
+                  className="grid grid-cols-[1.5rem_minmax(8rem,14rem)_1fr_auto] items-center gap-2 text-sm"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    {i + 1}.
+                  </span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate font-mono text-xs">{r.slug}</span>
+                    {r.promovido ? (
+                      <Badge variant="success" className="shrink-0">
+                        curado
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-chart-2"
+                      style={{
+                        width: `${Math.max(2, (r.total_tokens / max) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="whitespace-nowrap text-right text-xs text-muted-foreground">
+                    {tokensFmt(r.total_tokens)} · {r.share_pct.toFixed(1)}%
+                    {r.delta_7d_pct != null ? (
+                      <span
+                        className={
+                          r.delta_7d_pct >= 0
+                            ? "text-success"
+                            : "text-destructive"
+                        }
+                      >
+                        {" "}
+                        {r.delta_7d_pct >= 0 ? "▲" : "▼"}
+                        {Math.abs(r.delta_7d_pct).toFixed(0)}% 7d
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+            <p className="pt-1 text-xs text-muted-foreground">
+              Uso agregado da plataforma OpenRouter inteira (dataset oficial,
+              janela de 30 dias) — versões datadas do mesmo modelo somadas.
+              Não é o nosso consumo.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader className="pb-2">

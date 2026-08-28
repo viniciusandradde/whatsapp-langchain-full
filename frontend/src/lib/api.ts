@@ -5391,6 +5391,7 @@ export interface OpenRouterStatus {
   total_provedores?: number | null;
   metricas_sync_at?: string | null;
   erro?: string | null;
+  rankings_sync_at?: string | null;
 }
 
 export interface OpenRouterProvedor {
@@ -5484,4 +5485,18 @@ export async function getOpenRouterSaude(): Promise<{
   saude: Record<string, SaudeModelo>;
 }> {
   return apiFetch(`/api/openrouter/saude`);
+}
+
+export interface RankingModelo {
+  slug: string;
+  total_tokens: number;
+  share_pct: number;
+  delta_7d_pct: number | null;
+  promovido: boolean;
+}
+export async function getOpenRouterRankings(): Promise<{
+  ultimo_dia: string | null;
+  items: RankingModelo[];
+}> {
+  return apiFetch(`/api/openrouter/rankings`);
 }
