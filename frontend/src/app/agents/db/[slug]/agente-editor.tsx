@@ -25,6 +25,7 @@ import {
 import { AjudaCampo } from "@/components/ajuda-campo";
 import { AnaliseModelo } from "@/components/analise-modelo";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -634,7 +635,7 @@ function PickerCatalogoCompleto({
         </AjudaCampo>
       </div>
       <div className="flex gap-2">
-        <input
+        <Input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           onKeyDown={(e) => {
@@ -644,7 +645,7 @@ function PickerCatalogoCompleto({
             }
           }}
           placeholder="Buscar nos 388 modelos… (ex: claude, deepseek, grok)"
-          className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          className="h-9"
         />
         <button
           type="button"
@@ -758,15 +759,17 @@ function TabModelo({
         // Escolha do catálogo completo: hidden inputs carregam o slug e um
         // chip mostra o que vai ser salvo.
         <div className="md:col-span-2">
-          <input
+          <Input
             type="hidden"
             name="modelo_provedor"
             value={escolhaLivre.split("/")[0]}
+            readOnly
           />
-          <input
+          <Input
             type="hidden"
             name="modelo_nome"
             value={escolhaLivre.split("/").slice(1).join("/")}
+            readOnly
           />
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3">
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
