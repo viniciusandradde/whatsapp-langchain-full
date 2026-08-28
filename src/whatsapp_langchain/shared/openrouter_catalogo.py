@@ -117,6 +117,9 @@ def diff_catalogo(
         mudou_compl = c_ant is not None and c_novo is not None and c_novo != c_ant
         if mudou_prompt or mudou_compl:
             ref_ant, ref_novo = (p_ant, p_novo) if mudou_prompt else (c_ant, c_novo)
+            pct = None
+            if ref_ant is not None and ref_novo is not None and ref_ant != 0:
+                pct = round((ref_novo - ref_ant) * 100 / ref_ant, 1)
             eventos.append(
                 {
                     "tipo": "preco_mudou",
@@ -126,9 +129,7 @@ def diff_catalogo(
                         "prompt_depois": pricing.get("prompt"),
                         "completion_antes": ant.get("completion"),
                         "completion_depois": pricing.get("completion"),
-                        "pct": round((ref_novo - ref_ant) * 100 / ref_ant, 1)
-                        if ref_ant
-                        else None,
+                        "pct": pct,
                     },
                 }
             )
