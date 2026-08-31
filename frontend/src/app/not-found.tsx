@@ -17,17 +17,11 @@ export default function NotFound() {
       </div>
       <div className="flex flex-wrap gap-2">
         <Link
-          href="/dashboard/atendimento"
+          href="/"
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-brand-primary px-4 text-sm font-medium text-white hover:bg-brand-primary/90"
         >
           <Home className="size-4" />
           Voltar pra Home
-        </Link>
-        <Link
-          href="/atendimento"
-          className="inline-flex h-9 items-center justify-center rounded-md border border-foreground/15 bg-transparent px-4 text-sm font-medium hover:bg-foreground/5"
-        >
-          Ver Atendimentos
         </Link>
       </div>
     </div>

@@ -68,7 +68,7 @@ export default function GlobalError({
           Tentar de novo
         </Button>
         <Link
-          href="/dashboard/atendimento"
+          href="/"
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-foreground/15 bg-transparent px-4 text-sm font-medium hover:bg-foreground/5"
         >
           <Home className="size-4" />
