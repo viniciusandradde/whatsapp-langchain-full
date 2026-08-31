@@ -5,10 +5,22 @@ import { useEffect, useState } from "react";
 import { Search, Tag as TagIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Departamento, Tag, TipoVisualizacao } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type {
+  AtendenteStatus,
+  Departamento,
+  Tag,
+  TipoVisualizacao,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { loadTagsAction } from "./actions";
+import { loadAtendentesAction, loadTagsAction } from "./actions";
 import { TagChip } from "./tag-chip";
 
 const PRIORIDADES = [
@@ -28,6 +40,7 @@ interface Props {
   prioridade?: "baixa" | "media" | "alta" | "urgente";
   q?: string;
   tagIds?: number[];
+  assignedTo?: string;
   className?: string;
 }
 
@@ -38,6 +51,7 @@ export function ListFilters({
   prioridade,
   q,
   tagIds = [],
+  assignedTo,
   className,
 }: Props) {
   const router = useRouter();
@@ -45,10 +59,14 @@ export function ListFilters({
   const [busca, setBusca] = useState(q ?? "");
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagOpen, setTagOpen] = useState(false);
+  const [atendentes, setAtendentes] = useState<AtendenteStatus[]>([]);
 
   useEffect(() => {
     loadTagsAction(true).then((r) => {
       if (r.ok) setTags(r.tags);
+    });
+    loadAtendentesAction().then((r) => {
+      if (r.ok) setAtendentes(r.atendentes);
     });
   }, []);
 
@@ -80,7 +98,8 @@ export function ListFilters({
     router.push(`/atendimento?${params.toString()}`);
   };
 
-  const hasFiltros = depId || prioridade || q || tagIds.length > 0;
+  const hasFiltros =
+    depId || prioridade || q || tagIds.length > 0 || assignedTo;
 
   return (
     // Toolbar inline (sem moldura): divide a linha com o título da página.
@@ -114,6 +133,38 @@ export function ListFilters({
           </option>
         ))}
       </select>
+
+      {/* Filtro por responsável — supervisor vê a carteira de um atendente
+          (inclusive offline). Select do kit, não elemento cru (form_cru). */}
+      {atendentes.length > 0 && (
+        <Select
+          value={assignedTo ?? null}
+          onValueChange={(v) =>
+            setParam("assigned_to", (v as string | null) ?? undefined)
+          }
+        >
+          <SelectTrigger
+            className="h-9 w-48"
+            aria-label="Filtrar por responsável"
+          >
+            <SelectValue>
+              {(v: string | null) => {
+                if (!v) return "Todos os responsáveis";
+                const a = atendentes.find((x) => x.user_id === v);
+                return a?.nome || a?.email || "Responsável";
+              }}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={null}>Todos os responsáveis</SelectItem>
+            {atendentes.map((a) => (
+              <SelectItem key={a.user_id} value={a.user_id}>
+                {a.nome || a.email || a.user_id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       <form onSubmit={submitBusca} className="flex items-center gap-1">
         <div className="relative">

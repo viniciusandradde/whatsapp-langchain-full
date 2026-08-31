@@ -337,6 +337,7 @@ async def list_atendimentos(
     q: str | None = None,
     aba_id: int | None = None,
     only_ids: list[int] | None = None,
+    assigned_to_user_id: str | None = None,
 ) -> list[Atendimento]:
     """Lista atendimentos filtrados por tipo de visualização.
 
@@ -422,6 +423,9 @@ async def list_atendimentos(
     if prioridade is not None:
         where += " AND a.prioridade = %s"
         params.append(prioridade)
+    if assigned_to_user_id is not None:
+        where += " AND a.assigned_to_user_id = %s"
+        params.append(assigned_to_user_id)
     if q:
         where += " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s)"
         like = f"%{q.strip()}%"

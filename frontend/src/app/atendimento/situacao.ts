@@ -62,6 +62,30 @@ export const SITUACAO_AJUDA: Record<SituacaoAtendimento, string> = {
   abandonada: "Encerrado sem resolução.",
 };
 
+/**
+ * Ponto colorido por situação — versão compacta pro card da fila estreita.
+ *
+ * Só tokens do tema (destructive/warning/success/brand-primary/muted), nunca
+ * paleta crua: o portão de métricas de UI conta cor-com-número e reprova o PR
+ * se a contagem subir. O significado segue o SITUACAO_CLASSE: vermelho só na
+ * resposta perdida; resolvida/abandonada/sem automação são neutros.
+ */
+export const SITUACAO_PONTO: Record<SituacaoAtendimento, string> = {
+  resposta_perdida: "bg-destructive",
+  com_ia: "bg-success",
+  aguardando_humano: "bg-warning",
+  em_atendimento: "bg-brand-primary",
+  sem_automacao: "bg-muted-foreground/40",
+  resolvida: "bg-muted-foreground/40",
+  abandonada: "bg-muted-foreground/40",
+};
+
+/** Ponto por prioridade — só urgente/alta merecem tinta no card compacto. */
+export const PRIORIDADE_PONTO: Record<string, string> = {
+  urgente: "bg-destructive",
+  alta: "bg-warning",
+};
+
 /** `99+` acima de 99, como no Chatvolt — número maior não muda a decisão. */
 export function formatarNaoLidas(n: number): string {
   return n > 99 ? "99+" : String(n);

@@ -222,6 +222,20 @@ export async function loadAtendentesOnlineAction(): Promise<AtendentesOnlineResu
   }
 }
 
+/**
+ * Todos os atendentes ativos, online ou não — pro filtro por responsável da
+ * fila. O filtro serve pra supervisor ver a carteira de alguém, inclusive de
+ * quem está offline; por isso NÃO reusa o loadAtendentesOnlineAction.
+ */
+export async function loadAtendentesAction(): Promise<AtendentesOnlineResult> {
+  try {
+    const r = await getEmpresaAtendentes();
+    return { ok: true, atendentes: r.atendentes.filter((a) => a.is_active) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
 type ResetResult =
   | { ok: true; rowsDeleted: number; threadId: string }
   | { ok: false; error: string };

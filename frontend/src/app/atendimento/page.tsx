@@ -31,6 +31,7 @@ interface PageProps {
     aba_id?: string;
     // Multi-valor — Next entrega como string[] ou string
     tag_id?: string | string[];
+    assigned_to?: string;
   }>;
 }
 
@@ -80,6 +81,10 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
   const depId = sp.dep_id ? Number(sp.dep_id) : undefined;
   const prioridade = isValidPrioridade(sp.prioridade) ? sp.prioridade : undefined;
   const q = sp.q?.trim() || undefined;
+  const assignedTo =
+    typeof sp.assigned_to === "string" && sp.assigned_to.trim()
+      ? sp.assigned_to.trim()
+      : undefined;
   const tagIds = (
     Array.isArray(sp.tag_id) ? sp.tag_id : sp.tag_id ? [sp.tag_id] : []
   )
@@ -96,7 +101,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
 
   try {
     const [data, deps, myAbas, conts] = await Promise.all([
-      getAtendimentos({ tipo, depId, prioridade, q, abaId, tagIds }),
+      getAtendimentos({ tipo, depId, prioridade, q, abaId, tagIds, assignedTo }),
       getDepartamentos().catch(() => ({ departamentos: [] })),
       getMyAbas().catch(() => ({ items: [] })),
       getContadoresAtendimento().catch(() => null),
@@ -153,6 +158,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
             prioridade={prioridade}
             q={q}
             tagIds={tagIds}
+            assignedTo={assignedTo}
             className="ml-auto"
           />
         </div>

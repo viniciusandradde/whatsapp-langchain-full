@@ -1786,6 +1786,8 @@ export async function getAtendimentos(
     abaId?: number;
     // Sprint Atendimento UX 1.2 (mig 086) — filtra por tag(s) OR
     tagIds?: number[];
+    // Leva fila 2026-08: filtra pelo responsável (assigned_to_user_id)
+    assignedTo?: string;
   } = {}
 ): Promise<AtendimentosResponse> {
   const qs = new URLSearchParams();
@@ -1796,6 +1798,7 @@ export async function getAtendimentos(
   if (params.prioridade) qs.set("prioridade", params.prioridade);
   if (params.q) qs.set("q", params.q);
   if (params.abaId) qs.set("aba_id", String(params.abaId));
+  if (params.assignedTo) qs.set("assigned_to", params.assignedTo);
   if (params.tagIds && params.tagIds.length > 0) {
     for (const id of params.tagIds) qs.append("tag_id", String(id));
   }

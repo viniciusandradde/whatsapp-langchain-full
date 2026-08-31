@@ -186,6 +186,9 @@ async def list_my_atendimentos(
     tag_id: list[int] | None = Query(
         default=None, description="Filter por tag(s) OR — multi-valor"
     ),
+    assigned_to: str | None = Query(
+        default=None, max_length=64, description="Filtra pelo responsável"
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
@@ -242,6 +245,7 @@ async def list_my_atendimentos(
         aba_id=aba_id,
         only_ids=only_ids,
         scope_departamento_ids=scope_dept_ids,
+        assigned_to_user_id=assigned_to,
     )
     return {"atendimentos": rows}
 
