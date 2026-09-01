@@ -68,6 +68,7 @@ import {
 } from "./actions";
 import { usePermission } from "@/hooks/use-permission";
 import { BolhaMenu } from "./bolha-menu";
+import { ModelosPopover } from "./modelos-popover";
 import { PainelCliente } from "./painel-cliente";
 import { SITUACAO_AJUDA, SITUACAO_CLASSE, SITUACAO_LABEL } from "./situacao";
 import { TagPopover } from "./tag-popover";
@@ -115,6 +116,10 @@ export function AtendimentoDrawer({
   const [sending, setSending] = useState(false);
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
   const [modelosOpen, setModelosOpen] = useState(false);
+  // Atalho "/" no composer vazio (leva fila) — popover de busca de modelos,
+  // separado do painel do kebab (modelosOpen) que continua existindo.
+  const [slashOpen, setSlashOpen] = useState(false);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const [activeTab, setActiveTab] = useState<"conversa" | "arquivos">("conversa");
   const [isPending, startTransition] = useTransition();
 
@@ -382,6 +387,21 @@ export function AtendimentoDrawer({
   function insertModelo(m: ModeloMensagem) {
     setComposer((prev) => (prev ? `${prev}\n${m.conteudo}` : m.conteudo));
     setModelosOpen(false);
+  }
+
+  function abrirSlashModelos() {
+    if (modelos === null) {
+      void loadModelosAction().then((r) => {
+        if (r.ok) setModelos(r.modelos);
+      });
+    }
+    setSlashOpen(true);
+  }
+
+  function escolherModeloSlash(m: ModeloMensagem) {
+    setComposer(m.conteudo);
+    setSlashOpen(false);
+    composerRef.current?.focus();
   }
 
   function iniciarEdicao(m: AtendimentoMensagem) {
@@ -661,6 +681,16 @@ export function AtendimentoDrawer({
 
         {isOpen && (
           <div className="relative border-t bg-background/40 p-3">
+            {slashOpen && (
+              <ModelosPopover
+                modelos={modelos}
+                onEscolher={escolherModeloSlash}
+                onFechar={() => {
+                  setSlashOpen(false);
+                  composerRef.current?.focus();
+                }}
+              />
+            )}
             {editando && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-brand-primary/40 bg-brand-primary/5 px-2 py-1.5 text-xs">
                 <span className="flex items-center gap-1.5 font-medium">
@@ -701,6 +731,7 @@ export function AtendimentoDrawer({
             </div>
             <div className="flex items-end gap-2">
               <textarea
+                ref={composerRef}
                 value={composer}
                 onChange={(e) => setComposer(e.target.value)}
                 onKeyDown={(e) => {
@@ -711,6 +742,12 @@ export function AtendimentoDrawer({
                   if (e.key === "Escape" && editando) {
                     e.preventDefault();
                     sairEdicao();
+                  }
+                  // "/" no composer VAZIO abre a busca de modelos — com texto
+                  // já digitado, "/" é só um caractere (URLs, datas).
+                  if (e.key === "/" && composer === "") {
+                    e.preventDefault();
+                    abrirSlashModelos();
                   }
                 }}
                 placeholder={
