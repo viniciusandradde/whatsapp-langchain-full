@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { usePermissionsContext } from "@/components/permissions-context";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -87,6 +88,7 @@ export function OnboardingWizard() {
   const [pulando, setPulando] = useState(false);
   const [religando, setReligando] = useState(false);
   const router = useRouter();
+  const { hasPerm } = usePermissionsContext();
 
   useEffect(() => {
     fetchOnboardingStatusAction().then((s) => {
@@ -102,7 +104,11 @@ export function OnboardingWizard() {
   async function pular() {
     setPulando(true);
     if (status?.empresa_id) await dispensarOnboardingAction(status.empresa_id);
-    router.push("/dashboard/atendimento");
+    // Mesmo destino da raiz (page.tsx): quem atende vai pra fila. Não mandar
+    // pra "/" — se a gravação da dispensa falhou, a raiz devolveria pro wizard.
+    router.push(
+      hasPerm("atendimento.read") ? "/atendimento" : "/dashboard/atendimento"
+    );
   }
 
   /** Desfaz a dispensa — sem isso, "Pular" seria de mão única. */

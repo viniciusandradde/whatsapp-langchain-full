@@ -337,6 +337,7 @@ async def list_atendimentos(
     q: str | None = None,
     aba_id: int | None = None,
     only_ids: list[int] | None = None,
+    assigned_to_user_id: str | None = None,
 ) -> list[Atendimento]:
     """Lista atendimentos filtrados por tipo de visualização.
 
@@ -422,6 +423,9 @@ async def list_atendimentos(
     if prioridade is not None:
         where += " AND a.prioridade = %s"
         params.append(prioridade)
+    if assigned_to_user_id is not None:
+        where += " AND a.assigned_to_user_id = %s"
+        params.append(assigned_to_user_id)
     if q:
         where += " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s)"
         like = f"%{q.strip()}%"
@@ -479,6 +483,70 @@ async def list_atendimentos(
         pool, empresa_id, itens, modos, current_user_id=current_user_id
     )
     return itens
+
+
+#: Corte do preview do card da fila — o suficiente pra saber do que se trata.
+_PREVIEW_MAX = 120
+
+_ROTULOS_MIDIA = (
+    ("audio", "áudio"),
+    ("image", "imagem"),
+    ("video", "vídeo"),
+    ("pdf", "documento"),
+)
+
+
+def _rotulo_midia(media_type: str | None) -> str:
+    mt = (media_type or "").lower()
+    for chave, rotulo in _ROTULOS_MIDIA:
+        if chave in mt:
+            return rotulo
+    return "anexo"
+
+
+def _compactar_preview(texto: str) -> str:
+    plano = " ".join(texto.split())
+    if len(plano) > _PREVIEW_MAX:
+        return plano[: _PREVIEW_MAX - 1] + "…"
+    return plano
+
+
+def derivar_preview(
+    *,
+    incoming_message: str | None,
+    response: str | None,
+    response_apagada: bool,
+    tem_media: bool,
+    media_type: str | None,
+    tem_response_media: bool,
+    response_media_type: str | None,
+) -> str | None:
+    """Prévia da última mensagem pro card da fila (leva 2026-08). Pura.
+
+    O lado da RESPOSTA vence quando existe — é o conteúdo mais recente do
+    row. Marker interno do worker (`MARKERS_INTERNOS`) não é resposta e cai
+    pro lado do cliente; apagada vira o mesmo "Mensagem apagada" da timeline;
+    mídia vira rótulo ("📎 áudio") porque o conteúdo não sai da listagem.
+    Nota interna nem chega aqui: o SQL do lote já a exclui.
+    """
+    resp = response
+    if resp and resp.startswith(MARKERS_INTERNOS):
+        resp = None
+    if response_apagada and (resp or tem_response_media):
+        return "Mensagem apagada"
+    if tem_response_media:
+        rotulo = f"📎 {_rotulo_midia(response_media_type)}"
+        return _compactar_preview(f"{rotulo} — {resp}") if resp else rotulo
+    if resp:
+        return _compactar_preview(resp)
+    if tem_media:
+        rotulo = f"📎 {_rotulo_midia(media_type)}"
+        if incoming_message:
+            return _compactar_preview(f"{rotulo} — {incoming_message}")
+        return rotulo
+    if incoming_message:
+        return _compactar_preview(incoming_message)
+    return None
 
 
 async def _preencher_derivados(
@@ -541,6 +609,40 @@ async def _preencher_derivados(
     except Exception as exc:  # noqa: BLE001
         logger.warning("situacao_resposta_perdida_falhou", erro=str(exc))
 
+    # Preview da última mensagem visível, em lote — mesma forma da query de
+    # perdidas (DISTINCT ON sobre os ≤50 ids da página), com dois cuidados:
+    # nota interna fica fora do preview (WHERE interna=FALSE) e mídia entra
+    # como boolean `IS NOT NULL` — o base64 nunca sai do banco na listagem.
+    previews: dict[int, str | None] = {}
+    try:
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT DISTINCT ON (atendimento_id)
+                       atendimento_id, incoming_message, response,
+                       response_apagada_at IS NOT NULL,
+                       media_url IS NOT NULL, media_type,
+                       response_media_url IS NOT NULL, response_media_type
+                  FROM message_queue
+                 WHERE atendimento_id = ANY(%s)
+                   AND COALESCE(interna, FALSE) = FALSE
+                 ORDER BY atendimento_id, id DESC
+                """,
+                ([a.id for a in itens],),
+            )
+            for r in await cur.fetchall():
+                previews[r[0]] = derivar_preview(
+                    incoming_message=r[1],
+                    response=r[2],
+                    response_apagada=bool(r[3]),
+                    tem_media=bool(r[4]),
+                    media_type=r[5],
+                    tem_response_media=bool(r[6]),
+                    response_media_type=r[7],
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("situacao_preview_falhou", erro=str(exc))
+
     # Tags do cliente, em lote. `cliente_tag` (texto livre) é a tabela VIVA —
     # ver `shared/aba.py::cliente_ids_da_aba` para o porquê da v2 não servir.
     tags_por_cliente: dict[int, list[str]] = {}
@@ -588,6 +690,7 @@ async def _preencher_derivados(
         atd.ia_ativa = atd.situacao == "com_ia"
         atd.nao_lidas = nao_lidas.get(atd.id, 0)
         atd.cliente_tags = tags_por_cliente.get(atd.cliente_id, [])
+        atd.ultima_mensagem_preview = previews.get(atd.id)
 
 
 async def get_atendimento_by_id(
@@ -1211,6 +1314,18 @@ async def set_coleta_resumo(
 # `[handoff humano` fica de fora de propósito: ali um atendente assumiu a
 # conversa, e reprocessar faria a IA responder por cima dele.
 MARKERS_REPROCESSAVEIS = ("[modo manual", "[whitelist")
+
+# TODOS os prefixos internos que o worker grava em `response` no lugar de uma
+# resposta real (worker/processor.py). Nada disso foi enviado ao cliente —
+# nunca pode aparecer como conteúdo (preview da fila, timeline). Mesma lista
+# que o drawer web filtra ao montar bolhas; mudou lá, muda aqui.
+MARKERS_INTERNOS = (
+    "[handoff humano",
+    "[modo manual",
+    "[whitelist",
+    "[fila do departamento",
+    "[resposta superada",
+)
 
 
 async def reenfileirar_mensagem(

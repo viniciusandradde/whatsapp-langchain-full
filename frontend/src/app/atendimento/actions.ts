@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  apagarMensagem,
   applyTagsAtendimento,
   claimAtendimento,
   devolverAtendimentoParaIa,
@@ -12,6 +13,7 @@ import {
   criarNotaInterna,
   deleteAba,
   deleteTag,
+  editarMensagem,
   getAtendimentoMensagens,
   addClienteTag,
   getCliente,
@@ -30,6 +32,7 @@ import {
   getTagsOpcoesAba,
   createWhitelistNumero,
   marcarAtendimentoLido,
+  marcarAtendimentoNaoLido,
   reorderAbas,
   resetAtendimentoThread,
   responderAtendimento,
@@ -222,6 +225,20 @@ export async function loadAtendentesOnlineAction(): Promise<AtendentesOnlineResu
   }
 }
 
+/**
+ * Todos os atendentes ativos, online ou não — pro filtro por responsável da
+ * fila. O filtro serve pra supervisor ver a carteira de alguém, inclusive de
+ * quem está offline; por isso NÃO reusa o loadAtendentesOnlineAction.
+ */
+export async function loadAtendentesAction(): Promise<AtendentesOnlineResult> {
+  try {
+    const r = await getEmpresaAtendentes();
+    return { ok: true, atendentes: r.atendentes.filter((a) => a.is_active) };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
 type ResetResult =
   | { ok: true; rowsDeleted: number; threadId: string }
   | { ok: false; error: string };
@@ -255,6 +272,36 @@ export async function reprocessarMensagemAction(
   } catch (e) {
     // O 409 do backend traz frase pronta em pt-BR ("Ligue a IA na conexão
     // antes de reprocessar") — repassar é melhor que genérica.
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/**
+ * Edita no WhatsApp uma mensagem já enviada (mig 172). O backend revalida a
+ * janela de 15min — o 400 traz frase pronta em pt-BR, repassada como está.
+ */
+export async function editarMensagemAction(
+  atendimentoId: number,
+  mensagemId: number,
+  texto: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await editarMensagem(atendimentoId, mensagemId, texto);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/** Apaga para todos (mig 172) — janela de 48h, revalidada no servidor. */
+export async function apagarMensagemAction(
+  atendimentoId: number,
+  mensagemId: number
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await apagarMensagem(atendimentoId, mensagemId);
+    return { ok: true };
+  } catch (e) {
     return { ok: false, error: toError(e) };
   }
 }
@@ -490,6 +537,18 @@ export async function marcarAtendimentoLidoAction(
 ): Promise<Result> {
   try {
     await marcarAtendimentoLido(atendimentoId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/** Devolve o marcador de "não lida" a uma conversa aberta por engano. */
+export async function marcarAtendimentoNaoLidoAction(
+  atendimentoId: number
+): Promise<Result> {
+  try {
+    await marcarAtendimentoNaoLido(atendimentoId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };

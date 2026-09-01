@@ -629,6 +629,12 @@ export interface Atendimento {
   ia_ativa: boolean;
   /** Mensagens do cliente após a última vez que ESTE usuário abriu. */
   nao_lidas: number;
+  /**
+   * Prévia da última mensagem visível (leva fila 2026-08). Nota interna e
+   * markers internos nunca aparecem; mídia vem como rótulo ("📎 áudio");
+   * apagada vem como "Mensagem apagada".
+   */
+  ultima_mensagem_preview?: string | null;
   /** Tags do CLIENTE (identificam a pessoa; alimentam as abas). */
   cliente_tags: string[];
   // Sprint 3 padrão profissional (mig 047)
@@ -673,6 +679,12 @@ export interface AtendimentoMensagem {
   // Mig 172 — apagada para todos no WhatsApp. O texto continua em `response`
   // para auditoria; quem renderiza é que troca por "Mensagem apagada".
   response_apagada?: boolean;
+  // Mig 172 — o servidor calcula se editar (15min) / apagar (48h) ainda estão
+  // na janela E se a mensagem tem endereço no provedor. A UI só esconde o
+  // botão; o backend revalida no clique (flags ficam velhos em timeline
+  // aberta há horas).
+  pode_editar_resposta?: boolean;
+  pode_apagar_resposta?: boolean;
   media_processing_status: string | null;
   response: string | null;
   status: string;
@@ -1786,6 +1798,8 @@ export async function getAtendimentos(
     abaId?: number;
     // Sprint Atendimento UX 1.2 (mig 086) — filtra por tag(s) OR
     tagIds?: number[];
+    // Leva fila 2026-08: filtra pelo responsável (assigned_to_user_id)
+    assignedTo?: string;
   } = {}
 ): Promise<AtendimentosResponse> {
   const qs = new URLSearchParams();
@@ -1796,6 +1810,7 @@ export async function getAtendimentos(
   if (params.prioridade) qs.set("prioridade", params.prioridade);
   if (params.q) qs.set("q", params.q);
   if (params.abaId) qs.set("aba_id", String(params.abaId));
+  if (params.assignedTo) qs.set("assigned_to", params.assignedTo);
   if (params.tagIds && params.tagIds.length > 0) {
     for (const id of params.tagIds) qs.append("tag_id", String(id));
   }
@@ -2279,6 +2294,15 @@ export async function marcarAtendimentoLido(
   });
 }
 
+/** Inverso do marcar-lido — a conversa volta a contar como não lida pra MIM. */
+export async function marcarAtendimentoNaoLido(
+  atendimentoId: number
+): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/atendimentos/${atendimentoId}/marcar-nao-lido`, {
+    method: "POST",
+  });
+}
+
 
 
 
@@ -2697,6 +2721,29 @@ export async function transcreverMensagem(
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/transcrever`,
     { method: "POST" }
+  );
+}
+
+/** Edita no WhatsApp do cliente uma mensagem enviada pelo painel (mig 172). */
+export async function editarMensagem(
+  atendimentoId: number,
+  mensagemId: number,
+  texto: string
+): Promise<{ ok: boolean; mensagem_id: number; texto: string }> {
+  return apiFetch(
+    `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/texto`,
+    { method: "PATCH", body: { texto } }
+  );
+}
+
+/** Apaga para todos no WhatsApp (mig 172) — soft delete do nosso lado. */
+export async function apagarMensagem(
+  atendimentoId: number,
+  mensagemId: number
+): Promise<{ ok: boolean; mensagem_id: number }> {
+  return apiFetch(
+    `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/texto`,
+    { method: "DELETE" }
   );
 }
 

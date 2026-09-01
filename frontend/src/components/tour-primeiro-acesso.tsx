@@ -14,26 +14,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useSidebar } from "@/components/ui/sidebar";
 
 /**
  * Guia de primeiro acesso do atendente (mig 171).
  *
- * Quem recebe a senha pelo convite entra e não sabe onde atender. Este guia
- * mostra o caminho **Operação → Fila de atendimento** e termina abrindo a
- * tela.
+ * Quem recebe a senha pelo convite entra e não sabe onde atender. Como o
+ * login já cai direto na fila (`/atendimento`, decisão em `app/page.tsx`),
+ * o guia não ensina mais o caminho até ela — ensina a usá-la: abrir uma
+ * conversa, clicar em Atender e responder.
  *
  * Não confundir com `/onboarding`: aquele é o wizard da EMPRESA quando ela
  * ainda não está configurada (passos de admin). Este é do usuário, aparece
  * uma vez e marca em `auth."user".tour_operador_at`.
  *
- * Só aparece para quem tem `atendimento.read` — sem essa permissão o grupo
- * "Operação" nem existe no menu, e apontar para ele seria mentira.
+ * Só aparece para quem tem `atendimento.read` — sem essa permissão a pessoa
+ * nem cai na fila, e o roteiro seria mentira.
  */
 export function TourPrimeiroAcesso() {
   const { hasPerm } = usePermissionsContext();
   const router = useRouter();
-  const { setOpen } = useSidebar();
   const [passo, setPasso] = useState<0 | 1 | 2>(0);
   const [aberto, setAberto] = useState(false);
 
@@ -44,17 +43,13 @@ export function TourPrimeiroAcesso() {
       .then((r) => r.json())
       .then((d) => {
         if (!vivo || d.visto) return;
-        // Abrir o menu ANTES de começar: mexer no SidebarProvider no meio
-        // dos passos re-renderiza a subárvore e derruba o diálogo (visto no
-        // teste com Playwright).
-        setOpen(true);
         setAberto(true);
       })
       .catch(() => {});
     return () => {
       vivo = false;
     };
-  }, [hasPerm, setOpen]);
+  }, [hasPerm]);
 
   function encerrar(irParaFila: boolean) {
     setAberto(false);
@@ -82,28 +77,28 @@ export function TourPrimeiroAcesso() {
     {
       titulo: "Bem-vindo ao Chat Nexus",
       descricao:
-        "Em menos de um minuto você vai saber onde ficam as conversas dos clientes. É só seguir.",
+        "Esta é a fila de atendimento: as conversas dos clientes esperam aqui por você. Em dois passos você atende a primeira.",
       corpo: null,
     },
     {
-      titulo: "Passo 1 — abra o menu Operação",
+      titulo: "Passo 1 — abra uma conversa",
       descricao:
-        "No menu à esquerda, o grupo Operação reúne tudo o que chega dos clientes.",
-      corpo: (
-        <div className="flex items-center gap-2 rounded-md border bg-accent/40 px-3 py-2 text-sm">
-          <Headphones className="size-4 shrink-0" />
-          <span className="font-medium">Operação</span>
-        </div>
-      ),
-    },
-    {
-      titulo: "Passo 2 — entre na Fila de atendimento",
-      descricao:
-        "É onde as conversas esperam por você: abra uma, clique em Atender e responda pelo campo de mensagem.",
+        "Na lista à esquerda, cada linha é um cliente esperando. Clique numa conversa pra ver as mensagens.",
       corpo: (
         <div className="flex items-center gap-2 rounded-md border bg-accent/40 px-3 py-2 text-sm">
           <Inbox className="size-4 shrink-0" />
           <span className="font-medium">Fila de atendimento</span>
+        </div>
+      ),
+    },
+    {
+      titulo: "Passo 2 — atenda e responda",
+      descricao:
+        "Com a conversa aberta, clique em Atender pra assumir o cliente e responda pelo campo de mensagem. Enter envia; Shift+Enter quebra linha.",
+      corpo: (
+        <div className="flex items-center gap-2 rounded-md border bg-accent/40 px-3 py-2 text-sm">
+          <Headphones className="size-4 shrink-0" />
+          <span className="font-medium">Atender</span>
         </div>
       ),
     },
@@ -122,7 +117,7 @@ export function TourPrimeiroAcesso() {
             Pular guia
           </Button>
           <Button onClick={avancar}>
-            {passo === 2 ? "Abrir a fila de atendimento" : "Continuar"}
+            {passo === 2 ? "Começar a atender" : "Continuar"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,17 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { Headphones } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Frown, Headphones, Mail } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import type { Atendimento, TipoVisualizacao } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { marcarAtendimentoNaoLidoAction } from "./actions";
 import { AtendimentoDrawer } from "./atendimento-drawer";
 import {
+  PRIORIDADE_PONTO,
   SITUACAO_AJUDA,
-  SITUACAO_CLASSE,
   SITUACAO_LABEL,
+  SITUACAO_PONTO,
   formatarNaoLidas,
 } from "./situacao";
 
@@ -19,13 +23,6 @@ interface Props {
   atendimentos: Atendimento[];
   tipo: TipoVisualizacao;
 }
-
-const PRIORIDADE_CLASSE: Record<string, string> = {
-  urgente: "border-destructive/40 bg-destructive/10 text-destructive",
-  alta: "border-warning/40 bg-warning/10 text-warning",
-  media: "border-border bg-muted text-muted-foreground",
-  baixa: "border-border bg-muted text-muted-foreground",
-};
 
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -51,6 +48,17 @@ function formatRelative(iso: string): string {
  */
 export function AtendimentoList({ atendimentos, tipo }: Props) {
   const [ativo, setAtivo] = useState<Atendimento | null>(null);
+  const router = useRouter();
+
+  async function marcarNaoLida(atendimentoId: number) {
+    const r = await marcarAtendimentoNaoLidoAction(atendimentoId);
+    if (!r.ok) {
+      toast.error(r.error);
+      return;
+    }
+    // O badge vem calculado no servidor — refresh pra ele reaparecer.
+    router.refresh();
+  }
 
   if (atendimentos.length === 0) {
     return (
@@ -67,12 +75,15 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 gap-4">
-      <div className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border lg:w-[380px] lg:shrink-0">
+      <div className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border lg:w-[300px] lg:shrink-0">
         <ul className="divide-y overflow-y-auto">
           {atendimentos.map((a) => {
             const selecionado = ativo?.id === a.id;
             return (
-              <li key={a.id}>
+              // group/card + irmão absoluto: a ação de não-lida NÃO pode
+              // ficar DENTRO do botão da linha (button aninhado é HTML
+              // inválido e o clique selecionaria a conversa).
+              <li key={a.id} className="group/card relative">
                 <button
                   type="button"
                   onClick={() => setAtivo(a)}
@@ -93,6 +104,15 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     </span>
                   </div>
 
+                  {a.ultima_mensagem_preview && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {a.ultima_mensagem_preview}
+                    </p>
+                  )}
+
+                  {/* Linha compacta: badges viraram pontos com tooltip pra
+                      caber nos 300px — o rótulo inteiro vive no `title`. O
+                      #id saiu: o protocolo já identifica no header do drawer. */}
                   <div className="mt-1 flex items-center gap-1.5">
                     {a.nao_lidas > 0 && (
                       <span
@@ -104,26 +124,35 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     )}
                     <span
                       className={cn(
-                        "inline-flex items-center rounded border px-1.5 py-px text-[10px] font-medium",
-                        SITUACAO_CLASSE[a.situacao]
+                        "size-2 shrink-0 rounded-full",
+                        SITUACAO_PONTO[a.situacao]
                       )}
-                      title={SITUACAO_AJUDA[a.situacao]}
-                    >
+                      title={`${SITUACAO_LABEL[a.situacao]} — ${SITUACAO_AJUDA[a.situacao]}`}
+                    />
+                    <span className="truncate text-[10px] text-muted-foreground">
                       {SITUACAO_LABEL[a.situacao]}
                     </span>
-                    {a.prioridade && a.prioridade !== "media" && (
+                    {a.prioridade && PRIORIDADE_PONTO[a.prioridade] && (
                       <span
                         className={cn(
-                          "inline-flex items-center rounded border px-1.5 py-px text-[10px] font-medium",
-                          PRIORIDADE_CLASSE[a.prioridade]
+                          "size-2 shrink-0 rounded-full",
+                          PRIORIDADE_PONTO[a.prioridade]
                         )}
+                        title={`Prioridade ${a.prioridade}`}
+                      />
+                    )}
+                    {(a.sentimento === "negativo" ||
+                      a.sentimento === "frustrado") && (
+                      <span
+                        className="ml-auto shrink-0"
+                        title={`Cliente ${a.sentimento}${a.resumo_ia ? ` — ${a.resumo_ia.slice(0, 120)}` : ""}`}
                       >
-                        {a.prioridade}
+                        <Frown
+                          className="size-3 text-destructive"
+                          aria-label={`Cliente ${a.sentimento}`}
+                        />
                       </span>
                     )}
-                    <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
-                      #{a.id}
-                    </span>
                   </div>
 
                   {a.cliente_tags.length > 0 && (
@@ -141,6 +170,17 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     </div>
                   )}
                 </button>
+                {a.nao_lidas === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void marcarNaoLida(a.id)}
+                    aria-label="Marcar como não lida"
+                    title="Marcar como não lida (abrir a conversa marca como lida de novo)"
+                    className="absolute bottom-1.5 right-1.5 rounded-md border bg-background p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/card:opacity-100"
+                  >
+                    <Mail className="size-3.5" />
+                  </button>
+                )}
               </li>
             );
           })}
