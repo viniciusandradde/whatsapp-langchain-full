@@ -15,6 +15,7 @@ import { requireSession } from "@/lib/session";
 import { AtendimentoList } from "./atendimento-list";
 import { AtendimentoShell, ShellToggleButton } from "./atendimento-shell";
 import { AtendimentoSidebar } from "./atendimento-sidebar";
+import { FilaLive } from "./fila-live";
 import { ListFilters } from "./list-filters";
 import { NovaConversaBotao } from "./nova-conversa-modal";
 
@@ -151,6 +152,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           <Headphones className="hidden h-5 w-5 md:block" />
           <h1 className="truncate text-lg font-semibold">{contextoLabel}</h1>
           <NovaConversaBotao />
+          <FilaLive idsVisiveis={atendimentos.map((a) => a.id)} />
           <ListFilters
             tipo={tipo}
             departamentos={departamentos}

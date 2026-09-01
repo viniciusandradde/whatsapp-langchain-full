@@ -2288,6 +2288,15 @@ export async function marcarAtendimentoLido(
   });
 }
 
+/** Inverso do marcar-lido — a conversa volta a contar como não lida pra MIM. */
+export async function marcarAtendimentoNaoLido(
+  atendimentoId: number
+): Promise<{ ok: boolean }> {
+  return apiFetch(`/api/atendimentos/${atendimentoId}/marcar-nao-lido`, {
+    method: "POST",
+  });
+}
+
 
 
 

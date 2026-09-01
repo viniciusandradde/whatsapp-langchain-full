@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Frown, Headphones } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Frown, Headphones, Mail } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import type { Atendimento, TipoVisualizacao } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { marcarAtendimentoNaoLidoAction } from "./actions";
 import { AtendimentoDrawer } from "./atendimento-drawer";
 import {
   PRIORIDADE_PONTO,
@@ -45,6 +48,17 @@ function formatRelative(iso: string): string {
  */
 export function AtendimentoList({ atendimentos, tipo }: Props) {
   const [ativo, setAtivo] = useState<Atendimento | null>(null);
+  const router = useRouter();
+
+  async function marcarNaoLida(atendimentoId: number) {
+    const r = await marcarAtendimentoNaoLidoAction(atendimentoId);
+    if (!r.ok) {
+      toast.error(r.error);
+      return;
+    }
+    // O badge vem calculado no servidor — refresh pra ele reaparecer.
+    router.refresh();
+  }
 
   if (atendimentos.length === 0) {
     return (
@@ -66,7 +80,10 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
           {atendimentos.map((a) => {
             const selecionado = ativo?.id === a.id;
             return (
-              <li key={a.id}>
+              // group/card + irmão absoluto: a ação de não-lida NÃO pode
+              // ficar DENTRO do botão da linha (button aninhado é HTML
+              // inválido e o clique selecionaria a conversa).
+              <li key={a.id} className="group/card relative">
                 <button
                   type="button"
                   onClick={() => setAtivo(a)}
@@ -147,6 +164,17 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     </div>
                   )}
                 </button>
+                {a.nao_lidas === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void marcarNaoLida(a.id)}
+                    aria-label="Marcar como não lida"
+                    title="Marcar como não lida (abrir a conversa marca como lida de novo)"
+                    className="absolute bottom-1.5 right-1.5 rounded-md border bg-background p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/card:opacity-100"
+                  >
+                    <Mail className="size-3.5" />
+                  </button>
+                )}
               </li>
             );
           })}

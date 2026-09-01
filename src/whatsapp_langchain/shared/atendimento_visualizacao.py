@@ -31,6 +31,28 @@ async def marcar_lido(
         await conn.commit()
 
 
+async def marcar_nao_lido(
+    pool: AsyncConnectionPool, *, atendimento_id: int, user_id: str
+) -> None:
+    """Inverso do `marcar_lido`: apaga o read receipt DESTE user.
+
+    Sem a linha, a conversa volta ao estado "nunca aberta" — o
+    `count_unread_para_user` (que trata `ultima_visualizacao_at IS NULL`
+    como não lida) e os contadores da sidebar já a contam sem mudança
+    nenhuma. Caso de uso: operador abriu por engano e quer o marcador
+    de "preciso voltar aqui" de volta.
+    """
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            DELETE FROM atendimento_visualizacao
+             WHERE atendimento_id = %s AND user_id = %s
+            """,
+            (atendimento_id, user_id),
+        )
+        await conn.commit()
+
+
 async def get_ultima_visualizacao(
     pool: AsyncConnectionPool, *, atendimento_id: int, user_id: str
 ) -> str | None:

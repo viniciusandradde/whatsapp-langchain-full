@@ -32,6 +32,7 @@ import {
   getTagsOpcoesAba,
   createWhitelistNumero,
   marcarAtendimentoLido,
+  marcarAtendimentoNaoLido,
   reorderAbas,
   resetAtendimentoThread,
   responderAtendimento,
@@ -536,6 +537,18 @@ export async function marcarAtendimentoLidoAction(
 ): Promise<Result> {
   try {
     await marcarAtendimentoLido(atendimentoId);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/** Devolve o marcador de "não lida" a uma conversa aberta por engano. */
+export async function marcarAtendimentoNaoLidoAction(
+  atendimentoId: number
+): Promise<Result> {
+  try {
+    await marcarAtendimentoNaoLido(atendimentoId);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: toError(e) };

@@ -57,7 +57,10 @@ from whatsapp_langchain.shared.atendimento_tag import (
     list_atendimento_ids_com_tags,
     list_tags_de_atendimento,
 )
-from whatsapp_langchain.shared.atendimento_visualizacao import marcar_lido
+from whatsapp_langchain.shared.atendimento_visualizacao import (
+    marcar_lido,
+    marcar_nao_lido,
+)
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.conversa_ativa import (
@@ -1439,6 +1442,24 @@ async def marcar_lido_endpoint(
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
     pool = await get_pool()
     await marcar_lido(pool, atendimento_id=atendimento_id, user_id=user_id)
+    return {"ok": True}
+
+
+@router.post("/{atendimento_id}/marcar-nao-lido")
+async def marcar_nao_lido_endpoint(
+    atendimento_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Inverso do marcar-lido — apaga o read receipt deste user (leva fila).
+
+    A conversa volta a contar como não lida pra ELE (abrir por engano não
+    queima mais o marcador de "voltar aqui"). Mesma superfície de auth do
+    marcar-lido: efeito restrito ao próprio usuário.
+    """
+    await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    pool = await get_pool()
+    await marcar_nao_lido(pool, atendimento_id=atendimento_id, user_id=user_id)
     return {"ok": True}
 
 
