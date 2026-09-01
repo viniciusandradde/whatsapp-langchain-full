@@ -12,6 +12,7 @@ import {
   FileText,
   Hand,
   MoreVertical,
+  Pencil,
   RefreshCw,
   Send,
   ShieldOff,
@@ -44,10 +45,12 @@ import type {
 import { cn } from "@/lib/utils";
 
 import {
+  apagarMensagemAction,
   claimAction,
   closeAction,
   devolverParaIaAction,
   criarNotaInternaAction,
+  editarMensagemAction,
   incluirNumeroSemIaAction,
   loadAtendentesOnlineAction,
   enviarTemplateAction,
@@ -64,6 +67,7 @@ import {
   transferDepartamentoAction,
 } from "./actions";
 import { usePermission } from "@/hooks/use-permission";
+import { BolhaMenu } from "./bolha-menu";
 import { PainelCliente } from "./painel-cliente";
 import { SITUACAO_AJUDA, SITUACAO_CLASSE, SITUACAO_LABEL } from "./situacao";
 import { TagPopover } from "./tag-popover";
@@ -100,6 +104,13 @@ export function AtendimentoDrawer({
   const [semIaPending, setSemIaPending] = useState(false);
   const [composer, setComposer] = useState("");
   const [composerInterna, setComposerInterna] = useState(false);
+  // Mig 172 — edição de mensagem enviada reusa o composer. Mutuamente
+  // exclusivo com nota interna (espelha o `_editando` do app Android):
+  // entrar em edição desliga a nota, e o checkbox fica desabilitado.
+  const [editando, setEditando] = useState<{
+    id: number;
+    original: string;
+  } | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
@@ -373,22 +384,38 @@ export function AtendimentoDrawer({
     setModelosOpen(false);
   }
 
+  function iniciarEdicao(m: AtendimentoMensagem) {
+    setEditando({ id: m.id, original: m.response ?? "" });
+    setComposer(m.response ?? "");
+    setComposerInterna(false);
+  }
+
+  function sairEdicao() {
+    setEditando(null);
+    setComposer("");
+  }
+
   async function handleSend() {
     const text = composer.trim();
     if (!text || sending) return;
     setSending(true);
     setError(null);
-    const r = composerInterna
-      ? await criarNotaInternaAction(atendimento.id, text)
-      : await responderAction(atendimento.id, text);
+    const r = editando
+      ? await editarMensagemAction(atendimento.id, editando.id, text)
+      : composerInterna
+        ? await criarNotaInternaAction(atendimento.id, text)
+        : await responderAction(atendimento.id, text);
     if (!r.ok) {
+      // Inclui o 400 de janela vencida (15min) — a frase do backend já é
+      // amigável ("Este canal não permite editar…" / janela expirada).
       setError(r.error);
       setSending(false);
       return;
     }
     setComposer("");
+    setEditando(null);
     setSending(false);
-    // Recarrega timeline para incluir a msg recém-criada.
+    // Recarrega timeline para incluir a msg recém-criada/editada.
     await reload();
   }
 
@@ -593,6 +620,7 @@ export function AtendimentoDrawer({
                     m={m}
                     atendimentoId={atendimento.id}
                     onReprocessado={reload}
+                    onEditar={iniciarEdicao}
                   />
                 ))}
               </>
@@ -633,11 +661,28 @@ export function AtendimentoDrawer({
 
         {isOpen && (
           <div className="relative border-t bg-background/40 p-3">
+            {editando && (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-brand-primary/40 bg-brand-primary/5 px-2 py-1.5 text-xs">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Pencil className="size-3 shrink-0" />
+                  Editando mensagem — Enter salva, Esc cancela
+                </span>
+                <button
+                  type="button"
+                  aria-label="Cancelar edição"
+                  onClick={sairEdicao}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
             <div className="mb-2 flex items-center gap-3">
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
                   checked={composerInterna}
+                  disabled={editando !== null}
                   onChange={(e) => setComposerInterna(e.target.checked)}
                   className="h-3.5 w-3.5"
                 />
@@ -663,11 +708,17 @@ export function AtendimentoDrawer({
                     e.preventDefault();
                     void handleSend();
                   }
+                  if (e.key === "Escape" && editando) {
+                    e.preventDefault();
+                    sairEdicao();
+                  }
                 }}
                 placeholder={
-                  composerInterna
-                    ? "Anotação privada da equipe… (não aparece pro cliente)"
-                    : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
+                  editando
+                    ? "Corrija o texto da mensagem…"
+                    : composerInterna
+                      ? "Anotação privada da equipe… (não aparece pro cliente)"
+                      : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
                 }
                 rows={2}
                 disabled={sending}
@@ -682,7 +733,7 @@ export function AtendimentoDrawer({
                 disabled={sending || !composer.trim()}
               >
                 <Send className="size-3.5" />
-                {sending ? "Enviando…" : "Enviar"}
+                {sending ? "Enviando…" : editando ? "Salvar" : "Enviar"}
               </Button>
             </div>
           </div>
@@ -1244,10 +1295,13 @@ function MessageBubbles({
   m,
   atendimentoId,
   onReprocessado,
+  onEditar,
 }: {
   m: AtendimentoMensagem;
   atendimentoId: number;
   onReprocessado: () => void;
+  /** Mig 172 — pede ao drawer pra entrar em modo edição com esta mensagem. */
+  onEditar?: (m: AtendimentoMensagem) => void;
 }) {
   // Cada row pode gerar bolhas distintas: media (inbound), texto inbound,
   // resposta agente. Mídia é renderizada inline como <img>/<audio>/link.
@@ -1372,13 +1426,38 @@ function MessageBubbles({
     );
   }
 
+  async function apagar() {
+    const r = await apagarMensagemAction(atendimentoId, m.id);
+    if (!r.ok) {
+      // Janela de 48h vencida ou canal sem suporte (WABA) — frase do backend.
+      toast.error(r.error);
+      return;
+    }
+    toast.success("Mensagem apagada para todos");
+    onReprocessado();
+  }
+
   return (
     <div className="space-y-2">
-      {bubbles.map((b, i) => (
-        <div
-          key={i}
-          className={cn("flex", b.side === "out" ? "justify-end" : "justify-start")}
-        >
+      {bubbles.map((b, i) => {
+        // Guardas do menu (paridade com o app): bolha apagada ou de erro é
+        // inerte; Copiar exige texto; Editar/Apagar só na resposta outbound e
+        // só quando o servidor calculou que a janela ainda vale.
+        const ehErro = b.kind === "text" && b.meta?.startsWith("erro") === true;
+        const inerte = ehErro || (b.kind === "text" && b.apagada === true);
+        const copiavel = inerte
+          ? null
+          : b.kind === "text"
+            ? b.text
+            : [b.caption, b.transcricao].filter(Boolean).join("\n") || null;
+        const podeEditar =
+          !inerte &&
+          b.side === "out" &&
+          b.kind === "text" &&
+          m.pode_editar_resposta === true;
+        const podeApagar =
+          !inerte && b.side === "out" && m.pode_apagar_resposta === true;
+        const bolha = (
           <div
             className={cn(
               "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
@@ -1431,8 +1510,27 @@ function MessageBubbles({
               )}
             </p>
           </div>
-        </div>
-      ))}
+        );
+        return (
+          <div
+            key={i}
+            className={cn(
+              "flex",
+              b.side === "out" ? "justify-end" : "justify-start"
+            )}
+          >
+            <BolhaMenu
+              copiarTexto={copiavel}
+              podeEditar={podeEditar}
+              podeApagar={podeApagar}
+              onEditar={onEditar ? () => onEditar(m) : undefined}
+              onApagar={apagar}
+            >
+              {bolha}
+            </BolhaMenu>
+          </div>
+        );
+      })}
       {isHandoff && (
         <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
           {/* Antes os 3 markers mostravam "operador respondendo" — verdade só

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  apagarMensagem,
   applyTagsAtendimento,
   claimAtendimento,
   devolverAtendimentoParaIa,
@@ -12,6 +13,7 @@ import {
   criarNotaInterna,
   deleteAba,
   deleteTag,
+  editarMensagem,
   getAtendimentoMensagens,
   addClienteTag,
   getCliente,
@@ -269,6 +271,36 @@ export async function reprocessarMensagemAction(
   } catch (e) {
     // O 409 do backend traz frase pronta em pt-BR ("Ligue a IA na conexão
     // antes de reprocessar") — repassar é melhor que genérica.
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/**
+ * Edita no WhatsApp uma mensagem já enviada (mig 172). O backend revalida a
+ * janela de 15min — o 400 traz frase pronta em pt-BR, repassada como está.
+ */
+export async function editarMensagemAction(
+  atendimentoId: number,
+  mensagemId: number,
+  texto: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await editarMensagem(atendimentoId, mensagemId, texto);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/** Apaga para todos (mig 172) — janela de 48h, revalidada no servidor. */
+export async function apagarMensagemAction(
+  atendimentoId: number,
+  mensagemId: number
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await apagarMensagem(atendimentoId, mensagemId);
+    return { ok: true };
+  } catch (e) {
     return { ok: false, error: toError(e) };
   }
 }

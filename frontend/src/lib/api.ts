@@ -673,6 +673,12 @@ export interface AtendimentoMensagem {
   // Mig 172 — apagada para todos no WhatsApp. O texto continua em `response`
   // para auditoria; quem renderiza é que troca por "Mensagem apagada".
   response_apagada?: boolean;
+  // Mig 172 — o servidor calcula se editar (15min) / apagar (48h) ainda estão
+  // na janela E se a mensagem tem endereço no provedor. A UI só esconde o
+  // botão; o backend revalida no clique (flags ficam velhos em timeline
+  // aberta há horas).
+  pode_editar_resposta?: boolean;
+  pode_apagar_resposta?: boolean;
   media_processing_status: string | null;
   response: string | null;
   status: string;
@@ -2700,6 +2706,29 @@ export async function transcreverMensagem(
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/transcrever`,
     { method: "POST" }
+  );
+}
+
+/** Edita no WhatsApp do cliente uma mensagem enviada pelo painel (mig 172). */
+export async function editarMensagem(
+  atendimentoId: number,
+  mensagemId: number,
+  texto: string
+): Promise<{ ok: boolean; mensagem_id: number; texto: string }> {
+  return apiFetch(
+    `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/texto`,
+    { method: "PATCH", body: { texto } }
+  );
+}
+
+/** Apaga para todos no WhatsApp (mig 172) — soft delete do nosso lado. */
+export async function apagarMensagem(
+  atendimentoId: number,
+  mensagemId: number
+): Promise<{ ok: boolean; mensagem_id: number }> {
+  return apiFetch(
+    `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/texto`,
+    { method: "DELETE" }
   );
 }
 
