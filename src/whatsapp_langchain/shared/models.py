@@ -695,6 +695,12 @@ class Atendimento(BaseModel):
     # Mensagens do cliente após a última vez que ESTE usuário abriu a conversa.
     # 0 quando não há usuário no contexto (ex.: chamada por service token).
     nao_lidas: int = 0
+    # Prévia da última mensagem visível da conversa (leva fila 2026-08).
+    # Derivado por `derivar_preview`: nota interna e markers internos do
+    # worker NUNCA aparecem aqui; mídia vira rótulo ("📎 áudio"); mensagem
+    # apagada vira "Mensagem apagada". None quando a conversa não tem
+    # mensagem legível (ou a query de lote falhou — a listagem não cai).
+    ultima_mensagem_preview: str | None = None
 
 
 class DocumentoConhecimento(BaseModel):

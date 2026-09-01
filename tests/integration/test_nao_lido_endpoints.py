@@ -191,3 +191,37 @@ class TestE2E:
         )
         assert r.status_code == 200, r.text
         assert dados["atd_id"] not in [a["id"] for a in r.json()["atendimentos"]]
+
+    def test_7_preview_da_ultima_mensagem(self, dados) -> None:
+        """A listagem devolve a prévia — e nota interna NÃO a sobrescreve."""
+        conn = psycopg.connect(get_db_url(), autocommit=True)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO message_queue
+                (phone_number, agent_id, thread_id, incoming_message, response,
+                 interna, status, empresa_id, atendimento_id,
+                 created_at, processed_at)
+            VALUES (%s, 'agente', %s, '', 'anotação privada da equipe',
+                    TRUE, 'done', %s, %s, NOW(), NOW())
+            """,
+            (
+                _TEL,
+                f"{_TEL}:agente",
+                dados["empresa_id"],
+                dados["atd_id"],
+            ),
+        )
+        conn.close()
+        r = httpx.get(
+            f"{API_BASE_URL}/api/atendimentos?tipo=todas",
+            headers=self._h(dados),
+            timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        por_id = {a["id"]: a for a in r.json()["atendimentos"]}
+        # A última row é a nota interna, mas o preview mostra a mensagem do
+        # cliente — interna é filtrada no SQL do lote.
+        assert (
+            por_id[dados["atd_id"]]["ultima_mensagem_preview"] == "oi, preciso de ajuda"
+        )

@@ -629,6 +629,12 @@ export interface Atendimento {
   ia_ativa: boolean;
   /** Mensagens do cliente após a última vez que ESTE usuário abriu. */
   nao_lidas: number;
+  /**
+   * Prévia da última mensagem visível (leva fila 2026-08). Nota interna e
+   * markers internos nunca aparecem; mídia vem como rótulo ("📎 áudio");
+   * apagada vem como "Mensagem apagada".
+   */
+  ultima_mensagem_preview?: string | null;
   /** Tags do CLIENTE (identificam a pessoa; alimentam as abas). */
   cliente_tags: string[];
   // Sprint 3 padrão profissional (mig 047)

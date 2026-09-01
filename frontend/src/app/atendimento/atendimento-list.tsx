@@ -104,6 +104,12 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
                     </span>
                   </div>
 
+                  {a.ultima_mensagem_preview && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {a.ultima_mensagem_preview}
+                    </p>
+                  )}
+
                   {/* Linha compacta: badges viraram pontos com tooltip pra
                       caber nos 300px — o rótulo inteiro vive no `title`. O
                       #id saiu: o protocolo já identifica no header do drawer. */}
