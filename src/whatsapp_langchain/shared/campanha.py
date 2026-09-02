@@ -58,6 +58,85 @@ def normalize_phone(raw: str) -> str | None:
     return f"+{digits}"
 
 
+def particionar_suprimidos(
+    telefones: list[str], suprimidos: set[str]
+) -> tuple[list[str], list[str]]:
+    """Separa `telefones` em (permitidos, bloqueados) preservando a ordem.
+
+    A ordem importa: ela vira o `campanha_destinatario.id`, que é a ordem em
+    que o dispatcher percorre a campanha.
+    """
+    if not suprimidos:
+        return list(telefones), []
+    permitidos: list[str] = []
+    bloqueados: list[str] = []
+    for t in telefones:
+        (bloqueados if t in suprimidos else permitidos).append(t)
+    return permitidos, bloqueados
+
+
+async def _filtrar_opt_out(
+    pool: AsyncConnectionPool, empresa_id: int, telefones: list[str]
+) -> tuple[list[str], list[str]]:
+    """(permitidos, bloqueados) contra a lista de supressão da empresa.
+
+    Import tardio de propósito: `shared/opt_out.py` importa `normalize_phone`
+    daqui, então o import no topo fecharia um ciclo. Mesmo padrão de
+    `shared/disparo.py::preview_disparo`.
+    """
+    from whatsapp_langchain.shared.opt_out import telefones_suprimidos
+
+    suprimidos = await telefones_suprimidos(pool, empresa_id, telefones)
+    return particionar_suprimidos(telefones, suprimidos)
+
+
+async def remover_suprimidos_pendentes(
+    pool: AsyncConnectionPool, empresa_id: int, camp_id: int, telefones: list[str]
+) -> set[str]:
+    """Tira da campanha quem pediu descadastro DEPOIS de ela ser criada.
+
+    O gate da criação não basta: uma campanha em aquecimento é reagendada dia
+    após dia (`_reagendar_warmup`), e o STOP chega no meio. Por isso o
+    dispatcher repete a checagem a cada lote.
+
+    Remove a linha em vez de mudar o status porque o CHECK de
+    `campanha_destinatario` só aceita `pendente|enviado|falhou` — marcar
+    'falhou' contaminaria o kill-switch com uma falha que não é do número, e
+    deixar 'pendente' faria o lote ser relido para sempre. Recalcula
+    `total_destinatarios`, senão a campanha nunca fecha 'done'
+    (`_mark_finished` compara `enviados == total`).
+
+    Retorna o conjunto de telefones suprimidos encontrados no lote.
+    """
+    from whatsapp_langchain.shared.opt_out import telefones_suprimidos
+
+    suprimidos = await telefones_suprimidos(pool, empresa_id, telefones)
+    if not suprimidos:
+        return set()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            DELETE FROM campanha_destinatario
+             WHERE campanha_id = %s AND status = 'pendente' AND telefone = ANY(%s)
+            """,
+            (camp_id, list(suprimidos)),
+        )
+        await conn.execute(
+            "UPDATE campanha SET total_destinatarios ="
+            " (SELECT count(*) FROM campanha_destinatario WHERE campanha_id = %s),"
+            " updated_at = NOW() WHERE id = %s",
+            (camp_id, camp_id),
+        )
+        await conn.commit()
+    logger.info(
+        "campanha_opt_out_removido_no_disparo",
+        empresa_id=empresa_id,
+        camp_id=camp_id,
+        removidos=len(suprimidos),
+    )
+    return suprimidos
+
+
 # Piso de intervalo mínimo (ms) entre envios de MÍDIA — anti-ban. Mídia em
 # ritmo de texto foi o que escalou o ban da campanha 9 (ver
 # docs/DISPARO_MASSA_BEST_PRACTICES.md). 8s é conservador pra canal não-oficial.
@@ -275,6 +354,19 @@ async def create_campanha(
 
     if not normalized:
         raise ValueError("Nenhum telefone válido na lista")
+
+    # Gate de opt-out (LGPD). Até 2026-09 a supressão só era consultada no
+    # preview do disparo — quem criava campanha pelo painel enviava para quem
+    # tinha pedido descadastro. O gate mora aqui, no ponto único por onde os
+    # três callers (painel + os dois caminhos da extensão) passam.
+    normalized, bloqueados_opt_out = await _filtrar_opt_out(
+        pool, empresa_id, normalized
+    )
+    if not normalized:
+        raise ValueError(
+            f"Todos os {len(bloqueados_opt_out)} contatos da lista pediram "
+            "descadastro (opt-out) nesta empresa."
+        )
     if len(normalized) > max_destinatarios:
         raise ValueError(
             f"{len(normalized)} destinatários > limite {max_destinatarios}"
@@ -355,8 +447,9 @@ async def create_campanha(
         empresa_id=empresa_id,
         camp_id=camp.id,
         total=len(normalized),
+        ignorados_opt_out=len(bloqueados_opt_out),
     )
-    return camp.to_dict()
+    return {**camp.to_dict(), "ignorados_opt_out": len(bloqueados_opt_out)}
 
 
 async def aplicar_report_ext(
@@ -505,17 +598,26 @@ async def add_destinatarios(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int, telefones: list[str]
 ) -> dict:
     """Adiciona telefones a uma campanha editável (normaliza + dedupe). Recalcula
-    total_destinatarios. Retorna {novos, total}."""
+    total_destinatarios. Retorna {novos, total, ignorados_opt_out}.
+
+    Quem pediu descadastro é ignorado aqui pelo mesmo motivo de
+    `create_campanha`: esta é uma porta de entrada de destinatário."""
     novos = 0
+    normalizados: list[str] = []
+    vistos: set[str] = set()
+    for raw in telefones:
+        n = normalize_phone(raw)
+        if n is None or n in vistos:
+            continue
+        vistos.add(n)
+        normalizados.append(n)
+    permitidos, bloqueados_opt_out = await _filtrar_opt_out(
+        pool, empresa_id, normalizados
+    )
     with empresa_scope(empresa_id):
         async with pool.connection() as conn:
             await _status_editavel(conn, empresa_id, camp_id)
-            seen: set[str] = set()
-            for raw in telefones:
-                n = normalize_phone(raw)
-                if n is None or n in seen:
-                    continue
-                seen.add(n)
+            for n in permitidos:
                 cur = await conn.execute(
                     "INSERT INTO campanha_destinatario (campanha_id, telefone)"
                     " VALUES (%s, %s) ON CONFLICT (campanha_id, telefone) DO NOTHING"
@@ -532,7 +634,18 @@ async def add_destinatarios(
             )
             row = await cur.fetchone()
             await conn.commit()
-    return {"novos": novos, "total": row[0] if row else 0}
+    if bloqueados_opt_out:
+        logger.info(
+            "campanha_add_destinatarios_opt_out",
+            empresa_id=empresa_id,
+            camp_id=camp_id,
+            ignorados=len(bloqueados_opt_out),
+        )
+    return {
+        "novos": novos,
+        "total": row[0] if row else 0,
+        "ignorados_opt_out": len(bloqueados_opt_out),
+    }
 
 
 async def clonar_campanha(
@@ -560,8 +673,12 @@ async def clonar_campanha(
                          conexao_ids)
                     SELECT empresa_id, nome || ' (cópia)', descricao, mensagem,
                          conexao_id, intervalo_ms, max_destinatarios,
-                         (SELECT count(*) FROM campanha_destinatario
-                           WHERE campanha_id = %s),
+                         (SELECT count(*) FROM campanha_destinatario cd
+                           WHERE cd.campanha_id = %s
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM disparador_opt_out o
+                                  WHERE o.empresa_id = %s
+                                    AND o.telefone = cd.telefone)),
                          created_by_user_id, 'draft',
                          modelo_mensagem_id, tipo,
                          message_template_id, template_variaveis,
@@ -571,16 +688,23 @@ async def clonar_campanha(
                     FROM campanha WHERE id = %s AND empresa_id = %s
                     RETURNING {_COLS}
                     """,
-                    (camp_id, camp_id, empresa_id),
+                    (camp_id, empresa_id, camp_id, empresa_id),
                 )
                 row = await cur.fetchone()
                 assert row is not None
                 novo = _row_to_camp(row)
+                # A cópia respeita a supressão de HOJE: a campanha de origem
+                # pode ser anterior ao descadastro, e clonar não pode
+                # ressuscitar quem saiu.
                 await conn.execute(
                     "INSERT INTO campanha_destinatario (campanha_id, telefone, variaveis)"
-                    " SELECT %s, telefone, variaveis FROM campanha_destinatario"
-                    " WHERE campanha_id = %s",
-                    (novo.id, camp_id),
+                    " SELECT %s, cd.telefone, cd.variaveis"
+                    "   FROM campanha_destinatario cd"
+                    "  WHERE cd.campanha_id = %s"
+                    "    AND NOT EXISTS (SELECT 1 FROM disparador_opt_out o"
+                    "                     WHERE o.empresa_id = %s"
+                    "                       AND o.telefone = cd.telefone)",
+                    (novo.id, camp_id, empresa_id),
                 )
                 # NÃO chamar conn.commit() aqui — o `async with conn.transaction()`
                 # commita ao sair (psycopg proíbe commit explícito dentro dele).
@@ -973,6 +1097,16 @@ async def _dispatch_loop(
                 falhas=falhas,
             )
             return
+
+        # Gate de opt-out por lote. O da criação não basta: com aquecimento a
+        # campanha é reagendada dia após dia, e o STOP chega no meio dela.
+        removidos = await remover_suprimidos_pendentes(
+            pool, empresa_id, camp_id, [b[1] for b in batch]
+        )
+        if removidos:
+            batch = [b for b in batch if b[1] not in removidos]
+            if not batch:
+                continue
 
         for dest_id, phone, cliente_nome, variaveis in batch:
             # Round-robin anti-ban: próxima conexão do pool com capacidade.
