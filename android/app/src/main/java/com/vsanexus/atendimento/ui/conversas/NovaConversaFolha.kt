@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
  *
  * Sem seletor de conexão: o servidor usa a PADRÃO da empresa (quem quiser
  * trocar marca outra em /connections no painel). A lista carregada serve só
- * pra saber se existe conexão Evolution utilizável — WABA/Twilio exigem
+ * pra saber se existe conexão Evolution utilizável — o WABA exige
  * template HSM, fluxo do painel web.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,7 +61,7 @@ fun NovaConversaFolha(
                 ui.conexoes.isEmpty() -> {
                     Text(
                         "Nenhuma conexão disponível para iniciar conversa pelo " +
-                            "app. Conexões WABA/Twilio usam o painel web.",
+                            "app. Conexões WABA usam o painel web.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

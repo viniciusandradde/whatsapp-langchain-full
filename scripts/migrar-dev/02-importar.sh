@@ -129,14 +129,11 @@ TRAVAS = {
     "ENVIRONMENT":              "development",
     # A trava que mais importa: nada sai pra telefone real.
     "EVOLUTION_OUTBOUND_MODE":  "mock",
-    "TWILIO_OUTBOUND_MODE":     "mock",
     # Banco local, porta do override. Nunca o de produção.
     "DATABASE_URL":             "postgresql://postgres:postgres@localhost:5434/whatsapp_langchain",
     "DATABASE_URL_APP":         "",
     # Traces de teste não entram no painel de produção.
     "LANGFUSE_ENABLED":         "false",
-    # Assinatura do Twilio: em dev não há webhook real chegando.
-    "VALIDATE_TWILIO_SIGNATURE": "false",
     # Endereços locais.
     "INTERNAL_API_URL":         "http://localhost:8081",
     "BETTER_AUTH_URL":          "http://localhost:3100",
@@ -198,7 +195,6 @@ checar() {
   else erro "$3 — FALHOU"; PROBLEMAS=$((PROBLEMAS+1)); fi
 }
 checar EVOLUTION_OUTBOUND_MODE mock  "Evolution em mock (não manda WhatsApp)"
-checar TWILIO_OUTBOUND_MODE    mock  "Twilio em mock"
 checar LANGFUSE_ENABLED        false "Langfuse desligado"
 checar ENVIRONMENT      development  "ENVIRONMENT=development"
 
@@ -297,7 +293,7 @@ cat <<EOF
 
   Logs       docker compose -p $PROJETO_DOCKER logs -f
   Parar      docker compose -p $PROJETO_DOCKER down
-  Testes     uv run pytest -m "not docker_demo and not twilio_real"
+  Testes     uv run pytest -m "not docker_demo"
 
   A produção do Luis continua no VPS, intocada. Este ambiente está em mock:
   nada que você fizer aqui manda mensagem pra telefone real.

@@ -227,8 +227,6 @@ export interface EmpresasResponse {
 }
 
 export type ConexaoProvider =
-  | "twilio_sandbox"
-  | "twilio_prod"
   | "waba"
   | "evolution";
 export type ConexaoStatus = "active" | "disabled" | "error";

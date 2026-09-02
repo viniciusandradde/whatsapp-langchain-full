@@ -1132,7 +1132,7 @@ export function VozDoAgenteSection({ empresa }: { empresa: Empresa }) {
             <span className="mt-0.5 block text-xs text-muted-foreground">
               Quando o cliente manda áudio, o agente responde em nota de voz;
               mensagem de texto continua respondida em texto. Só funciona em
-              conexão Evolution — WABA e Twilio não enviam nota de voz.
+              conexão Evolution — o WABA não envia nota de voz.
             </span>
           </Label>
         </div>

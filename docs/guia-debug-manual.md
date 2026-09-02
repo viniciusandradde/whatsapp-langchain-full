@@ -36,7 +36,7 @@ Você verá todos os endpoints documentados com formulários interativos.
 
 ## Passo 2: Enviar uma Mensagem via Webhook
 
-1. No Swagger, localize **POST /webhook/twilio**
+1. No Swagger, localize **POST /webhook/evolution**
 2. Clique em **Try it out**
 3. No campo `agent` (query param), digite: `vsa_tech`
 4. No corpo (form data), preencha:

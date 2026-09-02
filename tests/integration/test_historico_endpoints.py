@@ -110,7 +110,7 @@ def setup(db_url: str):
 
         cur.execute(
             "INSERT INTO conexao (empresa_id, provider, from_number, "
-            "display_name, status) VALUES (%s, 'twilio_sandbox', %s, %s, 'active') "
+            "display_name, status) VALUES (%s, 'evolution', %s, %s, 'active') "
             "RETURNING id",
             (eid, f"+15550{_RUN[:5]}", f"Canal {_RUN}"),
         )

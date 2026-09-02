@@ -47,7 +47,6 @@ from .helpers import (
     wait_memory_saved,
     wait_queue_done,
     wait_terminal_status,
-    wait_until_n_rows_done,
 )
 
 pytestmark = pytest.mark.docker_demo
@@ -615,52 +614,3 @@ class TestMultiplasMidias:
     Verifica que o sistema enfileira 3 rows independentes com o mesmo
     message_id e que o worker processa todas até status terminal.
     """
-
-    def test_multimedia_message_creates_n_rows(self, db_url: str) -> None:
-        """Webhook com NumMedia=2 enfileira 1 texto + 2 mídias com mesmo message_id."""
-        sid = unique_sid("SMMM")
-        phone = unique_phone("81")
-
-        print(f"\n{'=' * 60}")
-        print("CENÁRIO: Múltiplas Mídias (NumMedia=2)")
-        print(f"Phone: {phone} | SID: {sid}")
-        print(f"{'=' * 60}")
-
-        print("\n[1/3] Enviando webhook com NumMedia=2...")
-        resp = httpx.post(
-            f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-            data={
-                "MessageSid": sid,
-                "From": f"whatsapp:{phone}",
-                "To": "whatsapp:+14155238886",
-                "Body": "olha",
-                "NumMedia": "2",
-                "MediaUrl0": "https://demo.twilio.com/owl.png",
-                "MediaContentType0": "image/png",
-                "MediaUrl1": "https://demo.twilio.com/owl.png",
-                "MediaContentType1": "image/png",
-            },
-            timeout=10,
-        )
-        assert resp.status_code == 200, f"Webhook retornou {resp.status_code}"
-        print(f"  ✓ Webhook aceito (SID: {sid})")
-
-        print("[2/3] Aguardando todas as 3 rows atingirem status terminal...")
-        # 3 rows: 1 texto + 2 mídias — aguarda até 180s para 3 turns
-        wait_until_n_rows_done(db_url, sid, expected=3, timeout_seconds=180)
-        print("  ✓ Todas as rows finalizadas")
-
-        print("[3/3] Verificando COUNT de rows no banco...")
-        with psycopg.connect(db_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM message_queue WHERE message_id = %s",
-                    (sid,),
-                )
-                row = cur.fetchone()
-        assert row[0] == 3, f"Esperava 3 rows, vi {row[0]}"
-        print(f"  ✓ {row[0]} rows com message_id={sid}")
-
-        print(f"\n{'=' * 60}")
-        print("CENÁRIO CONCLUÍDO COM SUCESSO")
-        print(f"{'=' * 60}\n")

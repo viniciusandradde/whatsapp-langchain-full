@@ -147,7 +147,6 @@ from whatsapp_langchain.server.routes.variavel import (
 from whatsapp_langchain.server.routes.waba_templates import (
     router as waba_templates_router,
 )
-from whatsapp_langchain.server.routes.webhook import router as webhook_router
 from whatsapp_langchain.server.routes.webhook_waba import (
     router as webhook_waba_router,
 )
@@ -305,7 +304,7 @@ app.add_middleware(
     allow_origins=settings.frontend_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Twilio-Signature"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 install_security_headers(app, is_production=settings.is_production)
@@ -378,7 +377,6 @@ async def agent_not_found_handler(
 
 # Routers
 app.include_router(health_router)
-app.include_router(webhook_router)
 app.include_router(evolution_webhook_router)
 app.include_router(webhook_waba_router)
 app.include_router(waba_templates_router)
@@ -508,7 +506,7 @@ app.include_router(hitl_router)
 app.include_router(workflows_router)
 
 # Webhook sincrono — apenas para dev/testes, nunca em producao.
-# Em producao, use o webhook async (Twilio) que passa pela fila.
+# Em producao, use o webhook async que passa pela fila.
 if settings.environment != "production":
     from whatsapp_langchain.server.routes.webhook_sync import (
         router as webhook_sync_router,

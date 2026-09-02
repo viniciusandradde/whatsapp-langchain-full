@@ -35,9 +35,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger()
 
-# Auth Twilio (API Key) só é anexada para hosts da Twilio — evita vazar a
-# credencial pra um destino arbitrário num redirect malicioso.
-_TWILIO_AUTH_HOST_SUFFIX = "twilio.com"
 _MAX_MEDIA_REDIRECTS = 5
 
 
@@ -129,7 +126,7 @@ async def download_media(url: str) -> tuple[bytes, str | None]:
     Suporta:
     - `data:` URLs (RFC 2397) — decoda base64 inline. Usado pra mídia já
       pre-fetched do Evolution (evita re-baixar URL encrypted WhatsApp).
-    - URLs HTTP/HTTPS — GET com auth Twilio se configurada.
+    - URLs HTTP/HTTPS — GET simples, sem credencial anexada.
     """
     if url.startswith("data:"):
         # data:<mime>[;base64],<payload>
@@ -143,20 +140,14 @@ async def download_media(url: str) -> tuple[bytes, str | None]:
 
         return unquote(payload).encode("utf-8"), mime
 
-    # SSRF guard: segue redirects MANUALMENTE, validando cada hop (Twilio
-    # MediaUrl redireciona pra S3, então não dá pra desligar redirect). A auth
-    # Twilio só vai pra hosts *.twilio.com — nunca vaza pro alvo de um redirect.
+    # SSRF guard: segue redirects MANUALMENTE, validando cada hop — a URL de
+    # mídia do provider costuma redirecionar pra um storage, então não dá pra
+    # desligar redirect; o que dá é validar o destino de cada salto.
     current = url
     async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
         for _ in range(_MAX_MEDIA_REDIRECTS):
-            host = await asyncio.to_thread(_validate_media_url, current)
-            auth = (
-                (settings.twilio_api_key_sid, settings.twilio_api_key_secret)
-                if settings.twilio_api_key_sid
-                and host.endswith(_TWILIO_AUTH_HOST_SUFFIX)
-                else None
-            )
-            response = await client.get(current, auth=auth)
+            await asyncio.to_thread(_validate_media_url, current)
+            response = await client.get(current)
             if response.is_redirect:
                 loc = response.headers.get("location")
                 if not loc:

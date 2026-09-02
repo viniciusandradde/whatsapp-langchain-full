@@ -19,8 +19,6 @@ interface PageProps {
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
-  twilio_sandbox: "Twilio Sandbox",
-  twilio_prod: "Twilio Produção",
   waba: "WhatsApp Oficial (Meta)",
   evolution: "Evolution API",
 };
@@ -67,8 +65,8 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
   }
 
   const isWABA = conexao.provider === "waba";
-  // Templates HSM: WABA (Meta direto) + Twilio (Content API). Evolution não tem.
-  const hasTemplates = ["waba", "twilio_sandbox", "twilio_prod"].includes(
+  // Templates HSM: só WABA (Meta Cloud API). Evolution não tem.
+  const hasTemplates = ["waba"].includes(
     conexao.provider
   );
 

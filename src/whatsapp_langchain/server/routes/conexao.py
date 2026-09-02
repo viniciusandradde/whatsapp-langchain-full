@@ -45,10 +45,11 @@ from whatsapp_langchain.shared.conexao import (
 from whatsapp_langchain.shared.conexao_quota import quota_status
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
-from whatsapp_langchain.shared.models import Conexao, ConexaoInput, ConexaoPatchInput
-from whatsapp_langchain.shared.outbound import (
-    OutboundError,
-    send_outbound_template,
+from whatsapp_langchain.shared.models import (
+    PROVIDERS_SUPORTADOS,
+    Conexao,
+    ConexaoInput,
+    ConexaoPatchInput,
 )
 
 logger = structlog.get_logger()
@@ -116,14 +117,20 @@ async def create_conexao(
     empresa_id: int = Depends(get_empresa_context),
     _quota: None = Depends(require_plano_limit("conexoes")),
 ) -> Conexao:
-    """Cria conexão Twilio (provider twilio_sandbox/twilio_prod).
+    """Cria/atualiza uma conexão a partir de payload cru.
+
+    Caminho usado pelo modal "Importar instance existente" da Evolution.
+    O fluxo normal é `/evolution/provision` (QR) ou `/waba/finalize` (após
+    o Embedded Signup) — aqui é o cadastro manual.
 
     Sprint Q.3: bloqueado com HTTP 402 se atingiu limite de conexões do
     plano (Free=1, Pro=3, Enterprise=∞).
-
-    WABA usa /waba/finalize (após OAuth) e Evolution usa /evolution/provision.
-    Twilio é o único path que mantém form simples.
     """
+    if body.provider not in PROVIDERS_SUPORTADOS:
+        raise HTTPException(
+            status_code=422,
+            detail=("Provider inválido: use 'waba' (WhatsApp Oficial) ou 'evolution'."),
+        )
     pool = await get_pool()
     out = await upsert_conexao(pool, empresa_id, body)
     logger.info(
@@ -1071,9 +1078,8 @@ async def test_conexao(
                 if state != conexao.connection_state:
                     await set_connection_state(pool, conexao_id, state=state)
 
-        else:  # twilio_*
-            ok = bool(settings.twilio_account_sid and settings.twilio_api_key_sid)
-            message = "Twilio config OK" if ok else "Twilio env vars ausentes."
+        else:
+            message = f"Sem checagem de saúde para o provider {conexao.provider!r}."
 
     except Exception as exc:
         message = str(exc)[:200]
@@ -1155,78 +1161,4 @@ async def test_evolution_connection(
         ok=state in {"open", "connecting"},
         state=state,
         instance_name=body.instance_name,
-    )
-
-
-# ---------- Twilio: enviar template HSM (Content API) ----------
-
-
-class SendTemplateInput(BaseModel):
-    to: str = Field(
-        ...,
-        min_length=8,
-        max_length=20,
-        description="Destino em E.164, ex: +5511999999999",
-    )
-    content_sid: str = Field(
-        ...,
-        min_length=10,
-        max_length=40,
-        description="SID do template aprovado, ex: HXb5b62575e6e4ff6129ad7c8efe1f983e",
-    )
-    content_variables: dict[str, str] | None = Field(
-        default=None,
-        description='Vars do template, ex: {"1": "12/1", "2": "3pm"}',
-    )
-    atendimento_id: int | None = Field(
-        default=None,
-        description=(
-            "Quando setado, persiste row na timeline. Sem isso é envio "
-            "fora-de-atendimento (broadcast/CSAT proativo)."
-        ),
-    )
-
-
-class SendTemplateResponse(BaseModel):
-    provider_message_id: str
-    outbound_mode: str
-    message_row: dict[str, Any] | None = None
-
-
-@router.post("/{conexao_id}/send-template")
-async def send_template_endpoint(
-    conexao_id: int,
-    body: SendTemplateInput,
-    request: Request,
-    empresa_id: int = Depends(get_empresa_context),
-    _perm: None = Depends(require_permission("integracao.manage")),
-) -> SendTemplateResponse:
-    """Envia template HSM via Twilio Content API.
-
-    Endpoint LEGADO, só `twilio_sandbox` / `twilio_prod`. Para WABA use
-    `POST /api/atendimentos/{id}/send-template`, que passa por
-    `send_template_by_id` e roteia os dois providers. Evolution não suporta HSM.
-
-    Útil pra: CSAT proativo, lembrete de agendamento, alerta operacional,
-    broadcast pra base de clientes que opted-in.
-    """
-    pool = await get_pool()
-    try:
-        result = await send_outbound_template(
-            pool,
-            conexao_id=conexao_id,
-            empresa_id=empresa_id,
-            to=body.to,
-            content_sid=body.content_sid,
-            content_variables=body.content_variables,
-            atendimento_id=body.atendimento_id,
-            user_id=get_user_id_from_request(request),
-        )
-    except OutboundError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return SendTemplateResponse(
-        provider_message_id=result["provider_message_id"],
-        outbound_mode=result["outbound_mode"],
-        message_row=result.get("message_row"),
     )

@@ -604,7 +604,7 @@ async def enviar_relatorio(
         client, _mode = await build_outbound_client(pool, conexao)
         # Duck-typing igual ao de `outbound.send_outbound_manual_midia`: só o
         # cliente Evolution tem `send_media`. WABA exigiria upload no /media do
-        # Graph e Twilio exigiria URL pública — nenhum dos dois existe hoje.
+        # Graph, o que não existe hoje.
         enviar_midia = getattr(client, "send_media", None)
         if enviar_midia is None:
             raise RuntimeError(

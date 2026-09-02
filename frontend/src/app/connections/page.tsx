@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * Página /connections — gestão de canais WhatsApp.
  *
  * Suporta 3 providers: WABA (OAuth Embedded Signup), Evolution (auto-provision
- * com QR), Twilio (form manual). Layout padrão ZigChat com filtros + tabela
+ * com QR). Layout padrão ZigChat com filtros + tabela
  * de badges + ações inline.
  */
 export default async function ConnectionsPage() {

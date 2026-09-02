@@ -248,7 +248,7 @@ async def enqueue_or_buffer(
             que escolhe o parser no worker e o que a resposta cita quando o
             conteúdo não pôde ser lido.
         to_number: Número destinatário (opcional).
-        message_id: ID externo da mensagem, ex: Twilio MessageSid (opcional).
+        message_id: ID externo da mensagem no provider (opcional).
         buffer_seconds: Janela curta — vale só com agrupamento desligado ou em
             fluxo guiado. Default: 2.0.
         grouping_seconds: Janela de agrupamento (por conexão). 0 desliga.

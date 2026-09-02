@@ -410,7 +410,7 @@ constructor(private val api: AtendimentoApi) {
     }
 
     /**
-     * 400 aqui quase sempre é provider sem suporte a mídia (WABA/Twilio) ou tipo
+     * 400 aqui quase sempre é provider sem suporte a mídia (WABA) ou tipo
      * recusado — casos em que o operador precisa saber que NÃO adianta repetir.
      */
     private fun avisoMidiaDe(codigo: Int) =

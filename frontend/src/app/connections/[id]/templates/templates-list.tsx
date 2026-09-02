@@ -119,7 +119,7 @@ export function TemplatesList({ conexaoId, initialTemplates }: Props) {
   function handleImport() {
     if (
       !confirm(
-        "Importar templates já existentes no provider (Meta/Twilio) que ainda não estão no painel?"
+        "Importar templates já existentes no provider (Meta) que ainda não estão no painel?"
       )
     )
       return;

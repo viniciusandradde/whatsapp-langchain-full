@@ -143,7 +143,7 @@ class TestExtracao:
 
         Exigir `type == "ai"` deixaria de fora qualquer mensagem fora do
         padrão e mudaria o comportamento de quem antes lia `[-1].content` sem
-        perguntar nada — inclusive quebrando os dublês de `test_processor_twilio`.
+        perguntar nada — inclusive quebrando os dublês de `test_processor_outbound`.
         """
 
         class MensagemEstranha:

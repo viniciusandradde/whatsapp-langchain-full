@@ -6,7 +6,7 @@ Plataforma de atendimento WhatsApp **multi-tenant** com agentes de IA (LangGraph
 
 Dois processos Python compartilham o Postgres — e o Postgres **é** a fila:
 
-- **API (FastAPI)** — borda HTTP. Valida o webhook (Evolution / WABA; Twilio legado), aplica rate limit por telefone, normaliza o payload e enfileira em `message_queue`. Responde em <100ms; nunca invoca o agente inline.
+- **API (FastAPI)** — borda HTTP. Valida o webhook (Evolution / WABA), aplica rate limit por telefone, normaliza o payload e enfileira em `message_queue`. Responde em <100ms; nunca invoca o agente inline.
 - **Worker assíncrono** — faz claim com `FOR UPDATE SKIP LOCKED` + lease, pré-processa mídia (imagem/áudio/documento → texto), invoca o agente LangGraph e só marca `done` depois do envio outbound bem-sucedido (entrega at-least-once). Retry com backoff até `MAX_ATTEMPTS`.
 - **LangGraph** — checkpointer (`AsyncPostgresSaver`) e store semântico (`AsyncPostgresStore`) abertos uma vez no boot do worker; histórico por `thread_id = telefone:agente`, memória cross-thread por usuário.
 - **Frontend (Next.js)** — painel administrativo com Better Auth (schema `auth` no mesmo Postgres), RBAC com governança record-level e white-label por empresa.
@@ -27,7 +27,7 @@ flowchart LR
 ## Destaques
 
 - **Multi-empresa** com RLS forçado no Postgres (4 roles de aplicação, policies estritas)
-- **Multi-conexão**: Evolution API e WhatsApp Cloud API (WABA, com Embedded Signup); Twilio como legado
+- **Multi-conexão**: Evolution API e WhatsApp Cloud API (WABA, com Embedded Signup)
 - **Agentes de IA por empresa**: prompt versionado com diff e restauração, catálogo de modelos via OpenRouter, tools de calendário (Google Calendar), memória semântica e few-shot learning opt-in a partir de atendimentos bem avaliados
 - **Menu chatbot** (URA de texto) com wizard de coleta e triagem por departamento
 - **Atendimento humano**: fila por departamento, transferência (atendente/departamento), notas internas, tags, distribuição com turnos/jornada, transcrição de áudio para o operador
@@ -66,7 +66,7 @@ Qualidade e testes:
 ```bash
 make check      # ruff + pyright
 make ci         # check + pytest com gate de coverage 50% (o CI de PR roda só o check)
-make test       # suite completa (sem markers docker_demo/twilio_real)
+make test       # suite completa (sem o marker docker_demo)
 ```
 
 Configuração via `.env` (documentada em `.env.example`); `INTERNAL_SERVICE_TOKEN` e `BETTER_AUTH_SECRET` são obrigatórios mesmo em dev.

@@ -42,8 +42,6 @@ interface Props {
 }
 
 const PROVIDER_LABELS: Record<ConexaoProvider, string> = {
-  twilio_sandbox: "Twilio Sandbox",
-  twilio_prod: "Twilio Prod",
   waba: "WhatsApp Oficial",
   evolution: "Evolution",
 };
@@ -243,8 +241,6 @@ export function ConnectionsList({ initialConexoes }: Props) {
             <option value="">Todos</option>
             <option value="waba">WhatsApp Oficial</option>
             <option value="evolution">Evolution</option>
-            <option value="twilio_sandbox">Twilio Sandbox</option>
-            <option value="twilio_prod">Twilio Prod</option>
           </select>
         </div>
         <Button onClick={() => setShowNew(true)} className="gap-1.5">

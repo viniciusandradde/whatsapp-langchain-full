@@ -32,6 +32,7 @@ from whatsapp_langchain.shared.config import settings
 from .helpers import (
     API_BASE_URL,
     clear_thread_checkpoints,
+    evolution_payload,
     get_db_url,
     wait_memory_saved,
     wait_terminal_status,
@@ -115,16 +116,14 @@ def test_demo_webhook_image_e2e(
     phone = f"+5511{uuid.uuid4().int % 10**8:08d}"
 
     response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": "Descreva esta imagem.",
-            "NumMedia": "1",
-            "MediaUrl0": media_server_urls["image_url"],
-            "MediaContentType0": "image/png",
-        },
+        f"{API_BASE_URL}/webhook/evolution",
+        json=evolution_payload(
+            phone,
+            "Descreva esta imagem.",
+            sid,
+            media_url=media_server_urls["image_url"],
+            media_content_type="image/png",
+        ),
         timeout=10,
     )
     assert response.status_code == 200
@@ -144,16 +143,14 @@ def test_demo_webhook_audio_e2e(
     phone = f"+5521{uuid.uuid4().int % 10**8:08d}"
 
     response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": "Transcreva e responda.",
-            "NumMedia": "1",
-            "MediaUrl0": media_server_urls["audio_url"],
-            "MediaContentType0": "audio/ogg",
-        },
+        f"{API_BASE_URL}/webhook/evolution",
+        json=evolution_payload(
+            phone,
+            "Transcreva e responda.",
+            sid,
+            media_url=media_server_urls["audio_url"],
+            media_content_type="audio/ogg",
+        ),
         timeout=10,
     )
     assert response.status_code == 200
@@ -169,7 +166,7 @@ async def test_demo_semantic_memory_roundtrip(ensure_docker_stack: str):
     """Demonstra roundtrip de memória por usuário no Postgres Store.
 
     O namespace segue o contrato do projeto: (user_id, "memories"),
-    onde user_id é o telefone (mesmo identificador vindo do payload Twilio).
+    onde user_id é o telefone (mesmo identificador vindo do payload do provider).
     """
     api_key = settings.openrouter_api_key
     if not api_key:
@@ -245,18 +242,16 @@ def test_demo_webhook_memory_recall_e2e(ensure_docker_stack: str):
 
     sid_save = f"SMMEM{uuid.uuid4().hex[:12]}"
     save_response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid_save,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": (
+        f"{API_BASE_URL}/webhook/evolution",
+        json=evolution_payload(
+            phone,
+            (
                 "Use a ferramenta save_memory e salve este fato sobre mim: "
                 f"meu identificador secreto é {token}. "
                 "Depois confirme em uma frase curta."
             ),
-            "NumMedia": "0",
-        },
+            sid_save,
+        ),
         timeout=10,
     )
     assert save_response.status_code == 200
@@ -272,17 +267,15 @@ def test_demo_webhook_memory_recall_e2e(ensure_docker_stack: str):
 
     sid_recall = f"SMMEM{uuid.uuid4().hex[:12]}"
     recall_response = httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent=vsa_tech",
-        data={
-            "MessageSid": sid_recall,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": (
+        f"{API_BASE_URL}/webhook/evolution",
+        json=evolution_payload(
+            phone,
+            (
                 "Sem usar save_memory agora, use read_memory para recuperar "
                 "meu identificador secreto e responda apenas com o valor."
             ),
-            "NumMedia": "0",
-        },
+            sid_recall,
+        ),
         timeout=10,
     )
     assert recall_response.status_code == 200
