@@ -39,7 +39,7 @@ class TestSmokeConexoesCRUD:
     def test_create_conexao_sem_auth_401(self) -> None:
         resp = _client().post(
             "/api/conexoes",
-            json={"provider": "twilio_sandbox", "from_number": "+5511999"},
+            json={"provider": "evolution", "from_number": "+5511999"},
         )
         assert resp.status_code == 401
 
@@ -204,7 +204,7 @@ class TestHardDeleteConexao:
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
             return conn.execute(
                 "INSERT INTO conexao (empresa_id, provider, from_number) "
-                "VALUES (%s, 'twilio_prod', %s) RETURNING id",
+                "VALUES (%s, 'evolution', %s) RETURNING id",
                 (eid, f"+1999{_RUN[:4]}{sufixo}"),
             ).fetchone()[0]
 
@@ -239,7 +239,7 @@ class TestHardDeleteConexao:
             aid = conn.execute(
                 "INSERT INTO atendimento (empresa_id, cliente_id, conexao_id, "
                 "conexao_nome, conexao_numero, conexao_provider) "
-                "VALUES (%s, %s, %s, 'Vendas', '+1999', 'twilio_prod') RETURNING id",
+                "VALUES (%s, %s, %s, 'Vendas', '+1999', 'evolution') RETURNING id",
                 (empresa, clid, cid),
             ).fetchone()[0]
         pool = await get_pool()
@@ -258,7 +258,7 @@ class TestHardDeleteConexao:
             ).fetchone()
         assert row is not None  # atendimento PERSISTE
         assert row[0] is None  # conexao_id virou NULL
-        assert row[1:] == ("Vendas", "+1999", "twilio_prod")  # snapshot intacto
+        assert row[1:] == ("Vendas", "+1999", "evolution")  # snapshot intacto
 
     async def test_historico_mostra_canal_do_snapshot_apos_delete(
         self, empresa

@@ -959,7 +959,7 @@ async def _dispatch_loop(
 
     # Um client por conexão do pool + gate de saúde POR conexão (anti-ban):
     # conexão com sessão ≠ open sai do rodízio (não martela sessão caindo).
-    # Canais oficiais (WABA/Twilio) não têm health() → ficam.
+    # Canal oficial (WABA) não tem health() → fica.
     clients: dict[int, Any] = {}
     saudaveis = []
     for cx in conexoes_pool:

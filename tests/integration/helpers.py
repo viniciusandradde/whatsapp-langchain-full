@@ -42,7 +42,7 @@ def unique_phone(ddd: str = "99") -> str:
 
 
 def unique_sid(prefix: str = "SM") -> str:
-    """Gera MessageSid único no formato do Twilio."""
+    """Gera um id de mensagem único no formato usado pelos providers."""
     return f"{prefix}{uuid.uuid4().hex[:12]}"
 
 
@@ -259,7 +259,7 @@ def wait_queue_done(
 def assert_outbound_sent(db_url: str, message_sid: str) -> dict:
     """Valida que a mensagem alcançou status terminal `done` com response não-vazio.
 
-    Em modo Twilio real, isso garante que `TwilioClient.send_message` retornou OK
+    Em modo real, isso garante que o envio pelo provider retornou OK
     (porque `mark_done` só corre depois). Retorna a row da fila pra inspeção.
 
     AVISO: para mensagens com NumMedia > 1 (que geram N rows com mesmo message_id),
@@ -289,24 +289,64 @@ def assert_outbound_sent(db_url: str, message_sid: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+#: Instância Evolution que o webhook usa pra resolver a conexão do teste.
+#: Sobrescreva com EVOLUTION_TEST_INSTANCE quando a stack usar outro seed.
+EVOLUTION_TEST_INSTANCE = os.getenv("EVOLUTION_TEST_INSTANCE", "e2e-sandbox")
+
+
+def evolution_payload(
+    phone: str,
+    body: str,
+    sid: str,
+    *,
+    instance: str | None = None,
+    media_url: str | None = None,
+    media_content_type: str | None = None,
+) -> dict:
+    """Payload `messages.upsert` da Evolution v2 (shape do provider real)."""
+    digits = phone.lstrip("+")
+    message: dict = {"conversation": body}
+    if media_url:
+        message = {
+            "imageMessage": {
+                "url": media_url,
+                "mimetype": media_content_type or "image/png",
+                "caption": body,
+            }
+        }
+    return {
+        "event": "messages.upsert",
+        "instance": instance or EVOLUTION_TEST_INSTANCE,
+        "data": {
+            "key": {
+                "remoteJid": f"{digits}@s.whatsapp.net",
+                "fromMe": False,
+                "id": sid,
+            },
+            "message": message,
+            "pushName": "Teste",
+            "messageTimestamp": int(time.time()),
+        },
+    }
+
+
 def send_webhook(
     phone: str,
     body: str,
-    agent: str = "vsa_tech",
+    agent: str = "",
     message_sid: str | None = None,
     timeout: int = 10,
 ) -> httpx.Response:
-    """Envia POST para /webhook/twilio simulando mensagem do Twilio."""
+    """Envia POST para /webhook/evolution simulando mensagem inbound.
+
+    `agent` é aceito por compatibilidade com os call sites antigos, mas é
+    IGNORADO: o webhook da Evolution resolve o agente pelo
+    `conexao.default_agent_id` da instância, não por query param.
+    """
     sid = message_sid or unique_sid()
     return httpx.post(
-        f"{API_BASE_URL}/webhook/twilio?agent={agent}",
-        data={
-            "MessageSid": sid,
-            "From": f"whatsapp:{phone}",
-            "To": "whatsapp:+14155238886",
-            "Body": body,
-            "NumMedia": "0",
-        },
+        f"{API_BASE_URL}/webhook/evolution",
+        json=evolution_payload(phone, body, sid),
         timeout=timeout,
     )
 
@@ -341,7 +381,7 @@ def wait_until_n_rows_done(
 
     Args:
         db_url: URL de conexão ao banco.
-        message_sid: Twilio MessageSid compartilhado pelas N rows.
+        message_sid: id de mensagem compartilhado pelas N rows.
         expected: Quantidade de rows terminais esperadas.
         timeout_seconds: Tempo máximo de espera.
     """

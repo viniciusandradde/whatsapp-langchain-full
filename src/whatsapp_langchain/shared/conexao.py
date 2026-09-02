@@ -1,8 +1,8 @@
 """Helpers de conexão WhatsApp — lookup, CRUD, credenciais cifradas.
 
-Cada `conexao` é uma linha (Twilio sandbox/prod, WABA, Evolution) ligada a
+Cada `conexao` é uma linha (WABA ou Evolution) ligada a
 uma empresa. O webhook resolve `empresa_id` + `default_agent_id` por lookup
-no `from_number` (Twilio) ou `phone_number_id` (WABA) ou `instance_name`
+no `phone_number_id` (WABA) ou no `instance_name`
 (Evolution).
 
 Campos sensíveis (`credentials_encrypted`, `webhook_verify_token`) NUNCA
@@ -134,7 +134,7 @@ async def get_conexao_by_from_number(
 
     Pode retornar None ou primeira match. Após mig 092, UNIQUE é
     (empresa_id, from_number) — então pode haver N rows com mesmo número
-    em empresas diferentes. Webhook do Twilio resolve pela primeira ativa.
+    em empresas diferentes. O webhook resolve pela primeira ativa.
 
     Sprint A.2.3: bypass RLS porque webhook ainda não sabe a empresa
     (descobre via este lookup). Após resolver, caller usa o empresa_id
@@ -338,22 +338,6 @@ async def upsert_conexao(
         row = await cur.fetchone()
     assert row is not None
     result = _row_to_conexao(row)
-
-    # Twilio (sandbox e prod) não tem callback/QR de ativação como WABA/Evolution
-    # — número global compartilhado (sandbox) ou número provisionado direto na
-    # console Twilio (prod). "Conectividade técnica" depende só de webhook
-    # configurado na console + opt-in do destinatário, ambos fora da nossa API.
-    # Mantemos `connection_state='pending'` (default da mig 092) faz a UI exibir
-    # "Não" pra Ativo indefinidamente. Promover pra 'open' aqui evita esse gap.
-    if result.provider in ("twilio_sandbox", "twilio_prod"):
-        await set_connection_state(
-            pool,
-            result.id,
-            state="open",
-            message="Twilio ready (configurar webhook na console + opt-in)",
-        )
-        result.connection_state = "open"
-        result.state_message = "Twilio ready (configurar webhook na console + opt-in)"
 
     return result
 

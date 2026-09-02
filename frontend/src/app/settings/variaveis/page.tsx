@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  *
  * Cada variável tem `nome` (chave referenciada como `{{var.NOME}}`) e
  * `valor` (texto que substitui no render). Loader e composer aplicam
- * `render_template` automaticamente antes do texto sair pra Twilio ou
+ * `render_template` automaticamente antes do texto sair pro WhatsApp ou
  * virar prompt do agente.
  */
 export default async function VariaveisPage() {

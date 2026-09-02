@@ -18,9 +18,6 @@ Telefones via `unique_phone()` evitam colisão entre runs paralelos.
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import os
 import time
 from dataclasses import dataclass, field
@@ -103,22 +100,6 @@ class JornadaResult:
         }
 
 
-def _twilio_signature(url: str, params: dict[str, str], auth_token: str) -> str:
-    """HMAC-SHA1 do Twilio: URL + sorted(key+value).
-
-    Match exato do que o backend faz via TwilioRequestValidator (oficial).
-    """
-    data = url
-    for key in sorted(params.keys()):
-        data += key + params[key]
-    sig = hmac.new(
-        auth_token.encode("utf-8"),
-        data.encode("utf-8"),
-        hashlib.sha1,
-    ).digest()
-    return base64.b64encode(sig).decode("utf-8")
-
-
 def _post_webhook(
     *,
     phone: str,
@@ -128,30 +109,50 @@ def _post_webhook(
     media_content_type: str | None = None,
     timeout: int = 10,
 ) -> httpx.Response:
-    """POST /webhook/twilio com ou sem mídia.
+    """POST /webhook/evolution com ou sem mídia.
 
-    Em prod, VALIDATE_TWILIO_SIGNATURE=true → exige header X-Twilio-Signature
-    HMAC-SHA1 válido. Quando TWILIO_AUTH_TOKEN está setado, gera signature.
-    Em dev (TWILIO_AUTH_TOKEN ausente), posta sem header (validation off).
+    A conexão é resolvida pelo campo `instance` do payload (o seed da
+    bateria cria `e2e-sandbox`); a autenticação, quando ligada, é o header
+    `apikey`.
     """
-    data: dict[str, str] = {
-        "MessageSid": sid,
-        "From": f"whatsapp:{phone}",
-        "To": "whatsapp:+14155238886",
-        "Body": body,
-        "NumMedia": "1" if media_url else "0",
-    }
+    digits = phone.lstrip("+")
     if media_url:
-        data["MediaUrl0"] = media_url
-        data["MediaContentType0"] = media_content_type or "image/png"
+        message: dict = {
+            "imageMessage": {
+                "url": media_url,
+                "mimetype": media_content_type or "image/png",
+                "caption": body,
+            }
+        }
+    else:
+        message = {"conversation": body}
 
-    url = f"{API_BASE_URL}/webhook/twilio"
+    payload = {
+        "event": "messages.upsert",
+        "instance": os.getenv("EVOLUTION_TEST_INSTANCE", "e2e-sandbox"),
+        "data": {
+            "key": {
+                "remoteJid": f"{digits}@s.whatsapp.net",
+                "fromMe": False,
+                "id": sid,
+            },
+            "message": message,
+            "pushName": "Jornada E2E",
+            "messageTimestamp": int(time.time()),
+        },
+    }
+
     headers: dict[str, str] = {}
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-    if auth_token:
-        headers["X-Twilio-Signature"] = _twilio_signature(url, data, auth_token)
+    apikey = os.getenv("EVOLUTION_API_KEY", "").strip()
+    if apikey:
+        headers["apikey"] = apikey
 
-    return httpx.post(url, data=data, headers=headers, timeout=timeout)
+    return httpx.post(
+        f"{API_BASE_URL}/webhook/evolution",
+        json=payload,
+        headers=headers,
+        timeout=timeout,
+    )
 
 
 def _query_atendimento(

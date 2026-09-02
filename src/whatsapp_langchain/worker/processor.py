@@ -11,7 +11,7 @@ Responsável por:
 Decisões arquiteturais:
 - Provider abstraction (M2.b): o worker recebe um dict
   `{provider: OutboundClient}` e resolve por `message.conexao_provider`.
-  Hoje suporta Twilio (sandbox/prod/WABA) e Evolution; novos providers
+  Hoje suporta WABA (Meta Cloud API) e Evolution; novos providers
   só implementam o protocolo `OutboundClient`.
 - Em production, o envio outbound usa cliente real.
 - Em desenvolvimento, cada provider pode operar em modo mock para
@@ -29,7 +29,7 @@ Uso:
         message, pool,
         checkpointer=checkpointer,
         store=store,
-        clients={"twilio_sandbox": twilio, "evolution": evolution, ...},
+        clients={"waba": waba, "evolution": evolution, ...},
     )
 """
 
@@ -626,7 +626,7 @@ def _attach_arquivo(msg: str, menu) -> str:
     Se `menu.arquivo_url` está vazio, retorna a mensagem inalterada — não
     requer mudança no protocolo `OutboundClient`.
 
-    Pra suporte nativo a mídia (image/audio/pdf direto via Twilio
+    Pra suporte nativo a mídia (image/audio/pdf direto via provider
     `MediaUrl[]` ou Evolution `mediaMessage`), seria necessário expandir
     o Protocol — fora do escopo dessa iteração.
     """
@@ -1163,7 +1163,7 @@ async def _try_handle_workflow(
             url = m.get("url", "")
             caption = m.get("caption", "")
             try:
-                # Outbound clients podem ter send_media (Twilio/Evolution).
+                # Outbound clients podem ter send_media (Evolution).
                 # Sem suporte garantido pelo Protocol, fazemos getattr seguro.
                 send_media = getattr(outbound, "send_media", None)
                 if callable(send_media):
@@ -2600,7 +2600,7 @@ async def process_message(
         if not pre.should_invoke_agent:
             auto_response = pre.auto_response or AUTO_RESPONSE_MEDIA_FAILURE
 
-            # Enviar auto-response via Twilio antes de marcar como done
+            # Enviar auto-response pelo provider antes de marcar como done
             await outbound.send_message(message.phone_number, auto_response)
 
             await mark_done(

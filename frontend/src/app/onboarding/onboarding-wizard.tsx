@@ -52,7 +52,7 @@ const STEPS: Step[] = [
     numero: 2,
     titulo: "Conecte seu WhatsApp",
     descricao:
-      "Escolha entre WhatsApp Oficial (WABA), Evolution (Baileys) ou Twilio. Sem conexão, seu agente não conversa com clientes.",
+      "Escolha entre WhatsApp Oficial (WABA) e Evolution (Baileys). Sem conexão, seu agente não conversa com clientes.",
     icon: Smartphone,
     ctaLabel: "Criar conexão",
     ctaHref: "/connections",

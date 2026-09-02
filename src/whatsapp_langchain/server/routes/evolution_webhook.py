@@ -1,7 +1,7 @@
 """Webhook inbound da Evolution API — M2.b.
 
 Recebe notificações `messages.upsert` da Evolution e enfileira pra
-processamento pelo Worker. Mesmo pipeline assíncrono do webhook Twilio:
+processamento pelo Worker. Pipeline assíncrono:
 
     Evolution → POST /webhook/evolution → Fila (PG) → Worker → resposta
 

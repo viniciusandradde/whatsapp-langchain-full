@@ -25,7 +25,7 @@ from typing import Any, TypedDict
 import httpx
 import structlog
 
-from whatsapp_langchain.worker.twilio_client import split_message_body
+from whatsapp_langchain.worker.outbound_client import split_message_body
 
 logger = structlog.get_logger()
 
@@ -109,8 +109,9 @@ class CapturedGroupMember(TypedDict):
     is_admin: bool
 
 
-# Mesmo limite seguro do Twilio — Evolution não documenta corte rígido,
-# mas mantemos splitting universal pra evitar truncamento server-side.
+# Limite histórico do canal (ver MESSAGE_BODY_LIMIT em outbound_client) —
+# a Evolution não documenta corte rígido, mas mantemos splitting universal
+# pra evitar truncamento server-side.
 EVOLUTION_MESSAGE_BODY_LIMIT = 1600
 # Duração default do indicador de digitação (ms). Curto o suficiente pra
 # não travar a UX se o envio outbound atrasar; o WhatsApp para de exibir

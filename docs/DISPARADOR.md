@@ -21,7 +21,7 @@ Painel ──(service-token)──▶ POST /api/conexoes/{id}/captura/*  (stagin
                                                            ▼
 Painel ─▶ POST /api/disparador/preview (resolve+dedup+opt-out+validação)
        ─▶ cria Campanha ─▶ _dispatch_loop (jitter anti-ban, kill-switch)
-                               └─ OutboundClient (Evolution / WABA / Twilio)
+                               └─ OutboundClient (Evolution / WABA)
 ```
 
 Decisões-chave (do veredito):

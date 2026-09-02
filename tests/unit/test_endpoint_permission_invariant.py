@@ -120,7 +120,6 @@ TECH_DEBT_KNOWN_OFFENDERS: set[str] = {
     "DELETE /api/base-conhecimento/{doc_id}",
     "DELETE /api/clientes/{cliente_id}/tags/{tag}",
     "DELETE /api/conexoes/{conexao_id}",
-    "DELETE /api/conexoes/{conexao_id}/templates/{template_id}",
     "DELETE /api/departamentos/{dep_id}",
     "DELETE /api/departamentos/{dep_id}/users/{target_user_id}",
     "DELETE /api/empresas/{empresa_id}/membros/{member_user_id}",
@@ -149,7 +148,6 @@ TECH_DEBT_KNOWN_OFFENDERS: set[str] = {
     "POST /api/atendentes/me/status",
     "POST /api/atendimentos/{atendimento_id}/claim",
     "POST /api/atendimentos/{atendimento_id}/close",
-    "POST /api/atendimentos/{atendimento_id}/marcar-lido",
     "POST /api/atendimentos/{atendimento_id}/reset-thread",
     "POST /api/atendimentos/{atendimento_id}/responder",
     "POST /api/atendimentos/{atendimento_id}/transfer",
@@ -167,10 +165,6 @@ TECH_DEBT_KNOWN_OFFENDERS: set[str] = {
     "POST /api/conexoes/waba/finalize",
     "POST /api/conexoes/waba/oauth/start",
     "POST /api/conexoes/{conexao_id}/disconnect",
-    "POST /api/conexoes/{conexao_id}/templates",
-    "POST /api/conexoes/{conexao_id}/templates/import",
-    "POST /api/conexoes/{conexao_id}/templates/{template_id}/sync",
-    "POST /api/conexoes/{conexao_id}/templates/{template_id}/test-send",
     "POST /api/conexoes/{conexao_id}/test",
     "POST /api/departamentos",
     "POST /api/departamentos/{dep_id}/users",
@@ -229,6 +223,42 @@ def _dep_name_recursive(dep: Any, max_depth: int = 5) -> list[str]:
     return names
 
 
+#: Endpoints cujo efeito é limitado a QUEM CHAMA (ou à conversa que a pessoa
+#: já enxerga), e que por isso não levam permissão do catálogo.
+#:
+#: A distinção importa: `require_permission` faz match EXATO do código
+#: (`dependencies_rbac.py`), então exigir `atendimento.read` aqui trancaria
+#: justamente o operador que só tem `atendimento.read.own` — ele veria a
+#: conversa e não conseguiria marcá-la como não lida. O gate real destes é o
+#: escopo de empresa (`get_empresa_context` + carga do atendimento).
+#:
+#: NÃO é lugar pra endpoint que escreve dado de outra pessoa.
+SELF_SCOPED_SEM_PERMISSAO: set[str] = {
+    # Read receipt por usuário: mexe só no badge de não-lidas de quem chama.
+    "POST /api/atendimentos/{atendimento_id}/marcar-lido",
+    "POST /api/atendimentos/{atendimento_id}/marcar-nao-lido",
+    # Transcrição sob demanda: "quem vê a conversa pode transcrever" (mig 169).
+    "POST /api/atendimentos/{atendimento_id}/mensagens/{mensagem_id}/transcrever",
+    # Preferência do próprio usuário (mig 171) — falhar aqui travaria o painel.
+    "POST /api/usuarios/me/tour",
+}
+
+#: Endpoints com gate `is_superadmin` chamado DENTRO do handler, não como
+#: `Depends`. São recursos de PLATAFORMA (catálogo global, relatório de
+#: produção), onde superadmin é mais restritivo que qualquer permissão de
+#: empresa — a decisão está documentada no topo de cada módulo.
+#:
+#: Ficam aqui porque este teste só enxerga a árvore de dependências; o gate
+#: existe, o inspetor é que não alcança. Se algum dia virar `Depends`, some
+#: daqui naturalmente.
+GATE_SUPERADMIN_NO_HANDLER: set[str] = {
+    "POST /api/openrouter/sync",
+    "POST /api/openrouter/modelos/{author}/{slug}/promover",
+    "POST /api/relatorios/producao/gerar",
+    "PUT /api/relatorios/producao/config",
+}
+
+
 def _is_allowlisted(method: str, path: str) -> bool:
     for allowed_method, prefix in ALLOWLIST:
         if method == allowed_method and path.startswith(prefix):
@@ -272,7 +302,10 @@ def test_no_new_mutator_endpoints_without_permission_dep(
             if not _has_permission_dep(route):
                 found_offenders.add(f"{method} {path}")
 
-    new_offenders = found_offenders - TECH_DEBT_KNOWN_OFFENDERS
+    # Gate deliberado por outro mecanismo ≠ gate esquecido. As duas listas
+    # abaixo são justificadas caso a caso na declaração de cada uma.
+    gated_de_outro_jeito = SELF_SCOPED_SEM_PERMISSAO | GATE_SUPERADMIN_NO_HANDLER
+    new_offenders = found_offenders - TECH_DEBT_KNOWN_OFFENDERS - gated_de_outro_jeito
     fixed_offenders = TECH_DEBT_KNOWN_OFFENDERS - found_offenders
 
     msgs: list[str] = []

@@ -88,7 +88,7 @@ constructor(private val api: AtendimentoApi) {
 
     /**
      * Conexões onde o app consegue INICIAR conversa: ativas e Evolution
-     * (texto livre). WABA/Twilio exigem template HSM com variáveis — fluxo
+     * (texto livre). O WABA exige template HSM com variáveis — fluxo
      * do painel web, fora do escopo do app por ora.
      */
     suspend fun conexoesParaIniciar(): List<ConexaoDto>? =

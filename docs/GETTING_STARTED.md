@@ -15,7 +15,7 @@ Este guia tem duas trilhas:
 - `uv` (gerenciador de pacotes)
 - Docker + Docker Compose
 - conta OpenRouter (API key)
-- conta Twilio com sandbox WhatsApp (obrigatória apenas para envio real; o compose local pode rodar em modo mock)
+- Evolution API acessível (ou uma conta WhatsApp Cloud API) — obrigatória apenas para envio real; o compose local roda em modo mock
 
 ## 1. Setup local
 
@@ -35,26 +35,18 @@ INTERNAL_SERVICE_TOKEN=seu-token-local
 BETTER_AUTH_SECRET=seu-secret-local
 BETTER_AUTH_URL=http://localhost:3000
 INTERNAL_API_URL=http://localhost:8000
-TWILIO_OUTBOUND_MODE=mock
+EVOLUTION_OUTBOUND_MODE=mock
 ```
 
 Para desenvolvimento local, basta preencher `INTERNAL_SERVICE_TOKEN` e
 `BETTER_AUTH_SECRET` com valores não-vazios. Em production, ambos devem ter
 32+ caracteres.
 
-Se quiser validar envio real pelo Twilio no ambiente local:
+Se quiser validar envio real no ambiente local, use uma conexão Evolution
+cadastrada pelo painel (Conexões → QR) e ligue:
 
-```bash
-TWILIO_OUTBOUND_MODE=real
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_API_KEY_SID=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_API_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_FROM_NUMBER=whatsapp:+14155238886
-
-# Inbound (obrigatório apenas para validação real de assinatura)
-TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-VALIDATE_TWILIO_SIGNATURE=false
-TWILIO_WEBHOOK_URL=
+```env
+EVOLUTION_OUTBOUND_MODE=real
 ```
 
 ## 2. Trilha A: desenvolvimento de agente no Studio
@@ -144,11 +136,10 @@ make up
 Isso sobe:
 - `db` (PostgreSQL + pgvector)
 - `api` (FastAPI)
-- `worker` (consumidor da fila; em dev usa Twilio mock por default)
+- `worker` (consumidor da fila; em dev usa envio mock por default)
 - `frontend` (painel administrativo)
 
-> O worker faz fail-fast apenas quando `TWILIO_OUTBOUND_MODE=real` e alguma credencial outbound do Twilio estiver ausente.
-> Para webhook público, sandbox e cloudflared, siga também [Integração Twilio](TWILIO.md).
+> Para webhook público e túnel, veja [Evolution](EVOLUTION.md) ou [WABA](WABA_SETUP.md).
 
 ### Reset completo do ambiente Docker
 
@@ -185,7 +176,7 @@ Use para debugging rápido sem fila.
 ### 4.2 Webhook assíncrono (arquitetura real)
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
+curl -X POST "http://localhost:8000/webhook/evolution" \
   -d "MessageSid=SM123" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -205,7 +196,7 @@ curl -H "Authorization: Bearer <seu_INTERNAL_SERVICE_TOKEN>" http://localhost:80
 
 1. Abra `http://localhost:8000/docs`.
 2. Execute `GET /api/agents` e confirme `vsa_tech`.
-3. Abra `POST /webhook/twilio` e clique em `Try it out`.
+3. Abra `POST /webhook/evolution` e clique em `Try it out`.
 4. Preencha:
    - `agent` (query): `vsa_tech`
    - `MessageSid`: `SMDOCS001`
@@ -222,7 +213,7 @@ curl -H "Authorization: Bearer <seu_INTERNAL_SERVICE_TOKEN>" http://localhost:80
 1. Envie uma mensagem pedindo para salvar um fato:
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
+curl -X POST "http://localhost:8000/webhook/evolution" \
   -d "MessageSid=SMMEM001" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -233,7 +224,7 @@ curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
 2. Envie outra mensagem pedindo recall explícito:
 
 ```bash
-curl -X POST "http://localhost:8000/webhook/twilio?agent=vsa_tech" \
+curl -X POST "http://localhost:8000/webhook/evolution" \
   -d "MessageSid=SMMEM002" \
   -d "From=whatsapp:+5511999999999" \
   -d "To=whatsapp:+14155238886" \
@@ -350,7 +341,6 @@ grep OPENROUTER_API_KEY .env
 
 ## Próximos passos
 
-- [Integração Twilio](TWILIO.md)
 - [Arquitetura](ARCHITECTURE.md)
 - [Criando Agentes](ADDING_AGENTS.md)
 - [Banco de Dados](DATABASE.md)

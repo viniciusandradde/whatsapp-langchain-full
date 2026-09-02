@@ -43,7 +43,7 @@ function _varKeys(t: WabaTemplate): string[] {
 /**
  * Botão + modal "Nova conversa" (mig 170) — o operador inicia contato ativo.
  *
- * Evolution: texto livre. WABA/Twilio: template aprovado obrigatório (fora da
+ * Evolution: texto livre. WABA: template aprovado obrigatório (fora da
  * janela de 24h não existe texto livre; mesma régua do composer). A conversa
  * criada nasce atribuída a quem iniciou — a IA não entra.
  */
@@ -88,7 +88,7 @@ function NovaConversaModal({
   const router = useRouter();
   // Conexão NÃO é escolha do operador: usamos a padrão da empresa (o
   // servidor resolve igual quando `conexao_id` vai vazio). Só carregamos a
-  // lista pra saber o provider — WABA/Twilio exige template.
+  // lista pra saber o provider — WABA exige template.
   const [conexoes, setConexoes] = useState<Conexao[] | null>(null);
   const [telefone, setTelefone] = useState(clienteInicial?.telefone ?? "");
   const [nome, setNome] = useState(clienteInicial?.nome ?? "");
@@ -117,11 +117,9 @@ function NovaConversaModal({
   // Padrão da empresa: `is_default` primeiro (a API já ordena assim).
   const conexao = conexoes?.[0] ?? null;
   const conexaoId = conexao?.id ?? "";
-  const ehTemplate =
-    conexao?.provider === "waba" ||
-    (conexao?.provider?.startsWith("twilio") ?? false);
+  const ehTemplate = conexao?.provider === "waba";
 
-  // WABA/Twilio: carrega os templates aprovados quando a conexão muda.
+  // WABA: carrega os templates aprovados quando a conexão muda.
   // Os resets (template/vars) ficam no handler do Select — setState síncrono
   // dentro de effect dispara render em cascata e o lint reprova.
   useEffect(() => {

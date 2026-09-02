@@ -23,7 +23,7 @@ WhatsApp ⇆ Evolution server ⇆ webhook POST → API (/webhook/evolution)
 ```
 
 A abstração `OutboundClient` (`worker/outbound_client.py`) define o
-contrato comum a Twilio e Evolution. O worker monta um dict
+contrato comum aos providers. O worker monta um dict
 `{provider: cliente}` e roteia cada mensagem por
 `MessageQueue.conexao_provider` (resolvido no `claim_next` via subquery
 em `conexao.provider`).
@@ -57,7 +57,7 @@ make migrate
 ```
 
 `db/migrations/020_evolution_provider.sql` relaxa o CHECK de
-`conexao.provider` pra aceitar `'evolution'` além dos providers Twilio.
+`conexao.provider` pra aceitar `'evolution'`.
 
 ### 3. Cadastrar conexão
 
@@ -197,7 +197,7 @@ Número destino é normalizado em `normalize_to_number`: aceita
 `+5511...`, `whatsapp:+5511...` ou já dígitos puros, devolve só
 dígitos (formato exigido pela Evolution).
 
-Splitting universal de 1600 chars (mesmo do Twilio) — defensivo contra
+Splitting universal de 1600 chars — defensivo contra
 truncamento da Evolution server-side.
 
 ---
@@ -229,7 +229,7 @@ frontend (3000). No Nginx Proxy Manager: aba **Custom Locations** do
 host:
 
 - Location: `/webhook/evolution` → `http://api-host:8000`
-- Location: `/webhook/twilio` → `http://api-host:8000`
+- Location: `/webhook/evolution` → `http://api-host:8000`
 
 Sem isso, o frontend Next.js intercepta e retorna `307 → /login`.
 
@@ -266,7 +266,7 @@ UPDATE message_queue
 |---|---|
 | `tests/unit/test_evolution_client.py` (28) | init validation, payload format, 4xx/5xx → erro, splitting, mock, typing best-effort |
 | `tests/unit/test_evolution_webhook.py` (15) | happy path, fromMe, eventos não-upsert, instance unknown, LID com/sem addressingMode, validação apikey |
-| `tests/unit/test_processor_twilio.py::TestProviderRouting` (4) | roteamento por `conexao_provider` + fallback default |
+| `tests/unit/test_processor_outbound.py::TestProviderRouting` (4) | roteamento por `conexao_provider` + fallback default |
 
 Total **+47 testes** introduzidos em M2.b. Suite global passa de 495 →
 542 passed (6 failures pré-existentes não relacionados).

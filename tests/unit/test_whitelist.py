@@ -1,6 +1,6 @@
 """Testes da whitelist de números (mig 133) — normalização/candidatos.
 
-O gate do worker é coberto em `test_processor_twilio.py::TestWhitelist`;
+O gate do worker é coberto em `test_processor_outbound.py::TestWhitelist`;
 aqui fica a lógica pura de `candidatos_lookup` (variantes do nono dígito BR).
 """
 
