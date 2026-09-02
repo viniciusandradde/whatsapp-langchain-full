@@ -107,8 +107,11 @@ segredo é exibido **uma única vez** na criação. Comparação timing-safe.
 ## Compliance / LGPD
 
 - **Opt-out**: o worker (`_try_handle_opt_out`) detecta STOP/PARAR/SAIR/… e
-  registra em `disparador_opt_out` antes de qualquer roteamento; o resolver de
-  disparo filtra esses telefones (`count_opt_out` no preview).
+  registra em `disparador_opt_out` antes de qualquer roteamento. A supressão é
+  aplicada em QUATRO portas (`shared/campanha.py`): criar campanha, adicionar
+  destinatários, clonar e o próprio `_dispatch_loop`, que recheca por lote —
+  campanha em aquecimento dura dias e o STOP chega no meio dela. O preview
+  (`count_opt_out`) é informativo; o gate que vale é o do servidor.
 - **Consentimento**: contatos capturados ficam em staging; promover ao CRM é
   ação explícita do operador. Avisar o usuário do produto sobre responsabilidade
   LGPD/consentimento e risco de ToS (a UI deve ter aceite na 1ª campanha
