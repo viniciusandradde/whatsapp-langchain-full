@@ -1,34 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { Cloud, MessageSquare, Smartphone, X } from "lucide-react";
+import { Cloud, Smartphone, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
 import { EvolutionQRModal } from "./evolution-qr-modal";
-import { TwilioFormModal } from "./twilio-form-modal";
 import { WabaOAuthButton } from "./waba-oauth-button";
 
 interface Props {
   onClose: (refresh: boolean) => void;
 }
 
-type Step = "pick" | "waba" | "evolution" | "twilio";
+type Step = "pick" | "waba" | "evolution";
 
 export function NewConnectionModal({ onClose }: Props) {
   const [step, setStep] = useState<Step>("pick");
   const [wabaError, setWabaError] = useState<string | null>(null);
-
-  if (step === "twilio") {
-    return (
-      <TwilioFormModal
-        onClose={(refresh) => {
-          if (refresh) onClose(true);
-          else setStep("pick");
-        }}
-      />
-    );
-  }
 
   if (step === "evolution") {
     return (
@@ -115,27 +103,6 @@ export function NewConnectionModal({ onClose }: Props) {
             </div>
           </button>
 
-          {/* Twilio — legado */}
-          <button
-            onClick={() => setStep("twilio")}
-            className="group flex w-full items-start gap-3 rounded-lg border border-border/40 p-4 text-left opacity-80 transition-colors hover:bg-muted/20"
-          >
-            <div className="rounded-md bg-rose-500/20 p-2">
-              <MessageSquare className="h-5 w-5 text-rose-400" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 font-medium">
-                Twilio
-                <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] text-muted-foreground">
-                  Legado
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Caminho legado — prefira o WhatsApp oficial (Meta) acima. Mantido
-                só para contas Twilio existentes; será removido no futuro.
-              </p>
-            </div>
-          </button>
 
         </div>
       </div>

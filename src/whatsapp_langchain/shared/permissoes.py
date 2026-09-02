@@ -192,7 +192,7 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "disparador",
     ),
     # Templates HSM WABA (mig 109) — módulo 'conexao' (mesma tela)
-    ("waba_template.read", "Ver templates HSM (WABA/Twilio)", "conexao"),
+    ("waba_template.read", "Ver templates HSM (WABA)", "conexao"),
     (
         "waba_template.write",
         "Criar/submeter/sincronizar templates HSM",

@@ -5,7 +5,7 @@ orquestra o caminho outbound-first (paridade ZigChat `criarAlterarAtendimento`):
 compliance do disparo (opt-out + teto diário anti-ban) → upsert do cliente →
 atendimento nascendo ATRIBUÍDO ao operador (`iniciado_cliente=False`; o gate
 de handoff do worker cala a IA) → primeira mensagem (texto no Evolution,
-template HSM aprovado em WABA/Twilio — a "janela de 24h" aqui é régua por
+template HSM aprovado em WABA — a "janela de 24h" aqui é régua por
 provider, não cálculo temporal).
 
 A whitelist ("números sem IA") NÃO bloqueia: ela cala respostas AUTOMÁTICAS;
@@ -81,7 +81,7 @@ async def iniciar_conversa(
     if conexao.status != "active":
         raise ConversaAtivaError("Esta conexão está desativada.", status=409)
 
-    eh_template = conexao.provider in ("waba", "twilio_sandbox", "twilio_prod")
+    eh_template = conexao.provider == "waba"
     if eh_template and not template_id:
         raise ConversaAtivaError(
             "Esta conexão exige um template aprovado para iniciar conversa."

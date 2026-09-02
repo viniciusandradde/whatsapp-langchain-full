@@ -19,12 +19,12 @@ TEST_INTERNAL_SERVICE_TOKEN = "test-internal-token"
 
 
 def _default_conexao() -> Conexao:
-    """Conexão fake pra empresa 1, número Twilio Sandbox padrão."""
+    """Conexão fake pra empresa 1, com o número padrão das fixtures."""
     now = datetime.now(UTC)
     return Conexao(
         id=1,
         empresa_id=1,
-        provider="twilio_sandbox",
+        provider="evolution",
         sid=None,
         from_number="+14155238886",
         display_name="Sandbox VSA Tech",
@@ -144,156 +144,6 @@ class TestWebhookSync:
             json={"phone": "+5511999999999", "message": "Olá"},
         )
         assert response.status_code == 400
-
-
-class TestWebhookTwilio:
-    """Testes do webhook Twilio."""
-
-    @patch(
-        "whatsapp_langchain.server.routes.webhook.enqueue_or_buffer",
-        new_callable=AsyncMock,
-    )
-    def test_twilio_uses_default_agent_when_omitted(self, mock_enqueue):
-        """Sem ?agent= o webhook resolve via conexao.default_agent_id (M2)."""
-        from whatsapp_langchain.shared.models import EnqueueResult
-
-        mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
-        response = client.post(
-            "/webhook/twilio",
-            data={
-                "MessageSid": "SM123",
-                "From": "whatsapp:+5511999999999",
-                "To": "whatsapp:+14155238886",
-                "Body": "Olá",
-                "NumMedia": "0",
-            },
-        )
-        assert response.status_code == 200
-        # Conexão default tem agent_id="vsa_tech"
-        assert mock_enqueue.await_args.kwargs["agent_id"] == "vsa_tech"
-
-    def test_twilio_unknown_to_number_returns_empty_twiml(self):
-        """`To` sem conexão registrada → 200 vazio sem enfileirar."""
-        response = client.post(
-            "/webhook/twilio",
-            data={
-                "MessageSid": "SM999",
-                "From": "whatsapp:+5511999999999",
-                "To": "whatsapp:+19999999999",
-                "Body": "Olá",
-                "NumMedia": "0",
-            },
-        )
-        assert response.status_code == 200
-        assert "<Response" in response.text
-
-    def test_twilio_nonexistent_agent(self):
-        """Deve retornar erro para agente inexistente."""
-        response = client.post(
-            "/webhook/twilio?agent=nao_existe",
-            data={
-                "MessageSid": "SM123",
-                "From": "whatsapp:+5511999999999",
-                "To": "whatsapp:+14155238886",
-                "Body": "Olá",
-                "NumMedia": "0",
-            },
-        )
-        assert response.status_code == 400
-
-    @patch("whatsapp_langchain.server.routes.webhook.enqueue_or_buffer")
-    def test_twilio_enqueues_message(self, mock_enqueue):
-        """Deve enfileirar mensagem e retornar TwiML vazio."""
-        from whatsapp_langchain.shared.models import EnqueueResult
-
-        mock_enqueue.return_value = EnqueueResult(message_id=1, is_buffered=False)
-
-        response = client.post(
-            "/webhook/twilio?agent=vsa_tech",
-            data={
-                "MessageSid": "SM123",
-                "From": "whatsapp:+5511999999999",
-                "To": "whatsapp:+14155238886",
-                "Body": "Olá",
-                "NumMedia": "0",
-            },
-        )
-        assert response.status_code == 200
-        assert "Response" in response.text
-
-    @patch(
-        "whatsapp_langchain.server.routes.webhook.enqueue_or_buffer",
-        new_callable=AsyncMock,
-    )
-    def test_webhook_enqueues_n_rows_for_num_media_2(self, mock_enqueue):
-        """NumMedia=2 cria 1 row de texto + 2 rows de mídia com mesmo message_id."""
-        from whatsapp_langchain.shared.models import EnqueueResult
-
-        call_count = 0
-
-        async def fake_enqueue_side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return EnqueueResult(message_id=call_count, is_buffered=False)
-
-        mock_enqueue.side_effect = fake_enqueue_side_effect
-
-        response = client.post(
-            "/webhook/twilio?agent=vsa_tech",
-            data={
-                "MessageSid": "SM_MULTI_001",
-                "From": "whatsapp:+5511999990050",
-                "To": "whatsapp:+14155238886",
-                "Body": "olha as fotos",
-                "NumMedia": "2",
-                "MediaUrl0": "https://example.com/img0.jpg",
-                "MediaContentType0": "image/jpeg",
-                "MediaUrl1": "https://example.com/img1.jpg",
-                "MediaContentType1": "image/jpeg",
-            },
-        )
-        assert response.status_code == 200, response.text
-
-        # Deve ter chamado enqueue_or_buffer 3 vezes: 1 texto + 2 mídias
-        assert mock_enqueue.call_count == 3, (
-            f"Esperava 3 chamadas a enqueue_or_buffer, vi {mock_enqueue.call_count}"
-        )
-
-        calls_kwargs = [c.kwargs for c in mock_enqueue.call_args_list]
-
-        media_rows = [k for k in calls_kwargs if k.get("media_url")]
-        assert len(media_rows) == 2, (
-            f"Esperava 2 rows de mídia, vi {len(media_rows)}: {calls_kwargs}"
-        )
-        assert {k["media_url"] for k in media_rows} == {
-            "https://example.com/img0.jpg",
-            "https://example.com/img1.jpg",
-        }
-        # Mesmo message_id em todas as chamadas
-        assert all(k.get("message_id") == "SM_MULTI_001" for k in calls_kwargs), (
-            f"Esperava message_id='SM_MULTI_001' em todas as chamadas: {calls_kwargs}"
-        )
-
-    def test_twilio_openapi_exposes_form_fields(self):
-        """Swagger deve exibir body form-encoded para teste manual."""
-        openapi = client.get("/openapi.json").json()
-        post = openapi["paths"]["/webhook/twilio"]["post"]
-        assert "requestBody" in post
-
-        form_content = post["requestBody"]["content"][
-            "application/x-www-form-urlencoded"
-        ]
-        schema = form_content["schema"]
-        if "$ref" in schema:
-            ref_name = schema["$ref"].split("/")[-1]
-            schema = openapi["components"]["schemas"][ref_name]
-
-        properties = schema["properties"]
-        assert "MessageSid" in properties
-        assert "From" in properties
-        assert "To" in properties
-        assert "Body" in properties
-        assert "NumMedia" in properties
 
 
 class TestAdminRoutes:

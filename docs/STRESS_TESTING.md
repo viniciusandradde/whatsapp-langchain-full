@@ -23,21 +23,18 @@ Sem testes de carga, você só descobre gargalos em produção — quando já é
 ## Cenários disponíveis
 
 O `locustfile.py` suporta **dois providers de webhook**, selecionáveis via a env
-`LOCUST_PROVIDER` (`twilio` | `evolution` | `both`):
+Provider único (Evolution):
 
-- **Twilio** (`/webhook/twilio`) — payload form-urlencoded com assinatura HMAC-SHA1
 - **Evolution API** (`/webhook/evolution`) — payload JSON com header `apikey`
 
 Cada provider expõe duas classes de usuários virtuais (normal + burst):
 
 | Cenário | Classe | Endpoint | Provider | Wait Time | Assinatura |
 |---------|--------|----------|----------|-----------|------------|
-| Webhook Async | `TwilioWebhookUser` | `/webhook/twilio` | twilio | 1-3s | Sim (HMAC-SHA1) |
-| Burst | `TwilioBurstUser` | `/webhook/twilio` | twilio | 5-15s (entre rajadas) | Sim |
 | Webhook Async | `EvolutionWebhookUser` | `/webhook/evolution` | evolution | 1-3s | header `apikey` |
 | Burst | `EvolutionBurstUser` | `/webhook/evolution` | evolution | 5-15s (entre rajadas) | header `apikey` |
 
-> O default do `locustfile.py` é `LOCUST_PROVIDER=twilio` (compat com o legado),
+> O `locustfile.py` roda só o Evolution,
 > mas o alias `make stress` roda **Evolution** (provider primário em produção).
 
 ### Webhook Async
@@ -61,7 +58,6 @@ O Makefile é o ponto de entrada canônico — roda Locust headless via `uv run 
 
 ```bash
 make stress-evolution   # webhook Evolution (provider primário)
-make stress-twilio      # webhook Twilio (precisa TWILIO_AUTH_TOKEN)
 make stress-both        # ambos os providers ao mesmo tempo
 make stress             # alias de stress-evolution
 ```
@@ -75,7 +71,7 @@ make stress-evolution USERS=20 RATE=5 TIME=120s HOST=https://outra.url
 Fallback sem `uv` local (constrói a imagem de `stress/Dockerfile`):
 
 ```bash
-make stress-evolution-docker   # ou stress-twilio-docker
+make stress-evolution-docker
 ```
 
 ### Localmente (sem Makefile)
@@ -85,8 +81,6 @@ cd /caminho/para/whatsapp-langchain/stress
 uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
-export TWILIO_AUTH_TOKEN=seu_token
-export TWILIO_WEBHOOK_URL=http://localhost:8000
 LOCUST_PROVIDER=evolution locust
 ```
 
@@ -108,7 +102,7 @@ Parâmetros:
 
 ### Contra o Railway (stack real)
 
-Para testar contra o ambiente real no Railway, é necessário preparar o ambiente **antes** de rodar o Locust. Sem essa preparação, o stress test pode enviar centenas de mensagens reais pelo Twilio (custo!) ou ser bloqueado pelo rate limit.
+Para testar contra o ambiente real no Railway, é necessário preparar o ambiente **antes** de rodar o Locust. Sem essa preparação, o stress test pode enviar centenas de mensagens reais (custo!) ou ser bloqueado pelo rate limit.
 
 #### 1. Preparar variáveis no Railway
 
@@ -116,19 +110,16 @@ Acesse o dashboard do Railway e ajuste as variáveis abaixo **antes** de iniciar
 
 | Serviço | Variável | Alterar para | Valor normal | Por quê |
 |---------|----------|-------------|--------------|---------|
-| **worker** | `TWILIO_OUTBOUND_MODE` | `mock` | `real` | Impede que o Worker envie mensagens reais pelo Twilio durante o teste. Sem isso, cada mensagem processada gera uma chamada real ao Twilio (custo + spam). |
 | **worker** | `LLM_RATE_LIMIT_REQUESTS_PER_SECOND` | `5` | `0.5` | Aumenta o throughput do LLM para drenar a fila mais rápido durante o teste. |
 | **worker** | `LLM_RATE_LIMIT_MAX_BURST` | `20` | `10` | Permite rajadas maiores ao LLM, compatível com o cenário BurstUser. |
 | **api** | `RATE_LIMIT_PER_HOUR` | `500` (ou mais) | `30` | O rate limit padrão (30/hora por telefone) bloqueia rapidamente os usuários virtuais do Locust. Aumente para o teste não ser interrompido por 429s. |
 
-> **Importante:** Após o teste, **reverta todas as variáveis** para os valores normais. Em especial, `TWILIO_OUTBOUND_MODE` deve voltar para `real` para que o bot funcione normalmente.
+> **Importante:** Após o teste, **reverta todas as variáveis** para os valores normais. Em especial, `EVOLUTION_OUTBOUND_MODE` deve voltar para `real` para que o bot funcione normalmente.
 
 #### 2. Obter as credenciais
 
 Você precisa de dois valores do Railway (disponíveis nas variáveis do serviço **API**):
 
-- `TWILIO_AUTH_TOKEN` — mesmo token configurado na API (necessário para gerar assinaturas HMAC-SHA1 válidas)
-- `TWILIO_WEBHOOK_URL` — URL pública da API (ex: `https://api-production-xxxx.up.railway.app`)
 
 #### 3. Rodar o teste
 
@@ -137,8 +128,6 @@ cd stress
 source .venv/bin/activate
 
 # Configura com os valores do Railway
-export TWILIO_AUTH_TOKEN=token_do_railway
-export TWILIO_WEBHOOK_URL=https://api-production-xxxx.up.railway.app
 
 # Com Web UI (recomendado para primeira vez)
 # IMPORTANTE: o host DEVE incluir https:// — sem isso o Locust falha com MissingSchema
@@ -148,7 +137,7 @@ locust -f locustfile.py --host https://api-production-xxxx.up.railway.app
 locust -f locustfile.py \
   --host https://api-production-xxxx.up.railway.app \
   -u 5 -r 1 --run-time 3m --headless --only-summary \
-  TwilioWebhookUser BurstUser
+  EvolutionWebhookUser EvolutionBurstUser
 ```
 
 #### 4. Após o teste — reverter variáveis
@@ -157,12 +146,11 @@ Checklist de reversão no Railway:
 
 | Serviço | Variável | Reverter para |
 |---------|----------|--------------|
-| **worker** | `TWILIO_OUTBOUND_MODE` | `real` |
 | **worker** | `LLM_RATE_LIMIT_REQUESTS_PER_SECOND` | `0.5` |
 | **worker** | `LLM_RATE_LIMIT_MAX_BURST` | `10` |
 | **api** | `RATE_LIMIT_PER_HOUR` | `30` |
 
-> **Cuidado:** Se esquecer de reverter `TWILIO_OUTBOUND_MODE` para `real`, o bot para de responder no WhatsApp (as mensagens são processadas mas as respostas são descartadas).
+> **Cuidado:** Se esquecer de reverter `EVOLUTION_OUTBOUND_MODE` para `real`, o bot para de responder no WhatsApp (as mensagens são processadas mas as respostas são descartadas).
 
 ## Cenários recomendados
 
@@ -194,7 +182,7 @@ Quando os resultados não estão bons, use esta tabela para diagnosticar:
 | Fila cresce sem drenar | Worker lento | Rate limit do LLM, quantidade de workers |
 | Erros de conexão | DB saturado | `pool_size` no PostgreSQL, conexões abertas |
 | Erros 429 do OpenRouter | LLM throttled | Ajustar `LLM_RATE_LIMIT_*` no `.env` |
-| Erros 403 no webhook | Assinatura inválida | `TWILIO_AUTH_TOKEN` correto e consistente |
+| Erros 401 no webhook | apikey inválida | `EVOLUTION_API_KEY` correto e consistente |
 
 ## Contextos de uso
 
@@ -213,7 +201,7 @@ Teste executado contra o ambiente de staging no Railway para validar a capacidad
 | Parâmetro | Valor |
 |-----------|-------|
 | **Host** | `https://api-production-5b93.up.railway.app` |
-| **Cenários** | `TwilioWebhookUser` + `BurstUser` |
+| **Cenários** | `EvolutionWebhookUser` + `EvolutionBurstUser` |
 | **Usuários** | 5 simultâneos |
 | **Spawn rate** | 1 user/s |
 | **Duração** | 3 minutos |
@@ -224,7 +212,7 @@ Teste executado contra o ambiente de staging no Railway para validar a capacidad
 | Serviço | Config |
 |---------|--------|
 | **API** | 2 réplicas, `RATE_LIMIT_PER_HOUR=200` |
-| **Worker** | 1 réplica, `TWILIO_OUTBOUND_MODE=mock`, `LLM_RATE_LIMIT_REQUESTS_PER_SECOND=5`, `LLM_RATE_LIMIT_MAX_BURST=20` |
+| **Worker** | 1 réplica, `EVOLUTION_OUTBOUND_MODE=mock`, `LLM_RATE_LIMIT_REQUESTS_PER_SECOND=5`, `LLM_RATE_LIMIT_MAX_BURST=20` |
 | **DB** | pgvector/pg16, volume persistente |
 | **LLM** | `x-ai/grok-4.1-fast` via OpenRouter |
 
@@ -311,21 +299,20 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 
 # 2. Configurar variáveis (usar os mesmos tokens do Railway)
-export TWILIO_AUTH_TOKEN=<token da sua conta Twilio>
-export TWILIO_WEBHOOK_URL=https://sua-api.up.railway.app
+export EVOLUTION_API_KEY=<apikey do seu servidor Evolution>
 
 # 3. Rodar com dashboard web (recomendado para primeira vez)
 locust -f locustfile.py \
   --host https://sua-api.up.railway.app \
   -u 5 -r 1 --run-time 3m --autostart \
-  TwilioWebhookUser BurstUser
+  EvolutionWebhookUser EvolutionBurstUser
 # Acesse http://localhost:8089 para ver o dashboard
 
 # 4. Rodar headless (para CI ou automação)
 locust -f locustfile.py \
   --host https://sua-api.up.railway.app \
   -u 5 -r 1 --run-time 3m --headless --only-summary \
-  TwilioWebhookUser BurstUser
+  EvolutionWebhookUser EvolutionBurstUser
 ```
 
 ---
@@ -339,7 +326,7 @@ Segundo teste executado imediatamente após o primeiro, com a única mudança se
 | Parâmetro | Valor |
 |-----------|-------|
 | **Host** | `https://api-production-5b93.up.railway.app` |
-| **Cenários** | `TwilioWebhookUser` + `BurstUser` |
+| **Cenários** | `EvolutionWebhookUser` + `EvolutionBurstUser` |
 | **Usuários** | 5 simultâneos |
 | **Spawn rate** | 1 user/s |
 | **Duração** | 3 minutos |

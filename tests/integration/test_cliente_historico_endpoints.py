@@ -155,7 +155,7 @@ def cliente_com_atendimentos(db_url: str, empresa_id: int) -> dict:
                 """
                 INSERT INTO conexao (empresa_id, provider, from_number,
                                       display_name, status)
-                VALUES (%s, 'twilio_sandbox', %s, %s, 'active')
+                VALUES (%s, 'evolution', %s, %s, 'active')
                 RETURNING id
                 """,
                 (empresa_id, f"+155504{_RUN[:5]}", f"conn-hist-{_RUN}"),

@@ -500,12 +500,12 @@ class TestCampanhaAntiBanPersistencia:
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
             c1 = conn.execute(
                 "INSERT INTO conexao (empresa_id, provider, from_number) "
-                "VALUES (%s, 'twilio_prod', %s) RETURNING id",
+                "VALUES (%s, 'evolution', %s) RETURNING id",
                 (empresa, f"+19{_RUN[:6]}a"),
             ).fetchone()[0]
             c2 = conn.execute(
                 "INSERT INTO conexao (empresa_id, provider, from_number) "
-                "VALUES (%s, 'twilio_prod', %s) RETURNING id",
+                "VALUES (%s, 'evolution', %s) RETURNING id",
                 (empresa, f"+19{_RUN[:6]}b"),
             ).fetchone()[0]
         pool = await get_pool()
@@ -545,7 +545,7 @@ class TestTetoDiario:
             ).fetchone()[0]
             cid = conn.execute(
                 "INSERT INTO conexao (empresa_id, provider, from_number, "
-                "daily_send_cap) VALUES (%s, 'twilio_prod', %s, 5) RETURNING id",
+                "daily_send_cap) VALUES (%s, 'evolution', %s, 5) RETURNING id",
                 (eid, f"+1555{_RUN[:7]}"),
             ).fetchone()[0]
         yield eid, cid

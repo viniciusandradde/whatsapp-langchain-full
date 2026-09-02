@@ -20,13 +20,13 @@ ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, status = 'active';
 
 -- 2a. Conexão das jornadas de setor.
 --
---     `evolution`, não `twilio_sandbox`: a constraint `conexao_provider_check`
+--     `evolution`, não `evolution`: a constraint `conexao_provider_check`
 --     do banco de desenvolvimento só aceita `waba` e `evolution` — a migration
 --     153 (`drop_twilio_provider`) foi aplicada lá. Um seed com Twilio não
 --     entra, e era por isso que a bateria estava vermelha desde junho.
 --
 --     O `from_number` continua sendo o número do sandbox porque as jornadas de
---     setor postam no webhook do Twilio, que resolve a conexão pelo NÚMERO de
+--     setor postam no webhook da Evolution, que resolve a conexão pela
 --     destino (`get_conexao_by_from_number`) e não olha o provider.
 --
 --     O envio segue sem sair: `EVOLUTION_OUTBOUND_MODE=mock` no ambiente de

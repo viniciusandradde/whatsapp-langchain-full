@@ -20,7 +20,7 @@ logger = structlog.get_logger()
 REQUEST_ID_HEADER = "X-Request-Id"
 REQUEST_ID_MAX_LEN = 100  # mitiga abuse: client passando ID gigante
 
-# Paths que recebem rate limit por user_id. Webhooks (twilio, evolution)
+# Paths que recebem rate limit por user_id. Webhooks (evolution, waba)
 # têm rate limit próprio por phone_number e ficam fora.
 # `/api/health` fica fora pra healthcheck do Dokploy não consumir bucket.
 _ADMIN_PATH_PREFIXES = ("/api/",)

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 EMPRESA_E2E = 900
 
-#: Conexão das jornadas de setor. `twilio_sandbox` + `TWILIO_OUTBOUND_MODE=mock`
+#: Conexão das jornadas de setor. `evolution` + `EVOLUTION_OUTBOUND_MODE=mock`
 #: é o que impede a bateria de mandar WhatsApp de verdade para os números
 #: inventados dos testes.
 CONEXAO_SANDBOX = 900

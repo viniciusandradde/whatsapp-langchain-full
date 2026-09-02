@@ -80,7 +80,7 @@ make ci           # check + test (o que CI roda)
 - Vault Obsidian em `docs/obsidian-vault/`
 - Workflows LangGraph Mackenzie rodando em prod (9 workflows, 123 nodes)
 - Calendar v2 S1+S2 entregue (S3-S5 pendente: rules, WhatsApp approval, sync+audit)
-- Módulos pós-Beta 1 entregues: Histórico (`/chats` repaginada + export, mig 110), Sprint U gestão de usuários (`/usuarios` + turnos, migs 106/111/112), Langfuse self-host (mig 107), WABA templates HSM enviáveis (mig 113), Twilio marcado legado / WABA-first (mig 114), White-label por empresa (logo+nome+cores, mig 115)
+- Módulos pós-Beta 1 entregues: Histórico (`/chats` repaginada + export, mig 110), Sprint U gestão de usuários (`/usuarios` + turnos, migs 106/111/112), Langfuse self-host (mig 107), WABA templates HSM enviáveis (mig 113), WABA-first: o provider legado saiu de vez (migs 114 e 153), White-label por empresa (logo+nome+cores, mig 115)
 
 ## Arquivos untracked sensíveis no working tree
 

@@ -16,9 +16,6 @@ pytestmark = pytest.mark.docker_demo
 def _build_app(monkeypatch, environment="development"):
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
     monkeypatch.setenv("ENVIRONMENT", environment)
-    monkeypatch.setenv("VALIDATE_TWILIO_SIGNATURE", "true")
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "abc")
-    monkeypatch.setenv("TWILIO_WEBHOOK_URL", "https://example.com")
     from whatsapp_langchain.shared import config as config_mod
 
     importlib.reload(config_mod)
@@ -29,7 +26,6 @@ def _build_app(monkeypatch, environment="development"):
 
 
 def test_security_headers_present_in_dev(monkeypatch):
-    monkeypatch.delenv("VALIDATE_TWILIO_SIGNATURE", raising=False)
     monkeypatch.setenv("INTERNAL_SERVICE_TOKEN", "x" * 32)
     monkeypatch.setenv("ENVIRONMENT", "development")
     from whatsapp_langchain.shared import config as config_mod

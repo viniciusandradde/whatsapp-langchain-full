@@ -57,8 +57,8 @@ class MessageQueue(BaseModel):
     conexao_provider: str | None = None
     media_url: str | None = None
     media_type: str | None = None
-    # Nome do arquivo informado pelo provedor (mig 164). None em row antiga e no
-    # Twilio, que não manda nome — aí a extensão é inferida do mime.
+    # Nome do arquivo informado pelo provedor (mig 164). None em row antiga ou
+    # quando o provedor não manda nome — aí a extensão é inferida do mime.
     media_filename: str | None = None
     normalized_input: str | None = None
     media_processing_status: str | None = None
@@ -91,24 +91,6 @@ class Conversation(BaseModel):
     message_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
-class TwilioWebhookPayload(BaseModel):
-    """Payload recebido no webhook do Twilio.
-
-    O Twilio envia os dados como form-encoded (application/x-www-form-urlencoded).
-    Campos opcionais podem estar ausentes dependendo do tipo de mensagem.
-    """
-
-    MessageSid: str = Field(description="ID único da mensagem no Twilio")
-    From: str = Field(description="Remetente, ex: whatsapp:+5511999999999")
-    To: str = Field(description="Destinatário, ex: whatsapp:+14155238886")
-    Body: str = Field(default="", description="Texto da mensagem")
-    NumMedia: str = Field(default="0", description="Número de mídias anexadas")
-    MediaUrl0: str | None = Field(default=None, description="URL da primeira mídia")
-    MediaContentType0: str | None = Field(
-        default=None, description="MIME type da primeira mídia"
-    )
 
 
 class EnqueueResult(BaseModel):
@@ -262,7 +244,7 @@ class EmpresaMembro(BaseModel):
 
 
 class Conexao(BaseModel):
-    """Linha WhatsApp (Twilio sandbox/prod, WABA) ligada a uma empresa.
+    """Linha WhatsApp (WABA ou Evolution) ligada a uma empresa.
 
     O webhook usa `from_number` pra resolver dinamicamente empresa_id +
     default_agent_id. `is_default` marca a conexão preferida pra outbound
@@ -306,6 +288,12 @@ class Conexao(BaseModel):
     resposta_agrupamento_segundos: int = 8
     # Mig 169 — transcreve todo áudio recebido, mesmo sem agente responder.
     transcrever_audio_sempre: bool = False
+
+
+#: Providers de saída aceitos. É a mesma lista do CHECK
+#: `conexao_provider_check` no banco (mig 153) — mantidos juntos pra a API
+#: recusar com 422 legível em vez de estourar CheckViolation no INSERT.
+PROVIDERS_SUPORTADOS = ("waba", "evolution")
 
 
 class ConexaoInput(BaseModel):

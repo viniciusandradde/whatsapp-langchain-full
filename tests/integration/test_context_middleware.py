@@ -314,7 +314,7 @@ class TestSummarizeMiddleware:
             "Meu nome é Carlos, moro em São Paulo.",
             "Trabalho como desenvolvedor Python há 5 anos.",
             "Estou estudando LangGraph para chatbots.",
-            "Quero integrar com WhatsApp usando Twilio.",
+            "Quero integrar com WhatsApp usando a API oficial.",
             "Preciso configurar middleware de contexto.",
         ]
 

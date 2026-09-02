@@ -177,7 +177,7 @@ def make_send_messages_node(spec):
     def node(state):
         # ✅ chega aqui apenas após resume do interrupt anterior
         # — pode duplicar SÓ se o checkpoint falhar entre send e save,
-        #   mitigado por message_id idempotente no provider (Twilio)
+        #   mitigado por message_id idempotente no provider
         return {"outbox": [render(m, state["vars"]) for m in spec["messages"]]}
     return node
 
@@ -220,9 +220,9 @@ Novo node type `send_media`:
 ```
 
 Runner usa `outbound.send_media(phone, url, caption=...)` que já existe
-no `TwilioClient`/`EvolutionClient` (suportam media URLs).
+no `EvolutionClient`/`WabaClient` (suportam media URLs).
 
-Admin valida no INSERT que URL é HTTPS público (Twilio precisa pull do
+Admin valida no INSERT que URL é HTTPS público (o provider precisa pull do
 arquivo). Não cobre upload — assume admin já tem URL.
 
 ### #4 — Vars sincronizadas para metadata do atendimento

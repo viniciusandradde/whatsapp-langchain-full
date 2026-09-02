@@ -206,7 +206,7 @@ azul "6/6  Empacotando segredos (arquivo separado)"
 tar -C "$RAIZ" -cf - .env frontend/.env.local 2>/dev/null \
   | $COMPRIMIR > "$SAIDA/segredos.tar.$EXT"
 chmod 600 "$SAIDA/segredos.tar.$EXT"
-verde "segredos.tar.$EXT — chmod 600, contém OPENROUTER/EVOLUTION/TWILIO/ADMIN"
+verde "segredos.tar.$EXT — chmod 600, contém OPENROUTER/EVOLUTION/ADMIN"
 
 # --- Manifesto -------------------------------------------------------------
 

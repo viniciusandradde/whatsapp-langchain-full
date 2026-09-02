@@ -1,4 +1,4 @@
-.PHONY: dev-acesso dev-isolamento dev-banco-refresh migrar-exportar migrar-preparar migrar-importar backup backup-instalar backup-restaurar repo-comparar help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution stress-twilio stress-both langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
+.PHONY: dev-acesso dev-isolamento dev-banco-refresh migrar-exportar migrar-preparar migrar-importar backup backup-instalar backup-restaurar repo-comparar help dev setup db migrate api worker frontend up down reset logs lint format format-check fix typecheck check ci test test-x test-v test-live test-media test-demo test-demo-up test-flows test-e2e report-e2e backfill-rag stress stress-evolution langfuse-up langfuse-down langfuse-logs langfuse-health langfuse-reset clean
 
 # Cores para output
 CYAN := \033[36m
@@ -66,7 +66,7 @@ dev-acesso: ## Mostra URLs, login e o estado dos serviços do ambiente de dev
 
 dev-isolamento: ## Confere as travas que impedem o dev de falar com a produção
 	@falhou=0; \
-	for trava in EVOLUTION_OUTBOUND_MODE=mock TWILIO_OUTBOUND_MODE=mock \
+	for trava in EVOLUTION_OUTBOUND_MODE=mock \
 	             LANGFUSE_ENABLED=false ENVIRONMENT=development; do \
 	  if grep -qE "^$$trava$$" .env; then echo "  ok     $$trava"; \
 	  else echo "  FALHOU $$trava"; falhou=1; fi; \
@@ -153,20 +153,20 @@ check-web: ## Verifica o frontend (eslint + tsc + build + métricas de UI)
 	bash scripts/ui_metrics.sh --check
 
 ci: ## CI/CD: verifica tudo + roda testes com gate de coverage 50%
-	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-fail-under=50
+	uv run ruff check . && uv run ruff format --check . && uv run pyright src/ && uv run pytest -m "not docker_demo" --cov --cov-fail-under=50
 
 cov: ## Roda tests + relatório HTML de coverage (htmlcov/index.html)
-	uv run pytest -m "not docker_demo and not twilio_real" --cov --cov-report=html --cov-report=term-missing
+	uv run pytest -m "not docker_demo" --cov --cov-report=html --cov-report=term-missing
 
 ##@ Testes
 test: ## Roda todos os testes
-	uv run pytest -m "not docker_demo and not twilio_real"
+	uv run pytest -m "not docker_demo"
 
 test-x: ## Roda testes, para no primeiro erro
-	uv run pytest -x -m "not docker_demo and not twilio_real"
+	uv run pytest -x -m "not docker_demo"
 
 test-v: ## Roda testes com output verboso
-	uv run pytest -v -m "not docker_demo and not twilio_real"
+	uv run pytest -v -m "not docker_demo"
 
 test-live: ## Roda integracoes live com OpenRouter real (requer OPENROUTER_API_KEY valida)
 	OPENROUTER_LIVE_TESTS=1 uv run pytest tests/integration/test_context_middleware.py tests/integration/test_memory.py tests/integration/test_media_real.py -v
@@ -201,9 +201,6 @@ report-e2e: test-e2e ## Gera HTML do Allure em tests/reports/allure
 	@echo "✅ Relatório gerado em tests/reports/allure/index.html"
 	@echo "   Para servir: 'allure open tests/reports/allure'"
 
-test-twilio-smoke: ## Smoke test e2e com Twilio real (custos $$$). Requer TWILIO_LIVE_TESTS=1 e stack Docker.
-	uv run pytest tests/integration/test_twilio_smoke.py -v -s -m twilio_real
-
 ##@ RAG
 backfill-rag: ## Re-chunka docs sem chunks (pós migration 018). --doc-id N força um.
 	uv run python scripts/backfill_rag_chunks.py $(ARGS)
@@ -222,9 +219,6 @@ LOCUST  = cd stress && uv run --with locust --with faker --with python-dotenv \
 stress-evolution: ## Stress test do webhook Evolution (default: 10u, 2/s, 60s)
 	LOCUST_PROVIDER=evolution $(LOCUST)
 
-stress-twilio: ## Stress test do webhook Twilio (precisa TWILIO_AUTH_TOKEN)
-	LOCUST_PROVIDER=twilio $(LOCUST)
-
 stress-both: ## Stress nos dois providers ao mesmo tempo
 	LOCUST_PROVIDER=both $(LOCUST)
 
@@ -236,16 +230,11 @@ LOCUST_DOCKER = sg docker -c "docker build -q -t whatsapp-stress stress >/dev/nu
                 -e LOCUST_PROVIDER=$$LOCUST_PROVIDER \
                 -e EVOLUTION_INSTANCE_NAME=$${EVOLUTION_INSTANCE_NAME:-vsa-tecnologia} \
                 -e EVOLUTION_API_KEY \
-                -e TWILIO_AUTH_TOKEN \
-                -e TWILIO_WEBHOOK_URL \
                 whatsapp-stress \
                 locust --headless -u $(USERS) -r $(RATE) -t $(TIME) -f locustfile.py --host $(HOST)"
 
 stress-evolution-docker: ## Stress Evolution via Docker (sem uv)
 	LOCUST_PROVIDER=evolution $(LOCUST_DOCKER)
-
-stress-twilio-docker: ## Stress Twilio via Docker (precisa TWILIO_AUTH_TOKEN no env)
-	LOCUST_PROVIDER=twilio $(LOCUST_DOCKER)
 
 ##@ Langfuse (observabilidade LLM self-hosted)
 # Stack separada (5 serviços de infra própria). Sobe sob demanda — não

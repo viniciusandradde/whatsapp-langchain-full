@@ -64,10 +64,10 @@ const STATUS_VARIANTS: Record<
   aborted: "destructive", // interrompida
 };
 
-/** Só WABA (Meta) e Twilio têm template HSM; Evolution não. Espelha o
+/** Só o WABA (Meta) tem template HSM; Evolution não. Espelha o
  *  `_validate_conexao` do backend pra evitar a chamada que daria 400. */
 function suportaTemplate(provider?: string): boolean {
-  return provider === "waba" || (provider?.startsWith("twilio") ?? false);
+  return provider === "waba";
 }
 
 export function CampanhasPageClient({
@@ -197,7 +197,7 @@ export function CampanhasPageClient({
   // (setState só no callback async — evita set-state-in-effect do compiler.)
   useEffect(() => {
     if (modo !== "template" || !conexaoId) return;
-    // Guard: só busca templates em conexões que suportam HSM (WABA/Twilio).
+    // Guard: só busca templates em conexões que suportam HSM (WABA).
     // Evolution daria 400 — evita a chamada e mostra nota amigável na UI.
     const cx = conexoes.find((c) => String(c.id) === conexaoId);
     // Conexão sem HSM (Evolution): não chama (daria 400). `templatesAtivos`
@@ -453,7 +453,7 @@ export function CampanhasPageClient({
                     ) : !suportaTemplate(conexaoSel?.provider) ? (
                       <p className="text-xs text-muted-foreground">
                         Templates disponíveis apenas para conexões WhatsApp Oficial
-                        (WABA) ou Twilio. Esta conexão não suporta templates.
+                        (WABA). Esta conexão não suporta templates.
                       </p>
                     ) : templatesAtivos.length === 0 ? (
                       <p className="text-xs text-muted-foreground">

@@ -42,7 +42,7 @@ hardcoded) — respondendo sem nenhuma configuração.
    reconhecer também o prefixo `"[modo manual"`. Tela de conexões: aviso
    visual quando `tipo_atendimento === 'manual'` ("IA desligada — configure o
    agente e mude para IA quando estiver pronto").
-5. **Testes** — unit no modelo de `tests/unit/test_processor_twilio.py`:
+5. **Testes** — unit no modelo de `tests/unit/test_processor_outbound.py`:
    (a) conexão manual → nenhuma resposta outbound + mark_done com marker;
    (b) conexão ia → fluxo atual inalterado; (c) opt-out responde mesmo em
    manual. Smoke dos endpoints tocados permanece verde.

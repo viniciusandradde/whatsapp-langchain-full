@@ -19,7 +19,7 @@ def _row(
     *,
     id_=1,
     empresa_id=1,
-    provider="twilio_sandbox",
+    provider="evolution",
     sid="ACxxxx",
     from_number="+14155238886",
     display_name="Sandbox",
@@ -119,11 +119,9 @@ async def test_list_conexoes_filters_by_empresa():
 
 @pytest.mark.asyncio
 async def test_upsert_conexao_returns_persisted_row():
-    pool, conn = _mock_pool(
-        _row(id_=10, provider="twilio_prod", from_number="+1555NEW")
-    )
+    pool, conn = _mock_pool(_row(id_=10, provider="evolution", from_number="+1555NEW"))
     data = ConexaoInput(
-        provider="twilio_prod",
+        provider="evolution",
         from_number="+1555NEW",
         display_name="Linha prod",
         default_agent_id="vsa_tech",
@@ -135,27 +133,6 @@ async def test_upsert_conexao_returns_persisted_row():
     first_sql = conn.execute.await_args_list[0].args[0]
     assert "INSERT INTO conexao" in first_sql
     assert "ON CONFLICT" in first_sql
-
-
-@pytest.mark.asyncio
-async def test_upsert_conexao_twilio_promotes_to_open():
-    """Twilio (sandbox/prod) não tem callback de ativação como WABA/Evolution —
-    `upsert_conexao` deve transicionar `connection_state` direto pra 'open'.
-    Sem isso UI mostra "Pendente" indefinidamente."""
-    pool, conn = _mock_pool(_row(id_=20, provider="twilio_sandbox"))
-    data = ConexaoInput(
-        provider="twilio_sandbox",
-        from_number="+14155238886",
-        display_name="Sandbox",
-        default_agent_id="vsa_tech",
-    )
-    out = await upsert_conexao(pool, 1, data)
-    assert out.connection_state == "open"
-    assert out.state_message is not None and "Twilio" in out.state_message
-    # 2 SQLs: INSERT + UPDATE connection_state (set_connection_state)
-    sqls = [call.args[0] for call in conn.execute.await_args_list]
-    assert any("INSERT INTO conexao" in s for s in sqls)
-    assert any("UPDATE conexao" in s and "connection_state" in s for s in sqls)
 
 
 @pytest.mark.asyncio
@@ -226,10 +203,10 @@ async def test_upsert_conexao_is_default_unsets_others():
     """upsert com is_default=True também precisa desligar outras pra evitar
     violação do UNIQUE INDEX da mig 108."""
     pool, conn = _mock_pool(
-        _row(id_=10, provider="twilio_prod", from_number="+1555NEW", is_default=True)
+        _row(id_=10, provider="evolution", from_number="+1555NEW", is_default=True)
     )
     data = ConexaoInput(
-        provider="twilio_prod",
+        provider="evolution",
         from_number="+1555NEW",
         display_name="prod default",
         default_agent_id="vsa_tech",
@@ -249,10 +226,10 @@ async def test_upsert_conexao_is_default_unsets_others():
 async def test_upsert_conexao_is_default_false_does_not_unset():
     """Sem is_default=True no input, upsert não deve fazer batch unset."""
     pool, conn = _mock_pool(
-        _row(id_=11, provider="twilio_prod", from_number="+1555OTHER", is_default=False)
+        _row(id_=11, provider="evolution", from_number="+1555OTHER", is_default=False)
     )
     data = ConexaoInput(
-        provider="twilio_prod",
+        provider="evolution",
         from_number="+1555OTHER",
         display_name="not default",
         default_agent_id="vsa_tech",
@@ -260,7 +237,7 @@ async def test_upsert_conexao_is_default_false_does_not_unset():
     )
     await upsert_conexao(pool, 1, data)
     sqls = [call.args[0] for call in conn.execute.await_args_list]
-    # Sem batch unset — só INSERT (+ UPDATE connection_state pra Twilio)
+    # Sem batch unset — só INSERT
     assert not any("UPDATE conexao SET is_default = FALSE" in s for s in sqls)
 
 

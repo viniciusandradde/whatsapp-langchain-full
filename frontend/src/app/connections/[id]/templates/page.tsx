@@ -32,7 +32,7 @@ export default async function TemplatesPage({ params }: PageProps) {
     error = e instanceof Error ? e.message : "Erro ao carregar templates.";
   }
 
-  const TEMPLATE_PROVIDERS = ["waba", "twilio_sandbox", "twilio_prod"];
+  const TEMPLATE_PROVIDERS = ["waba"];
   if (conexao && !TEMPLATE_PROVIDERS.includes(conexao.provider)) {
     return (
       <div className="space-y-4">
@@ -41,7 +41,7 @@ export default async function TemplatesPage({ params }: PageProps) {
         </Link>
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
           Templates HSM só funcionam em conexões WhatsApp Oficial (WABA) ou
-          Twilio. Esta conexão usa provider <code>{conexao.provider}</code>.
+          Esta conexão usa provider <code>{conexao.provider}</code>.
         </div>
       </div>
     );
