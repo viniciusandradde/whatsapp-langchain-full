@@ -208,7 +208,7 @@ class TestEditar:
         assert c2["total_destinatarios"] == 3
 
         # remove 1 → total 2
-        dests = await list_destinatarios(pool, cid, limit=10)
+        dests = await list_destinatarios(pool, cid, empresa_id=empresa, limit=10)
         rem = await remove_destinatario(pool, empresa, cid, dests[0]["id"])
         assert rem["removido"] is True and rem["total"] == 2
 
@@ -247,7 +247,7 @@ class TestEditar:
         assert nova["nome"].endswith("(cópia)")
         assert nova["id"] != camp["id"]
         # destinatários copiados, todos pendente
-        dn = await list_destinatarios(pool, nova["id"], limit=50)
+        dn = await list_destinatarios(pool, nova["id"], empresa_id=empresa, limit=50)
         assert len(dn) == 2
         assert all(d["status"] == "pendente" for d in dn)
         # original intacta (ainda done)

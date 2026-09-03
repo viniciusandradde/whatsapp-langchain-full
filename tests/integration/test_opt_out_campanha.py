@@ -151,9 +151,9 @@ class TestOptOutNaCampanha:
         # Injeta o suprimido direto na origem, simulando a campanha antiga.
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
             conn.execute(
-                "INSERT INTO campanha_destinatario (campanha_id, telefone)"
-                " VALUES (%s, %s)",
-                (camp["id"], _TEL_STOP),
+                "INSERT INTO campanha_destinatario"
+                " (campanha_id, empresa_id, telefone) VALUES (%s, %s, %s)",
+                (camp["id"], empresa, _TEL_STOP),
             )
         assert _TEL_STOP in self._telefones(camp["id"])
 
@@ -177,9 +177,9 @@ class TestOptOutNaCampanha:
         # O opt-out chega DEPOIS: injeta o telefone na campanha já criada.
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
             conn.execute(
-                "INSERT INTO campanha_destinatario (campanha_id, telefone)"
-                " VALUES (%s, %s)",
-                (camp["id"], _TEL_STOP),
+                "INSERT INTO campanha_destinatario"
+                " (campanha_id, empresa_id, telefone) VALUES (%s, %s, %s)",
+                (camp["id"], empresa, _TEL_STOP),
             )
 
         with empresa_scope(empresa):
