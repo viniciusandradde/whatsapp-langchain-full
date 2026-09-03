@@ -153,7 +153,9 @@ async def list_dest_endpoint(
     out = await camp_lib.get_campanha(pool, empresa_id, camp_id)
     if out is None:
         raise HTTPException(status_code=404, detail="Campanha não encontrada.")
-    items = await camp_lib.list_destinatarios(pool, camp_id, limit=limit)
+    items = await camp_lib.list_destinatarios(
+        pool, camp_id, empresa_id=empresa_id, limit=limit
+    )
     return {"items": items}
 
 

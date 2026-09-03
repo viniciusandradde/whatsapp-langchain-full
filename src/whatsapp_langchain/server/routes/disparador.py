@@ -117,7 +117,9 @@ async def ext_criar_campanha(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    destinatarios = await camp_lib.list_destinatarios(pool, camp["id"], limit=10_000)
+    destinatarios = await camp_lib.list_destinatarios(
+        pool, camp["id"], empresa_id=ctx.empresa_id, limit=10_000
+    )
     return {
         "campanha_id": camp["id"],
         "total": camp["total_destinatarios"],

@@ -36,7 +36,7 @@ from whatsapp_langchain.shared.conexao_quota import (
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.outbound import _build_client, send_template_by_id
-from whatsapp_langchain.shared.rls_context import empresa_scope
+from whatsapp_langchain.shared.rls_context import empresa_scope, set_request_context
 
 logger = structlog.get_logger()
 
@@ -113,21 +113,27 @@ async def remover_suprimidos_pendentes(
     suprimidos = await telefones_suprimidos(pool, empresa_id, telefones)
     if not suprimidos:
         return set()
-    async with pool.connection() as conn:
-        await conn.execute(
-            """
-            DELETE FROM campanha_destinatario
-             WHERE campanha_id = %s AND status = 'pendente' AND telefone = ANY(%s)
-            """,
-            (camp_id, list(suprimidos)),
-        )
-        await conn.execute(
-            "UPDATE campanha SET total_destinatarios ="
-            " (SELECT count(*) FROM campanha_destinatario WHERE campanha_id = %s),"
-            " updated_at = NOW() WHERE id = %s",
-            (camp_id, camp_id),
-        )
-        await conn.commit()
+    # `campanha_destinatario` está sob RLS estrito (mig 182): sem
+    # `empresa_scope` a policy não casa linha nenhuma e o DELETE viraria
+    # no-op silencioso — o suprimido seguiria recebendo.
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            await conn.execute(
+                """
+                DELETE FROM campanha_destinatario
+                 WHERE campanha_id = %s AND status = 'pendente'
+                   AND telefone = ANY(%s)
+                """,
+                (camp_id, list(suprimidos)),
+            )
+            await conn.execute(
+                "UPDATE campanha SET total_destinatarios ="
+                " (SELECT count(*) FROM campanha_destinatario"
+                "   WHERE campanha_id = %s),"
+                " updated_at = NOW() WHERE id = %s",
+                (camp_id, camp_id),
+            )
+            await conn.commit()
     logger.info(
         "campanha_opt_out_removido_no_disparo",
         empresa_id=empresa_id,
@@ -379,10 +385,13 @@ async def create_campanha(
     else:
         status_inicial = "scheduled" if (agendar and scheduled_at) else "draft"
 
-    async with pool.connection() as conn:
-        async with conn.transaction():
-            cur = await conn.execute(
-                f"""
+    # `campanha` e `campanha_destinatario` estão sob RLS estrito — sem o
+    # scope o INSERT viola a policy (WITH CHECK) em vez de gravar.
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    f"""
                 INSERT INTO campanha
                     (empresa_id, nome, descricao, mensagem, conexao_id,
                      intervalo_ms, max_destinatarios, total_destinatarios,
@@ -398,49 +407,50 @@ async def create_campanha(
                         %s::bigint[])
                 RETURNING {_COLS}
                 """,
-                (
-                    empresa_id,
-                    nome,
-                    descricao,
-                    mensagem,
-                    conexao_id,
-                    intervalo_ms,
-                    max_destinatarios,
-                    len(normalized),
-                    user_id,
-                    status_inicial,
-                    modelo_mensagem_id,
-                    scheduled_at,
-                    tipo,
-                    filtro_segmento,
-                    list(filtro_tags or []) if filtro_tags is not None else None,
-                    message_template_id,
-                    _json.dumps(template_variaveis or {}),
-                    eff_min,
-                    eff_max,
-                    eff_kill,
-                    media_url,
-                    media_tipo,
-                    origem_envio,
-                    eff_pausa_cada,
-                    eff_pausa_seg,
-                    eff_pool,
-                ),
-            )
-            row = await cur.fetchone()
-            assert row is not None
-            camp = _row_to_camp(row)
+                    (
+                        empresa_id,
+                        nome,
+                        descricao,
+                        mensagem,
+                        conexao_id,
+                        intervalo_ms,
+                        max_destinatarios,
+                        len(normalized),
+                        user_id,
+                        status_inicial,
+                        modelo_mensagem_id,
+                        scheduled_at,
+                        tipo,
+                        filtro_segmento,
+                        list(filtro_tags or []) if filtro_tags is not None else None,
+                        message_template_id,
+                        _json.dumps(template_variaveis or {}),
+                        eff_min,
+                        eff_max,
+                        eff_kill,
+                        media_url,
+                        media_tipo,
+                        origem_envio,
+                        eff_pausa_cada,
+                        eff_pausa_seg,
+                        eff_pool,
+                    ),
+                )
+                row = await cur.fetchone()
+                assert row is not None
+                camp = _row_to_camp(row)
 
-            # Bulk insert destinatarios
-            for phone in normalized:
-                await conn.execute(
-                    """
-                    INSERT INTO campanha_destinatario (campanha_id, telefone)
-                    VALUES (%s, %s)
+                # Bulk insert destinatarios
+                for phone in normalized:
+                    await conn.execute(
+                        """
+                    INSERT INTO campanha_destinatario
+                        (campanha_id, empresa_id, telefone)
+                    VALUES (%s, %s, %s)
                     ON CONFLICT (campanha_id, telefone) DO NOTHING
                     """,
-                    (camp.id, phone),
-                )
+                        (camp.id, empresa_id, phone),
+                    )
 
     logger.info(
         "campanha_created",
@@ -619,10 +629,12 @@ async def add_destinatarios(
             await _status_editavel(conn, empresa_id, camp_id)
             for n in permitidos:
                 cur = await conn.execute(
-                    "INSERT INTO campanha_destinatario (campanha_id, telefone)"
-                    " VALUES (%s, %s) ON CONFLICT (campanha_id, telefone) DO NOTHING"
+                    "INSERT INTO campanha_destinatario"
+                    " (campanha_id, empresa_id, telefone)"
+                    " VALUES (%s, %s, %s)"
+                    " ON CONFLICT (campanha_id, telefone) DO NOTHING"
                     " RETURNING id",
-                    (camp_id, n),
+                    (camp_id, empresa_id, n),
                 )
                 if await cur.fetchone() is not None:
                     novos += 1
@@ -697,14 +709,15 @@ async def clonar_campanha(
                 # pode ser anterior ao descadastro, e clonar não pode
                 # ressuscitar quem saiu.
                 await conn.execute(
-                    "INSERT INTO campanha_destinatario (campanha_id, telefone, variaveis)"
-                    " SELECT %s, cd.telefone, cd.variaveis"
+                    "INSERT INTO campanha_destinatario"
+                    " (campanha_id, empresa_id, telefone, variaveis)"
+                    " SELECT %s, %s, cd.telefone, cd.variaveis"
                     "   FROM campanha_destinatario cd"
                     "  WHERE cd.campanha_id = %s"
                     "    AND NOT EXISTS (SELECT 1 FROM disparador_opt_out o"
                     "                     WHERE o.empresa_id = %s"
                     "                       AND o.telefone = cd.telefone)",
-                    (novo.id, camp_id, empresa_id),
+                    (novo.id, empresa_id, camp_id, empresa_id),
                 )
                 # NÃO chamar conn.commit() aqui — o `async with conn.transaction()`
                 # commita ao sair (psycopg proíbe commit explícito dentro dele).
@@ -737,20 +750,24 @@ async def remove_destinatario(
 
 
 async def list_destinatarios(
-    pool: AsyncConnectionPool, camp_id: int, *, limit: int = 200
+    pool: AsyncConnectionPool, camp_id: int, *, empresa_id: int, limit: int = 200
 ) -> list[dict]:
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            """
+    """Destinatários de uma campanha. `empresa_id` é obrigatório desde a mig
+    182: sem ele a policy de RLS devolve lista vazia, e vazio aqui é
+    indistinguível de "campanha sem ninguém"."""
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
             SELECT id, telefone, status, mensagem_id_externo, erro, sent_at
               FROM campanha_destinatario
              WHERE campanha_id = %s
              ORDER BY id
              LIMIT %s
             """,
-            (camp_id, limit),
-        )
-        rows = await cur.fetchall()
+                (camp_id, limit),
+            )
+            rows = await cur.fetchall()
     return [
         {
             "id": r[0],
@@ -912,6 +929,11 @@ async def _dispatch_loop(
     """
     log = logger.bind(camp_id=camp_id, empresa_id=empresa_id)
     log.info("campanha_dispatch_started")
+
+    # O loop roda numa task própria e toca `campanha`/`campanha_destinatario`
+    # do começo ao fim. Contextvar é task-local, então fixar aqui vale pra
+    # todo o dispatch — sem depender do contexto que a request deixou.
+    set_request_context(empresa_id)
 
     camp = await get_campanha(pool, empresa_id, camp_id)
     estado_ok = "running" if ja_running else "draft"
