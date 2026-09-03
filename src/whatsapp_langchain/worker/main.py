@@ -127,6 +127,14 @@ async def main() -> None:
 
     push_task = asyncio.create_task(push_loop(pool))
 
+    # Motor de disparo (mig 183). Mudou de casa: rodava no lifespan da API, o
+    # processo que reinicia a cada deploy, então merge no meio de uma campanha
+    # matava o envio e a deixava 'running' órfã pra sempre. Aqui o claim tem a
+    # porta do lease vencido, então campanha abandonada é retomada sozinha.
+    from whatsapp_langchain.shared.campanha import run_campanha_worker
+
+    campanha_task = asyncio.create_task(run_campanha_worker(pool))
+
     # Sprint A.2.5 — importa context manager pra RLS
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -209,6 +217,10 @@ async def main() -> None:
         relatorio_task.cancel()
         openrouter_task.cancel()
         push_task.cancel()
+        # A campanha em voo NÃO é perdida no shutdown: o lease continua no banco
+        # e expira em LEASE_SECONDS, depois de que qualquer worker a reivindica
+        # de onde parou. É exatamente o caso que esta fase veio consertar.
+        campanha_task.cancel()
         for t in (
             sync_task,
             idle_task,
@@ -217,6 +229,7 @@ async def main() -> None:
             relatorio_task,
             openrouter_task,
             push_task,
+            campanha_task,
         ):
             try:
                 await t

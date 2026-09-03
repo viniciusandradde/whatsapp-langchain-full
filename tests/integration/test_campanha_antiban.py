@@ -272,10 +272,14 @@ class TestAgendamento:
             conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
 
     async def test_agenda_e_claim_atomico(self, empresa) -> None:
-        from whatsapp_langchain.shared.campanha import (
-            claim_scheduled_due,
-            create_campanha,
-        )
+        """A agendada vencida é reivindicada uma vez só.
+
+        Desde a mig 183 o claim é o do motor durável (`claim_campanha`), que
+        cobre as agendadas junto com `queued` e as órfãs — o
+        `claim_scheduled_due`, que só via `scheduled`, deixou de existir.
+        """
+        from whatsapp_langchain.shared.campanha import create_campanha
+        from whatsapp_langchain.shared.campanha_motor import claim_campanha
         from whatsapp_langchain.shared.db import get_pool
         from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -297,17 +301,38 @@ class TestAgendamento:
             )
         assert out["status"] == "scheduled", out
 
-        # 1º claim pega; 2º não devolve de novo (idempotente/atômico)
-        due1 = await claim_scheduled_due(pool)
-        assert (empresa, out["id"]) in due1
-        due2 = await claim_scheduled_due(pool)
-        assert (empresa, out["id"]) not in due2
-        # status agora é running
+        # O claim pega UMA campanha por vez (LIMIT 1, pra que um disparo longo
+        # não monopolize o worker), então varre até achar a nossa. Outras
+        # suítes podem ter deixado campanhas reivindicáveis na mesma base.
+        vistos = []
+        achou = None
+        for _ in range(20):
+            claim = await claim_campanha(pool)
+            if claim is None:
+                break
+            vistos.append(claim.camp_id)
+            if claim.camp_id == out["id"]:
+                achou = claim
+                break
+        assert achou is not None, f"campanha {out['id']} não reivindicada; vi {vistos}"
+        assert achou.empresa_id == empresa
+        assert achou.status_anterior == "scheduled"
+        assert not achou.era_orfa
+
+        # Não devolve de novo: o claim já a transicionou pra running COM lease
+        # vivo, e lease vivo não é reivindicável.
+        for _ in range(20):
+            claim = await claim_campanha(pool)
+            if claim is None:
+                break
+            assert claim.camp_id != out["id"], "campanha reivindicada duas vezes"
+
         with psycopg.connect(get_db_url(), autocommit=True) as conn:
             st = conn.execute(
-                "SELECT status FROM campanha WHERE id = %s", (out["id"],)
+                "SELECT status, lease_owner IS NOT NULL FROM campanha WHERE id = %s",
+                (out["id"],),
             ).fetchone()
-        assert st[0] == "running", st
+        assert st == ("running", True), st
 
 
 @pytest.mark.docker_demo

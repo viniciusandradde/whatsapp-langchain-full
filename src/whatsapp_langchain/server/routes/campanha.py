@@ -373,12 +373,14 @@ async def dispatch_endpoint(
     camp_id: int,
     empresa_id: int = Depends(get_empresa_context),
 ) -> dict:
-    """Inicia envio em background. Retorna 202 imediatamente.
+    """Põe a campanha na fila do worker. Retorna 202 imediatamente.
 
-    Idempotência: dispatch só atua em campanha 'draft'. Chamadas
-    repetidas em campanha 'running' são no-op (mas retornam 200 no
-    background task helper). Pra reenviar pendentes/falhos, use
-    endpoint dedicado (TODO).
+    Desde a mig 183 este endpoint **não dispara nada** — só marca `queued`.
+    Antes ele criava um `asyncio.create_task` no próprio processo da API, que
+    reinicia a cada deploy: merge no meio de uma campanha matava o envio e a
+    deixava `running` órfã pra sempre. Quem trabalha agora é o worker.
+
+    Idempotência: só atua em campanha 'draft'.
     """
     pool = await get_pool()
     out = await camp_lib.get_campanha(pool, empresa_id, camp_id)
@@ -391,8 +393,12 @@ async def dispatch_endpoint(
                 f"Campanha em status {out['status']!r} — só draft pode ser despachado."
             ),
         )
-    camp_lib.schedule_dispatch(pool, empresa_id, camp_id)
-    logger.info("campanha_dispatch_scheduled", camp_id=camp_id, empresa_id=empresa_id)
+    if not await camp_lib.enfileirar_dispatch(pool, empresa_id, camp_id):
+        # Corrida: alguém despachou entre o SELECT acima e o UPDATE.
+        raise HTTPException(
+            status_code=409, detail="Campanha já foi despachada por outra requisição."
+        )
+    logger.info("campanha_enfileirada", camp_id=camp_id, empresa_id=empresa_id)
     return {"ok": True, "campanha_id": camp_id, "status": "queued"}
 
 

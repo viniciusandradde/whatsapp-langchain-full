@@ -259,9 +259,10 @@ async def ext_campanha_template(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    # Campanha nasce 'draft'; sem agendamento, despacha agora (poller pega as agendadas).
+    # Campanha nasce 'draft'; sem agendamento, vai pra fila do worker agora
+    # (as agendadas o próprio claim pega quando `scheduled_at` vencer).
     if not agendar:
-        camp_lib.schedule_dispatch(pool, ctx.empresa_id, camp["id"])
+        await camp_lib.enfileirar_dispatch(pool, ctx.empresa_id, camp["id"])
     logger.info(
         "ext_campanha_template_criada",
         empresa_id=ctx.empresa_id,

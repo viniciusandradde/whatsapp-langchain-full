@@ -1,16 +1,25 @@
-"""CRUD + dispatcher de Campanha (E2.D M6.b).
+"""CRUD + dispatcher de Campanha (E2.D M6.b; motor durável na mig 183).
 
 Modelo de execução:
 - Cria campanha em `draft` com lista de telefones (rows pendentes).
-- Endpoint dispatch agenda asyncio.create_task em background; o handler
-  retorna 202 imediatamente.
-- Background task itera destinatarios pendentes, envia via OutboundClient
-  do provider da Conexao, atualiza status e contadores. Cooldown
-  configurável (default 500ms) pra não martelar provider.
+- `POST /dispatch` só marca `queued` e devolve 202 — **não dispara nada**.
+- O **worker** reivindica (`campanha_motor.claim_campanha`), toma o lease e
+  roda `_dispatch_loop` até o fim, renovando o lease a cada lote.
+- O loop reivindica os destinatários em lotes (`pendente → enviando`), envia
+  via OutboundClient do provider da Conexao e atualiza status/contadores, com
+  cooldown anti-ban configurável.
 - UI faz polling no GET /api/campanhas/{id} pra ver progresso.
 
+Até a mig 183 o dispatch era um `asyncio.create_task` dentro do processo da
+API. Como a API reinicia a cada deploy — e neste repo merge é deploy —, um
+merge no meio de uma campanha matava o envio, e nada reivindicava `running`:
+a campanha ficava presa nesse estado para sempre, recuperável só por SQL
+manual. O lease + as três portas do claim (`queued`, `scheduled` vencida,
+`running` com lease morto) são o conserto.
+
 Não usa message_queue — campanha é fluxo OUTBOUND puro, não passa pelo
-agente. Persiste em `campanha_destinatario` direto.
+agente. Persiste em `campanha_destinatario` direto, mas usa o MESMO padrão de
+claim/lease/heartbeat, que é o pedaço mais confiável do sistema.
 """
 
 from __future__ import annotations
@@ -26,6 +35,7 @@ from typing import Any
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.shared import campanha_motor as motor
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
     list_conexoes,
@@ -99,12 +109,18 @@ async def remover_suprimidos_pendentes(
     após dia (`_reagendar_warmup`), e o STOP chega no meio. Por isso o
     dispatcher repete a checagem a cada lote.
 
-    Remove a linha em vez de mudar o status porque o CHECK de
-    `campanha_destinatario` só aceita `pendente|enviado|falhou` — marcar
-    'falhou' contaminaria o kill-switch com uma falha que não é do número, e
-    deixar 'pendente' faria o lote ser relido para sempre. Recalcula
+    Remove a linha em vez de mudar o status porque marcar 'falhou'
+    contaminaria o kill-switch com uma falha que não é do número, e deixar
+    'pendente' faria o lote ser relido para sempre. Recalcula
     `total_destinatarios`, senão a campanha nunca fecha 'done'
     (`_mark_finished` compara `enviados == total`).
+
+    O `IN ('pendente','enviando')` é load-bearing desde a mig 183: o dispatcher
+    passou a **reivindicar** o lote (`pendente → enviando`) ANTES de checar
+    opt-out, então filtrar só por 'pendente' faria o DELETE virar no-op
+    silencioso e o número suprimido receberia — exatamente o furo que este gate
+    existe pra fechar. Apagar linha 'enviando' é seguro porque só o worker que
+    detém o lease da campanha reivindica destinatários dela.
 
     Retorna o conjunto de telefones suprimidos encontrados no lote.
     """
@@ -121,7 +137,7 @@ async def remover_suprimidos_pendentes(
             await conn.execute(
                 """
                 DELETE FROM campanha_destinatario
-                 WHERE campanha_id = %s AND status = 'pendente'
+                 WHERE campanha_id = %s AND status IN ('pendente', 'enviando')
                    AND telefone = ANY(%s)
                 """,
                 (camp_id, list(suprimidos)),
@@ -784,15 +800,21 @@ async def list_destinatarios(
 async def abort_campanha(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int
 ) -> bool:
-    """Marca campanha como aborted. Background task detecta no próximo
-    loop e para o envio."""
+    """Marca campanha como aborted. O worker detecta no próximo lote e para.
+
+    `queued` e `paused` entraram na lista com a mig 183: sem eles, uma campanha
+    esperando na fila (ou pausada) não podia ser cancelada — o UPDATE não casava
+    e o endpoint devolvia "não encontrada". Solta o lease junto, senão a linha
+    ficaria com dono de uma campanha já terminada.
+    """
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
             UPDATE campanha
-               SET status = 'aborted', finished_at = NOW(), updated_at = NOW()
+               SET status = 'aborted', finished_at = NOW(), updated_at = NOW(),
+                   lease_owner = NULL, lease_expires_at = NULL
              WHERE id = %s AND empresa_id = %s
-               AND status IN ('draft', 'running')
+               AND status IN ('draft', 'queued', 'scheduled', 'running', 'paused')
             """,
             (camp_id, empresa_id),
         )
@@ -915,20 +937,22 @@ async def _dispatch_loop(
     pool: AsyncConnectionPool,
     empresa_id: int,
     camp_id: int,
-    *,
-    ja_running: bool = False,
 ) -> None:
-    """Loop de envio executado em asyncio.create_task.
+    """Loop de envio de UMA campanha já reivindicada por este worker.
 
-    Lê telefones pendentes em batches de 50, envia 1 a 1 com cooldown.
-    Re-checa status da campanha a cada item — se virou 'aborted',
-    para imediatamente (deixa pendentes como 'pendente').
+    Pré-condição (mig 183): a campanha está `running` e o lease é nosso — quem
+    chama é `run_campanha_worker`, depois de `claim_campanha`. O loop nunca
+    transiciona a campanha para `running` por conta própria; isso é do claim,
+    que é atômico e portanto seguro entre workers.
 
-    `ja_running=True`: a campanha já foi transicionada pra 'running' pelo poller
-    de agendamento (claim atômico) — pula a guarda de 'draft' e a transição.
+    Lê pendentes em lotes de 50 **reivindicando cada lote**
+    (`pendente → enviando`), envia 1 a 1 com cooldown anti-ban, e a cada lote
+    recheca o status (abort/pausa param na hora) e o lease (perder o lease
+    também para: dois workers enviando é a duplicata que o claim existe pra
+    evitar).
     """
     log = logger.bind(camp_id=camp_id, empresa_id=empresa_id)
-    log.info("campanha_dispatch_started")
+    log.info("campanha_dispatch_started", worker=motor.WORKER_ID)
 
     # O loop roda numa task própria e toca `campanha`/`campanha_destinatario`
     # do começo ao fim. Contextvar é task-local, então fixar aqui vale pra
@@ -936,8 +960,7 @@ async def _dispatch_loop(
     set_request_context(empresa_id)
 
     camp = await get_campanha(pool, empresa_id, camp_id)
-    estado_ok = "running" if ja_running else "draft"
-    if camp is None or camp["status"] != estado_ok:
+    if camp is None or camp["status"] != "running":
         log.warning("campanha_dispatch_invalid_state", status=camp and camp["status"])
         return
 
@@ -949,7 +972,13 @@ async def _dispatch_loop(
     if not raw_pool:
         ativas = await list_conexoes(pool, empresa_id)  # já retorna só ativas
         if not ativas:
-            await _mark_finished(pool, camp_id, "aborted", reason="sem conexão ativa")
+            await _mark_finished(
+                pool,
+                camp_id,
+                "aborted",
+                reason="sem conexão ativa",
+                empresa_id=empresa_id,
+            )
             log.error("campanha_no_active_conexao")
             return
         raw_pool = [ativas[0].id]
@@ -959,7 +988,9 @@ async def _dispatch_loop(
         if cx is not None and cx.empresa_id == empresa_id and cx.status == "active":
             conexoes_pool.append(cx)
     if not conexoes_pool:
-        await _mark_finished(pool, camp_id, "aborted", reason="conexão inválida")
+        await _mark_finished(
+            pool, camp_id, "aborted", reason="conexão inválida", empresa_id=empresa_id
+        )
         log.error("campanha_invalid_conexao", pool=raw_pool)
         return
 
@@ -975,7 +1006,9 @@ async def _dispatch_loop(
         else:
             log.warning("campanha_media_sem_public_base_url", media_url=media_url)
     if not template_id and not media_url and not (camp.get("mensagem") or "").strip():
-        await _mark_finished(pool, camp_id, "aborted", reason="sem conteúdo")
+        await _mark_finished(
+            pool, camp_id, "aborted", reason="sem conteúdo", empresa_id=empresa_id
+        )
         log.error("campanha_sem_conteudo")
         return
 
@@ -1008,7 +1041,11 @@ async def _dispatch_loop(
         saudaveis.append(cx)
     if not saudaveis:
         await _mark_finished(
-            pool, camp_id, "aborted", reason="nenhuma conexão com sessão conectada"
+            pool,
+            camp_id,
+            "aborted",
+            reason="nenhuma conexão com sessão conectada",
+            empresa_id=empresa_id,
         )
         log.error("campanha_pool_sem_sessao_aberta")
         return
@@ -1056,15 +1093,10 @@ async def _dispatch_loop(
                 motivo=q.motivo,
             )
 
-    # Marca como running (quando agendada, o poller já fez o claim → pula).
-    if not ja_running:
-        async with pool.connection() as conn:
-            await conn.execute(
-                "UPDATE campanha SET status='running', started_at=NOW(), updated_at=NOW() "
-                "WHERE id = %s AND status='draft'",
-                (camp_id,),
-            )
-            await conn.commit()
+    # Destinatários deixados em 'enviando' por um worker que morreu: devolve os
+    # que comprovadamente não saíram e marca 'incerto' os que podem ter saído.
+    # Roda ANTES do primeiro lote pra que a retomada de órfã já comece limpa.
+    await motor.recuperar_destinatarios_orfaos(pool, empresa_id, camp_id)
 
     # Conta envios já feitos (enviados+falhas) pra alinhar a pausa periódica
     # mesmo quando a campanha é retomada (agendada/reagendada) no meio.
@@ -1072,7 +1104,7 @@ async def _dispatch_loop(
     rr = 0  # índice do round-robin do pool de conexões
 
     while True:
-        # Recheca abort a cada batch
+        # Recheca abort/pausa a cada lote...
         async with pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT status FROM campanha WHERE id = %s",
@@ -1083,23 +1115,36 @@ async def _dispatch_loop(
             log.info("campanha_dispatch_stopped", status=srow and srow[0])
             return
 
-        # Pega próximo lote de pendentes
-        async with pool.connection() as conn:
-            cur = await conn.execute(
-                """
-                SELECT cd.id, cd.telefone, c.nome, cd.variaveis
-                  FROM campanha_destinatario cd
-                  LEFT JOIN cliente c ON c.id = cd.cliente_id
-                 WHERE cd.campanha_id = %s AND cd.status = 'pendente'
-                 ORDER BY cd.id
-                 LIMIT 50
-                """,
-                (camp_id,),
-            )
-            batch = await cur.fetchall()
+        # ...e o lease. Perder a propriedade significa que outro worker já
+        # assumiu esta campanha; continuar enviando seria a duplicata que todo
+        # o claim existe pra evitar (mesmo fence do `_lease_heartbeat`).
+        if not await motor.renovar_lease(pool, camp_id):
+            log.warning("campanha_lease_perdido", worker=motor.WORKER_ID)
+            return
+
+        # Reivindica o próximo lote (`pendente → enviando`). O SELECT solto de
+        # antes deixava dois motores lerem o mesmo lote e enviarem tudo duas
+        # vezes — e produção roda dois workers.
+        batch = await motor.claim_destinatarios(pool, empresa_id, camp_id, limite=50)
 
         if not batch:
-            # Tudo enviado — marca done (ou partial se houve falhas)
+            # Nada pendente. Antes de fechar, confere se ainda há 'enviando' em
+            # voo de um worker morto que ainda não envelheceu o suficiente pra
+            # ser recuperado — fechar agora marcaria done/partial cedo demais.
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    "SELECT count(*) FROM campanha_destinatario"
+                    " WHERE campanha_id = %s AND status = 'enviando'",
+                    (camp_id,),
+                )
+                em_voo = (await cur.fetchone() or (0,))[0]
+            if em_voo:
+                log.info("campanha_aguardando_em_voo", em_voo=em_voo)
+                await asyncio.sleep(min(30, motor.DEST_ORFAO_SEGUNDOS))
+                await motor.recuperar_destinatarios_orfaos(pool, empresa_id, camp_id)
+                continue
+
+            # Tudo resolvido — marca done (ou partial se houve falha/incerto)
             async with pool.connection() as conn:
                 cur = await conn.execute(
                     "SELECT enviados, falhas, total_destinatarios "
@@ -1111,7 +1156,7 @@ async def _dispatch_loop(
                 return
             envs, falhas, total = stats
             new_status = "done" if envs == total else "partial"
-            await _mark_finished(pool, camp_id, new_status)
+            await _mark_finished(pool, camp_id, new_status, empresa_id=empresa_id)
             log.info(
                 "campanha_dispatch_finished",
                 status=new_status,
@@ -1137,7 +1182,7 @@ async def _dispatch_loop(
                 # TODAS as conexões bateram o teto diário → reagenda o restante
                 # pro dia seguinte (warm-up). Deixa os pendentes como 'pendente'.
                 motivo = next((m for m in quota_motivo.values() if m), "teto diário")
-                await _reagendar_warmup(pool, camp_id, 0, motivo)
+                await _reagendar_warmup(pool, camp_id, 0, motivo, empresa_id=empresa_id)
                 log.info("campanha_teto_diario_atingido", pool=pool_ids, motivo=motivo)
                 return
             cid, rr = escolha
@@ -1180,6 +1225,13 @@ async def _dispatch_loop(
                     return await _cli.send_message(
                         phone, _apply_tokens(camp.get("mensagem") or "", cn, v)
                     )
+
+                # Marca a hora ANTES de falar com o provedor. É o que torna o
+                # órfão decidível se este worker morrer agora: sem a marca, um
+                # 'enviando' abandonado é indistinguível entre "nunca saiu" e
+                # "pode ter saído", e as duas suposições erradas são simétricas
+                # (duplicar a mensagem ou deixar buraco). Ver mig 183.
+                await motor.marcar_provider_chamado(pool, empresa_id, dest_id)
 
                 # Retry anti-ban: "Connection Closed" e afins são transitórios —
                 # re-tenta com backoff curto antes de marcar falha definitiva.
@@ -1254,6 +1306,14 @@ async def _dispatch_loop(
                 camp_id,
                 "aborted",
                 reason=f"kill-switch: falhas {krow[1]}/{krow[0] + krow[1]} > {kill_pct}%",
+                empresa_id=empresa_id,
+            )
+            await motor.registrar_evento(
+                pool,
+                empresa_id,
+                camp_id,
+                "kill_switch",
+                {"enviados": krow[0], "falhas": krow[1], "limite_pct": kill_pct},
             )
             log.warning(
                 "campanha_kill_switch", enviados=krow[0], falhas=krow[1], pct=kill_pct
@@ -1262,39 +1322,59 @@ async def _dispatch_loop(
 
 
 async def _mark_finished(
-    pool: AsyncConnectionPool, camp_id: int, status: str, *, reason: str | None = None
+    pool: AsyncConnectionPool,
+    camp_id: int,
+    status: str,
+    *,
+    reason: str | None = None,
+    empresa_id: int | None = None,
 ) -> None:
+    """Fecha a campanha e solta o lease.
+
+    O motivo ia CONCATENADO em `descricao` — o campo que o usuário escreveu
+    virava depósito de histórico, impossível de consultar ou exibir. Desde a
+    mig 183 vai pra `campanha_evento`; `aborted_reason` continua sendo o
+    resumo de uma linha que a UI já lê.
+    """
     async with pool.connection() as conn:
         await conn.execute(
             """
             UPDATE campanha
                SET status = %s, finished_at = NOW(), updated_at = NOW(),
                    aborted_reason = COALESCE(%s, aborted_reason),
-                   descricao = COALESCE(descricao, '') || COALESCE(%s, '')
+                   lease_owner = NULL, lease_expires_at = NULL
              WHERE id = %s
             """,
-            (
-                status,
-                reason,
-                f"\n[motivo: {reason}]" if reason else None,
-                camp_id,
-            ),
+            (status, reason, camp_id),
         )
         await conn.commit()
+    if empresa_id is not None:
+        await motor.registrar_evento(
+            pool,
+            empresa_id,
+            camp_id,
+            "finalizada",
+            {"status": status, "motivo": reason},
+        )
 
 
 async def _reagendar_warmup(
-    pool: AsyncConnectionPool, camp_id: int, cap: int, motivo: str | None
+    pool: AsyncConnectionPool,
+    camp_id: int,
+    cap: int,
+    motivo: str | None,
+    *,
+    empresa_id: int | None = None,
 ) -> None:
     """Teto diário atingido: reagenda os pendentes pro início do dia seguinte.
 
     Não aborta — vira 'scheduled' com `scheduled_at` = meia-noite de amanhã; o
-    `run_scheduled_poller` reivindica e o `_dispatch_loop` (ja_running) continua
-    de onde parou. O disparo "pinga" ao longo dos dias = aquecimento na prática.
+    worker reivindica pelo mesmo claim das agendadas e continua de onde parou.
+    O disparo "pinga" ao longo dos dias = aquecimento na prática.
     `cap` é mantido por compat (com pool de números não há teto único).
+
+    Solta o lease junto: a campanha volta a ser de ninguém até a hora marcada.
     """
-    _cap_txt = f" {cap}" if cap else ""
-    nota = f"\n[teto diário{_cap_txt} atingido ({motivo or 'manual'}) — retoma amanhã]"
     async with pool.connection() as conn:
         await conn.execute(
             """
@@ -1302,83 +1382,118 @@ async def _reagendar_warmup(
                SET status = 'scheduled',
                    scheduled_at = date_trunc('day', NOW()) + INTERVAL '1 day',
                    updated_at = NOW(),
-                   descricao = COALESCE(descricao, '') || %s
+                   lease_owner = NULL, lease_expires_at = NULL
              WHERE id = %s
             """,
-            (nota, camp_id),
+            (camp_id,),
         )
         await conn.commit()
+    if empresa_id is not None:
+        await motor.registrar_evento(
+            pool,
+            empresa_id,
+            camp_id,
+            "reagendada_warmup",
+            {"cap": cap or None, "motivo": motivo or "manual"},
+        )
 
 
-# Refs fortes pras tasks de dispatch — sem isso o GC pode coletar a task no
-# meio da campanha (o event loop só guarda referência fraca; asyncio docs).
-_BG_TASKS: set[asyncio.Task] = set()
-
-
-def schedule_dispatch(
+async def enfileirar_dispatch(
     pool: AsyncConnectionPool, empresa_id: int, camp_id: int
-) -> asyncio.Task:
-    """Agenda dispatch em background via asyncio.create_task. Retorna
-    a Task pra logging — endpoint não precisa await."""
-    task = asyncio.create_task(_dispatch_loop(pool, empresa_id, camp_id))
-    _BG_TASKS.add(task)
+) -> bool:
+    """Põe a campanha na fila (`draft → queued`). Retorna False se não deu.
 
-    def _on_done(t: asyncio.Task) -> None:
-        _BG_TASKS.discard(t)
-        if t.exception() is not None:
-            logger.error("campanha_dispatch_task_crashed", error=str(t.exception()))
+    **É aqui que o motor virou durável.** Até a mig 183 esta função criava um
+    `asyncio.create_task` dentro do processo da API; como a API reinicia a cada
+    deploy — e merge é deploy —, o disparo morria no meio e a campanha ficava
+    `running` para sempre, sem ninguém pra retomar.
 
-    task.add_done_callback(_on_done)
-    return task
-
-
-async def claim_scheduled_due(pool: AsyncConnectionPool) -> list[tuple[int, int]]:
-    """Claim atômico de campanhas agendadas vencidas (scheduled_at <= now()).
-
-    Usa `FOR UPDATE SKIP LOCKED` + transição `scheduled→running` na mesma
-    transação, então 2 instâncias da API nunca disparam a mesma campanha.
-    Retorna lista de `(empresa_id, camp_id)` reivindicadas (já em 'running').
+    Agora o endpoint só marca `queued` e volta 202. Quem trabalha é o worker,
+    via `motor.claim_campanha`. O trabalho deixou de depender do processo que
+    atendeu o HTTP.
     """
-    claimed: list[tuple[int, int]] = []
-    # bypass de RLS: poller é cross-tenant (varre todas as empresas).
-    with empresa_scope(None, bypass=True):
-        async with pool.connection() as conn, conn.transaction():
+    with empresa_scope(empresa_id):
+        async with pool.connection() as conn:
             cur = await conn.execute(
                 """
-                UPDATE campanha SET status='running', started_at=NOW(), updated_at=NOW()
-                 WHERE id IN (
-                    SELECT id FROM campanha
-                     WHERE status='scheduled' AND scheduled_at IS NOT NULL
-                       AND scheduled_at <= NOW()
-                     ORDER BY scheduled_at
-                     FOR UPDATE SKIP LOCKED
-                     LIMIT 20
-                 )
-                RETURNING empresa_id, id
-                """
+                UPDATE campanha
+                   SET status = 'queued', updated_at = NOW()
+                 WHERE id = %s AND empresa_id = %s AND status = 'draft'
+                """,
+                (camp_id, empresa_id),
             )
-            claimed = [(r[0], r[1]) for r in await cur.fetchall()]
-    return claimed
+            await conn.commit()
+            ok = (cur.rowcount or 0) > 0
+    if ok:
+        await motor.registrar_evento(pool, empresa_id, camp_id, "enfileirada")
+    return ok
 
 
-async def run_scheduled_poller(
-    pool: AsyncConnectionPool, interval_s: float = 30.0
+async def run_campanha_worker(
+    pool: AsyncConnectionPool, interval_s: float = 15.0
 ) -> None:
-    """Loop infinito: a cada `interval_s`, claim das agendadas vencidas e
-    dispara cada uma (já 'running' pelo claim). Rodar como task no lifespan."""
+    """Loop do motor de disparo. Roda no **worker**, não na API.
+
+    A cada `interval_s` tenta reivindicar uma campanha (`motor.claim_campanha`)
+    e, se conseguir, executa o dispatch dela até o fim antes de voltar a
+    procurar. Uma campanha por vez por worker, pra que um disparo longo não
+    monopolize o processo que também consome `message_queue`.
+
+    Substitui o `run_scheduled_poller`, que rodava no lifespan da API e só
+    reivindicava `scheduled` — deixando campanha `running` órfã sem ninguém
+    pra retomar. O claim novo tem a terceira porta (lease vencido), então o
+    ciclo aqui é o mesmo tanto pra campanha nova quanto pra abandonada.
+
+    Nunca morre: exceção é logada e o loop segue (mesmo contrato dos outros
+    loops de fundo do worker).
+    """
     while True:
+        camp_id_atual: int | None = None
         try:
-            due = await claim_scheduled_due(pool)
-            for empresa_id, camp_id in due:
-                logger.info("campanha_scheduled_fired", camp_id=camp_id)
-                # empresa_scope capturado pelo create_task (contextvars) → o
-                # _dispatch_loop roda com o tenant certo apesar do poller ser global.
-                with empresa_scope(empresa_id):
-                    task = asyncio.create_task(
-                        _dispatch_loop(pool, empresa_id, camp_id, ja_running=True)
+            claim = await motor.claim_campanha(pool)
+            if claim is not None:
+                empresa_id, camp_id = claim.empresa_id, claim.camp_id
+                camp_id_atual = camp_id
+                logger.info(
+                    "campanha_reivindicada",
+                    camp_id=camp_id,
+                    empresa_id=empresa_id,
+                    worker=motor.WORKER_ID,
+                    era_orfa=claim.era_orfa,
+                )
+                # Campanha que já estava 'running' com lease vencido = o dono
+                # anterior morreu. Registrar isso é o que torna o conserto
+                # OBSERVÁVEL: sem o evento, "se recuperou sozinha" fica
+                # indistinguível de "nunca quebrou".
+                if claim.era_orfa:
+                    await motor.registrar_evento(
+                        pool,
+                        empresa_id,
+                        camp_id,
+                        "retomada_apos_orfa",
+                        {
+                            "dono_anterior": claim.dono_anterior,
+                            "novo_dono": motor.WORKER_ID,
+                        },
                     )
-                _BG_TASKS.add(task)
-                task.add_done_callback(_BG_TASKS.discard)
-        except Exception as e:  # noqa: BLE001 — poller nunca pode morrer
-            logger.error("campanha_scheduled_poller_error", error=str(e))
+                else:
+                    await motor.registrar_evento(
+                        pool,
+                        empresa_id,
+                        camp_id,
+                        "iniciada",
+                        {"worker": motor.WORKER_ID, "de": claim.status_anterior},
+                    )
+                await _dispatch_loop(pool, empresa_id, camp_id)
+                await motor.liberar_lease(pool, camp_id)
+                continue  # tenta a próxima imediatamente
+        except Exception as e:  # noqa: BLE001 — o motor nunca pode morrer
+            logger.error("campanha_worker_error", error=str(e), camp_id=camp_id_atual)
+            if camp_id_atual is not None:
+                # Solta o lease pra campanha voltar a ser reivindicável agora
+                # em vez de esperar o lease vencer.
+                try:
+                    await motor.liberar_lease(pool, camp_id_atual)
+                except Exception:  # noqa: BLE001
+                    logger.exception("campanha_liberar_lease_falhou")
         await asyncio.sleep(interval_s)

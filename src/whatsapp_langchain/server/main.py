@@ -7,7 +7,6 @@ Uso:
     uvicorn whatsapp_langchain.server.main:app --reload --port 8000
 """
 
-import contextlib
 import hmac
 import os
 from collections.abc import AsyncIterator
@@ -213,28 +212,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("rbac_seed_default_failed", error=str(exc))
 
     # Aquece o pool da app (chat_nexus_app ou postgres fallback)
-    app_pool = await get_pool()
+    await get_pool()
 
-    # Poller de campanhas agendadas (mig 124) — dispara no scheduled_at.
-    import asyncio as _asyncio
-
-    from whatsapp_langchain.shared.campanha import run_scheduled_poller
-
-    scheduled_poller_task = _asyncio.create_task(run_scheduled_poller(app_pool))
+    # O motor de disparo NÃO mora mais aqui (mig 183). Rodava como task no
+    # lifespan da API — o processo que reinicia a cada deploy —, então merge
+    # no meio de uma campanha matava o envio e a deixava 'running' órfã, sem
+    # ninguém pra retomar. Foi pro worker (`shared/campanha.py::
+    # run_campanha_worker`), que é o processo desenhado pra trabalho longo.
+    #
+    # Efeito colateral bem-vindo: era este poller que, sob `TestClient`, ficava
+    # vivo no join de tasks do anyio e pendurava a suíte sem mensagem de erro.
     logger.info("server_ready")
 
     yield
 
     # Shutdown
-    #
-    # `cancel()` só SINALIZA — sem esperar, a task pode continuar viva depois
-    # do lifespan terminar. Em produção isso passava despercebido porque o
-    # processo morre logo em seguida, mas sob `TestClient` o portal do anyio faz
-    # join das tasks do loop ao fechar, encontra o poller ainda rodando e espera
-    # para sempre: era o que pendurava a suíte inteira sem mensagem de erro.
-    scheduled_poller_task.cancel()
-    with contextlib.suppress(_asyncio.CancelledError):
-        await scheduled_poller_task
     await close_pool()
     logger.info("server_stopped")
 
