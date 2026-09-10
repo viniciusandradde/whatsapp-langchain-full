@@ -1122,10 +1122,21 @@ async def _dispatch_loop(
             log.warning("campanha_lease_perdido", worker=motor.WORKER_ID)
             return
 
-        # Reivindica o próximo lote (`pendente → enviando`). O SELECT solto de
+        # Reivindica UM destinatário (`pendente → enviando`). O SELECT solto de
         # antes deixava dois motores lerem o mesmo lote e enviarem tudo duas
         # vezes — e produção roda dois workers.
-        batch = await motor.claim_destinatarios(pool, empresa_id, camp_id, limite=50)
+        #
+        # O tamanho 1 é deliberado e custou um teste de fumaça: reivindicar o
+        # lote inteiro de 50 prendia até 50 pessoas em `enviando` quando o
+        # worker morria no meio do lote. A campanha ficava com ZERO pendentes e
+        # 24 presas, sem poder andar até a janela de órfão vencer. Com o claim
+        # unitário, um crash prende exatamente um — o que estava em voo.
+        #
+        # O custo é ~5 queries por mensagem (status, lease, claim, opt-out,
+        # resultado). A cadência anti-ban é de segundos por envio, então isso é
+        # ruído; e em troca o fence do lease passa a ser checado a cada
+        # mensagem em vez de a cada 50.
+        batch = await motor.claim_destinatarios(pool, empresa_id, camp_id, limite=1)
 
         if not batch:
             # Nada pendente. Antes de fechar, confere se ainda há 'enviando' em
@@ -1165,8 +1176,9 @@ async def _dispatch_loop(
             )
             return
 
-        # Gate de opt-out por lote. O da criação não basta: com aquecimento a
-        # campanha é reagendada dia após dia, e o STOP chega no meio dela.
+        # Gate de opt-out do número reivindicado. O da criação não basta: com
+        # aquecimento a campanha é reagendada dia após dia, e o STOP chega no
+        # meio dela.
         removidos = await remover_suprimidos_pendentes(
             pool, empresa_id, camp_id, [b[1] for b in batch]
         )

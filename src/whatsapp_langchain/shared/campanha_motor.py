@@ -31,8 +31,8 @@ exatamente a duplicata que o claim existe para evitar.
 from __future__ import annotations
 
 import json as _json
-import os
 import socket
+import uuid
 from dataclasses import dataclass
 
 import structlog
@@ -42,10 +42,15 @@ from whatsapp_langchain.shared.rls_context import empresa_scope
 
 logger = structlog.get_logger()
 
-#: Identidade deste processo no lease. Dois workers no mesmo host têm pids
-#: diferentes; o mesmo worker reiniciado tem pid novo e por isso NÃO se
-#: reconhece como dono do lease antigo — que é o comportamento correto.
-WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
+#: Identidade desta INSTÂNCIA do processo no lease.
+#:
+#: O sufixo aleatório é load-bearing e custou um teste de fumaça: a primeira
+#: versão usava `os.getpid()`, e em container o processo principal é SEMPRE o
+#: pid 1 com hostname fixo. Um worker reiniciado nascia com o id IDÊNTICO ao do
+#: worker morto, se reconhecia como dono do lease antigo e o fence de
+#: `renovar_lease` deixava de proteger — que é exatamente o que ele existe para
+#: fazer. Com o uuid, cada boot é uma instância distinta.
+WORKER_ID = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
 
 #: Duração do lease da campanha. Chute informado pelo `message_queue`
 #: (LEASE_SECONDS=60); campanha usa o dobro porque um lote de 50 com jitter
@@ -57,8 +62,14 @@ LEASE_SECONDS = 120
 HEARTBEAT_INTERVAL_S = max(5, LEASE_SECONDS // 3)
 
 #: Depois de quanto tempo um destinatário `enviando` é considerado órfão.
-#: Generoso de propósito: melhor esperar do que concorrer com um envio vivo.
-DEST_ORFAO_SEGUNDOS = 600
+#:
+#: Alinhado ao lease de propósito: quando um worker novo consegue reivindicar a
+#: campanha, é porque o lease do anterior já venceu — logo qualquer `enviando`
+#: dela é de um dono que não existe mais. Um valor MAIOR que o lease só serve
+#: pra prolongar a paralisia: a campanha volta a ter dono mas fica sem poder
+#: mexer nas linhas presas. Era 600s, e o teste de fumaça mostrou a campanha
+#: parada por minutos depois de o worker morrer.
+DEST_ORFAO_SEGUNDOS = LEASE_SECONDS
 
 
 # ---------------------------------------------------------------------------
