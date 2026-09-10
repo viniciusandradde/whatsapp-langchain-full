@@ -107,6 +107,38 @@ não tem Shared Drive — o upload falha com `storageQuotaExceeded`. É limitaç
 Google, não configuração. Por isso o caminho é OAuth de usuário com refresh
 token.
 
+## O backup diário NÃO é suficiente para trocar de servidor
+
+Este documento cobre o banco da **aplicação**. Ele não leva o que faz um
+servidor novo virar produção:
+
+- o banco da **Evolution**, onde ficam as credenciais Baileys (tabela
+  `Session`) — sem ele, todo número precisa ser re-pareado;
+- o banco do **Dokploy**, onde ficam as **variáveis de ambiente de produção**
+  (o repositório só tem `.env.example`);
+- `/etc/dokploy`, as units systemd e o `rclone.conf` — a credencial do próprio
+  backup, que sem cópia deixa o offsite mudo na máquina nova.
+
+Para isso existe `scripts/exportar_producao.sh` e o runbook
+[`docs/MIGRACAO_SERVIDOR.md`](MIGRACAO_SERVIDOR.md):
+
+```bash
+./scripts/exportar_producao.sh                        # snapshot completo no dev
+./scripts/exportar_producao.sh --verificar <snapshot>  # restaura e confere
+./scripts/exportar_producao.sh --cifrar   <snapshot>   # empacota segredos (GPG AES-256)
+./scripts/exportar_producao.sh --offsite  <snapshot>   # sobe só o pacote cifrado
+```
+
+A verificação restaura cada dump numa base descartável e confere conteúdo, não
+tamanho de arquivo: objetos no dump da app, linhas em `Session` com credencial
+de verdade, e `compose.env` do Dokploy com bytes. Dump truncado tem tamanho;
+o que ele não tem é dado.
+
+**Quente × frio, e por que importa.** As credenciais Baileys rotacionam durante
+a conexão. Dump com a Evolution rodando serve de seguro contra desastre, mas
+pode custar re-parear. Dump com a Evolution **parada** é o que garante migração
+sem QR. Migração planejada usa o frio — a ordem completa está no runbook.
+
 ## Restaurar
 
 Sempre numa base **nova**; trocar a produção pela restaurada é decisão humana,
