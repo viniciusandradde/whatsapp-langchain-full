@@ -441,6 +441,49 @@ def coletar_para_checagens():
     if mtime and agora_epoch:
         backup_offsite_horas = (agora_epoch - mtime) / 3600.0
 
+    # Saldo do OpenRouter. Duas fontes, porque o conserto é diferente: o teto
+    # DA CHAVE se resolve no painel de chaves, o crédito DA CONTA comprando.
+    # Em 2026-09-10 a chave esgotou com US$ 11,98 na conta — quem olhasse só o
+    # crédito concluiria "tem dinheiro" e o áudio seguiria falhando.
+    #
+    # A chave nunca sai do container: o `python` roda lá dentro e lê do próprio
+    # env, então o valor não passa pela linha de comando (onde apareceria em
+    # `ps` e no log deste script).
+    openrouter_saldo = openrouter_teto = None
+    openrouter_origem = None
+    _or = sh(
+        "docker exec %s-api-1 python -c "
+        "'import os,json,urllib.request;"
+        'k=os.environ.get("OPENROUTER_API_KEY","");'
+        'h={"Authorization":"Bearer "+k};'
+        "g=lambda u:json.load(urllib.request.urlopen("
+        'urllib.request.Request(u,headers=h),timeout=15))["data"];'
+        'kk=g("https://openrouter.ai/api/v1/key");'
+        'cc=g("https://openrouter.ai/api/v1/credits");'
+        'print(json.dumps({"lim":kk.get("limit"),'
+        '"rest":kk.get("limit_remaining"),'
+        '"tot":cc.get("total_credits"),"uso":cc.get("total_usage")}))\''
+        " 2>/dev/null" % PREFIXO_PROD
+    ).strip()
+    if _or:
+        try:
+            _d = json.loads(_or)
+            _conta = None
+            if _d.get("tot") is not None and _d.get("uso") is not None:
+                _conta = float(_d["tot"]) - float(_d["uso"])
+            _chave = _d.get("rest")
+            _chave = float(_chave) if _chave is not None else None
+            # Vale o que limita primeiro. Chave sem teto (`limit` nulo) deixa a
+            # conta como única restrição.
+            if _chave is not None and (_conta is None or _chave <= _conta):
+                openrouter_saldo, openrouter_origem = _chave, "chave"
+                openrouter_teto = _d.get("lim")
+            elif _conta is not None:
+                openrouter_saldo, openrouter_origem = _conta, "conta"
+                openrouter_teto = _d.get("tot")
+        except (ValueError, TypeError, KeyError):
+            pass  # API fora do ar vira "não sei" — a checagem cala.
+
     # Dump mais recente no disco: nome, hora e tamanho. Vira a linha de status
     # que aparece TODO dia no relatório — inclusive quando está tudo certo.
     #
@@ -486,6 +529,9 @@ def coletar_para_checagens():
         "disco_pct": disco,
         "backup_horas": backup_horas,
         "backup_offsite_horas": backup_offsite_horas,
+        "openrouter_saldo": openrouter_saldo,
+        "openrouter_teto": openrouter_teto,
+        "openrouter_origem": openrouter_origem,
         # Versão da Graph API em uso pelo container da API (vazio = WABA
         # desligado). Lida do env do container, não do host: é lá que a
         # aplicação roda.

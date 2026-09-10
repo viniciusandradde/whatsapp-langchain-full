@@ -36,6 +36,16 @@ DISCO_CRITICO_PCT = 90
 #: unit e para um dia em que a máquina estava desligada na hora.
 LIMITE_BACKUP_H = 26
 
+#: Saldo do OpenRouter. Abaixo do CRÍTICO a mídia já está falhando: o OpenRouter
+#: recusa pelo CUSTO ESTIMADO da requisição, e transcrição de áudio estima mais
+#: caro que texto — daí o sintoma clássico ser "áudio parou, texto funciona".
+#: Medido no incidente de 2026-09-10: com US$ 0,41 restantes, áudio dava 402 e
+#: texto passava. O piso de atenção é relativo ao teto porque o consumo escala
+#: com o uso: quem gasta US$ 10/mês não quer ser avisado no mesmo valor absoluto
+#: de quem gasta US$ 1.000.
+OPENROUTER_CRITICO_USD = 1.00
+OPENROUTER_ATENCAO_PCT = 20
+
 #: Sunset das versões da Graph API (Meta garante 2 anos por versão). Datas
 #: públicas e fixas, conferidas na documentação oficial em 2026-08-21.
 #: Uma versão fora do ar derruba TODO o WhatsApp oficial de uma vez, e ninguém
@@ -197,6 +207,63 @@ def checar_backup_offsite(horas_desde_ultimo_upload):
     )
 
 
+def checar_saldo_openrouter(saldo_usd, teto_usd=None, origem=None):
+    """Ainda há saldo para o agente responder?
+
+    Sem isto, acabar o crédito é uma falha SILENCIOSA e enganosa. Em 2026-09-10
+    o teto da chave (US$ 5) esgotou com US$ 11,98 sobrando na conta: o cliente
+    mandou áudio e recebeu "estamos com dificuldades em processar imagens/audio"
+    por mais de uma hora, sem nenhum alarme. Descobriu-se porque alguém reparou
+    na tela.
+
+    O sintoma engana duas vezes. Parece intermitente (o OpenRouter recusa pelo
+    custo ESTIMADO, então áudio cai antes do texto) e parece falta de dinheiro
+    (quando o que acabou era o teto DA CHAVE). Por isso `origem` entra na ação:
+    "chave" se conserta no painel de chaves, "conta" comprando crédito — e
+    mandar comprar crédito quando o problema é o teto não resolve nada.
+
+    `None` é silêncio proposital, igual ao backup offsite: chave sem teto e API
+    fora do ar são "não sei", não "está tudo bem".
+    """
+    if saldo_usd is None:
+        return None
+
+    onde = {"chave": "teto da chave", "conta": "crédito da conta"}.get(origem, "saldo")
+    acao_chave = (
+        "Aumentar ou remover o limite da chave em openrouter.ai/settings/keys "
+        "(não precisa comprar crédito se a conta tem saldo)."
+    )
+    acao_conta = "Comprar crédito em openrouter.ai/credits."
+    acao = acao_chave if origem == "chave" else acao_conta
+
+    if saldo_usd < OPENROUTER_CRITICO_USD:
+        return Achado(
+            chave="openrouter_saldo",
+            severidade=CRITICO,
+            titulo="OpenRouter com US$ {0:.2f} — mídia já falha".format(saldo_usd),
+            evidencia=(
+                "{0} restante: US$ {1:.2f}. Abaixo de US$ {2:.2f} a transcrição "
+                "de áudio e a leitura de imagem passam a receber 402, enquanto "
+                "texto ainda funciona — o cliente ouve 'mande mensagem de texto'."
+            ).format(onde, saldo_usd, OPENROUTER_CRITICO_USD),
+            acao=acao,
+        )
+
+    if teto_usd and saldo_usd < (teto_usd * OPENROUTER_ATENCAO_PCT / 100.0):
+        return Achado(
+            chave="openrouter_saldo",
+            severidade=ATENCAO,
+            titulo="OpenRouter com US$ {0:.2f} de US$ {1:.2f}".format(
+                saldo_usd, teto_usd
+            ),
+            evidencia="{0} restante: US$ {1:.2f} ({2:.0f}% do teto).".format(
+                onde, saldo_usd, saldo_usd / teto_usd * 100.0
+            ),
+            acao=acao,
+        )
+    return None
+
+
 def checar_graph_api_version(versao, hoje):
     """A versão da Graph API do WhatsApp oficial ainda está no ar?
 
@@ -337,6 +404,11 @@ def rodar_checagens(dados):
         checar_disco(dados.get("disco_pct")),
         checar_backup(dados.get("backup_horas")),
         checar_backup_offsite(dados.get("backup_offsite_horas")),
+        checar_saldo_openrouter(
+            dados.get("openrouter_saldo"),
+            dados.get("openrouter_teto"),
+            dados.get("openrouter_origem"),
+        ),
         checar_graph_api_version(dados.get("graph_api_version"), dados.get("hoje")),
         checar_migrations(
             dados.get("migrations_arquivos") or [],

@@ -28,6 +28,7 @@ from producao_checks import (  # noqa: E402
     checar_graph_api_version,
     checar_ia_alertas,
     checar_migrations,
+    checar_saldo_openrouter,
     checar_worker_mudo,
     linha_backup,
     resumo_texto,
@@ -334,3 +335,51 @@ class TestChecarIaAlertas:
     def test_entra_no_rodar_checagens(self) -> None:
         achados = rodar_checagens({"ia_alertas_ativos": 1})
         assert any(a.chave == "ia_alertas" for a in achados)
+
+
+class TestSaldoOpenRouter:
+    """A checagem que teria pego o incidente de 2026-09-10.
+
+    O cliente mandou áudio e ouviu "estamos com dificuldades em processar
+    imagens/audio" por mais de uma hora. Nada alarmou: o teto DA CHAVE (US$ 5)
+    tinha esgotado enquanto a conta ainda tinha US$ 11,98.
+    """
+
+    def test_numeros_reais_do_incidente_sao_criticos(self) -> None:
+        a = checar_saldo_openrouter(0.4154, 5, "chave")
+        assert a is not None
+        assert a.severidade == "critico"
+        assert a.chave == "openrouter_saldo"
+
+    def test_manda_arrumar_o_TETO_quando_o_limite_e_da_chave(self) -> None:
+        """Distinção que custou a investigação: mandar comprar crédito quando o
+        problema é o teto da chave não conserta nada — havia US$ 11,98 na conta."""
+        a = checar_saldo_openrouter(0.4154, 5, "chave")
+        assert a is not None
+        assert "openrouter.ai/settings/keys" in a.acao
+        assert "credits" not in a.acao
+
+    def test_manda_comprar_credito_quando_o_limite_e_da_conta(self) -> None:
+        a = checar_saldo_openrouter(0.80, 25, "conta")
+        assert a is not None
+        assert "credits" in a.acao
+
+    def test_depois_do_conserto_cala(self) -> None:
+        assert checar_saldo_openrouter(5.3821, 10, "chave") is None
+
+    def test_avisa_antes_de_doer(self) -> None:
+        a = checar_saldo_openrouter(1.50, 10, "chave")
+        assert a is not None
+        assert a.severidade == "atencao"
+
+    def test_sem_dado_fica_em_silencio(self) -> None:
+        """Chave sem teto ou API fora do ar é "não sei", não "está tudo bem" —
+        mesmo contrato do backup offsite."""
+        assert checar_saldo_openrouter(None) is None
+        assert checar_saldo_openrouter(None, None, None) is None
+
+    def test_sem_teto_conhecido_ainda_pega_o_critico(self) -> None:
+        """Sem `teto` não dá pra calcular a faixa de atenção, mas o piso
+        absoluto continua valendo — é o que dispara com a mídia já falhando."""
+        assert checar_saldo_openrouter(0.40, None, "conta") is not None
+        assert checar_saldo_openrouter(3.00, None, "conta") is None
