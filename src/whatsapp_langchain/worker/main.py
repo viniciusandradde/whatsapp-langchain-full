@@ -120,6 +120,11 @@ async def main() -> None:
     # Saúde de IA (mig 178): catálogo OpenRouter + métricas de endpoint
     openrouter_task = asyncio.create_task(_openrouter_sync_loop(pool))
 
+    # Retenção de dados por tempo (Fase E, migs 184/185): apaga mensagens +
+    # mídia de atendimentos encerrados além do prazo (max empresa/agente).
+    # Precisa do checkpointer pra apagar as threads dormentes do LangGraph.
+    dados_retencao_task = asyncio.create_task(_dados_retencao_loop(pool, checkpointer))
+
     # Push FCM (mig 168): LISTEN no mesmo canal do SSE → notifica os
     # dispositivos da empresa em mensagem nova de cliente. No-op sem a
     # credencial no env.
@@ -209,6 +214,7 @@ async def main() -> None:
         relatorio_task.cancel()
         openrouter_task.cancel()
         push_task.cancel()
+        dados_retencao_task.cancel()
         for t in (
             sync_task,
             idle_task,
@@ -217,6 +223,7 @@ async def main() -> None:
             relatorio_task,
             openrouter_task,
             push_task,
+            dados_retencao_task,
         ):
             try:
                 await t
@@ -419,6 +426,33 @@ async def _openrouter_sync_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("openrouter_sync_loop_error", error=str(e))
         await asyncio.sleep(OPENROUTER_SYNC_INTERVAL_SECONDS)
+
+
+# Fase E: retenção de dados por tempo. 6h basta — a granularidade é dias, e o
+# expurgo é idempotente (rodar de novo só apaga o que acumulou).
+DADOS_RETENCAO_INTERVAL_SECONDS = 6 * 3600
+
+
+async def _dados_retencao_loop(pool, checkpointer) -> None:
+    """Apaga por tempo as mensagens + mídia de atendimentos encerrados (Fase E).
+
+    Prazo efetivo por atendimento = max(empresa, agente); o agente só estende.
+    Empresas sem prazo (retencao_dias NULL/0 = ilimitado) são puladas, então o
+    loop é inerte até o dono configurar um prazo. A trava de sessão
+    (`pg_try_advisory_lock`) serializa dois workers.
+    """
+    from whatsapp_langchain.shared.dados_retencao import rodar_retencao_dados
+
+    # Aguarda o boot estabilizar (migrations/bootstrap) e desencontra do
+    # arranque dos outros loops.
+    await asyncio.sleep(300)
+
+    while True:
+        try:
+            await rodar_retencao_dados(pool, checkpointer=checkpointer)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("dados_retencao_loop_error", error=str(e))
+        await asyncio.sleep(DADOS_RETENCAO_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
