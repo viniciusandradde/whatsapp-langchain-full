@@ -53,7 +53,8 @@ async def list_empresas_of_user(
                 SELECT e.id, e.nome, e.slug, e.doc, e.plano, e.status,
                        e.config, e.created_at, e.updated_at,
                        e.logo_path, e.nome_exibicao, e.cor_primaria,
-                       e.cor_secundaria, m.role, e.onboarding_dispensado_at
+                       e.cor_secundaria, m.role, e.onboarding_dispensado_at,
+                       e.voz_ativa, e.voz_nome, e.voz_estilo, e.retencao_dias
                   FROM empresa e
                   JOIN empresa_membro m ON m.empresa_id = e.id
                  WHERE m.user_id = %s
@@ -81,6 +82,14 @@ async def list_empresas_of_user(
             cor_secundaria=r[12],
             my_role=r[13],
             onboarding_dispensado_at=r[14],
+            # Sem estes 4, a lista devolvia Empresa com voz_ativa/retencao_dias
+            # None e a tela (/companies usa a LISTA, não o detalhe) mostrava o
+            # checkbox de voz desmarcado e o dropdown de retenção no default,
+            # mesmo com valor salvo — bug de display, não de comportamento.
+            voz_ativa=bool(r[15]),
+            voz_nome=r[16],
+            voz_estilo=r[17],
+            retencao_dias=r[18],
         )
         for r in rows
     ]
