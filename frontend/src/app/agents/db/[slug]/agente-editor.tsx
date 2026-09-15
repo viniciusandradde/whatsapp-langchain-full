@@ -929,7 +929,7 @@ function TabModelo({
         type="number"
         placeholder="ex: 30 — vazio = sem timeout"
       />
-      <Field
+      <FieldSelect
         label="Retenção de dados (dias)"
         name="retencao_dias"
         ajuda={
