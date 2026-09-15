@@ -202,6 +202,7 @@ async def enqueue_or_buffer(
     media_url: str | None = None,
     media_type: str | None = None,
     media_filename: str | None = None,
+    media_arquivo_uuid: str | None = None,
     to_number: str | None = None,
     message_id: str | None = None,
     buffer_seconds: float = 2.0,
@@ -260,7 +261,10 @@ async def enqueue_or_buffer(
         EnqueueResult com message_id e se foi buffered.
     """
     thread_id = f"{phone_number}:{agent_id}"
-    has_media = media_url is not None
+    # Mídia pode chegar como base64 em media_url (fluxo antigo) OU como
+    # referência ao storage em media_arquivo_uuid (mig 184). Qualquer uma
+    # fura o debounce e absorve o texto pendente.
+    has_media = media_url is not None or media_arquivo_uuid is not None
 
     # Hash determinístico para pg_advisory_xact_lock.
     # Usa os 8 bytes iniciais do SHA-256 convertidos para int64 signed,
@@ -367,8 +371,8 @@ async def enqueue_or_buffer(
                     (empresa_id, conexao_id, atendimento_id, message_id,
                      phone_number, to_number, agent_id, thread_id,
                      incoming_message, media_url, media_type, media_filename,
-                     process_after)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     media_arquivo_uuid, process_after)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -384,6 +388,7 @@ async def enqueue_or_buffer(
                     media_url,
                     media_type,
                     media_filename,
+                    media_arquivo_uuid,
                     process_after_midia,
                 ),
             )
@@ -576,7 +581,8 @@ async def claim_next(
                       ) AS conexao_provider,
                       -- Fora de ordem de propósito: o mapeamento abaixo é por
                       -- índice, e inserir no meio renumeraria 15 campos.
-                      media_filename
+                      media_filename,
+                      media_arquivo_uuid::text
             """,
             (lease_until,),
         )
@@ -614,6 +620,7 @@ async def claim_next(
             conexao_id=row[24],
             conexao_provider=row[25],
             media_filename=row[26],
+            media_arquivo_uuid=row[27],
         )
 
         logger.info(
