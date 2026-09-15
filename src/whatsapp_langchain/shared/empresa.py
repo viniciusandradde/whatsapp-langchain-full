@@ -162,7 +162,7 @@ _EMPRESA_COLS = (
     "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
     "logo_path, nome_exibicao, cor_primaria, cor_secundaria, "
     "anuncia_atendente_assumiu, onboarding_dispensado_at, "
-    "voz_ativa, voz_nome, voz_estilo"
+    "voz_ativa, voz_nome, voz_estilo, retencao_dias"
 )
 
 
@@ -186,6 +186,7 @@ def _row_to_empresa(row) -> Empresa:
         voz_ativa=bool(row[15]),
         voz_nome=row[16] or "alloy",
         voz_estilo=row[17] or "",
+        retencao_dias=row[18],
     )
 
 
@@ -410,6 +411,7 @@ async def update_empresa(
     voz_ativa: bool | None = None,
     voz_nome: str | None = None,
     voz_estilo: str | None = None,
+    retencao_dias: int | None = None,
 ) -> Empresa | None:
     """Atualiza campos não-None. Retorna None se a empresa não existe."""
     fields: list[str] = []
@@ -437,6 +439,7 @@ async def update_empresa(
         ("voz_ativa", voz_ativa),
         ("voz_nome", voz_nome),
         ("voz_estilo", voz_estilo),
+        ("retencao_dias", retencao_dias),
     ):
         if value is not None:
             fields.append(f"{name} = %s")

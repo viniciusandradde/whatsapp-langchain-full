@@ -72,7 +72,7 @@ _COLS = (
     "timeout_minutos, acao_limite_menu_id, "
     # Triagem omnichannel (mig 061): depto destino fixo quando agente
     # chama transfer_to_human (IA não escolhe — admin configura).
-    "departamento_default_id"
+    "departamento_default_id, retencao_dias"
 )
 
 
@@ -120,6 +120,8 @@ class AgenteIA:
     acao_limite_menu_id: int | None = None
     # Triagem omnichannel (mig 061)
     departamento_default_id: int | None = None
+    # Retenção de dados (mig 185): dias; NULL = herda a empresa; 0 = ilimitado.
+    retencao_dias: int | None = None
 
     def to_dict(self) -> dict:
         out = {
@@ -166,6 +168,7 @@ class AgenteIA:
             "acao_limite_menu_id": self.acao_limite_menu_id,
             # Triagem omnichannel (mig 061)
             "departamento_default_id": self.departamento_default_id,
+            "retencao_dias": self.retencao_dias,
         }
         # Campos derivados (pra UI mostrar valores efetivos)
         temp, top_p = resolve_temperatura_top_p(

@@ -136,6 +136,11 @@ export async function saveEmpresa(
       anuncia_atendente_assumiu: formData.get("anuncia_atendente_assumiu") === "on",
     };
 
+    // Retenção de dados (mig 185): dias; 0 = ilimitado.
+    const retencaoRaw = formData.get("retencao_dias");
+    const retencaoDias =
+      retencaoRaw === null || retencaoRaw === "" ? null : Number(retencaoRaw);
+
     let savedId: number;
     if (empresaId) {
       const update: EmpresaUpdateInput = {
@@ -147,6 +152,9 @@ export async function saveEmpresa(
         ...branding,
         ...atendimento,
       };
+      if (retencaoDias !== null && !Number.isNaN(retencaoDias)) {
+        update.retencao_dias = retencaoDias;
+      }
       const status = (formData.get("status") as string) || null;
       if (status) update.status = status;
       await updateEmpresa(empresaId, update);

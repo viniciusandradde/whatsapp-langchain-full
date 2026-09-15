@@ -366,6 +366,28 @@ export function EmpresaForm({ initial, onDone }: Props) {
                 </Field>
               )}
 
+              <Field label="Período de retenção de dados" htmlFor="retencao_dias">
+                <select
+                  id="retencao_dias"
+                  name="retencao_dias"
+                  defaultValue={String(initial?.retencao_dias ?? 0)}
+                  className={SELECT_CLASS}
+                  disabled={isPending}
+                >
+                  <option value="0">Ilimitado (não apagar)</option>
+                  <option value="30">30 dias</option>
+                  <option value="60">60 dias</option>
+                  <option value="90">90 dias</option>
+                  <option value="180">180 dias</option>
+                  <option value="365">365 dias</option>
+                </select>
+                <p className="mt-1 text-xs text-foreground/50">
+                  Após o prazo, conversas de atendimentos encerrados e sua mídia
+                  são apagadas; o registro do atendimento permanece. Um agente
+                  pode manter por mais tempo, nunca menos.
+                </p>
+              </Field>
+
               {/* Identidade visual (white-label) */}
               <div className="space-y-3 rounded-lg border border-foreground/10 bg-obsidian-800/40 p-4 md:col-span-2">
                 <p className="text-sm font-medium">

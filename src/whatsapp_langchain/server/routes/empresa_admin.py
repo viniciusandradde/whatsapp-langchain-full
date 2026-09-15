@@ -92,6 +92,8 @@ class UpdateEmpresaInput(BaseModel):
     voz_ativa: bool | None = None
     voz_nome: str | None = None
     voz_estilo: str | None = Field(default=None, max_length=200)
+    # Retenção (mig 185): dias; 0 = ilimitado. None = não mexe (patch parcial).
+    retencao_dias: int | None = Field(default=None, ge=0, le=3650)
 
 
 class AddMemberInput(BaseModel):
@@ -211,6 +213,7 @@ async def update_empresa_endpoint(
             voz_ativa=body.voz_ativa,
             voz_nome=body.voz_nome,
             voz_estilo=body.voz_estilo,
+            retencao_dias=body.retencao_dias,
         )
     except Exception as e:
         msg = str(e).lower()

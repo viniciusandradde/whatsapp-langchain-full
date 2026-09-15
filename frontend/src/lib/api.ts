@@ -126,6 +126,7 @@ export interface Empresa {
   voz_ativa?: boolean;
   voz_nome?: string;
   voz_estilo?: string;
+  retencao_dias?: number | null;
 }
 
 export interface EmpresaInput {
@@ -173,6 +174,7 @@ export interface EmpresaUpdateInput {
   voz_ativa?: boolean;
   voz_nome?: string;
   voz_estilo?: string;
+  retencao_dias?: number | null;
 }
 
 export type UserStatus = "active" | "disabled";
@@ -3635,6 +3637,7 @@ export interface AgenteIA {
   tipo_memoria: string;
   janela_memoria: number | null;
   timeout_minutos: number | null;
+  retencao_dias: number | null;
   acao_limite_menu_id: number | null;
   // Triagem omnichannel (mig 061): depto destino fixo de transfer_to_human
   departamento_default_id: number | null;

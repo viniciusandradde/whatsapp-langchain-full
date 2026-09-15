@@ -142,6 +142,9 @@ class UpdateAgenteInput(BaseModel):
     acao_limite_menu_id: int | None = None
     # Triagem omnichannel (mig 061): depto destino ao chamar transfer_to_human
     departamento_default_id: int | None = None
+    # Retenção (mig 185): dias; 0 = ilimitado; NULL = herda a empresa. O
+    # endpoint faz passthrough (model_dump exclude_unset) → sem mudança na rota.
+    retencao_dias: int | None = Field(default=None, ge=0, le=3650)
     # "Mensagem de commit" da versão do prompt (mig 158). Não é coluna de
     # `agente_ia` — `update_agente` recebe por nome e nunca põe no SET.
     nota: str | None = Field(default=None, max_length=200)
