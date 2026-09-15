@@ -250,6 +250,11 @@ class Settings(BaseSettings):
     summarize_keep_messages: int = 10
     summarize_model: str = "x-ai/grok-4.1-fast"
 
+    # --- Retenção de checkpoints do LangGraph (plano 2026-09-15, Fase 2) ---
+    # Threads com todos os atendimentos fechados há mais que isto são
+    # apagadas inteiras. A poda "só o último por thread" roda sempre.
+    checkpoint_retencao_dias: int = 90
+
     # --- Assistente de redação de prompt ---
     # Modelo que redige o prompt do agente a partir de uma descrição curta.
     # Não é tarefa de modelo barato: sai um texto estruturado de milhares de

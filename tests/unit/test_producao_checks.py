@@ -29,6 +29,7 @@ from producao_checks import (  # noqa: E402
     checar_ia_alertas,
     checar_migrations,
     checar_saldo_openrouter,
+    checar_tamanho_tabela,
     checar_worker_mudo,
     linha_backup,
     resumo_texto,
@@ -383,3 +384,41 @@ class TestSaldoOpenRouter:
         absoluto continua valendo — é o que dispara com a mídia já falhando."""
         assert checar_saldo_openrouter(0.40, None, "conta") is not None
         assert checar_saldo_openrouter(3.00, None, "conta") is None
+
+
+class TestTamanhoTabela:
+    """Fase 4 do plano dos checkpoints: o crescimento silencioso vira alarme."""
+
+    def test_checkpoints_acima_de_2gb_e_critico(self) -> None:
+        a = checar_tamanho_tabela(1885, "checkpoints")  # medido antes do conserto
+        # 1885 MB fica na faixa de ATENÇÃO (>= 500), não CRÍTICO (>= 2000).
+        assert a is not None
+        assert a.severidade == ATENCAO
+        assert "checkpoints" in a.evidencia and "1885" in a.evidencia
+
+    def test_estouro_de_2gb_e_critico(self) -> None:
+        a = checar_tamanho_tabela(2048, "checkpoints")
+        assert a is not None
+        assert a.severidade == CRITICO
+
+    def test_abaixo_de_500mb_cala(self) -> None:
+        assert checar_tamanho_tabela(90, "checkpoints") is None
+
+    def test_sem_medida_fica_em_silencio(self) -> None:
+        assert checar_tamanho_tabela(None, "checkpoints") is None
+
+    def test_message_queue_tem_acao_propria(self) -> None:
+        a = checar_tamanho_tabela(718, "message_queue")
+        assert a is not None
+        assert a.severidade == ATENCAO
+        assert "message_queue" in a.acao and a.chave == "tamanho_message_queue"
+
+    def test_checkpoints_aponta_a_retencao(self) -> None:
+        a = checar_tamanho_tabela(600, "checkpoints")
+        assert a is not None and "retenção" in a.acao.lower()
+
+    def test_entra_no_rodar_checagens(self) -> None:
+        achados = rodar_checagens({"checkpoints_mb": 2048, "message_queue_mb": 40})
+        chaves = {x.chave for x in achados}
+        assert "tamanho_checkpoints" in chaves
+        assert "tamanho_message_queue" not in chaves  # 40 MB não alarma

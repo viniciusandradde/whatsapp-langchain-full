@@ -520,6 +520,16 @@ def coletar_para_checagens():
         "FROM ia_alerta WHERE resolvido_em IS NULL;"
     )
 
+    # Tamanho (MB) das tabelas que incham calado: checkpoints do LangGraph
+    # e message_queue, as duas com a mesma raiz (base64 de mídia). Fase 4 do
+    # plano dos checkpoints — o crescimento era invisível até abrir o pg_stat.
+    ckpt_mb, _ = sql_stdin(
+        "SELECT (pg_total_relation_size('checkpoints')/1024/1024)::int;"
+    )
+    mq_mb, _ = sql_stdin(
+        "SELECT (pg_total_relation_size('message_queue')/1024/1024)::int;"
+    )
+
     m = num(minutos, None)
     return {
         # -1 é o "nunca processou nada" do COALESCE; vira None para a checagem
@@ -527,6 +537,8 @@ def coletar_para_checagens():
         "minutos_sem_done": None if m is None or m < 0 else m,
         "fila_esperando": num(fila, 0),
         "disco_pct": disco,
+        "checkpoints_mb": num(ckpt_mb, None),
+        "message_queue_mb": num(mq_mb, None),
         "backup_horas": backup_horas,
         "backup_offsite_horas": backup_offsite_horas,
         "openrouter_saldo": openrouter_saldo,
