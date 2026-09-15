@@ -11,11 +11,14 @@ esse config; sem ele a tool retorna "[ERRO: Nenhuma mídia anexada]".
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from whatsapp_langchain.agents.tools.midia import (
+    _get_media_url,
     analyze_image,
     extract_document,
     summarize_document,
@@ -211,6 +214,97 @@ class TestSummarizeDocument:
         ):
             r = await summarize_document.ainvoke({}, config=_cfg("https://x/d.pdf"))
             assert r.startswith("[ERRO")
+
+
+def _pool_fake(row):
+    """Pool cujo `connection()` entrega uma conn que responde `row` ao SELECT."""
+    cur = AsyncMock()
+    cur.fetchone = AsyncMock(return_value=row)
+    conn = AsyncMock()
+    conn.execute = AsyncMock(return_value=cur)
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _connection():
+        yield conn
+
+    pool.connection = _connection
+    return pool, conn
+
+
+def _runtime(**configurable) -> SimpleNamespace:
+    return SimpleNamespace(config={"configurable": configurable})
+
+
+class TestGetMediaUrl:
+    """Fase 1 dos checkpoints: a mídia inline vem pela referência, não pelo config.
+
+    O worker só põe `media_url` no configurable quando é http(s); `data:...`
+    fica na fila e a tool lê por `message_queue_id`. Sem isso o base64 ia
+    parar em `checkpoints.metadata` a cada passo do agente.
+    """
+
+    async def test_url_no_config_nao_consulta_a_fila(self):
+        with patch("whatsapp_langchain.agents.tools.midia.get_pool") as gp:
+            r = await _get_media_url(
+                _runtime(media_url="https://x/a.ogg", message_queue_id=42)
+            )
+            assert r == "https://x/a.ogg"
+            gp.assert_not_called()
+
+    async def test_sem_url_resolve_pela_referencia_na_fila(self):
+        pool, conn = _pool_fake(("data:audio/ogg;base64,AAAA",))
+        with patch(
+            "whatsapp_langchain.agents.tools.midia.get_pool",
+            new=AsyncMock(return_value=pool),
+        ):
+            r = await _get_media_url(
+                _runtime(media_url=None, message_queue_id=42, empresa_id=1018)
+            )
+        assert r == "data:audio/ogg;base64,AAAA"
+        sql, params = conn.execute.await_args.args
+        assert "message_queue" in sql and "empresa_id" in sql
+        assert params == (42, 1018)
+
+    async def test_sem_url_nem_referencia_e_none(self):
+        with patch("whatsapp_langchain.agents.tools.midia.get_pool") as gp:
+            assert await _get_media_url(_runtime(media_url=None)) is None
+            gp.assert_not_called()
+
+    async def test_row_sem_midia_e_none(self):
+        pool, _ = _pool_fake((None,))
+        with patch(
+            "whatsapp_langchain.agents.tools.midia.get_pool",
+            new=AsyncMock(return_value=pool),
+        ):
+            assert await _get_media_url(_runtime(message_queue_id=42)) is None
+
+    async def test_falha_no_banco_vira_none_sem_levantar(self):
+        with patch(
+            "whatsapp_langchain.agents.tools.midia.get_pool",
+            new=AsyncMock(side_effect=RuntimeError("pool fechado")),
+        ):
+            assert await _get_media_url(_runtime(message_queue_id=42)) is None
+
+    async def test_tool_transcreve_a_midia_lida_da_fila(self):
+        """Fim a fim: config só com a referência → a tool chega no base64."""
+        pool, _ = _pool_fake(("data:audio/ogg;base64,QUJD",))
+        with (
+            patch(
+                "whatsapp_langchain.agents.tools.midia.get_pool",
+                new=AsyncMock(return_value=pool),
+            ),
+            patch(
+                "whatsapp_langchain.agents.tools.midia.transcribe_audio_url",
+                new=AsyncMock(return_value="texto do áudio"),
+            ) as m,
+        ):
+            r = await transcribe_audio.ainvoke(
+                {},
+                config={"configurable": {"message_queue_id": 42, "empresa_id": 1}},
+            )
+        assert r == "texto do áudio"
+        m.assert_awaited_once_with("data:audio/ogg;base64,QUJD")
 
 
 # Marca todos como asyncio (conftest já configura asyncio_mode=auto)

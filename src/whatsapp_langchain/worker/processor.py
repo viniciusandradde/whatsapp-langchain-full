@@ -47,6 +47,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.loader import load_graph
 from whatsapp_langchain.shared.agente import (
+    AgenteRuntime,
     get_agente_by_slug,
     resolve_agente_runtime,
 )
@@ -592,6 +593,44 @@ def extrair_resposta_do_turno(messages: Sequence[Any]) -> str:
         if texto:
             return texto
     return ""
+
+
+def _montar_configurable(
+    message: MessageQueue, agente_runtime: AgenteRuntime | None
+) -> dict[str, Any]:
+    """Monta o `configurable` do invoke — só referências, nunca conteúdo.
+
+    O `AsyncPostgresSaver` copia TODO o `configurable` para
+    `checkpoints.metadata` em cada checkpoint do run. Mídia inline da
+    Evolution chega como `data:...;base64,...` com o arquivo inteiro: passar
+    isso aqui levou `metadata` a 1,9 GB em produção (2026-09-15, uma linha
+    com 71 MB) enquanto o State ocupava 10 MB. Por isso `media_url` só entra
+    quando é `http(s)://`; o resto vira `None` e as tools multimodais resolvem
+    pelo `message_queue_id` (`agents/tools/midia.py::_get_media_url`) — o que
+    mantém a garantia original: o agente nunca escolhe a URL.
+    """
+    media_url = message.media_url
+    if not (
+        isinstance(media_url, str) and media_url.startswith(("http://", "https://"))
+    ):
+        media_url = None
+    return {
+        "thread_id": message.thread_id,
+        "user_id": message.phone_number,
+        "empresa_id": message.empresa_id,
+        "atendimento_id": message.atendimento_id,
+        # Referência ao row da fila (PK, não o id do provedor): as tools
+        # multimodais leem `message_queue.media_url` por aqui.
+        "message_queue_id": message.id,
+        "media_url": media_url,
+        "media_type": message.media_type,
+        # Sprint M (RAG por setor) — search_knowledge_base usa pra
+        # filtrar docs apenas das pastas do agente. Vazio = busca
+        # global na empresa (fallback).
+        "base_conhecimento_ids": (
+            agente_runtime.base_conhecimento_ids if agente_runtime is not None else []
+        ),
+    }
 
 
 async def _resolve_outbound_client(
@@ -2966,26 +3005,8 @@ async def process_message(
             callbacks.append(langfuse_handler)
 
         invoke_config: dict = {
-            "configurable": {
-                "thread_id": message.thread_id,
-                "user_id": message.phone_number,
-                "empresa_id": message.empresa_id,
-                "atendimento_id": message.atendimento_id,
-                # Fase 1 fix bug PDF — tools multimodais (analyze_image,
-                # transcribe_audio, extract_document, summarize_document)
-                # leem media_url daqui em vez do parâmetro do agente.
-                # Evita alucinação de URL (agente não tem acesso à URL real).
-                "media_url": message.media_url,
-                "media_type": message.media_type,
-                # Sprint M (RAG por setor) — search_knowledge_base usa pra
-                # filtrar docs apenas das pastas do agente. Vazio = busca
-                # global na empresa (fallback).
-                "base_conhecimento_ids": (
-                    agente_runtime.base_conhecimento_ids
-                    if agente_runtime is not None
-                    else []
-                ),
-            },
+            # Só referências: o checkpointer persiste isto inteiro a cada passo.
+            "configurable": _montar_configurable(message, agente_runtime),
             "callbacks": callbacks,
             # Metadata anexada pela CallbackHandler do Langfuse à trace.
             # Langfuse-specific keys (langfuse_user_id/session_id) ficam

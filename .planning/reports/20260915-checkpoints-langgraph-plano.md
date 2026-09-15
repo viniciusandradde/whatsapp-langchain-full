@@ -58,7 +58,7 @@ que o LangGraph copia para `metadata` sem que ninguém "salve no state". Quem
 seguisse a regra à risca ainda teria este bug. A regra correta para este
 repositório é mais forte: **nada pesado no `configurable`** — e isso vai para
 o `CLAUDE.md`. O material sugere guardar "URL ou caminho no seu bucket"; a
-Fase 1 guarda uma referência (`message_id`) e a tool resolve — satisfaz o
+Fase 1 guarda uma referência (`message_queue_id`) e a tool resolve — satisfaz o
 princípio sem criar bucket. Mover mídia para disco/S3 seria a versão completa,
 mas ataca também `message_queue` (718 MB) e é decisão à parte.
 
@@ -83,20 +83,44 @@ pequeno. Se o dono preferir o modelo de ticket, vira plano próprio.
 
 **`src/whatsapp_langchain/worker/processor.py` ~2968-2988:** o `configurable`
 deixa de carregar base64. Regra: `media_url` só entra se for `http(s)://`;
-`data:` vira `None`. Entra `"message_id": message.id` no lugar, como referência.
+`data:` vira `None`. Entra `"message_queue_id": message.id` no lugar, como referência.
 
 **`src/whatsapp_langchain/agents/tools/midia.py` ~65 (helper que lê
 `configurable["media_url"]`):** se `media_url` vier `None` e houver
-`message_id`, buscar `media_url` em `message_queue` pelo id (via `get_pool()`,
+`message_queue_id`, buscar `media_url` em `message_queue` pelo id (via `get_pool()`,
 como as outras tools já fazem). Mantém a propriedade que o comentário original
 queria — a tool nunca recebe URL do agente — sem passar o conteúdo pelo
 checkpoint. `atendimento_router/agent.py:21` tem o mesmo `configurable`; aplicar
 a mesma regra.
 
 Teste: unit que monta o `invoke_config` com `media_url="data:audio/ogg;base64,AAAA"`
-e afirma que `configurable["media_url"] is None` e `message_id` está presente;
+e afirma que `configurable["media_url"] is None` e `message_queue_id` está presente;
 e que com `https://...` passa intacto. Um segundo teste no helper de `midia.py`
-provando o fallback por `message_id`.
+provando o fallback por `message_queue_id`.
+
+### Status da Fase 1 — FEITA e validada no dev (2026-09-15)
+
+Branch `fix/checkpoint-metadata-sem-base64`. O que mudou: `worker/processor.py::_montar_configurable`
+(função nova, testável) monta o `configurable` só com referências — `media_url` passa apenas
+quando é `http(s)://`, senão `None`; entra `message_queue_id` (PK do row da fila; o nome evita
+confusão com `MessageQueue.message_id`, que é o id do provedor). Em `agents/tools/midia.py`,
+`_get_media_url` virou assíncrona e, sem URL no config, lê `message_queue.media_url` pela
+referência (filtro extra por `empresa_id`; falha vira `None` e a tool responde "sem anexo").
+Testes: `tests/unit/test_processor_configurable.py` (6) e `TestGetMediaUrl` em
+`tests/unit/test_midia_tools.py` (6, incluindo fim a fim pela tool `transcribe_audio`).
+
+Prova no dev — mesma thread (`+556796837053:atendimento-cliente`), mesmo áudio inline de 36 kB
+reenfileirado (row 4327), worker reconstruído desta branch, turno completo (transcrição → agente →
+voz mock):
+
+| lote | checkpoints | `metadata` por checkpoint | base64 dentro | `message_queue_id` |
+|---|---|---|---|---|
+| antes (código velho) | 8 | 8.728 a 36.918 bytes | 8 de 8 | 0 |
+| depois (Fase 1) | 4 | **310 a 311 bytes** | 0 | 4 de 4 |
+
+Fallback provado contra o banco real, dentro de `empresa_scope(1)`: `message_queue_id=4327` com
+a empresa certa devolve os 36.615 bytes do `data:audio/ogg…`; empresa errada e id inexistente
+devolvem `None`.
 
 ## Fase 2 — Retenção (loop no worker)
 
@@ -155,8 +179,8 @@ o crescimento era invisível até alguém abrir o `pg_stat`.
 
 | Arquivo | Ação |
 |---|---|
-| `src/whatsapp_langchain/worker/processor.py` | `configurable` sem base64 + `message_id` |
-| `src/whatsapp_langchain/agents/tools/midia.py` | fallback por `message_id` |
+| `src/whatsapp_langchain/worker/processor.py` | `configurable` sem base64 + `message_queue_id` |
+| `src/whatsapp_langchain/agents/tools/midia.py` | fallback por `message_queue_id` |
 | `src/whatsapp_langchain/agents/catalog/atendimento_router/agent.py` | mesma regra |
 | `src/whatsapp_langchain/shared/checkpoint_retencao.py` | **novo** — as duas políticas |
 | `src/whatsapp_langchain/worker/main.py` | `_checkpoint_prune_loop` + task no `main()` e no `finally` |
@@ -167,7 +191,7 @@ o crescimento era invisível até alguém abrir o `pg_stat`.
 
 ## Verificação
 
-1. Unit: `configurable` com `data:` → `None` + `message_id`; helper de mídia resolve por id.
+1. Unit: `configurable` com `data:` → `None` + `message_queue_id`; helper de mídia resolve por id.
 2. Dev (`EVOLUTION_OUTBOUND_MODE=mock`): mandar um áudio pelo webhook, deixar o
    agente responder, e provar com `SELECT length(metadata::text) FROM checkpoints
    WHERE thread_id=...` que o checkpoint novo tem **kB, não MB**.
