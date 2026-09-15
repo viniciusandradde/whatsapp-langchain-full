@@ -273,6 +273,9 @@ async def webhook_evolution(
     text, media_url, media_type, media_filename = _extract_message_payload(
         data.get("message") or {}
     )
+    # Referência ao objeto no storage (mig 184); preenchida no prefetch quando
+    # o storage está ligado, e passada ao enqueue no lugar do base64.
+    media_arquivo_uuid: str | None = None
     if not text and not media_url:
         # Sticker / location / contato / poll / etc — não suportado.
         # Responde 200 silently pra Evolution não retransmitir.
@@ -314,14 +317,43 @@ async def webhook_evolution(
             )
             if res is not None:
                 b64, mime_real = res
-                media_url = f"data:{mime_real};base64,{b64}"
                 media_type = mime_real
+                # Object storage (mig 183/184): quando ligado, a mídia vai pro
+                # bucket e a mensagem guarda só a referência — media_url fica
+                # NULL. Falha no storage cai pro base64 (comportamento antigo),
+                # pra um MinIO fora do ar não perder a mídia do cliente.
+                from whatsapp_langchain.shared import storage
+
+                if storage.storage_ativo():
+                    try:
+                        import base64 as _b64
+
+                        arq = await storage.guardar_midia(
+                            pool,
+                            conexao.empresa_id,
+                            _b64.b64decode(b64),
+                            mime_real,
+                            media_filename,
+                        )
+                        media_arquivo_uuid = arq.uuid
+                        media_url = None
+                    except Exception as exc:  # noqa: BLE001 — degrada pro base64
+                        logger.warning(
+                            "evolution_media_storage_falhou_fallback_base64",
+                            instance=instance,
+                            message_id=msg_key_id,
+                            error=str(exc)[:200],
+                        )
+                        media_url = f"data:{mime_real};base64,{b64}"
+                else:
+                    media_url = f"data:{mime_real};base64,{b64}"
                 logger.info(
                     "evolution_media_prefetch_ok",
                     instance=instance,
                     message_id=msg_key_id,
                     bytes_b64=len(b64),
                     mime=mime_real,
+                    no_storage=media_arquivo_uuid is not None,
                 )
             else:
                 # Falhou — segue só com texto/caption se houver
@@ -389,6 +421,7 @@ async def webhook_evolution(
         media_url=media_url,
         media_type=media_type,
         media_filename=media_filename,
+        media_arquivo_uuid=media_arquivo_uuid,
         to_number=conexao.from_number,
         message_id=msg_id,
         buffer_seconds=settings.message_buffer_seconds,

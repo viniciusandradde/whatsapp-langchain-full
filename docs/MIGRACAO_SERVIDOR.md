@@ -12,6 +12,7 @@ o conjunto completo que faz um servidor novo virar produção.
 | Item | Onde vive hoje | Sai por |
 |---|---|---|
 | Banco da aplicação | container `...-db-1` | `pg_dump` (o timer 03:15 já gera) |
+| **Mídia dos clientes** | volume `minio_data` (bucket S3, mig 183/184) | `mc mirror` / tar do volume — **ver aviso abaixo** |
 | **Sessões WhatsApp** | banco `evolution`, tabela `Session` | `pg_dump` do banco `evolution` |
 | **Variáveis de ambiente de produção** | banco do Dokploy | `pg_dump` do banco `dokploy` |
 | Definição dos serviços | `/etc/dokploy` | `tar` |
@@ -30,6 +31,14 @@ Tudo isso sai de uma vez com:
 **Não precisa levar:** `/opt/registry` (8,6 GB de imagens — reconstruíveis do
 git via CI), os volumes `logos_data` / `avatars_data` / `disparador_media`
 (estão vazios) e `evolution_redis` (só cache).
+
+> ⚠️ **`minio_data` (mídia dos clientes) ainda NÃO entra no backup automático.**
+> Quando o object storage for ligado em produção (env `S3_BUCKET`), a mídia
+> passa a viver só neste volume — mesmo risco de desastre do banco. O
+> `backup_prod.sh` só faz `pg_dump`; falta adicionar um `mc mirror` do bucket
+> (ou tar do volume) pro Drive. **TODO da Fase B** antes de depender do storage
+> pra valer. Enquanto o `S3_BUCKET` estiver vazio, o volume fica ocioso e não
+> há mídia a perder.
 
 ## ⚠️ Cópia de arquivo não substitui `pg_dump`
 

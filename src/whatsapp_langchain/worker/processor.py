@@ -2579,6 +2579,41 @@ async def process_message(
             pool, message.empresa_id, message.agent_id
         )
 
+        # Object storage (mig 183/184): mídia guardada no bucket chega como
+        # referência (`media_arquivo_uuid`), com media_url NULL. Materializa os
+        # bytes num `data:` URL (transitório, em memória) e o coloca em
+        # `message.media_url` — daí todo o downstream funciona sem mudança.
+        # Por que data: e não URL assinada: o `download_media` tem guarda
+        # anti-SSRF que barra host interno (`minio:9000`), e o OpenRouter
+        # (visão/transcrição) não alcança URL interna — o modelo precisa dos
+        # bytes inline. O base64 é transitório: `_montar_configurable` o remove
+        # do checkpoint (Fase 1) e a coluna media_url no banco continua NULL.
+        if message.media_arquivo_uuid and not message.media_url:
+            import base64 as _b64
+
+            from whatsapp_langchain.shared import arquivo as _arquivo_lib
+            from whatsapp_langchain.shared import storage as _storage
+
+            try:
+                _arq = await _arquivo_lib.get_arquivo(pool, message.media_arquivo_uuid)
+                if _arq is not None:
+                    _bytes = await _storage.ler_bytes(_arq)
+                    _mime = (
+                        _arq.mime_type
+                        or message.media_type
+                        or "application/octet-stream"
+                    )
+                    message.media_url = (
+                        f"data:{_mime};base64,{_b64.b64encode(_bytes).decode()}"
+                    )
+            except Exception as _exc:  # noqa: BLE001 — sem mídia, segue como texto
+                logger.warning(
+                    "worker_midia_storage_resolver_falhou",
+                    message_id=message.id,
+                    arquivo_uuid=message.media_arquivo_uuid,
+                    error=str(_exc)[:200],
+                )
+
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(
             body=message.incoming_message,
