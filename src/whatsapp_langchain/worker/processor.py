@@ -412,6 +412,15 @@ RESPOSTA_SUPERADA_MARKER = "[resposta superada — cliente escreveu de novo]"
 # `[whitelist`, onde a IA nunca chegou a rodar.
 RESPOSTA_VAZIA_MARKER = "[resposta vazia — agente não gerou texto]"
 
+# Marcador quando a conexão está em modo IA/híbrido mas NÃO há agente da
+# empresa cadastrado pro slug (`resolve_agente_runtime` devolveu None). Sem
+# isto o worker cairia no template de exemplo do catálogo (vsa_tech) e
+# responderia com um prompt genérico da VSA Tech — o susto do dono em
+# 2026-08-19 ("não tenho agente cadastrado, por que está respondendo?"). Trata
+# igual ao modo manual: nada é enviado, a mensagem fica na fila humana. Entra
+# em MARKERS_REPROCESSAVEIS: cadastrar o agente e reenfileirar volta a IA.
+SEM_AGENTE_MARKER = "[IA sem agente cadastrado — resposta automática desligada]"
+
 # Guarda do gatilho de voz (mig 176): marcador de sistema nunca vira áudio.
 # No caminho normal a resposta que chega ao envio não é marcador (os caminhos
 # de marker retornam antes), mas a guarda custa nada e protege refatoração.
@@ -423,6 +432,7 @@ _MARKERS_SISTEMA = frozenset(
         FILA_DEPARTAMENTO_MARKER,
         RESPOSTA_SUPERADA_MARKER,
         RESPOSTA_VAZIA_MARKER,
+        SEM_AGENTE_MARKER,
     }
 )
 
@@ -2578,6 +2588,31 @@ async def process_message(
         agente_runtime = await resolve_agente_runtime(
             pool, message.empresa_id, message.agent_id
         )
+
+        # Rede de segurança do modo IA (TODO 2026-08-20): a conexão está em
+        # ia/híbrido (o gate de modo manual já retornou acima), mas não há
+        # agente da empresa pro slug — `resolve_agente_runtime` devolveu None,
+        # o que faria o turno cair no template de exemplo do catálogo. Em vez
+        # de responder com o prompt genérico, trata como modo manual: registra
+        # e devolve pra fila humana. O gate da API (`validar_agente_da_empresa_
+        # para_ia`) impede novos saves nesse estado; isto cobre rows já na fila
+        # e o caminho de provisionamento que não passa pelo PATCH.
+        if agente_runtime is None:
+            await mark_done(
+                pool,
+                message.id,
+                SEM_AGENTE_MARKER,
+                normalized_input=None,
+            )
+            logger.warning(
+                "worker_skipped_agent_sem_agente_cadastrado",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+                conexao_id=conexao.id,
+                slug=message.agent_id,
+                atendimento_id=message.atendimento_id,
+            )
+            return
 
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(

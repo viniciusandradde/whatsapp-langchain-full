@@ -1313,7 +1313,7 @@ async def set_coleta_resumo(
 #
 # `[handoff humano` fica de fora de propósito: ali um atendente assumiu a
 # conversa, e reprocessar faria a IA responder por cima dele.
-MARKERS_REPROCESSAVEIS = ("[modo manual", "[whitelist")
+MARKERS_REPROCESSAVEIS = ("[modo manual", "[whitelist", "[IA sem agente cadastrado")
 
 # TODOS os prefixos internos que o worker grava em `response` no lugar de uma
 # resposta real (worker/processor.py). Nada disso foi enviado ao cliente —
@@ -1325,6 +1325,7 @@ MARKERS_INTERNOS = (
     "[whitelist",
     "[fila do departamento",
     "[resposta superada",
+    "[IA sem agente cadastrado",
 )
 
 

@@ -294,3 +294,72 @@ class TestHardDeleteConexao:
         assert alvo is not None  # aparece no histórico
         assert alvo["conexao_nome"] == "Marketing"  # veio do snapshot
         assert alvo["conexao_numero"] == "+5567"
+
+
+@pytest.mark.docker_demo
+class TestGateAgenteModoIA:
+    """Modo IA exige agente da empresa cadastrado (TODO 2026-08-20).
+
+    Exercita o `resolve_agente_runtime` REAL — o que os unit tests, que o
+    mockam, não cobrem: a query casa slug↔empresa e o fallback pro default.
+    """
+
+    @pytest.fixture(scope="class")
+    def empresa(self):
+        db = get_db_url()
+        with psycopg.connect(db, autocommit=True) as conn:
+            eid = conn.execute(
+                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                (f"gate-{_RUN}", f"gate-{_RUN}"),
+            ).fetchone()[0]
+        yield eid
+        with psycopg.connect(db, autocommit=True) as conn:
+            conn.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+    async def test_ia_sem_agente_devolve_mensagem_de_erro(self, empresa) -> None:
+        from whatsapp_langchain.shared.conexao import (
+            validar_agente_da_empresa_para_ia,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            erro = await validar_agente_da_empresa_para_ia(
+                pool, empresa, "ia", "vsa_tech"
+            )
+        assert erro is not None  # empresa nova, sem agente_ia → bloqueia
+        assert "agente" in erro.lower()
+
+    async def test_manual_passa_mesmo_sem_agente(self, empresa) -> None:
+        from whatsapp_langchain.shared.conexao import (
+            validar_agente_da_empresa_para_ia,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            erro = await validar_agente_da_empresa_para_ia(
+                pool, empresa, "manual", "vsa_tech"
+            )
+        assert erro is None
+
+    async def test_ia_com_agente_cadastrado_passa(self, empresa) -> None:
+        from whatsapp_langchain.shared.conexao import (
+            validar_agente_da_empresa_para_ia,
+        )
+        from whatsapp_langchain.shared.db import get_pool
+        from whatsapp_langchain.shared.rls_context import empresa_scope
+
+        slug = f"agente-gate-{_RUN}"
+        with psycopg.connect(get_db_url(), autocommit=True) as conn:
+            conn.execute(
+                "INSERT INTO agente_ia (empresa_id, slug, nome, ativo, is_default) "
+                "VALUES (%s, %s, %s, TRUE, TRUE)",
+                (empresa, slug, f"Agente Gate {_RUN}"),
+            )
+        pool = await get_pool()
+        with empresa_scope(empresa):
+            erro = await validar_agente_da_empresa_para_ia(pool, empresa, "ia", slug)
+        assert erro is None  # agente da empresa existe e está ativo
