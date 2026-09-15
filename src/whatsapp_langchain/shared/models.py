@@ -862,3 +862,24 @@ class ClienteMemoriaInput(BaseModel):
         default="agent_explicit",
         pattern=r"^(agent_explicit|agent_extracted|operator)$",
     )
+
+
+class Arquivo(BaseModel):
+    """Mapeamento da tabela `arquivo` (object storage, mig 183).
+
+    Metadados de um objeto guardado no bucket S3-compatível. A mensagem
+    referencia por `uuid`; o conteúdo (bytes) vive no storage, nunca aqui.
+    """
+
+    uuid: str
+    empresa_id: int
+    disk: str = "s3"
+    bucket: str
+    object_key: str
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    original_name: str | None = None
+    sha256: str | None = None
+    thumbnail_key: str | None = None
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
