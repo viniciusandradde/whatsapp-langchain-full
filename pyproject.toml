@@ -55,6 +55,10 @@ dependencies = [
     # a rota `/api/relatorios/uso/{id}/pdf` e o envio agendado no worker, virou
     # dependência de runtime das duas imagens.
     "fpdf2>=2.8,<3.0",
+    # Object storage S3-compatível (mig 183): mídia do cliente vai pro bucket
+    # (MinIO/S3/R2) e a mensagem guarda só a referência. `shared/storage.py` é
+    # o único lugar que importa boto3.
+    "boto3>=1.35,<2.0",
 ]
 
 [project.optional-dependencies]

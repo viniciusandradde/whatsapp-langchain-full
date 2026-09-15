@@ -243,6 +243,24 @@ class Settings(BaseSettings):
     media_audio_enabled: bool = True
     media_document_enabled: bool = True
 
+    # --- Object storage (S3-compatível) para a mídia do cliente ---
+    # A mídia sai do Postgres pro bucket; a mensagem guarda só a referência
+    # (`arquivo.uuid`) e o painel lê por URL assinada. O cliente é agnóstico
+    # de backend: aponte `s3_endpoint_url` pra MinIO (self-host) ou deixe vazio
+    # pra AWS S3; R2/B2/etc. também servem. Vazio (`s3_bucket` em branco) =
+    # storage não configurado — o helper `shared/storage.py::storage_ativo()`
+    # devolve False e o fluxo de mídia cai no comportamento anterior (base64).
+    s3_endpoint_url: str = ""  # ex.: http://minio:9000 (MinIO). Vazio = AWS S3.
+    s3_region: str = "us-east-1"
+    s3_bucket: str = ""
+    s3_access_key: SecretStr | None = None
+    s3_secret_key: SecretStr | None = None
+    # TTL (segundos) das URLs assinadas que o painel usa pra exibir a mídia.
+    s3_signed_url_ttl: int = 3600
+    # Estilo de path: MinIO exige path-style (bucket no path), AWS aceita
+    # virtual-hosted. Default path-style porque o alvo padrão é MinIO.
+    s3_use_path_style: bool = True
+
     # --- Context Management (migrado do .env manual) ---
     context_strategy: str = "trim"
     trim_keep_turns: int = 5
