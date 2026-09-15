@@ -581,7 +581,8 @@ async def claim_next(
                       ) AS conexao_provider,
                       -- Fora de ordem de propósito: o mapeamento abaixo é por
                       -- índice, e inserir no meio renumeraria 15 campos.
-                      media_filename
+                      media_filename,
+                      media_arquivo_uuid::text
             """,
             (lease_until,),
         )
@@ -619,6 +620,7 @@ async def claim_next(
             conexao_id=row[24],
             conexao_provider=row[25],
             media_filename=row[26],
+            media_arquivo_uuid=row[27],
         )
 
         logger.info(

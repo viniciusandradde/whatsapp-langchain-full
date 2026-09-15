@@ -2579,6 +2579,27 @@ async def process_message(
             pool, message.empresa_id, message.agent_id
         )
 
+        # Object storage (mig 183/184): mídia guardada no bucket chega como
+        # referência (`media_arquivo_uuid`), com media_url NULL. Resolve pra uma
+        # URL assinada e a coloca em `message.media_url` — daí todo o downstream
+        # (preprocess, _montar_configurable, tools de mídia) funciona sem mudança
+        # (a URL assinada é http, o worker alcança o MinIO pela rede interna).
+        if message.media_arquivo_uuid and not message.media_url:
+            from whatsapp_langchain.shared import arquivo as _arquivo_lib
+            from whatsapp_langchain.shared import storage as _storage
+
+            try:
+                _arq = await _arquivo_lib.get_arquivo(pool, message.media_arquivo_uuid)
+                if _arq is not None:
+                    message.media_url = _storage.url_assinada(_arq)
+            except Exception as _exc:  # noqa: BLE001 — sem mídia, segue como texto
+                logger.warning(
+                    "worker_midia_storage_resolver_falhou",
+                    message_id=message.id,
+                    arquivo_uuid=message.media_arquivo_uuid,
+                    error=str(_exc)[:200],
+                )
+
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(
             body=message.incoming_message,
