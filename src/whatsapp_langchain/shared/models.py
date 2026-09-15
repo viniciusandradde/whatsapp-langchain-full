@@ -218,6 +218,9 @@ class Empresa(BaseModel):
     voz_ativa: bool = False
     voz_nome: str = "alloy"
     voz_estilo: str = ""
+    # Retenção de dados (mig 185): dias até apagar conversas de atendimentos
+    # encerrados. NULL/0 = ilimitado. Piso da empresa; o agente só estende.
+    retencao_dias: int | None = None
 
 
 class EmpresaMembro(BaseModel):
