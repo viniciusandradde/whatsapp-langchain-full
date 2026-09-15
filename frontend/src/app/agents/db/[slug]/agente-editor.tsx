@@ -233,6 +233,8 @@ export function AgenteEditor({
       patch.tipo_memoria = getStr("tipo_memoria") ?? undefined;
       patch.janela_memoria = getNum("janela_memoria");
       patch.timeout_minutos = getNum("timeout_minutos");
+      // Retenção (mig 185): dias; 0 = ilimitado; vazio = herda a empresa.
+      patch.retencao_dias = getNum("retencao_dias");
       patch.acao_limite_menu_id = getNum("acao_limite_menu_id");
     }
     if (tab === "prompt") {
@@ -926,6 +928,26 @@ function TabModelo({
         defaultValue={a.timeout_minutos?.toString() ?? null}
         type="number"
         placeholder="ex: 30 — vazio = sem timeout"
+      />
+      <Field
+        label="Retenção de dados (dias)"
+        name="retencao_dias"
+        ajuda={
+          <>
+            <p>Por quanto tempo guardar as conversas deste agente antes de apagá-las (junto com a mídia), mantendo o registro do atendimento.</p>
+            <p><b>Vazio = herda a empresa.</b> Um agente só pode manter por <b>mais</b> tempo que a empresa, nunca menos. <b>0 = ilimitado.</b></p>
+          </>
+        }
+        defaultValue={a.retencao_dias?.toString() ?? ""}
+        options={[
+          { v: "", l: "Herda a empresa (padrão)" },
+          { v: "0", l: "Ilimitado (não apagar)" },
+          { v: "30", l: "30 dias" },
+          { v: "60", l: "60 dias" },
+          { v: "90", l: "90 dias" },
+          { v: "180", l: "180 dias" },
+          { v: "365", l: "365 dias" },
+        ]}
       />
       <FieldSelect
         label="Limite custo → menu"
