@@ -41,6 +41,7 @@ from whatsapp_langchain.shared.conexao import (
     set_qr_code,
     update_waba_fields,
     upsert_conexao,
+    validar_agente_da_empresa_para_ia,
 )
 from whatsapp_langchain.shared.conexao_quota import quota_status
 from whatsapp_langchain.shared.config import settings
@@ -152,6 +153,24 @@ async def patch_conexao_endpoint(
     existing = await get_conexao_by_id(pool, conexao_id)
     if existing is None or existing.empresa_id != empresa_id:
         raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    # Modo IA só salva com um agente da empresa cadastrado — sem isso o worker
+    # cairia no template de exemplo do catálogo (incidente 2026-08-19). O modo
+    # e o agente efetivos são os do corpo se vierem, senão os já gravados.
+    tipo_efetivo = (
+        body.tipo_atendimento
+        if body.tipo_atendimento is not None
+        else existing.tipo_atendimento
+    )
+    agente_efetivo = (
+        body.default_agent_id
+        if body.default_agent_id is not None
+        else existing.default_agent_id
+    )
+    erro_agente = await validar_agente_da_empresa_para_ia(
+        pool, empresa_id, tipo_efetivo, agente_efetivo
+    )
+    if erro_agente:
+        raise HTTPException(status_code=422, detail=erro_agente)
     updated = await patch_conexao(
         pool,
         conexao_id,

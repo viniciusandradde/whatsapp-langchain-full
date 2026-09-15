@@ -46,6 +46,12 @@ LIMITE_BACKUP_H = 26
 OPENROUTER_CRITICO_USD = 1.00
 OPENROUTER_ATENCAO_PCT = 20
 
+#: Tamanho das tabelas que incham silenciosamente (checkpoints do LangGraph,
+#: message_queue). O dump de produção dobrou em 11 dias sem ninguém ver até
+#: alguém abrir o pg_stat (plano 2026-09-15).
+TABELA_ATENCAO_MB = 500
+TABELA_CRITICO_MB = 2000
+
 #: Sunset das versões da Graph API (Meta garante 2 anos por versão). Datas
 #: públicas e fixas, conferidas na documentação oficial em 2026-08-21.
 #: Uma versão fora do ar derruba TODO o WhatsApp oficial de uma vez, e ninguém
@@ -264,6 +270,52 @@ def checar_saldo_openrouter(saldo_usd, teto_usd=None, origem=None):
     return None
 
 
+def checar_tamanho_tabela(tamanho_mb, tabela="checkpoints"):
+    """Uma tabela cresceu a ponto de ameaçar o dump/o disco?
+
+    Os `checkpoints` do LangGraph chegaram a 65% do banco em produção porque
+    a mídia inline (base64) entrava no `configurable` e o `AsyncPostgresSaver`
+    copia isso pro `metadata` a cada passo do agente (plano 2026-09-15). Era
+    invisível: o dump só ia dobrando. `message_queue` tem a mesma raiz na
+    coluna `media_url`. A Fase 1 (PR #123) estanca a fonte; esta checagem é o
+    alarme pra ninguém mais descobrir tarde.
+
+    `None` quando não veio medida — coleta parcial não é "está tudo bem".
+    """
+    if tamanho_mb is None:
+        return None
+    if tamanho_mb >= TABELA_CRITICO_MB:
+        sev = CRITICO
+    elif tamanho_mb >= TABELA_ATENCAO_MB:
+        sev = ATENCAO
+    else:
+        return None
+    if tabela == "checkpoints":
+        acao = (
+            "Conferir se a poda de retenção está rodando "
+            "(`checkpoint_retencao_ok` no log do worker) e se a Fase 1 "
+            "(configurable sem base64) já está em produção. Limpeza única + "
+            "VACUUM em `.planning/reports/20260915-checkpoints-langgraph-plano.md` "
+            "(Fase 3), nunca VACUUM FULL em horário comercial."
+        )
+    else:
+        acao = (
+            "Mesma raiz dos checkpoints (base64 em coluna de mídia). Avaliar "
+            "retenção/limpeza de `{0}` — decisão própria, fora do plano dos "
+            "checkpoints."
+        ).format(tabela)
+    return Achado(
+        chave="tamanho_" + tabela,
+        severidade=sev,
+        titulo="Tabela {0} com {1} MB".format(tabela, int(tamanho_mb)),
+        evidencia=(
+            "pg_total_relation_size({0}) = {1} MB "
+            "(ATENÇÃO a partir de {2} MB, CRÍTICO a partir de {3} MB)."
+        ).format(tabela, int(tamanho_mb), TABELA_ATENCAO_MB, TABELA_CRITICO_MB),
+        acao=acao,
+    )
+
+
 def checar_graph_api_version(versao, hoje):
     """A versão da Graph API do WhatsApp oficial ainda está no ar?
 
@@ -409,6 +461,8 @@ def rodar_checagens(dados):
             dados.get("openrouter_teto"),
             dados.get("openrouter_origem"),
         ),
+        checar_tamanho_tabela(dados.get("checkpoints_mb"), "checkpoints"),
+        checar_tamanho_tabela(dados.get("message_queue_mb"), "message_queue"),
         checar_graph_api_version(dados.get("graph_api_version"), dados.get("hoje")),
         checar_migrations(
             dados.get("migrations_arquivos") or [],

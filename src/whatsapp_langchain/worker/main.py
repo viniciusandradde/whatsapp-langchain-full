@@ -127,6 +127,11 @@ async def main() -> None:
 
     push_task = asyncio.create_task(push_loop(pool))
 
+    # Fase 2 dos checkpoints (plano 2026-09-15): poda o que o checkpointer
+    # acumula. Precisa do `checkpointer` (pool do LangGraph + adelete_thread)
+    # e do `pool` da app (mapeamento thread→atendimento).
+    retencao_task = asyncio.create_task(_checkpoint_retencao_loop(pool, checkpointer))
+
     # Sprint A.2.5 — importa context manager pra RLS
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
@@ -209,6 +214,7 @@ async def main() -> None:
         relatorio_task.cancel()
         openrouter_task.cancel()
         push_task.cancel()
+        retencao_task.cancel()
         for t in (
             sync_task,
             idle_task,
@@ -217,6 +223,7 @@ async def main() -> None:
             relatorio_task,
             openrouter_task,
             push_task,
+            retencao_task,
         ):
             try:
                 await t
@@ -231,6 +238,10 @@ async def main() -> None:
 
 # S5: cron interno do worker — sync Google → DB a cada N minutos
 CALENDAR_SYNC_INTERVAL_SECONDS = 300  # 5 min
+
+# Fase 2 dos checkpoints: poda de retenção a cada 6h (idempotente; a trava
+# de sessão no módulo garante que só um worker roda por ciclo).
+CHECKPOINT_RETENCAO_INTERVAL_SECONDS = 6 * 60 * 60
 
 
 async def _calendar_sync_loop(pool) -> None:
@@ -399,6 +410,27 @@ async def _relatorio_uso_loop(pool) -> None:
 # (janelas do OpenRouter são de 30m — colher mais rápido não traz dado novo)
 # com volume de chamadas (~25 modelos/tick, bem abaixo dos rate limits).
 OPENROUTER_SYNC_INTERVAL_SECONDS = 600
+
+
+async def _checkpoint_retencao_loop(pool, checkpointer) -> None:
+    """Poda os checkpoints do LangGraph a cada 6h (Fase 2 do plano).
+
+    Molde do `_cleanup_zumbis_loop`: delay inicial, `try` que nunca mata o
+    loop, intervalo fixo. A trava de sessão em `rodar_retencao` cuida dos
+    dois workers de produção — não precisa de claim 1x/dia porque a poda é
+    idempotente (ao contrário do resumo diário).
+    """
+    from whatsapp_langchain.shared.checkpoint_retencao import rodar_retencao
+
+    # Espera o boot estabilizar (migrations/bootstrap do schema LangGraph).
+    await asyncio.sleep(300)
+
+    while True:
+        try:
+            await rodar_retencao(checkpointer, pool, settings.checkpoint_retencao_dias)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("checkpoint_retencao_loop_error", error=str(e))
+        await asyncio.sleep(CHECKPOINT_RETENCAO_INTERVAL_SECONDS)
 
 
 async def _openrouter_sync_loop(pool) -> None:
