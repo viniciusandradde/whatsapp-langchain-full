@@ -342,6 +342,44 @@ async def upsert_conexao(
     return result
 
 
+#: Modos de atendimento que invocam o agente e, portanto, exigem um agente da
+#: empresa cadastrado (linha em `agente_ia`). `manual` não invoca ninguém.
+MODOS_QUE_EXIGEM_AGENTE = ("ia", "hibrido")
+
+
+async def validar_agente_da_empresa_para_ia(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    tipo_atendimento: str | None,
+    default_agent_id: str | None,
+) -> str | None:
+    """Mensagem de erro (pt-BR) se o modo exige agente e não há um cadastrado
+    na empresa; `None` se está tudo certo.
+
+    Ligar `tipo_atendimento='ia'` numa conexão cujo `default_agent_id` não tem
+    linha em `agente_ia` da empresa fazia o worker cair no **template de
+    exemplo do catálogo** (`vsa_tech`, prompt genérico da VSA Tech) — o dono
+    ligou a IA "sem agente cadastrado" e o cliente recebeu resposta mesmo
+    assim (incidente 2026-08-19). O critério aqui é exatamente o que decide o
+    fallback no runtime: se `resolve_agente_runtime` devolve `None`, o worker
+    usaria o legacy — então o save é bloqueado. Ver
+    `worker/processor.py` (rede de segurança equivalente no runtime).
+    """
+    if tipo_atendimento not in MODOS_QUE_EXIGEM_AGENTE:
+        return None
+    # Import tardio evita ciclo (agente.py depende de conexao.py).
+    from whatsapp_langchain.shared.agente import resolve_agente_runtime
+
+    runtime = await resolve_agente_runtime(pool, empresa_id, default_agent_id or "")
+    if runtime is not None:
+        return None
+    return (
+        "Cadastre e ative um agente da empresa antes de ligar o modo "
+        "automático (IA) nesta conexão. O agente de exemplo do catálogo não "
+        "responde aos seus clientes."
+    )
+
+
 async def patch_conexao(
     pool: AsyncConnectionPool,
     conexao_id: int,
