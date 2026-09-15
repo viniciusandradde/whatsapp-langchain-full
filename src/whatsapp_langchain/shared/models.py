@@ -57,6 +57,10 @@ class MessageQueue(BaseModel):
     conexao_provider: str | None = None
     media_url: str | None = None
     media_type: str | None = None
+    # Referência ao objeto no storage (mig 184). Preenchido quando a mídia foi
+    # pro bucket; nesse caso media_url fica NULL. Mutuamente exclusivo com o
+    # base64 em media_url (fluxo antigo, storage desligado).
+    media_arquivo_uuid: str | None = None
     # Nome do arquivo informado pelo provedor (mig 164). None em row antiga ou
     # quando o provedor não manda nome — aí a extensão é inferida do mime.
     media_filename: str | None = None
