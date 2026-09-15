@@ -8,10 +8,13 @@ pré-processamento automático do worker:
 - extract_document() — texto cru de PDF/DOCX
 - summarize_document(focus?) — resumo executivo
 
-A `media_url` real do anexo do turno é injetada via `RunnableConfig`
-(LangGraph runtime) — agente NÃO recebe URL como parâmetro (evita
-alucinação de URL inventada). Worker passa em
-`invoke_config["configurable"]["media_url"]` quando há mídia.
+A mídia real do anexo do turno vem do `RunnableConfig` (LangGraph runtime)
+— o agente NÃO recebe URL como parâmetro (evita alucinação de URL inventada).
+O worker passa `configurable["media_url"]` só quando ela é http(s); mídia
+inline (`data:...;base64`) fica em `message_queue.media_url` e a tool a lê
+pela referência `configurable["message_queue_id"]`. Motivo: o
+`AsyncPostgresSaver` grava o configurable inteiro em `checkpoints.metadata`
+a cada checkpoint — base64 ali encheu o banco (ver CLAUDE.md).
 
 Use as tools quando descrição/transcrição/extração inicial perdeu detalhe
 específico ou documento é muito longo. Se o input já contém
@@ -27,6 +30,7 @@ import structlog
 from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import InjectedToolArg, tool
 
+from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.file_extractor import (
     extract_text,
     filename_for_media_type,
@@ -61,15 +65,58 @@ def _extract_runtime_config(runtime: Any) -> dict[str, Any]:
     return {}
 
 
-def _get_media_url(runtime: Any) -> str | None:
-    """Retorna media_url do turno atual via RunnableConfig.
+async def _media_url_da_fila(
+    message_queue_id: int, empresa_id: int | None
+) -> str | None:
+    """Lê `message_queue.media_url` do row do turno — a referência vira conteúdo.
 
-    Worker injeta em invoke_config["configurable"]["media_url"] quando
-    message.media_url está presente. None = não há mídia anexada.
+    Roda dentro do `empresa_scope` do worker, então o `_RlsAwarePool` já
+    aplica o RLS; o filtro por `empresa_id` é defesa em profundidade.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        if empresa_id is not None:
+            cur = await conn.execute(
+                "SELECT media_url FROM message_queue WHERE id = %s AND empresa_id = %s",
+                (message_queue_id, empresa_id),
+            )
+        else:
+            cur = await conn.execute(
+                "SELECT media_url FROM message_queue WHERE id = %s",
+                (message_queue_id,),
+            )
+        row = await cur.fetchone()
+    media_url = row[0] if row else None
+    return media_url if isinstance(media_url, str) and media_url else None
+
+
+async def _get_media_url(runtime: Any) -> str | None:
+    """Retorna a media_url do turno atual. None = não há mídia anexada.
+
+    1. `configurable["media_url"]` — só quando o worker pôde passar uma URL
+       referenciável (http/https).
+    2. `configurable["message_queue_id"]` — referência ao row da fila; a URL
+       (inclusive a inline em base64) é lida na hora, sem passar pelo
+       checkpoint.
+    Falha ao consultar a fila vira None: a tool responde "sem anexo" em vez
+    de derrubar o turno.
     """
     cfg = _extract_runtime_config(runtime)
     media_url = cfg.get("media_url")
-    return media_url if isinstance(media_url, str) and media_url else None
+    if isinstance(media_url, str) and media_url:
+        return media_url
+    message_queue_id = cfg.get("message_queue_id")
+    if not isinstance(message_queue_id, int):
+        return None
+    try:
+        return await _media_url_da_fila(message_queue_id, cfg.get("empresa_id"))
+    except Exception as exc:
+        logger.warning(
+            "media_url_da_fila_falhou",
+            message_queue_id=message_queue_id,
+            error=str(exc),
+        )
+        return None
 
 
 @tool
@@ -92,7 +139,7 @@ async def analyze_image(
     retorna mensagem de erro — nesse caso responda ao cliente que precisa
     da imagem reenviada.
     """
-    media_url = _get_media_url(runtime)
+    media_url = await _get_media_url(runtime)
     if not media_url:
         return "[ERRO: Nenhuma imagem anexada nesse turno do cliente.]"
     try:
@@ -113,7 +160,7 @@ async def transcribe_audio(
     trecho ininteligível ou termo técnico errado, ou quando precisa do
     conteúdo cru pra citar literalmente.
     """
-    media_url = _get_media_url(runtime)
+    media_url = await _get_media_url(runtime)
     if not media_url:
         return "[ERRO: Nenhum áudio anexado nesse turno.]"
     try:
@@ -147,7 +194,7 @@ async def extract_document(
     Tenta extração nativa (`pypdf`/`python-docx`); cai pra OCR via Vision
     OpenRouter se documento for escaneado. Limite ~30k chars (truncado).
     """
-    media_url = _get_media_url(runtime)
+    media_url = await _get_media_url(runtime)
     if not media_url:
         return "[ERRO: Nenhum documento anexado nesse turno.]"
     try:
@@ -182,7 +229,7 @@ async def summarize_document(
         focus: tópico que deve receber atenção especial (opcional).
                Ex: "cláusula de cancelamento", "valor total", "data de vencimento".
     """
-    media_url = _get_media_url(runtime)
+    media_url = await _get_media_url(runtime)
     if not media_url:
         return "[ERRO: Nenhum documento anexado nesse turno.]"
 

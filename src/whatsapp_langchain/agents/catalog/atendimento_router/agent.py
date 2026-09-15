@@ -18,7 +18,7 @@ Padrão de invocação (worker idêntico aos outros templates):
     graph = await load_graph(...)
     result = await graph.ainvoke(
         {"messages": [HumanMessage(...)], "media_url": ..., "media_type": ...},
-        config={"configurable": {"thread_id": ..., "user_id": ..., "media_url": ...}},
+        config={"configurable": {"thread_id": ..., "user_id": ..., "message_queue_id": ...}},
     )
 """
 
