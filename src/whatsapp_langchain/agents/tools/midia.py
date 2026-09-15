@@ -77,17 +77,37 @@ async def _media_url_da_fila(
     async with pool.connection() as conn:
         if empresa_id is not None:
             cur = await conn.execute(
-                "SELECT media_url FROM message_queue WHERE id = %s AND empresa_id = %s",
+                "SELECT media_url, media_arquivo_uuid::text, media_type "
+                "FROM message_queue WHERE id = %s AND empresa_id = %s",
                 (message_queue_id, empresa_id),
             )
         else:
             cur = await conn.execute(
-                "SELECT media_url FROM message_queue WHERE id = %s",
+                "SELECT media_url, media_arquivo_uuid::text, media_type "
+                "FROM message_queue WHERE id = %s",
                 (message_queue_id,),
             )
         row = await cur.fetchone()
-    media_url = row[0] if row else None
-    return media_url if isinstance(media_url, str) and media_url else None
+    if not row:
+        return None
+    media_url, arquivo_uuid, media_type = row[0], row[1], row[2]
+    if isinstance(media_url, str) and media_url:
+        return media_url
+    # Object storage (mig 184): mídia no bucket. Materializa num data: URL —
+    # o modelo (visão/transcrição) precisa dos bytes inline; URL interna do
+    # MinIO não é alcançável por ele nem passa pela guarda anti-SSRF.
+    if arquivo_uuid:
+        import base64 as _b64
+
+        from whatsapp_langchain.shared import arquivo as _arquivo_lib
+        from whatsapp_langchain.shared import storage as _storage
+
+        arq = await _arquivo_lib.get_arquivo(pool, arquivo_uuid)
+        if arq is not None:
+            dados = await _storage.ler_bytes(arq)
+            mime = arq.mime_type or media_type or "application/octet-stream"
+            return f"data:{mime};base64,{_b64.b64encode(dados).decode()}"
+    return None
 
 
 async def _get_media_url(runtime: Any) -> str | None:

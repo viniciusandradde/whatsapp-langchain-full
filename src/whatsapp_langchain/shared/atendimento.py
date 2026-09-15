@@ -1052,11 +1052,14 @@ async def get_mensagem_midia(
     """
     coluna = "response_media_url" if lado == "out" else "media_url"
     tipo_coluna = "response_media_type" if lado == "out" else "media_type"
+    # media_arquivo_uuid (mig 184) só existe pro lado inbound; pro out é sempre
+    # NULL (a mídia do operador ainda vai em base64 nesta fase).
+    col_ref = "media_arquivo_uuid" if lado != "out" else "NULL::uuid"
 
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT {coluna}, {tipo_coluna}
+            SELECT {coluna}, {tipo_coluna}, {col_ref}::text
               FROM message_queue
              WHERE id = %s AND atendimento_id = %s AND empresa_id = %s
             """,
@@ -1064,11 +1067,37 @@ async def get_mensagem_midia(
         )
         row = await cur.fetchone()
 
-    if row is None or not row[0]:
+    if row is None:
+        return None
+
+    mime: str = row[1] or "application/octet-stream"
+
+    # Object storage (mig 183/184): a mídia vive no bucket e a mensagem só
+    # referencia. Baixa os bytes pelo storage e devolve como as demais — o
+    # endpoint continua transmitindo (o painel não muda). Sem base64 no banco.
+    arquivo_uuid = row[2]
+    if arquivo_uuid:
+        from whatsapp_langchain.shared import arquivo as arquivo_lib
+        from whatsapp_langchain.shared import storage
+
+        arq = await arquivo_lib.get_arquivo(pool, arquivo_uuid)
+        if arq is None:
+            return None
+        try:
+            return await storage.ler_bytes(arq), (arq.mime_type or mime)
+        except Exception:  # noqa: BLE001 — objeto sumido/indisponível → rótulo
+            logger.warning(
+                "midia_storage_indisponivel",
+                mensagem_id=mensagem_id,
+                atendimento_id=atendimento_id,
+                arquivo_uuid=arquivo_uuid,
+            )
+            return None
+
+    if not row[0]:
         return None
 
     conteudo: str = row[0]
-    mime: str = row[1] or "application/octet-stream"
 
     # O worker embute o que baixa do WhatsApp como `data:<mime>;base64,...`.
     # Conteúdo em outro formato (URL externa de mídia antiga, por exemplo) não é
@@ -1313,7 +1342,7 @@ async def set_coleta_resumo(
 #
 # `[handoff humano` fica de fora de propósito: ali um atendente assumiu a
 # conversa, e reprocessar faria a IA responder por cima dele.
-MARKERS_REPROCESSAVEIS = ("[modo manual", "[whitelist")
+MARKERS_REPROCESSAVEIS = ("[modo manual", "[whitelist", "[IA sem agente cadastrado")
 
 # TODOS os prefixos internos que o worker grava em `response` no lugar de uma
 # resposta real (worker/processor.py). Nada disso foi enviado ao cliente —
@@ -1325,6 +1354,7 @@ MARKERS_INTERNOS = (
     "[whitelist",
     "[fila do departamento",
     "[resposta superada",
+    "[IA sem agente cadastrado",
 )
 
 

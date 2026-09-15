@@ -35,6 +35,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Object storage S3-compatível (mig 183/184). Interno (sem portas publicadas),
+  # só a rede do compose alcança. Imagem do quay.io — o `minio/minio` do Docker
+  # Hub dá "repository does not exist" mesmo com o Hub acessível.
+  #
+  # LIGAR O STORAGE = setar no Dokploy: S3_ACCESS_KEY, S3_SECRET_KEY e S3_BUCKET.
+  # As duas primeiras viram TAMBÉM as credenciais root do MinIO (fonte única).
+  # Sem S3_BUCKET, o app não usa storage (fluxo base64 antigo) — o MinIO até
+  # sobe, mas fica ocioso. Sem `depends_on` no api/worker de propósito: MinIO
+  # com problema não pode derrubar o app (o webhook cai pro base64).
+  #
+  # ATENÇÃO backup: `minio_data` vive neste VPS — mesmo risco de desastre do
+  # banco. Entra no docs/MIGRACAO_SERVIDOR.md / rotina de backup.
+  minio:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    pull_policy: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-chatnexus}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-troque-por-uma-senha-forte-no-dokploy}
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
   api:
     image: registry.vsanexus.com/chatnexus/api:${IMAGE_TAG:-latest}
     pull_policy: always
@@ -47,6 +70,13 @@ services:
       # vazio (sem isso o app cai no superuser e o RLS fica inerte).
       DATABASE_URL_APP: ${DATABASE_URL_APP:-}
       LOG_JSON: "true"
+      # Object storage (mig 183/184) — vazio S3_BUCKET = storage desligado.
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-chatnexus}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-troque-por-uma-senha-forte-no-dokploy}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-true}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -74,6 +104,13 @@ services:
       # chat_nexus_app e envolve cada mensagem em empresa_scope().
       DATABASE_URL_APP: ${DATABASE_URL_APP:-}
       LOG_JSON: "true"
+      # Object storage (mig 183/184) — mesmas envs do api.
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-chatnexus}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-troque-por-uma-senha-forte-no-dokploy}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-true}
     depends_on:
       - db
     # `unless-stopped` é load-bearing: o worker se mata de propósito quando
@@ -174,3 +211,4 @@ volumes:
   avatars_data:  # Sprint U — uploads de avatar (persiste em rebuilds)
   logos_data:  # White-label — logos por empresa (persiste em rebuilds)
   disparador_media:  # Disparador — fotos de campanha (persiste em rebuilds)
+  minio_data:  # Object storage — mídia do cliente (mig 183/184); ENTRA NO BACKUP

@@ -412,6 +412,15 @@ RESPOSTA_SUPERADA_MARKER = "[resposta superada — cliente escreveu de novo]"
 # `[whitelist`, onde a IA nunca chegou a rodar.
 RESPOSTA_VAZIA_MARKER = "[resposta vazia — agente não gerou texto]"
 
+# Marcador quando a conexão está em modo IA/híbrido mas NÃO há agente da
+# empresa cadastrado pro slug (`resolve_agente_runtime` devolveu None). Sem
+# isto o worker cairia no template de exemplo do catálogo (vsa_tech) e
+# responderia com um prompt genérico da VSA Tech — o susto do dono em
+# 2026-08-19 ("não tenho agente cadastrado, por que está respondendo?"). Trata
+# igual ao modo manual: nada é enviado, a mensagem fica na fila humana. Entra
+# em MARKERS_REPROCESSAVEIS: cadastrar o agente e reenfileirar volta a IA.
+SEM_AGENTE_MARKER = "[IA sem agente cadastrado — resposta automática desligada]"
+
 # Guarda do gatilho de voz (mig 176): marcador de sistema nunca vira áudio.
 # No caminho normal a resposta que chega ao envio não é marcador (os caminhos
 # de marker retornam antes), mas a guarda custa nada e protege refatoração.
@@ -423,6 +432,7 @@ _MARKERS_SISTEMA = frozenset(
         FILA_DEPARTAMENTO_MARKER,
         RESPOSTA_SUPERADA_MARKER,
         RESPOSTA_VAZIA_MARKER,
+        SEM_AGENTE_MARKER,
     }
 )
 
@@ -2578,6 +2588,69 @@ async def process_message(
         agente_runtime = await resolve_agente_runtime(
             pool, message.empresa_id, message.agent_id
         )
+
+        # Rede de segurança do modo IA (TODO 2026-08-20): a conexão está em
+        # ia/híbrido (o gate de modo manual já retornou acima), mas não há
+        # agente da empresa pro slug — `resolve_agente_runtime` devolveu None,
+        # o que faria o turno cair no template de exemplo do catálogo. Em vez
+        # de responder com o prompt genérico, trata como modo manual: registra
+        # e devolve pra fila humana. O gate da API (`validar_agente_da_empresa_
+        # para_ia`) impede novos saves nesse estado; isto cobre rows já na fila
+        # e o caminho de provisionamento que não passa pelo PATCH.
+        #
+        # Vem ANTES da materialização de mídia: sem agente o turno retorna, então
+        # não vale gastar download do bucket (o painel lê a mídia pela referência).
+        if agente_runtime is None:
+            await mark_done(
+                pool,
+                message.id,
+                SEM_AGENTE_MARKER,
+                normalized_input=None,
+            )
+            logger.warning(
+                "worker_skipped_agent_sem_agente_cadastrado",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+                conexao_id=conexao.id,
+                slug=message.agent_id,
+                atendimento_id=message.atendimento_id,
+            )
+            return
+
+        # Object storage (mig 183/184): mídia guardada no bucket chega como
+        # referência (`media_arquivo_uuid`), com media_url NULL. Materializa os
+        # bytes num `data:` URL (transitório, em memória) e o coloca em
+        # `message.media_url` — daí todo o downstream funciona sem mudança.
+        # Por que data: e não URL assinada: o `download_media` tem guarda
+        # anti-SSRF que barra host interno (`minio:9000`), e o OpenRouter
+        # (visão/transcrição) não alcança URL interna — o modelo precisa dos
+        # bytes inline. O base64 é transitório: `_montar_configurable` o remove
+        # do checkpoint (Fase 1) e a coluna media_url no banco continua NULL.
+        if message.media_arquivo_uuid and not message.media_url:
+            import base64 as _b64
+
+            from whatsapp_langchain.shared import arquivo as _arquivo_lib
+            from whatsapp_langchain.shared import storage as _storage
+
+            try:
+                _arq = await _arquivo_lib.get_arquivo(pool, message.media_arquivo_uuid)
+                if _arq is not None:
+                    _bytes = await _storage.ler_bytes(_arq)
+                    _mime = (
+                        _arq.mime_type
+                        or message.media_type
+                        or "application/octet-stream"
+                    )
+                    message.media_url = (
+                        f"data:{_mime};base64,{_b64.b64encode(_bytes).decode()}"
+                    )
+            except Exception as _exc:  # noqa: BLE001 — sem mídia, segue como texto
+                logger.warning(
+                    "worker_midia_storage_resolver_falhou",
+                    message_id=message.id,
+                    arquivo_uuid=message.media_arquivo_uuid,
+                    error=str(_exc)[:200],
+                )
 
         # 1. Pré-processar entrada (mídia -> texto) antes do agente
         pre = await preprocess_incoming_message(

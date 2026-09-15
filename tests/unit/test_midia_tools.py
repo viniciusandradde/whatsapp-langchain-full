@@ -253,7 +253,7 @@ class TestGetMediaUrl:
             gp.assert_not_called()
 
     async def test_sem_url_resolve_pela_referencia_na_fila(self):
-        pool, conn = _pool_fake(("data:audio/ogg;base64,AAAA",))
+        pool, conn = _pool_fake(("data:audio/ogg;base64,AAAA", None, "audio/ogg"))
         with patch(
             "whatsapp_langchain.agents.tools.midia.get_pool",
             new=AsyncMock(return_value=pool),
@@ -272,7 +272,7 @@ class TestGetMediaUrl:
             gp.assert_not_called()
 
     async def test_row_sem_midia_e_none(self):
-        pool, _ = _pool_fake((None,))
+        pool, _ = _pool_fake((None, None, None))
         with patch(
             "whatsapp_langchain.agents.tools.midia.get_pool",
             new=AsyncMock(return_value=pool),
@@ -288,7 +288,7 @@ class TestGetMediaUrl:
 
     async def test_tool_transcreve_a_midia_lida_da_fila(self):
         """Fim a fim: config só com a referência → a tool chega no base64."""
-        pool, _ = _pool_fake(("data:audio/ogg;base64,QUJD",))
+        pool, _ = _pool_fake(("data:audio/ogg;base64,QUJD", None, "audio/ogg"))
         with (
             patch(
                 "whatsapp_langchain.agents.tools.midia.get_pool",
@@ -305,6 +305,34 @@ class TestGetMediaUrl:
             )
         assert r == "texto do áudio"
         m.assert_awaited_once_with("data:audio/ogg;base64,QUJD")
+
+    async def test_referencia_de_storage_vira_data_url(self):
+        """mig 184: media_url NULL + media_arquivo_uuid → resolve pelo storage,
+        materializando os bytes num data: URL (o modelo precisa inline)."""
+        from whatsapp_langchain.shared.models import Arquivo
+
+        pool, _ = _pool_fake((None, "uuid-1", "image/png"))
+        arq = Arquivo(uuid="uuid-1", empresa_id=1, bucket="b", object_key="k.png")
+        with (
+            patch(
+                "whatsapp_langchain.agents.tools.midia.get_pool",
+                new=AsyncMock(return_value=pool),
+            ),
+            patch(
+                "whatsapp_langchain.shared.arquivo.get_arquivo",
+                new=AsyncMock(return_value=arq),
+            ),
+            patch(
+                "whatsapp_langchain.shared.storage.ler_bytes",
+                new=AsyncMock(return_value=b"PNGBYTES"),
+            ),
+        ):
+            r = await _get_media_url(
+                _runtime(media_url=None, message_queue_id=42, empresa_id=1)
+            )
+        import base64 as _b64
+
+        assert r == "data:image/png;base64," + _b64.b64encode(b"PNGBYTES").decode()
 
 
 # Marca todos como asyncio (conftest já configura asyncio_mode=auto)
