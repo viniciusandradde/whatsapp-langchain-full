@@ -1,0 +1,178 @@
+# ZigChat — queries
+
+> Extraído por introspecção de `https://dev.zigchat.com.br/api/graphql` em 2026-09-16.
+> Referência de PRODUTO (paridade de features). A integração runtime está arquivada — ver decisão de 2026-09-16.
+
+**171** operações.
+
+- **Login**(login: LoginInput!) → `Usuario`
+- **admBuscarEmpresaPorId**(id: Int!) → `Empresa`
+- **admFiltrarEmpresas**(filter: EmpresaListInput!) → `EmpresaDataTable`
+- **admListarConexoesOcultas**(contexto: String!) → `[ConexaoOculta!]`
+- **admTotalUsuariosEmpresa**(empresa_id: [Int!]!) → `[TotalUsuarioEmpresa!]`
+- **adminFiltrarConexoes**(filter: ConexaoListInput!) → `ConexaoDataTable`
+- **adminFiltrarUsuarios**(filter: UsuarioListInput!) → `UsuarioDataTable`
+- **adminListarEmpresas**() → `[Empresa!]`
+- **adminListarUsuariosCriacaoStatus**(data_final: String!, data_inicial: String!) → `[Usuario!]`
+- **adminListarUsuariosPorEmpresa**(empresa_id: Int!) → `[Usuario!]`
+- **buscarAbaPorId**(id: Int!) → `Aba`
+- **buscarAgenteIAPorId**(id: Int!) → `AgenteIA`
+- **buscarAlertaPorUuid**(uuid: String!) → `Alerta`
+- **buscarArquivoPorId**(uuid: String!) → `Arquivo`
+- **buscarAtendimentoHistoricoPorId**(next: Int, id: Int!) → `Atendimento`
+- **buscarAtendimentoPorId**(id: Int!) → `Atendimento`
+- **buscarAtendimentoTransferenciaPorId**(id: Int!) → `AtendimentoTransferencia`
+- **buscarAvisoPorId**(id: Int!) → `Aviso`
+- **buscarBaseConhecimentoPorId**(id: Int!) → `BaseConhecimento`
+- **buscarCalendarioEventoPorId**(id: Int!) → `CalendarioEvento`
+- **buscarCampanhaPorId**(id: Int!) → `Campanha`
+- **buscarCanalExternoPorId**(id: Int!) → `CanalExterno`
+- **buscarCategoriaProdutoPorId**(id: Int!) → `CategoriaProduto`
+- **buscarCidade**(data: CidadeFilterInput!) → `[Cidade!]`
+- **buscarCidadePorIbge**(ibge: String!) → `Cidade`
+- **buscarCliente**(filtro: ClienteInput!) → `[Cliente!]`
+- **buscarClienteAnotacaoPorId**(id: Int!) → `ClienteAnotacao`
+- **buscarClienteMencaoPorId**(cliente_id: Int!) → `[ClienteMencao!]`
+- **buscarClientePorId**(id: Int!) → `Cliente`
+- **buscarClientePorNomeOuTel**(query: String!) → `[Cliente!]`
+- **buscarClientePorTelefoneFinal**(telefone: String!) → `[Cliente!]`
+- **buscarClientesPorId**(ids: [Int!]!) → `[Cliente!]`
+- **buscarConexaoPorId**(id: Int!) → `Conexao`
+- **buscarContadorPorNome**(nome: String!) → `Contador`
+- **buscarDepartamentoPorId**(id: Int!) → `Departamento`
+- **buscarEmpresaPorId**(id: Int!) → `Empresa`
+- **buscarFaturaPorUuid**(uuid: String!) → `Fatura`
+- **buscarFormPadraoAtendimentoPorNanoid**(nanoid: String!) → `FormPadraoAtendimento`
+- **buscarFormPadraoPorId**(id: Int!) → `FormPadrao`
+- **buscarFuncionarioPorId**(id: Int!) → `Funcionario`
+- **buscarGeralLogPorId**(nanoid: String!) → `GeralLog`
+- **buscarGrupoSistemaPorId**(id: Int!) → `GrupoSistema`
+- **buscarHookPorId**(id: Int!) → `Hook`
+- **buscarHookTaskPorId**(nanoid: String!) → `HookTask`
+- **buscarHookUrlPorId**(id: Int!) → `HookUrl`
+- **buscarItemPorId**(id: Int!) → `Item`
+- **buscarMcpServerPorId**(id: Int!) → `McpServer`
+- **buscarMenuPorId**(id: Int!) → `Menu`
+- **buscarModeloMensagemPorId**(id: Int!) → `ModeloMensagem`
+- **buscarPastaPorId**(uuid: String!) → `Pasta`
+- **buscarProdutoPorId**(id: Int!) → `Produto`
+- **buscarSistemaMensagemPorId**(id: Int!) → `SistemaMensagem`
+- **buscarTagPorId**(id: Int!) → `Tag`
+- **buscarTurnoPorId**(id: Int!) → `Turno`
+- **buscarUltimaMensagemCliente**(conexaoId: Int!, clienteId: Int!) → `ClienteConexaoUltimaMensagem`
+- **buscarUltimoTermo**() → `Termo`
+- **buscarUsuario**(filtro: UsuarioInput!) → `[Usuario!]`
+- **buscarVariavelAmbientePorId**(id: Int!) → `VariavelAmbiente`
+- **buscarWabaSaldoLimite**() → `WabaSaldoLimite`
+- **buscarWabaTelefones**(waba_account_id: String!, token: String!) → `String`
+- **buscarWabaTemplatePorId**(nanoid: String!) → `WabaTemplate`
+- **carregarMensagens**(data: BuscarMensagemInput!) → `[AtendimentoMensagem!]`
+- **contarAtendimentosAbertosUsuario**(usuario_id: Int!) → `AtendimentosAbertosUsuarioResult`
+- **criarEmpresaVerifyToken**() → `String`
+- **decryptFile**(id: String!, w_id: String!) → `DecryptJob`
+- **filtrarAba**(filter: AbaListInput!) → `AbaDataTable`
+- **filtrarAgenteIA**(filter: AgenteIAListInput!) → `AgenteIADataTable`
+- **filtrarAlertas**(filter: AlertaListInput!) → `AlertaDataTable`
+- **filtrarArquivo**(filter: ArquivoListInput!) → `ArquivoDataTable`
+- **filtrarAtendimentoHistorico**(filter: AtendimentoListInput!) → `AtendimentoDataTable`
+- **filtrarAtendimentoMensagem**(filter: AtendimentoMensagemListInput!) → `[AtendimentoMensagem!]`
+- **filtrarAtendimentoMenuHistorico**(filter: AtendimentoMenuHistoricoListInput!) → `AtendimentoMenuHistoricoDataTable`
+- **filtrarAtendimentoTransferencia**(filter: AtendimentoTransferenciaListInput!) → `AtendimentoTransferenciaDataTable`
+- **filtrarAtendimentosCount**(filter: AtendimentoLazyFilterInput!) → `AtendimentoLazyResponse`
+- **filtrarAtendimentosLazy**(filter: AtendimentoLazyFilterInput!) → `AtendimentoLazyResponse`
+- **filtrarAviso**(filter: AvisoListInput!) → `AvisoDataTable`
+- **filtrarBaseConhecimento**(filter: BaseConhecimentoListInput!) → `BaseConhecimentoDataTable`
+- **filtrarCalendarioEvento**(filter: CalendarioEventoListInput!) → `CalendarioEventoDataTable`
+- **filtrarCampanha**(filter: CampanhaListInput!) → `CampanhaDataTable`
+- **filtrarCampanhaCliente**(filter: CampanhaClienteListInput!) → `CampanhaClienteDataTable`
+- **filtrarCanalExterno**(filter: CanalExternoListInput!) → `CanalExternoDataTable`
+- **filtrarCategoriaProduto**(filter: CategoriaProdutoListInput!) → `CategoriaProdutoDataTable`
+- **filtrarCliente**(filter: ClienteListInput!) → `ClienteDataTable`
+- **filtrarClienteAnotacao**(filter: ClienteAnotacaoListInput!) → `ClienteAnotacaoDataTable`
+- **filtrarClientesCampanha**(filter: CampanhaListInput!) → `ClienteDataTable`
+- **filtrarConexao**(filter: ConexaoListInput!) → `ConexaoDataTable`
+- **filtrarDepartamento**(filter: DepartamentoListInput!) → `DepartamentoDataTable`
+- **filtrarEmpresa**(filter: EmpresaListInput!) → `EmpresaDataTable`
+- **filtrarFaturas**(filter: FaturaListInput!) → `FaturaDataTable`
+- **filtrarFormPadrao**(filter: FormPadraoListInput!) → `FormPadraoDataTable`
+- **filtrarFormPadraoAtendimento**(filter: FormPadraoAtendimentoListInput!) → `FormPadraoAtendimentoDataTable`
+- **filtrarFuncionario**(filter: FuncionarioListInput!) → `FuncionarioDataTable`
+- **filtrarGeralLog**(filter: GeralLogListInput!) → `GeralLogDataTable`
+- **filtrarGrupoSistema**(filter: GrupoSistemaListInput!) → `GrupoSistemaDataTable`
+- **filtrarHook**(filter: HookListInput!) → `HookDataTable`
+- **filtrarHookTask**(filter: HookTaskListInput!) → `HookTaskDataTable`
+- **filtrarHookUrl**(filter: HookUrlListInput!) → `HookUrlDataTable`
+- **filtrarItem**(filter: ItemListInput!) → `ItemDataTable`
+- **filtrarMcpServer**(filter: McpServerListInput!) → `McpServerDataTable`
+- **filtrarMenu**(filter: MenuListInput!) → `MenuDataTable`
+- **filtrarModeloMensagem**(filter: ModeloMensagemListInput!) → `ModeloMensagemDataTable`
+- **filtrarPasta**(filter: PastaListInput!) → `PastaDataTable`
+- **filtrarProduto**(filter: ProdutoListInput!) → `ProdutoDataTable`
+- **filtrarSistemaMensagem**(filter: SistemaMensagemListInput!) → `SistemaMensagemDataTable`
+- **filtrarTag**(filter: TagListInput!) → `TagDataTable`
+- **filtrarTurno**(filter: TurnoListInput!) → `TurnoDataTable`
+- **filtrarUsuario**(filter: UsuarioListInput!) → `UsuarioDataTable`
+- **filtrarVariavelAmbiente**(filter: VariavelAmbienteListInput!) → `VariavelAmbienteDataTable`
+- **filtrarWabaTemplate**(filter: WabaTemplateListInput!) → `WabaTemplateDataTable`
+- **getUserLogged**() → `Usuario`
+- **iaAtendimentoResumo**(atendimento_id: Int!) → `IAAtendimentoResumo!`
+- **iaDashboard**() → `IADashboard!`
+- **iaExecucaoDetalhe**(id: String!) → `IAExecucaoDetalhe`
+- **iaExecucoes**(filtro: IAExecucaoFiltro!) → `IAExecucaoLista!`
+- **insightMensagemWaba**(ano: Int!, mes: Int!) → `[WabaInsightMensagem!]!`
+- **limiteAtendentesValido**() → `Boolean`
+- **listarAba**() → `[Aba!]`
+- **listarAgentesIA**() → `[AgenteIA!]`
+- **listarAlertasPorSituacao**(situacao: String) → `[Alerta!]`
+- **listarAtendimentoTransferencia**(atendimento_id: Int!) → `[AtendimentoTransferencia!]`
+- **listarAvisosAtivos**() → `[Aviso!]`
+- **listarBasesConhecimento**() → `[BaseConhecimento!]`
+- **listarCampanhas**() → `[Campanha!]`
+- **listarCanalExterno**() → `[CanalExterno!]`
+- **listarCargos**() → `[Cargo!]`
+- **listarCategoriaProduto**() → `[CategoriaProduto!]`
+- **listarCategoriaProdutoPorCliente**(filter: ListarCategoriaProdutoFilterInput!) → `[CategoriaProduto!]`
+- **listarChatIds**() → `[TelegramChat!]`
+- **listarConexoes**() → `[Conexao!]`
+- **listarConexoesOcultasUsuario**(contexto: String!) → `[ConexaoOculta!]`
+- **listarConexoesVinculadas**() → `[Conexao!]`
+- **listarDepartamentos**() → `[Departamento!]`
+- **listarDepartamentosHistorico**() → `[Departamento!]`
+- **listarDepartamentosPorUsuarioId**(id: Int!) → `[Departamento!]`
+- **listarFaturaArquivos**(fatura_uuid: String!) → `[FaturaArquivo!]`
+- **listarFaturasEmpresa**(ano: Int!) → `[Fatura!]`
+- **listarFaturasVencidas**() → `[Fatura!]`
+- **listarFormPadrao**() → `[FormPadrao!]`
+- **listarFuncionarios**() → `[Funcionario!]`
+- **listarGruposPermissoes**() → `[GrupoSistema!]`
+- **listarHookUrls**() → `[HookUrl!]`
+- **listarHooks**() → `[Hook!]`
+- **listarHorarioFuncionamento**() → `[HorarioFuncionamento!]`
+- **listarLeitoresAviso**(aviso_id: Int!) → `[AvisoUsuario!]!`
+- **listarMcpServers**() → `[McpServer!]`
+- **listarMenuItemArquivo**(filtro: MenuItemArquivoListarInput!) → `[MenuItemArquivo!]`
+- **listarMenus**() → `[Menu!]`
+- **listarMenusAtivos**() → `[Menu!]`
+- **listarModeloMensagem**() → `[ModeloMensagem!]`
+- **listarModelosIA**() → `[ModeloIA!]`
+- **listarPastas**() → `[Pasta!]`
+- **listarPastasEmpresa**() → `[Pasta!]`
+- **listarPermissoes**() → `[Permissao!]!`
+- **listarProdutos**(tipo: Int) → `[Produto!]`
+- **listarTags**() → `[Tag!]`
+- **listarTransacoes**() → `[Transacao!]`
+- **listarTransacoesEmpresa**() → `[Transacao!]`
+- **listarTurno**() → `[Turno!]`
+- **listarTurnoAtivo**() → `[Turno!]`
+- **listarUsuarios**() → `[Usuario!]`
+- **listarVariaveisAmbiente**() → `[VariavelAmbiente!]`
+- **listarVinculoUsuarioCliente**(cliente_id: Int!) → `[UsuarioCliente!]`
+- **listarWabaSaldoPorMesAno**(ano: Int!, mes: Int) → `[WabaSaldo!]`
+- **listarWabaServicoDiario**(ano: Int!, mes: Int!) → `[WabaContadorMsgDiario!]!`
+- **listarWabaServicoMensal**(ano: Int!) → `[WabaContadorMsgMensal!]!`
+- **listarWabaTemplatesPorAccountId**(waba_account_id: String!) → `[WabaTemplate!]`
+- **listarWabaTemplatesPorConexaoId**(conexao_id: Int!) → `[WabaTemplate!]`
+- **metricaConexao**(filtro: MetricaConexaoFiltro!) → `[MetricaConexaoPonto!]!`
+- **pushDeviceUsuarioPorUuid**(push_device_uuid: String!) → `PushDeviceUsuario`
+- **regenerarKeywordsArquivo**(uuid: String!) → `String`
+- **usuarioPorId**(id: Int!) → `Usuario`

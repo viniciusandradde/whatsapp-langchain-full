@@ -1,0 +1,90 @@
+# ZigChat — mutations
+
+> Extraído por introspecção de `https://dev.zigchat.com.br/api/graphql` em 2026-09-16.
+> Referência de PRODUTO (paridade de features). A integração runtime está arquivada — ver decisão de 2026-09-16.
+
+**83** operações.
+
+- **admCriarAlterarEmpresa**(data: EmpresaInput!) → `Empresa`
+- **admLimparFila**(conexao_id: Int) → `Boolean`
+- **admSessionUpdate**(data: SessionUpdateInput!) → `String`
+- **alteraStatusUsuario**(data: UsuarioInput!) → `Usuario`
+- **alterarSenha**(data: AlterarSenhaInput!) → `Usuario`
+- **alterarSituacaoAlertas**(situacao: String!, uuids: [String!]!) → `Float!`
+- **alterarUsuarioDisponivel**(disponivel: String!, id: Int!) → `Usuario`
+- **atualizarStatusConexao**() → `Boolean`
+- **copiarArquivoDeMensagem**(original_name: String, pasta_uuid: String, nanoid: String!) → `Arquivo`
+- **criaAlteraUsuario**(data: UsuarioInput!) → `Usuario`
+- **criarAlterarAba**(data: AbaInput!) → `Aba`
+- **criarAlterarAgenteIA**(data: AgenteIAInput!) → `AgenteIA`
+- **criarAlterarAlerta**(data: AlertaInput!) → `Alerta`
+- **criarAlterarArquivo**(data: ArquivoInput!, thumbnail: Upload, file: Upload) → `Arquivo`
+- **criarAlterarAtendimento**(data: AtendimentoInput!) → `Atendimento`
+- **criarAlterarAtendimentoMensagem**(data: AtendimentoMensagemInput!) → `AtendimentoMensagem`
+- **criarAlterarAtendimentoTransferencia**(data: AtendimentoTransferenciaInput!) → `AtendimentoTransferencia`
+- **criarAlterarAviso**(data: AvisoInput!) → `Aviso`
+- **criarAlterarBaseConhecimento**(data: BaseConhecimentoInput!) → `BaseConhecimento`
+- **criarAlterarCalendarioEvento**(data: CalendarioEventoInput!) → `CalendarioEvento`
+- **criarAlterarCampanha**(data: CampanhaInput!) → `Campanha`
+- **criarAlterarCanalExterno**(data: CanalExternoInput!) → `CanalExterno`
+- **criarAlterarCategoriaProduto**(data: CategoriaProdutoInput!) → `CategoriaProduto`
+- **criarAlterarCliente**(data: ClienteInput!) → `Cliente`
+- **criarAlterarClienteAnotacao**(data: ClienteAnotacaoInput!) → `ClienteAnotacao`
+- **criarAlterarConexao**(data: ConexaoInput!) → `Conexao`
+- **criarAlterarConexaoOculta**(data: ConexaoOcultaInput!) → `Boolean`
+- **criarAlterarDepartamento**(data: DepartamentoInput!) → `Departamento`
+- **criarAlterarEmpresa**(data: EmpresaInput!) → `Empresa`
+- **criarAlterarFatura**(data: FaturaInput!) → `Fatura`
+- **criarAlterarFaturaArquivo**(data: FaturaArquivoInput!, file: Upload) → `FaturaArquivo`
+- **criarAlterarFormPadrao**(data: FormPadraoInput!) → `FormPadrao`
+- **criarAlterarFormPadraoAtendimento**(data: FormPadraoAtendimentoInput!) → `FormPadraoAtendimento`
+- **criarAlterarFuncionario**(data: FuncionarioInput!) → `Funcionario`
+- **criarAlterarGrupoSistema**(data: GrupoSistemaInput!) → `GrupoSistema`
+- **criarAlterarHook**(data: HookInput!) → `Hook`
+- **criarAlterarHookTask**(data: HookTaskInput!) → `HookTask`
+- **criarAlterarHookUrl**(data: HookUrlInput!) → `HookUrl`
+- **criarAlterarHorarioFuncionamento**(data: HorarioFuncionamentoInput!) → `HorarioFuncionamento`
+- **criarAlterarItem**(data: ItemInput!) → `Item`
+- **criarAlterarItemLote**(data: [ItemInput!]!) → `[Item!]`
+- **criarAlterarMcpServer**(data: McpServerInput!) → `McpServer`
+- **criarAlterarMenu**(data: MenuInput!) → `Menu`
+- **criarAlterarMenuItemArquivo**(data: MenuItemArquivoInput!) → `MenuItemArquivo`
+- **criarAlterarModeloMensagem**(data: ModeloMensagemInput!) → `ModeloMensagem`
+- **criarAlterarPasta**(data: PastaInput!) → `Pasta`
+- **criarAlterarProduto**(data: ProdutoInput!) → `Produto`
+- **criarAlterarPushDevice**(data: PushDeviceInput!) → `PushDevice`
+- **criarAlterarPushDeviceUsuario**(data: PushDeviceUsuarioInput!) → `PushDeviceUsuario`
+- **criarAlterarSistemaMensagem**(data: SistemaMensagemInput!) → `SistemaMensagem`
+- **criarAlterarTag**(data: TagInput!) → `Tag`
+- **criarAlterarTermo**(data: TermoInput!) → `Termo`
+- **criarAlterarTurno**(data: TurnoInput!) → `Turno`
+- **criarAlterarVariavelAmbiente**(data: VariavelAmbienteInput!) → `VariavelAmbiente`
+- **criarAlterarWabaTemplate**(data: WabaTemplateInput!) → `WabaTemplate`
+- **criarClienteMencao**(data: ClienteMencaoInput!) → `Boolean`
+- **criarUsuarioAvaliacao**(data: UsuarioAvaliacaoInput!) → `Usuario`
+- **criarVinculoUsuarioCliente**(data: UsuarioClienteInput!) → `UsuarioCliente`
+- **duplicarMenu**(id: Int!) → `Menu`
+- **encaminharAtendimentoMensagem**(data: EncaminharMensagemInput!) → `[AtendimentoMensagem!]`
+- **enviarArquivosChat**(contentType: String!, resposta_mensagem_nanoid: String, atendimentoId: Int!, caption: String!, thumbnail: String, dir: String!, file: Upload!) → `LocalFile`
+- **excluirClienteMencao**(nanoid: String!) → `Boolean`
+- **fecharPedido**(data: [PedidoProdutoInput!]!) → `Pedido`
+- **importarClientes**(data: ClienteImportacaoInput!) → `[Cliente!]`
+- **importarWabaTemplates**(waba_account_id: String!) → `[WabaTemplate!]`
+- **inicializaSessao**(conexao_id: Int!) → `String`
+- **lerAtendimentoMensagemPorId**(nanoid: String!) → `[AtendimentoMensagem!]`
+- **limparFila**(conexao_id: Int) → `Boolean`
+- **marcarAvisoLido**(aviso_id: Int!) → `Boolean!`
+- **marcarTodosAvisosLidos**() → `Boolean!`
+- **reenviarMsg**(data: ReenviarAtendimentoMensagemInput!) → `AtendimentoMensagem`
+- **replicarUsuario**(data: ReplicarUsuarioInput!) → `Boolean`
+- **salvarAppTraces**(data: [TraceEventInput!]!) → `[TraceEvent!]!`
+- **salvarTema**(tema: String!) → `Boolean`
+- **sessionUpdate**(conexao_id: Int, type: String!) → `String`
+- **sincronizarWabaTemplate**(template_id: String!) → `WabaTemplate`
+- **testarMcpServer**(data: TestarMcpServerInput!) → `TestarMcpServerResult`
+- **testeAgenteMensagem**(draft: String, mensagem: String!, session_id: String!, agente_id: Int!) → `Boolean!`
+- **updateUserActivity**() → `String`
+- **uploadFile**(dir: String, file: Upload!) → `LocalFile`
+- **uploadWabaFile**(waba_account_id: String!, file_length: Int!, file: Upload!) → `WabaTemplateFileUpload`
+- **vincularTagsClientesEmLote**(data: ClienteTagLoteInput!) → `Float!`
+- **wabaEmbeddedSignup**(data: WabaEmbeddedSignupInput!) → `Conexao`
