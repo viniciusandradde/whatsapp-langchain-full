@@ -14,6 +14,7 @@ import {
   getDepartamentos,
   getEmpresaAtendentes,
   getPerfis,
+  getUsuario,
   getUsuarioAtividade,
   invalidarSessionsUsuario,
   listUsuarios,
@@ -208,6 +209,11 @@ export async function resetarSenhaUsuarioAction(
   | { ok: false; error: string }
 > {
   try {
+    // Autorização: herda o gate do backend (require_permission
+    // "empresa.member.add" + escopo de empresa). Lança 403/404 se o chamador
+    // não pode gerenciar este usuário — sem isto, a action reseta a senha de
+    // QUALQUER user (inclusive superadmin de outra empresa) sem checar nada.
+    await getUsuario(userId);
     const password = _generatePassword(16);
     await upsertUserPassword(userId, password);
     // Invalida sessions ativas — força re-login com senha nova

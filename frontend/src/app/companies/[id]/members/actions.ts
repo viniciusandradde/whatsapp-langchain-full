@@ -6,6 +6,7 @@ import {
   addEmpresaMember,
   getMemberDepartamentos,
   getMemberPerfis,
+  getUsuario,
   removeEmpresaMember,
   setMemberDepartamentos,
   setMemberPerfis,
@@ -117,6 +118,9 @@ export async function generateResetLinkAction(
   userId: string
 ): Promise<ResetLinkResult> {
   try {
+    // Autorização: herda o gate do backend (require_permission +
+    // escopo de empresa) — 403/404 se o chamador não pode gerenciar o alvo.
+    await getUsuario(userId);
     // 1. Resolver email do user (Better Auth requer email)
     const userRow = await authPool.query<{ email: string }>(
       `SELECT email FROM auth."user" WHERE id = $1`,
@@ -184,6 +188,10 @@ export async function resetMemberPasswordAction(
   | { ok: false; error: string }
 > {
   try {
+    // Autorização: herda o gate do backend (require_permission +
+    // escopo de empresa) — 403/404 se o chamador não pode gerenciar o alvo.
+    // Sem isto, a action reseta senha de qualquer user cross-tenant.
+    await getUsuario(userId);
     // Sprint U.4 — FIX: busca por user_id, não filtra por email NOT NULL.
     // Users criados via /usuarios sem email têm email sintético
     // (`user-{uuid}@no-email.local`) — funcionam pra reset normal.

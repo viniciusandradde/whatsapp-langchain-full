@@ -28,6 +28,7 @@ from whatsapp_langchain.shared.catalogo import (
     update_modelo_llm,
 )
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.ssrf_guard import assert_url_externa
 
 # =====================================================================
 # modelo_llm
@@ -389,6 +390,9 @@ async def test_mcp_endpoint(
             erro_msg = "URL não configurada."
         else:
             try:
+                # Anti-SSRF: a URL do MCP é configurada pela empresa; bloqueia
+                # host interno/privado antes do GET (probe de rede interna).
+                await assert_url_externa(mcp.url)
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.get(mcp.url)
                     if resp.status_code >= 400:
