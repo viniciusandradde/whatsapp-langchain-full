@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bell, BellOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,7 @@ export function FilaLive({
    *  por PAUSA_MS em vez de seguir refrescando — quebra o loop. */
   erroCarregamento?: boolean;
 }) {
-  const router = useRouter();
+  const queryClient = useQueryClient();
   // Preferência do som via useSyncExternalStore: localStorage é a fonte,
   // snapshot do servidor é "ligado" — sem setState síncrono em effect (o
   // React Compiler reprova) e sem mismatch de hidratação.
@@ -121,7 +121,10 @@ export function FilaLive({
         if (!vivo || document.visibilityState !== "visible") return;
         if (!podeRefrescar()) return;
         refreshHist.current.push(Date.now());
-        router.refresh();
+        // Invalida SÓ a fila — antes era `router.refresh()`, que re-executava
+        // os quatro fetches da página a cada evento. O circuit breaker acima
+        // continua como defesa, mas o custo por evento caiu para 1 request.
+        queryClient.invalidateQueries({ queryKey: ["atendimentos"] });
       }, DEBOUNCE_MS);
     }
 
@@ -194,7 +197,7 @@ export function FilaLive({
         refreshTimer.current = null;
       }
     };
-  }, [router]);
+  }, [queryClient]);
 
   function alternarSom() {
     const ligar = !somLigado;
