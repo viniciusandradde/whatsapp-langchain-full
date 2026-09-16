@@ -65,6 +65,19 @@ def _is_admin_request(path: str) -> bool:
     return not any(path.startswith(e) for e in _ADMIN_PATH_EXCLUDED)
 
 
+def _is_sse_endpoint(path: str) -> bool:
+    """Endpoints SSE (streams de longa duração) que ficam FORA do rate limit.
+
+    Allowlist por PATH, server-controlada — NÃO decidir pelo header `Accept`
+    (spoofável: qualquer request mandando `Accept: text/event-stream` burlaria
+    o limite). Cobre a fila da empresa, o stream por conversa (`{id}/events`)
+    e o HITL.
+    """
+    if path in ("/api/atendimentos/events", "/api/admin/hitl/events"):
+        return True
+    return path.startswith("/api/atendimentos/") and path.endswith("/events")
+
+
 async def admin_rate_limit_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
@@ -81,6 +94,15 @@ async def admin_rate_limit_middleware(
     OPTIONS sempre passa (CORS preflight não conta).
     """
     if request.method == "OPTIONS" or not _is_admin_request(request.url.path):
+        return await call_next(request)
+
+    # Streams SSE são conexões de longa duração, não ações — não devem
+    # consumir o bucket. Sem isto, a fila viva (1 EventSource por operador em
+    # /api/atendimentos/events) e suas reconexões contavam no rate limit e, ao
+    # estourar, o próprio stream tomava 429 e reconectava, mantendo o painel
+    # travado. A exceção é gateada por PATH (allowlist server-controlada), não
+    # pelo header Accept — que o cliente poderia forjar pra burlar o limite.
+    if _is_sse_endpoint(request.url.path):
         return await call_next(request)
 
     user_id = request.headers.get("X-User-Id", "").strip()
