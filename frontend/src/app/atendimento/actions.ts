@@ -27,6 +27,7 @@ import {
   getEmpresaAtendentes,
   getModelosMensagem,
   getMyAbas,
+  getAtendimentos,
   getTags,
   getTagsAtendimento,
   getTagsOpcoesAba,
@@ -198,6 +199,31 @@ export async function transferDepartamentoAction(
 type DepartamentosResult =
   | { ok: true; departamentos: Departamento[] }
   | { ok: false; error: string };
+
+/** Filtros da fila — espelha os `searchParams` resolvidos em `page.tsx`. */
+export type FiltrosFila = Parameters<typeof getAtendimentos>[0];
+
+type AtendimentosResult =
+  | { ok: true; atendimentos: Atendimento[] }
+  | { ok: false; error: string };
+
+/**
+ * Lista a fila para o TanStack Query (Onda 1 do blueprint).
+ *
+ * A `queryFn` do cliente chama ESTA action — nunca a API direto. O
+ * `INTERNAL_SERVICE_TOKEN` é `server-only`: buscar da API pelo browser (como
+ * faz o blueprint com axios) vazaria o token.
+ */
+export async function carregarAtendimentosAction(
+  filtros: FiltrosFila
+): Promise<AtendimentosResult> {
+  try {
+    const r = await getAtendimentos(filtros);
+    return { ok: true, atendimentos: r.atendimentos };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
 
 export async function loadDepartamentosAction(): Promise<DepartamentosResult> {
   try {
