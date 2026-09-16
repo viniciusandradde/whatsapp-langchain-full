@@ -36,6 +36,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.hook import insert_log, list_hooks_for_dispatch
 from whatsapp_langchain.shared.models import Hook
+from whatsapp_langchain.shared.ssrf_guard import assert_url_externa
 
 logger = structlog.get_logger()
 
@@ -78,11 +79,18 @@ async def _attempt_post(
     error: str | None = None
 
     try:
+        # Anti-SSRF: bloqueia URL apontando pra host interno/privado (metadata
+        # de nuvem, minio:9000, etc.). A URL do hook é configurada pela empresa
+        # e antes ia direto pro POST — o corpo da resposta era exfiltrado via
+        # DLQ. Também validada na criação (rota), esta é a porta de runtime.
+        await assert_url_externa(hook.url)
         async with httpx.AsyncClient(timeout=HOOK_TIMEOUT_SECONDS) as client:
             resp = await client.post(hook.url, content=body, headers=headers)
             status_code = resp.status_code
             # Trunca pra evitar payloads gigantes na auditoria
             response_body = resp.text[:1000] if resp.text else None
+    except ValueError as e:
+        error = f"url bloqueada (host interno/privado): {e}"
     except httpx.TimeoutException:
         error = f"timeout após {HOOK_TIMEOUT_SECONDS}s"
     except httpx.RequestError as e:

@@ -2160,8 +2160,13 @@ async def _try_handle_menu(
 
         import httpx
 
+        from whatsapp_langchain.shared.ssrf_guard import assert_url_externa
+
         async def _fire_webhook(target_url: str, body: dict) -> None:
             try:
+                # Anti-SSRF: URL do item de menu é configurada pela empresa;
+                # bloqueia host interno/privado antes do POST.
+                await assert_url_externa(target_url)
                 async with httpx.AsyncClient(timeout=10) as client:
                     await client.post(target_url, json=body)
             except Exception as exc:

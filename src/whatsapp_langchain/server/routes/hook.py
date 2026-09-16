@@ -30,6 +30,7 @@ from whatsapp_langchain.shared.hook import (
 )
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Hook, HookInput, HookLog
+from whatsapp_langchain.shared.ssrf_guard import assert_url_externa
 
 logger = structlog.get_logger()
 
@@ -79,6 +80,20 @@ async def _load_hook_in_empresa(hook_id: int, empresa_id: int) -> Hook:
     return h
 
 
+async def _validar_url_saida(url: str) -> None:
+    """Rejeita URL de webhook apontando pra host interno/privado (anti-SSRF).
+
+    Feedback imediato na criação/edição; o dispatcher revalida em runtime.
+    """
+    try:
+        await assert_url_externa(url)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"URL do webhook não permitida (host interno/privado): {e}",
+        ) from e
+
+
 @router.post("", status_code=201)
 async def create(
     body: HookInput,
@@ -86,6 +101,7 @@ async def create(
     user_id: str = Depends(get_user_id_from_request),
 ) -> Hook:
     _validate_evento(body.evento)
+    await _validar_url_saida(body.url)
     pool = await get_pool()
     out = await create_hook(pool, empresa_id, body, user_id=user_id)
     logger.info(
@@ -108,6 +124,7 @@ async def update(
 ) -> Hook:
     await _load_hook_in_empresa(hook_id, empresa_id)
     _validate_evento(body.evento)
+    await _validar_url_saida(body.url)
     pool = await get_pool()
     out = await update_hook(pool, hook_id, body)
     if out is None:

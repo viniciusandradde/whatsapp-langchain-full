@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import ipaddress
-import socket
 import time
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import httpx
 import structlog
@@ -29,6 +27,7 @@ from whatsapp_langchain.shared.governanca_ia import (
     registrar_execucao,
 )
 from whatsapp_langchain.shared.llm import provider_preferences
+from whatsapp_langchain.shared.ssrf_guard import host_is_public, validar_url_externa
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -38,40 +37,10 @@ logger = structlog.get_logger()
 _MAX_MEDIA_REDIRECTS = 5
 
 
-def _host_is_public(host: str) -> bool:
-    """True se TODOS os IPs do host são públicos (anti-SSRF).
-
-    Bloqueia loopback, privados, link-local (169.254.x — metadata cloud!),
-    reservados, multicast e unspecified. Faz DNS resolve (bloqueante; chamar
-    via asyncio.to_thread).
-    """
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return False
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            return False
-    return True
-
-
-def _validate_media_url(url: str) -> str:
-    """Valida scheme http(s) + host público. Retorna o host. Levanta ValueError."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"scheme de mídia não permitido: {parsed.scheme!r}")
-    host = parsed.hostname or ""
-    if not host or not _host_is_public(host):
-        raise ValueError(f"host de mídia não permitido (privado/interno): {host!r}")
-    return host
+# Guarda anti-SSRF unificada em shared/ssrf_guard (reusada por hooks/menu/MCP).
+# Aliases preservam os nomes internos deste módulo (e imports existentes).
+_host_is_public = host_is_public
+_validate_media_url = validar_url_externa
 
 
 def _audio_format_from_media_type(media_type: str) -> str:
