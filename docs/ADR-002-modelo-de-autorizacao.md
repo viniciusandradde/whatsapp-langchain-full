@@ -5,7 +5,8 @@
 - **Código:** `shared/empresa.py::is_admin_of`, `server/dependencies_rbac.py::require_permission`,
   `shared/perfil.py`, tabelas `permissao` / `perfil_acesso` / `perfil_permissao` / `usuario_perfil`
 - **Ferramenta:** `scripts/raio_x_acesso.py` (leitura pura, roda em dev e produção)
-- **Referências:** `docs/ANALISE_PERMISSOES.md`, `docs/zigchat/` (142 permissões em 34 categorias),
+- **Referências:** `docs/ANALISE_PERMISSOES.md`, `docs/zigchat/` (142 permissões em 34 categorias) e
+  `docs/zigchat/controle-de-acesso.md` (o *mecanismo* — 2ª introspecção),
   blueprint `docs/one-for-all-main/` (árvore de permissões, telas de inconsistência)
 
 ## Contexto
@@ -65,19 +66,29 @@ faz o sistema dele parecer completo.
 
 5. **Adotamos do ZigChat a cobertura, não o modelo.** Mantemos `codigo` estruturado
    (`modulo.acao[.escopo]`) e o escopo `.own`/`.all`. Do ZigChat trazemos as **lacunas de cobertura**:
-   Dashboard, Histórico (com escopo próprio), Relatórios, exportar/importar planilha de clientes,
-   ocultar telefone do contato, alterar período de retenção, operações de conexão
-   (reconectar, limpar fila, tornar padrão) e **"editar regras e permissões" separado de "editar usuário"**
-   (controle de escalação de privilégio).
+   Dashboard, Histórico (com escopo próprio de 3 níveis), Relatórios, exportar/importar planilha de
+   clientes, ocultar telefone do contato, alterar período de retenção, **transferir para o agente IA**,
+   operações de conexão separadas de `conexao.write` (reconectar/desconectar, limpar fila, tornar
+   padrão — hoje quem pode renomear a conexão pode derrubar o WhatsApp da empresa) e
+   **"editar regras e permissões" separado de "editar usuário"** (controle de escalação de privilégio).
 
-6. **Segmentação de acesso por conexão/canal entra no modelo.** Hoje o escopo é `.own`/`.all` +
-   departamento. O ZigChat também segmenta por conexão (`Usuario.conexoes[]`). Adotamos como
-   `atendimento.scope.conexao`, reusando `usuario_conexao` (mig 111) — que hoje é *default de envio* e
-   passa a poder atuar como *filtro de visibilidade*.
+6. **Segmentação de acesso por conexão/canal entra no modelo — como allow-list.** Hoje o escopo é
+   `.own`/`.all` + departamento. Adotamos `atendimento.scope.conexao`, reusando `usuario_conexao`
+   (mig 111) — que hoje é *default de envio* e passa a poder atuar como *filtro de visibilidade*.
+   O ZigChat faz o inverso (deny-list `ConexaoOculta` por usuário + contexto, com default "vê tudo");
+   **rejeitamos a deny-list por ser fail-open** — conexão nova nasceria visível para todos. Do desenho
+   dele aproveitamos três coisas: **`contexto`** (a mesma conexão pode ser invisível na fila e visível
+   no histórico — um booleano é grosseiro demais), **`motivo`** gravado na restrição (material de
+   auditoria, custa uma coluna) e **opt-in por empresa** (ligar para todos de uma vez quebraria os
+   clientes atuais).
 
-7. **Não adotamos permissão direta no usuário.** O ZigChat permite exceção individual fora do perfil.
-   Rejeitado: dobra a superfície de auditoria e reintroduz o problema que este ADR resolve (duas fontes
-   de verdade). Exceção vira perfil.
+7. **Não adotamos permissão direta no usuário.** *Reforçada pela 2ª introspecção:* o ZigChat **não tem
+   perfil nenhum** — não existe vínculo usuário↔grupo no schema; `GrupoSistema` é um preset que a tela
+   copia para `Usuario.permissoes[]`. Logo ele não é um contra-exemplo, é a demonstração do custo:
+   mudar a regra de um cargo vira edição usuário a usuário, "quem pode exportar clientes?" vira
+   varredura, e não existe "esperado" contra o qual auditar desvio. Exceção vira perfil.
+   Do ZigChat copiamos só o atalho de onboarding (`replicarUsuario` → "criar usuário a partir de
+   &lt;colega&gt;"), porque o gestor sabe dizer "igual ao Fulano" e não sabe marcar 12 permissões.
 
 ## Ordem de implantação
 
@@ -99,3 +110,7 @@ faz o sistema dele parecer completo.
   quem hoje usa o sistema** se a etapa 0 não for conferida. Nenhuma etapa vai a produção sem passar pelo dev.
 - **Dívida aceita:** `empresa_membro.role` permanece na base e no código por compatibilidade. Remover é
   outro ADR, depois que nenhuma leitura de autorização depender dele.
+- **Fora do escopo deste ADR** (achados da 2ª introspecção, viraram backlog de produto):
+  desativar usuário **deixa os atendimentos dele órfãos** (o ZigChat conta os abertos e obriga a
+  escolher para quem transferir); teto de IA **por atendimento**; retenção **por departamento**;
+  carteira `usuario↔cliente` como terceiro eixo de segmentação.
