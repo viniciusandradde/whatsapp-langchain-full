@@ -621,7 +621,11 @@ async def _preencher_derivados(
                 SELECT DISTINCT ON (atendimento_id)
                        atendimento_id, incoming_message, response,
                        response_apagada_at IS NOT NULL,
-                       media_url IS NOT NULL, media_type,
+                       -- Inclui mídia no object storage (mig 184): sem o
+                       -- media_arquivo_uuid, o preview "📎 Áudio" sumia da
+                       -- lista quando a última msg era mídia no bucket.
+                       (media_url IS NOT NULL OR media_arquivo_uuid IS NOT NULL),
+                       media_type,
                        response_media_url IS NOT NULL, response_media_type
                   FROM message_queue
                  WHERE atendimento_id = ANY(%s)
@@ -950,7 +954,12 @@ async def list_atendimento_mensagens(
                    mq.message_id, c.provider,
                    EXTRACT(EPOCH FROM (
                        NOW() - COALESCE(mq.processed_at, mq.created_at)
-                   ))
+                   )),
+                   -- Mídia inbound migrada pro object storage (mig 184) tem
+                   -- media_url NULL + media_arquivo_uuid preenchido. Sem esta
+                   -- coluna, `media_disponivel` (bool(media_url)) dava False e
+                   -- o áudio/imagem no bucket SUMIA da timeline.
+                   (mq.media_arquivo_uuid IS NOT NULL)
               FROM message_queue mq
               LEFT JOIN conexao c ON c.id = mq.conexao_id
              WHERE {" AND ".join(where)}
@@ -982,7 +991,10 @@ async def list_atendimento_mensagens(
                 # `IS NOT NULL`, e o conteúdo não é devolvido — o cliente busca
                 # em `/mensagens/{id}/midia`.
                 "media_url": r[3] if incluir_midia else None,
-                "media_disponivel": bool(r[3]),
+                # r[3] cobre media_url (conteúdo no modo full ou o IS NOT NULL
+                # no modo leve); r[22] cobre a mídia que vive no bucket. Os
+                # bytes saem por /mensagens/{id}/midia, que resolve o uuid.
+                "media_disponivel": bool(r[3]) or bool(r[22]),
                 "media_type": r[4],
                 "normalized_input": r[5],
                 "media_processing_status": r[6],

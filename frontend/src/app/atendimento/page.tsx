@@ -152,7 +152,10 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           <Headphones className="hidden h-5 w-5 md:block" />
           <h1 className="truncate text-lg font-semibold">{contextoLabel}</h1>
           <NovaConversaBotao />
-          <FilaLive idsVisiveis={atendimentos.map((a) => a.id)} />
+          <FilaLive
+            idsVisiveis={atendimentos.map((a) => a.id)}
+            erroCarregamento={!!error}
+          />
           <ListFilters
             tipo={tipo}
             departamentos={departamentos}
@@ -169,6 +172,13 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
             <p className="font-medium">Não foi possível carregar a caixa</p>
             <p className="mt-1 text-destructive/80">{error}</p>
+            {error.includes("Muitas ações") && (
+              <p className="mt-2 text-xs text-destructive/70">
+                A atualização automática foi pausada por 60s para a caixa se
+                recuperar. Se houver várias abas do painel abertas, feche as
+                extras — cada aba atualiza a fila sozinha.
+              </p>
+            )}
           </div>
         )}
 

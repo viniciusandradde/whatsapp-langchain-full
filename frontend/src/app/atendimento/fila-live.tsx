@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 const SOM_STORAGE_KEY = "atd-som-notificacao";
 const SOM_EVENTO = "atd-som-changed";
 
+// Circuit breaker do refresh. Cada router.refresh() re-executa os 4 fetches
+// da página; uma rajada de eventos SSE (ou várias abas do mesmo operador)
+// pode estourar o rate limit e travar a fila. Teto por janela + backoff.
+const DEBOUNCE_MS = 2000;
+const JANELA_MS = 60_000;
+const TETO_REFRESH_JANELA = 15; // máx. refreshes por 60s por aba (≈60 req)
+const PAUSA_MS = 60_000; // recuo ao estourar o teto ou carregar em erro
+
 /** try/catch: o acessor de localStorage pode lançar (site data bloqueado). */
 function lerSomLigado(): boolean {
   try {
@@ -45,7 +53,15 @@ function assinarSom(onChange: () => void) {
  * Fallback: se o stream nunca abrir (401/500), poll de 30s com a aba
  * visível — espelho do safety net do drawer.
  */
-export function FilaLive({ idsVisiveis }: { idsVisiveis: number[] }) {
+export function FilaLive({
+  idsVisiveis,
+  erroCarregamento = false,
+}: {
+  idsVisiveis: number[];
+  /** A página carregou em erro (ex.: a caixa tomou 429). Faz a fila recuar
+   *  por PAUSA_MS em vez de seguir refrescando — quebra o loop. */
+  erroCarregamento?: boolean;
+}) {
   const router = useRouter();
   // Preferência do som via useSyncExternalStore: localStorage é a fonte,
   // snapshot do servidor é "ligado" — sem setState síncrono em effect (o
@@ -53,6 +69,11 @@ export function FilaLive({ idsVisiveis }: { idsVisiveis: number[] }) {
   const somLigado = useSyncExternalStore(assinarSom, lerSomLigado, () => true);
   const vistos = useRef<Set<number>>(new Set(idsVisiveis));
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Circuit breaker: instante até quando os refreshes ficam pausados +
+  // histórico de refreshes na janela deslizante (nível do componente pra
+  // sobreviver a re-render e ser visto pelo effect de erroCarregamento).
+  const pausadoAte = useRef(0);
+  const refreshHist = useRef<number[]>([]);
 
   // Cada render do server traz os ids da página — acumula, não substitui:
   // conversa que já beepou uma vez não beepa de novo após o refresh.
@@ -60,20 +81,48 @@ export function FilaLive({ idsVisiveis }: { idsVisiveis: number[] }) {
     for (const id of idsVisiveis) vistos.current.add(id);
   }, [idsVisiveis]);
 
+  // Página carregou em erro → recua PAUSA_MS. Se a caixa está tomando 429,
+  // continuar refrescando só realimenta o estouro (a janela do rate limit é
+  // fixa por minuto e não se recupera enquanto o cliente martelar).
+  useEffect(() => {
+    if (erroCarregamento) pausadoAte.current = Date.now() + PAUSA_MS;
+  }, [erroCarregamento]);
+
   useEffect(() => {
     let es: EventSource | null = null;
     let fallbackTimer: ReturnType<typeof setInterval> | null = null;
     let openedOk = false;
     let vivo = true;
 
+    function podeRefrescar(): boolean {
+      const agora = Date.now();
+      if (agora < pausadoAte.current) return false;
+      refreshHist.current = refreshHist.current.filter(
+        (t) => agora - t < JANELA_MS
+      );
+      if (refreshHist.current.length >= TETO_REFRESH_JANELA) {
+        // Rajada anormal (loop, muitas abas): recua e para de martelar.
+        pausadoAte.current = agora + PAUSA_MS;
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[fila-live] teto de refresh atingido — pausando 60s");
+        }
+        return false;
+      }
+      return true;
+    }
+
     function agendarRefresh() {
       // Debounce: rajada de eventos (várias mensagens num burst) vira UM
       // refresh — cada refresh re-executa os fetches da página no servidor.
       if (refreshTimer.current) return;
+      if (Date.now() < pausadoAte.current) return;
       refreshTimer.current = setTimeout(() => {
         refreshTimer.current = null;
-        if (vivo && document.visibilityState === "visible") router.refresh();
-      }, 2000);
+        if (!vivo || document.visibilityState !== "visible") return;
+        if (!podeRefrescar()) return;
+        refreshHist.current.push(Date.now());
+        router.refresh();
+      }, DEBOUNCE_MS);
     }
 
     function notificarConversaNova(atendimentoId: number) {
@@ -99,9 +148,9 @@ export function FilaLive({ idsVisiveis }: { idsVisiveis: number[] }) {
 
     function startFallbackPolling() {
       if (fallbackTimer) return;
-      fallbackTimer = setInterval(() => {
-        if (document.visibilityState === "visible") router.refresh();
-      }, 30_000);
+      // Passa pelo mesmo circuit breaker (agendarRefresh), não router.refresh
+      // direto — senão o fallback ignoraria a pausa e o teto.
+      fallbackTimer = setInterval(agendarRefresh, 30_000);
     }
 
     function connect() {
