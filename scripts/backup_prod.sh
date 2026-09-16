@@ -255,10 +255,96 @@ else
   log "cópia externa não configurada (defina RCLONE_REMOTE) — backup só neste host"
 fi
 
+# --- Config cifrada: sessão do WhatsApp + env do Dokploy -------------------
+#
+# O dump acima cobre o banco da APP, mas não o que faz um servidor NOVO virar
+# produção: a sessão Baileys (tabela `Session` da Evolution — perdê-la = re-
+# parear todos os números) e as variáveis de ambiente (banco do Dokploy). Até
+# 2026-09 isso só saía pelo `exportar_producao.sh` rodado NA MÃO e ficava
+# semanas defasado. Agora vai junto no timer, CIFRADO (GPG): a sessão dá
+# controle do WhatsApp e o env tem todas as chaves — não sobe em claro.
+#
+# Containers descobertos por filtro (o sufixo muda a cada redeploy). Best-effort:
+# falha aqui alerta, mas NÃO invalida o backup do banco (que já subiu acima).
+
+CONTAINER_EVO_PG="${CONTAINER_EVO_PG:-$(docker ps --filter name=evolution-postgres --format '{{.Names}}' | head -1)}"
+CONTAINER_DOKPLOY_PG="${CONTAINER_DOKPLOY_PG:-$(docker ps --filter name=dokploy-postgres --format '{{.Names}}' | head -1)}"
+GPG_PASS_FILE="${GPG_PASS_FILE:-/root/.config/chatnexus-backup.pass}"
+RCLONE_REMOTE_CONFIG="${RCLONE_REMOTE_CONFIG:-}"
+
+if [ -n "$RCLONE_REMOTE_CONFIG" ] && [ -n "$RCLONE_BIN" ] && command -v gpg >/dev/null; then
+  CFG_TMP="$(mktemp -d "${TMPDIR:-/tmp}/chatnexus-config-XXXXXX")"
+  CFG_OK=1
+  if [ -n "$CONTAINER_EVO_PG" ]; then
+    docker exec "$CONTAINER_EVO_PG" pg_dump -U evolution -Fc evolution > "$CFG_TMP/evolution.dump" 2>/dev/null
+    [ -s "$CFG_TMP/evolution.dump" ] || { CFG_OK=0; log "AVISO: dump da Evolution (sessão) falhou"; }
+  else
+    CFG_OK=0; log "AVISO: container evolution-postgres não encontrado — sessão fora do backup"
+  fi
+  if [ -n "$CONTAINER_DOKPLOY_PG" ]; then
+    docker exec "$CONTAINER_DOKPLOY_PG" pg_dump -U dokploy -Fc dokploy > "$CFG_TMP/dokploy.dump" 2>/dev/null \
+      || log "AVISO: dump do Dokploy (env) falhou"
+  fi
+  # Passphrase estável; na 1ª vez gera e GRITA pro dono guardar FORA do host.
+  if [ ! -f "$GPG_PASS_FILE" ]; then
+    mkdir -p "$(dirname "$GPG_PASS_FILE")"
+    ( umask 077; head -c 32 /dev/urandom | base64 > "$GPG_PASS_FILE" )
+    alerta "<b>Chat Nexus — backup</b>${NL}Senha do backup de config gerada em <code>$GPG_PASS_FILE</code>. GUARDE-A FORA do servidor — sem ela o backup cifrado (sessão WhatsApp + env) no Drive não abre."
+  fi
+  if [ "$CFG_OK" = 1 ]; then
+    CFG_PKG="$DESTINO/config-$(date +%F).tar.gz.gpg"
+    if tar cz -C "$CFG_TMP" . \
+         | gpg --batch --yes --symmetric --cipher-algo AES256 \
+               --passphrase-file "$GPG_PASS_FILE" -o "$CFG_PKG" 2>/dev/null; then
+      CFG_NOME="$(basename "$CFG_PKG")"
+      if "$RCLONE_BIN" copyto "$CFG_PKG" "$RCLONE_REMOTE_CONFIG/$CFG_NOME" 2>/dev/null \
+         && "$RCLONE_BIN" lsf "$RCLONE_REMOTE_CONFIG/$CFG_NOME" >/dev/null 2>&1; then
+        log "config cifrada (sessão WhatsApp + env) enviada ($RCLONE_REMOTE_CONFIG/$CFG_NOME)"
+        "$RCLONE_BIN" delete "$RCLONE_REMOTE_CONFIG" --min-age "${RCLONE_RETENCAO_DIAS}d" \
+          --include "config-*.tar.gz.gpg" >/dev/null 2>&1 || true
+      else
+        alerta "<b>Chat Nexus — backup</b>${NL}Falhou o envio da config cifrada (sessão WhatsApp + env) para <code>$RCLONE_REMOTE_CONFIG</code>."
+      fi
+    fi
+  fi
+  rm -rf "$CFG_TMP"
+else
+  log "backup de config (sessão/env) desligado — precisa de RCLONE_REMOTE_CONFIG + gpg + rclone"
+fi
+
+# --- Mídia dos clientes (object storage, volume minio_data) ----------------
+#
+# Desde que o storage ligou (2026-09-15), a mídia do cliente vive SÓ no bucket
+# — fora do pg_dump. Sem isto, migração/desastre perde fotos, áudios e docs.
+# Objetos do MinIO são arquivos imutáveis, então tar do volume a quente é
+# seguro (ao contrário de um pgdata a quente, que sai rasgado).
+
+MINIO_VOLUME="${MINIO_VOLUME:-$(docker volume ls -q 2>/dev/null | grep '_minio_data$' | head -1)}"
+if [ -n "$RCLONE_REMOTE" ] && [ -n "$RCLONE_BIN" ] && [ -n "$MINIO_VOLUME" ]; then
+  MINIO_MP="$(docker volume inspect -f '{{.Mountpoint}}' "$MINIO_VOLUME" 2>/dev/null)"
+  if [ -n "$MINIO_MP" ] && [ -d "$MINIO_MP" ]; then
+    MINIO_ARQ="$DESTINO/minio-$(date +%F).tar.$EXT"
+    if tar c -C "$MINIO_MP" . | $COMPRIMIR > "$MINIO_ARQ" 2>/dev/null && [ -s "$MINIO_ARQ" ]; then
+      MINIO_NOME="$(basename "$MINIO_ARQ")"
+      if "$RCLONE_BIN" copyto "$MINIO_ARQ" "$RCLONE_REMOTE/$MINIO_NOME" 2>/dev/null \
+         && "$RCLONE_BIN" lsf "$RCLONE_REMOTE/$MINIO_NOME" >/dev/null 2>&1; then
+        log "mídia (minio_data) enviada ($RCLONE_REMOTE/$MINIO_NOME, $(du -h "$MINIO_ARQ" | cut -f1))"
+        "$RCLONE_BIN" delete "$RCLONE_REMOTE" --min-age "${RCLONE_RETENCAO_DIAS}d" \
+          --include "minio-*.tar.*" >/dev/null 2>&1 || true
+      else
+        alerta "<b>Chat Nexus — backup</b>${NL}Falhou o envio da mídia (minio_data) para <code>$RCLONE_REMOTE</code>."
+      fi
+    fi
+  fi
+fi
+
 # --- Retenção --------------------------------------------------------------
 
 APAGADOS=$(find "$DESTINO" -name "prod-*.dump.$EXT" -mtime "+$RETENCAO_DIAS" -print -delete | wc -l)
 [ "$APAGADOS" -gt 0 ] && log "removidos $APAGADOS backup(s) com mais de $RETENCAO_DIAS dias"
+# Mídia e config cifrada seguem a mesma janela local.
+find "$DESTINO" -name "minio-*.tar.$EXT"     -mtime "+$RETENCAO_DIAS" -delete 2>/dev/null || true
+find "$DESTINO" -name "config-*.tar.gz.gpg"  -mtime "+$RETENCAO_DIAS" -delete 2>/dev/null || true
 
 log "backups em disco: $(find "$DESTINO" -name "prod-*.dump.$EXT" | wc -l) ocupando $(du -sh "$DESTINO" | cut -f1)"
 
@@ -277,4 +363,15 @@ log "backups em disco: $(find "$DESTINO" -name "prod-*.dump.$EXT" | wc -l) ocupa
 #   rclone authorize "drive" -- --scope drive.file   # numa máquina com navegador
 #   rclone config                                    # colar o token no host
 #   drop-in: Environment=RCLONE_REMOTE=gdrive:chatnexus-backups
+#
+# COBERTURA DIÁRIA (desde 2026-09-15) — este backup passou de "só o banco" a
+# cobrir tudo que uma migração precisa, sem depender de rodar nada na mão:
+#   - banco da app        → prod-DATA.dump.zst          (gdrive:chatnexus-backups)
+#   - sessão WhatsApp+env  → config-DATA.tar.gz.gpg CIFRADO (RCLONE_REMOTE_CONFIG)
+#   - mídia dos clientes   → minio-DATA.tar.zst          (gdrive:chatnexus-backups)
+# Para ligar as duas partes novas, no drop-in do timer (e instalar `gpg` no host):
+#   Environment=RCLONE_REMOTE_CONFIG=gdrive:chatnexus-config
+# A senha do pacote cifrado nasce em GPG_PASS_FILE (default /root/.config/
+# chatnexus-backup.pass) e DEVE ser guardada fora do host — sem ela o backup de
+# sessão/env não abre. Restaurar: `exportar_producao.sh` documenta o caminho.
 # ---------------------------------------------------------------------------
