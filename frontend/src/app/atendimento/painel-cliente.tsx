@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -83,23 +83,46 @@ export function PainelCliente({
   const [loading, setLoading] = useState(false);
   const [historico, setHistorico] = useState<Atendimento[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Guarda "já tentei carregar ESTE cliente" — `historico.length === 0` era
+  // indistinguível de "carreguei e o cliente não tem nenhum atendimento
+  // anterior", que é o caso mais comum de todos (1ª interação). Cada
+  // resolução da promise reavaliava a mesma condição vazia e disparava a
+  // Server Action de novo — mesmo bug do popover de transferência (#133),
+  // achado em produção 2026-09-17 ao resolver atendimentos em sequência.
+  // `clienteIdRef` reseta a guarda quando o cliente muda SEM remontar o
+  // componente — o drawer mobile (`atendimento-list.tsx`) não tem
+  // `key={ativo.id}` como o desktop, então troca de atendimento pode
+  // reusar a mesma instância.
+  const historicoCarregado = useRef(false);
+  const clienteIdRef = useRef<number | null>(null);
 
   // Carrega só o último atendimento anterior — quem precisa ver
   // histórico completo abre a ficha do cliente via "Ver ficha completa".
   // Trade-off: 1 req leve no abrir vs N reqs ao listar 10 (que ainda
   // ninguém olha caso a fila esteja cheia).
   useEffect(() => {
-    if (!open || !clienteId || historico.length > 0 || loading) return;
+    if (clienteIdRef.current !== clienteId) {
+      // Só reseta a GUARDA aqui (sem setState — o fetch abaixo substitui
+      // `historico`/`error` assim que resolver; evita disparar outro
+      // render síncrono dentro do effect).
+      clienteIdRef.current = clienteId;
+      historicoCarregado.current = false;
+    }
+    if (!open || !clienteId || historicoCarregado.current || loading) return;
     setLoading(true);
     void loadClienteHistoricoAction(clienteId, {
       excludeId: atendimentoId,
       limit: 1,
     }).then((r) => {
       setLoading(false);
-      if (r.ok) setHistorico(r.atendimentos);
-      else setError(r.error);
+      if (r.ok) {
+        setHistorico(r.atendimentos);
+        historicoCarregado.current = true;
+      } else {
+        setError(r.error);
+      }
     });
-  }, [open, clienteId, atendimentoId, historico.length, loading]);
+  }, [open, clienteId, atendimentoId, loading]);
 
   if (!clienteId) {
     return null;
