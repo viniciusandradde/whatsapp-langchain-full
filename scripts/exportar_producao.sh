@@ -8,6 +8,8 @@
 # configs do host — o conjunto que transforma servidor novo em produção.
 #
 #   ./scripts/exportar_producao.sh                 # export completo
+#   DUMP_NOVO=1 ./scripts/exportar_producao.sh     # idem, mas gera o dump da app AGORA
+#                                                  # (em vez de reusar o do timer das 03:15)
 #   ./scripts/exportar_producao.sh --verificar DIR # prova que o snapshot presta
 #   ./scripts/exportar_producao.sh --cifrar DIR    # empacota segredos com GPG
 #   ./scripts/exportar_producao.sh --offsite DIR   # sobe o pacote cifrado ao Drive
@@ -61,7 +63,15 @@ exportar() {
   remoto="/home/opc/backup/prod-$hoje.dump.zst"
   espelho="$HOME/backups/chatnexus-prod/prod-$hoje.dump.zst"
 
-  if [ -f "$espelho" ]; then
+  if [ "${DUMP_NOVO:-0}" = "1" ]; then
+    # O dump do timer é da madrugada; o espelho das 18h (backup_espelho_vps.sh)
+    # quer o dia inteiro. Nome com hora pra não colidir com o do timer no host.
+    log "1/7 banco da app — gerando AGORA (DUMP_NOVO=1)"
+    remoto="/tmp/prod-$ts.dump.zst"
+    ssh "$HOST" "sudo docker exec $CT_APP_DB pg_dump -U postgres -Fc whatsapp_langchain | zstd -q -T0 -o $remoto && sudo chown opc:opc $remoto"
+    scp -q "$HOST:$remoto" "$out/dados/whatsapp_langchain.dump.zst"
+    ssh "$HOST" "rm -f $remoto"
+  elif [ -f "$espelho" ]; then
     # O cron das 04:30 já espelha o dump do dia aqui. Puxar os ~2 GB de novo
     # pela rede não acrescenta nada — e numa emergência o tempo é o recurso
     # escasso. Link rígido: ocupa zero a mais no disco.
