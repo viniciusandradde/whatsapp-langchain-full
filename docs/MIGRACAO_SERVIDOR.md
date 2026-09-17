@@ -152,6 +152,25 @@ Sintoma: `connectionStatus` vira `close`, log com `conflict` ou
   (a verificação do script cobre isso) e se o `AUTHENTICATION_API_KEY` da
   Evolution nova é o mesmo — a aplicação autentica com ele.
 
+## Registro: emergência de 2026-09-17 (OCI podia ser desligada)
+
+Aviso do dono às ~23:10 UTC de que a máquina da OCI poderia ser desligada. O
+que foi feito, da VPS local (`vps`, via Tailscale), em ~15 min:
+
+| Item | Onde ficou (VPS local) | Como |
+|---|---|---|
+| Export consistente (Evolution/sessões, Dokploy/envs, configs, inventário, manifesto) | `~/backups/chatnexus-export/2026-09-17_1904` (712 MB) | `scripts/exportar_producao.sh` + `--verificar` |
+| Banco da app **de agora** (o export reusa o dump das 04:30) | `~/backups/chatnexus-emergencia-2026-09-17/prod-emergencia-2026-09-17.dump.zst` (705 MB) | `pg_dump -Fc \| zstd` no container, `scp` |
+| **Todos** os volumes Docker do host (MinIO, avatars, logos, disparador, evolution_pgdata/redis, dokploy-postgres e os do hermes-lab) | `~/backups/chatnexus-emergencia-2026-09-17/volumes/` | `rsync -a --rsync-path="sudo rsync"` |
+| `/home/opc` (dumps diários + tars do MinIO) e `/etc/dokploy` | `~/backups/chatnexus-emergencia-2026-09-17/host/` | idem |
+
+Lições: (1) o script de export cobre o essencial em menos de 1 minuto — o que
+demora é o dump novo da app e o rsync; (2) os volumes de Postgres copiados a
+quente entram só como última esperança, restaurar é pelos dumps (ver aviso
+acima); (3) o host abriga **outros projetos** (hermes-lab: GLPI, Zabbix,
+Metabase, Samba-AD) que não estão em nenhum runbook — o rsync de
+`/var/lib/docker/volumes/` inteiro foi o que os salvou.
+
 ## Referências
 
 - `scripts/exportar_producao.sh` — export, verificação, cifra e envio offsite
