@@ -225,6 +225,11 @@ class Empresa(BaseModel):
     # Retenção de dados (mig 185): dias até apagar conversas de atendimentos
     # encerrados. NULL/0 = ilimitado. Piso da empresa; o agente só estende.
     retencao_dias: int | None = None
+    # Escopo de atendimento por conexão (mig 188, ADR-002 Etapa 4). Opt-in:
+    # default OFF preserva o comportamento de hoje (ninguém filtrado).
+    # Ligado, `atendimento.read.own` passa a enxergar só as conexões
+    # atribuídas em `usuario_conexao` — `.all` (Gestor/Admin) não é afetado.
+    conexao_scope_ativo: bool = False
 
 
 class EmpresaMembro(BaseModel):

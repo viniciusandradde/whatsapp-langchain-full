@@ -120,7 +120,7 @@ faz o sistema dele parecer completo.
 | **1** | `require_permission` nas rotas sem gate, com as permissões que já existem. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 17 → **5**, órfãs 38 → **11**. Ver "Resultado da Etapa 1" abaixo | **médio — pode tirar acesso**; validado no dev |
 | **2** | Permissões novas para as rotas sem catálogo. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 5 → **0**. Ver "Resultado da Etapa 2" abaixo | médio |
 | **3** | `is_admin_of` deriva de permissão (fecha o A4). **FEITA no dev 2026-09-17.** Ver "Resultado da Etapa 3" abaixo | médio, destravado pela etapa 0 |
-| **4** | Escopo por conexão | médio |
+| **4** | Escopo por conexão. **FEITA no dev 2026-09-17.** Ver "Resultado da Etapa 4" abaixo | médio |
 | **5** | UI em árvore (a tabela `permissao` **já tem `modulo`**) + raio-X como tela | baixo |
 
 ## Resultado da Etapa 1 (dev, 2026-09-16)
@@ -220,6 +220,52 @@ Operador e usuário sem perfil algum tomam 403. `tests/unit/test_is_admin_of.py`
 (bypass de superadmin, código exato, variante `.own`/`.all`, ausência de `empresa.update` mesmo com
 outras permissões no set).
 `tests/unit/test_permissoes_etapa2.py` trava a intenção de cada grant contra `PERFIS_SYSTEM`.
+
+## Resultado da Etapa 4 (dev, 2026-09-17)
+
+Escopo por conexão, decidido com o dono ao começar a etapa: **só afeta `atendimento.read.own`**,
+mesmo padrão do escopo por departamento — Gestor/Admin (`.all`) continuam vendo a empresa inteira,
+sem filtro de conexão. Rejeitado o eixo independente (afetar até `.all`) por replicar um mecanismo
+já testado em vez de abrir superfície nova.
+
+**Correção ao texto original da Decisão 6**: não foi criada a permissão `atendimento.scope.conexao`
+cogitada ali. `atendimento.scope.departamento` já existe no catálogo com essa forma — permissão só
+documentando o conceito, nunca checada em código (a própria descrição dela diz "deprecated, use
+.own") — e o escopo de departamento de fato deriva de `.own`/`.all`, não checa essa permissão.
+Repetir o padrão descontinuado aqui readicionaria outra permissão órfã, o oposto do que as Etapas 1-2
+vieram consertar.
+
+Mecanismo (mig 188): `empresa.conexao_scope_ativo` (opt-in, default `FALSE` — zero mudança de
+comportamento até a empresa ligar). Ligado, `usuario_conexao` (mig 111, hoje só "conexão padrão de
+envio") passa a valer também como allow-list de visibilidade, via as colunas novas `contexto`
+(`{fila,historico}`, pode divergir entre os dois — a mesma conexão visível na fila e invisível no
+histórico, ou o inverso) e `motivo` (auditoria — por que esta atribuição existe). Fail-closed:
+`.own` sem nenhuma conexão atribuída pro contexto vê zero, não "vê tudo por omissão" (a deny-list do
+ZigChat é o contra-exemplo rejeitado na Decisão 6).
+
+Tocado: `shared/atendimento.py::list_atendimentos` (`scope_conexao_ids`, mesma semântica None/vazio/
+IDs de `scope_departamento_ids`), `shared/historico.py::_build_where`,
+`shared/historico_relatorios.py::_scope` (as 4 funções de relatório: resumo/por-operador/
+por-departamento/por-canal) e o contador da sidebar (`routes/atendimento.py::list_contadores`) — sem
+espelhar o contador o badge divergiria da lista de verdade
+(`gotcha_contagem_por_endpoint_permissao`). Resolução em `shared/permissoes.py::get_user_conexao_ids`
+(mesmo formato de `get_user_departamento_ids`) e `shared/empresa.py::is_conexao_scope_ativo` — query
+dedicada de 1 coluna, não `get_empresa_by_id` inteiro, porque roda em toda listagem/poll da fila.
+
+**Fora do escopo desta etapa, de propósito**: `cliente.py` continua só com escopo de departamento.
+Cliente não tem `conexao_id` direto — o vínculo é "tem atendimento num depto do user", relação
+indireta que não mapeia 1:1 pra conexão (um cliente pode ter atendimentos em conexões diferentes ao
+longo do tempo). Estender pra lá é decisão de design própria, não uma extensão mecânica desta.
+
+Conferido no dev pela API, empresa 900 (2 conexões, 900 e 901): com o opt-in desligado, operador vê
+atendimentos das duas conexões (baseline). Ligado e sem nenhuma atribuição em `usuario_conexao`, vê
+zero (fail-closed). Atribuído só à conexão 900 com `contexto={fila}`: vê só o atendimento dessa
+conexão na fila E ZERO no histórico — confirma que os contextos são independentes. Adicionado
+`historico` ao array, passa a ver o mesmo atendimento nos dois. Superadmin (`.all` implícito)
+continuou vendo as duas conexões o tempo todo, sem filtro. `tests/unit/test_atendimento_scope_
+conexao.py` e `test_empresa_conexao_scope.py` cobrem a montagem do SQL/params e o guard de set vazio
+sem tocar o banco.
+
 ## Consequências
 
 - **Positivas:** uma fonte de verdade; a tela de perfil passa a significar o que mostra; ações sensíveis

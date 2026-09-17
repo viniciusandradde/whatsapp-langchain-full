@@ -332,6 +332,7 @@ async def list_atendimentos(
     limit: int = 50,
     offset: int = 0,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
     dep_id: int | None = None,
     prioridade: str | None = None,
     q: str | None = None,
@@ -354,12 +355,21 @@ async def list_atendimentos(
       aparece pra users com scope — política de "default-deny" pra
       garantir isolamento.
 
+    `scope_conexao_ids` (ADR-002 Etapa 4) — mesma semântica de None/vazio/IDs
+    que `scope_departamento_ids`, filtrando por `conexao_id` em vez de
+    `departamento_id`. Mesma política de default-deny: atendimento
+    desacoplado da conexão (`conexao_id IS NULL`, mig 129) NÃO aparece pra
+    quem está sob este escopo. Quem resolve os dois sets (e decide se
+    aplicam) é o caller — aqui só filtra o que chegou pronto.
+
     Faz LEFT JOIN com cliente pra preencher nome/telefone na resposta.
     """
     if tipo == "grupos":
         return []
 
     if scope_departamento_ids is not None and not scope_departamento_ids:
+        return []
+    if scope_conexao_ids is not None and not scope_conexao_ids:
         return []
 
     where = "WHERE a.empresa_id = %s"
@@ -415,6 +425,10 @@ async def list_atendimentos(
     if scope_departamento_ids is not None:
         where += " AND a.departamento_id = ANY(%s)"
         params.append(list(scope_departamento_ids))
+
+    if scope_conexao_ids is not None:
+        where += " AND a.conexao_id = ANY(%s)"
+        params.append(list(scope_conexao_ids))
 
     # Filtros opcionais Sprint F.2 — admin/atendente refina a lista
     if dep_id is not None:

@@ -83,6 +83,7 @@ def _build_where(
     empresa_id: int,
     f: HistoricoFiltros,
     scope_departamento_ids: set[int] | None,
+    scope_conexao_ids: set[int] | None = None,
 ) -> tuple[str, list[Any]]:
     """Monta o WHERE dinâmico + lista de params (ordem importa)."""
     conds: list[str] = ["a.empresa_id = %s"]
@@ -145,6 +146,11 @@ def _build_where(
         conds.append("a.departamento_id = ANY(%s)")
         params.append(list(scope_departamento_ids))
 
+    # ADR-002 Etapa 4 — mesma política, por conexão (opt-in por empresa).
+    if scope_conexao_ids is not None:
+        conds.append("a.conexao_id = ANY(%s)")
+        params.append(list(scope_conexao_ids))
+
     return " AND ".join(conds), params
 
 
@@ -158,9 +164,12 @@ async def list_atendimentos_historico(
     limit: int = 50,
     offset: int = 0,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Lista paginada do histórico. Retorna (rows, total)."""
-    where, params = _build_where(empresa_id, filtros, scope_departamento_ids)
+    where, params = _build_where(
+        empresa_id, filtros, scope_departamento_ids, scope_conexao_ids
+    )
     order_col = _SORT_COLS.get(sort_field, "a.created_at")
     direction = "ASC" if sort_order.lower() == "asc" else "DESC"
 
@@ -187,11 +196,14 @@ async def iter_historico_rows_para_export(
     *,
     filtros: HistoricoFiltros,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
     cap: int = EXPORT_ROW_CAP,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Carrega linhas pro export (sem paginação, até `cap`). Retorna
     (rows, truncado) — `truncado=True` se bateu no cap."""
-    where, params = _build_where(empresa_id, filtros, scope_departamento_ids)
+    where, params = _build_where(
+        empresa_id, filtros, scope_departamento_ids, scope_conexao_ids
+    )
     sql = f"""
         SELECT {_SELECT}
         {_FROM}

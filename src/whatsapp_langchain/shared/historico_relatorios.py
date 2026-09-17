@@ -7,6 +7,8 @@ e `relatorios_nps`. Tempo de 1ª resposta é DERIVADO de `message_queue` (sem
 coluna nova / sem tocar o hot-path do worker).
 
 RBAC: `scope_departamento_ids` (escopo `.own`) filtra por departamento.
+`scope_conexao_ids` (ADR-002 Etapa 4, opt-in por empresa) filtra por conexão
+— mesmo default-deny: só a UNIÃO das duas condições passa (AND, não OR).
 """
 
 from __future__ import annotations
@@ -16,10 +18,19 @@ from typing import Any
 from psycopg_pool import AsyncConnectionPool
 
 
-def _scope(scope_departamento_ids: set[int] | None) -> tuple[str, list[Any]]:
-    if scope_departamento_ids is None:
-        return "", []
-    return " AND a.departamento_id = ANY(%s)", [list(scope_departamento_ids)]
+def _scope(
+    scope_departamento_ids: set[int] | None,
+    scope_conexao_ids: set[int] | None = None,
+) -> tuple[str, list[Any]]:
+    sql = ""
+    params: list[Any] = []
+    if scope_departamento_ids is not None:
+        sql += " AND a.departamento_id = ANY(%s)"
+        params.append(list(scope_departamento_ids))
+    if scope_conexao_ids is not None:
+        sql += " AND a.conexao_id = ANY(%s)"
+        params.append(list(scope_conexao_ids))
+    return sql, params
 
 
 async def _one(
@@ -48,9 +59,10 @@ async def resumo(
     *,
     dias: int,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
 ) -> dict[str, Any]:
     """KPIs do período + série diária + tempos + CSAT/NPS."""
-    sc, sp = _scope(scope_departamento_ids)
+    sc, sp = _scope(scope_departamento_ids, scope_conexao_ids)
 
     kpis = await _one(
         pool,
@@ -128,8 +140,9 @@ async def por_operador(
     *,
     dias: int,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
-    sc, sp = _scope(scope_departamento_ids)
+    sc, sp = _scope(scope_departamento_ids, scope_conexao_ids)
     return await _all(
         pool,
         f"""
@@ -157,8 +170,9 @@ async def por_departamento(
     *,
     dias: int,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
-    sc, sp = _scope(scope_departamento_ids)
+    sc, sp = _scope(scope_departamento_ids, scope_conexao_ids)
     return await _all(
         pool,
         f"""
@@ -186,8 +200,9 @@ async def por_canal(
     *,
     dias: int,
     scope_departamento_ids: set[int] | None = None,
+    scope_conexao_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
-    sc, sp = _scope(scope_departamento_ids)
+    sc, sp = _scope(scope_departamento_ids, scope_conexao_ids)
     return await _all(
         pool,
         f"""

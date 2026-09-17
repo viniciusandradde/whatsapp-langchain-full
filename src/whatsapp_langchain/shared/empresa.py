@@ -172,7 +172,7 @@ _EMPRESA_COLS = (
     "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
     "logo_path, nome_exibicao, cor_primaria, cor_secundaria, "
     "anuncia_atendente_assumiu, onboarding_dispensado_at, "
-    "voz_ativa, voz_nome, voz_estilo, retencao_dias"
+    "voz_ativa, voz_nome, voz_estilo, retencao_dias, conexao_scope_ativo"
 )
 
 
@@ -197,7 +197,23 @@ def _row_to_empresa(row) -> Empresa:
         voz_nome=row[16] or "alloy",
         voz_estilo=row[17] or "",
         retencao_dias=row[18],
+        conexao_scope_ativo=bool(row[19]),
     )
+
+
+async def is_conexao_scope_ativo(pool: AsyncConnectionPool, empresa_id: int) -> bool:
+    """Empresa optou pelo escopo de atendimento por conexão (ADR-002, Decisão 6)?
+
+    Query dedicada, não `get_empresa_by_id`: isto roda em toda listagem/poll
+    da fila e do histórico — 1 coluna booleana é mais barato que a `Empresa`
+    inteira (campos de white-label, fiscais etc.).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT conexao_scope_ativo FROM empresa WHERE id = %s", (empresa_id,)
+        )
+        row = await cur.fetchone()
+    return bool(row[0]) if row else False
 
 
 async def get_empresa_by_id(

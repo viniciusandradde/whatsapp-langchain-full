@@ -457,3 +457,32 @@ async def get_user_departamento_ids(
         )
         rows = await cur.fetchall()
     return [r[0] for r in rows]
+
+
+async def get_user_conexao_ids(
+    pool: AsyncConnectionPool, user_id: str, empresa_id: int, contexto: str
+) -> list[int]:
+    """Lista IDs das conexões atribuídas ao user na empresa, para `contexto`.
+
+    ADR-002, Etapa 4 (Decisão 6): usado pra aplicar filtro `.own` de
+    `atendimento.read` — só quando a empresa tem `conexao_scope_ativo=TRUE`
+    (`shared/empresa.py::is_conexao_scope_ativo`). Retorna lista vazia se o
+    user não tem nenhuma conexão atribuída para este contexto; nesse caso,
+    queries `.own` devem retornar zero records (mesma política de
+    default-deny do `get_user_departamento_ids`).
+
+    `contexto` é `'fila'` (fila viva/lista de atendimentos) ou `'historico'`
+    — a mesma conexão pode estar visível num e não no outro (mig 188).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT DISTINCT uc.conexao_id
+              FROM usuario_conexao uc
+             WHERE uc.user_id = %s AND uc.empresa_id = %s
+               AND %s = ANY(uc.contexto)
+            """,
+            (user_id, empresa_id, contexto),
+        )
+        rows = await cur.fetchall()
+    return [r[0] for r in rows]

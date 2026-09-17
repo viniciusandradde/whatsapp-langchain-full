@@ -26,6 +26,7 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.shared import historico_relatorios as rel
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.empresa import is_conexao_scope_ativo
 from whatsapp_langchain.shared.historico import (
     HistoricoFiltros,
     get_historico_detalhe,
@@ -35,6 +36,7 @@ from whatsapp_langchain.shared.historico import (
 from whatsapp_langchain.shared.perfil import get_user_permissions
 from whatsapp_langchain.shared.permissoes import (
     effective_scope,
+    get_user_conexao_ids,
     get_user_departamento_ids,
 )
 
@@ -83,9 +85,15 @@ _EXPORT_COLS: list[tuple[str, str]] = [
 
 async def _resolve_scope(
     request: Request, user_id: str, empresa_id: int
-) -> set[int] | None:
-    """Retorna o set de deptos do operador quando escopo `.own`; None quando
-    `.all` (sem restrição). Levanta 403 se sem `atendimento.read`."""
+) -> tuple[set[int] | None, set[int] | None]:
+    """Retorna `(deptos, conexoes)` do operador quando escopo `.own`; ambos
+    None quando `.all` (sem restrição). Levanta 403 se sem `atendimento.read`.
+
+    Conexão (ADR-002 Etapa 4) só entra em jogo se a EMPRESA optou
+    (`conexao_scope_ativo`, default OFF) — contexto `'historico'`, que pode
+    divergir do `'fila'` de `routes/atendimento.py` (mesma conexão pode
+    estar visível num e não no outro, mig 188).
+    """
     pool = await get_pool()
     perms = await get_user_permissions(pool, user_id, empresa_id)
     scope = effective_scope(perms, "atendimento.read")
@@ -94,9 +102,15 @@ async def _resolve_scope(
             status_code=403,
             detail="Permissão necessária: atendimento.read[.own|.all]",
         )
-    if scope == "own":
-        return set(await get_user_departamento_ids(pool, user_id, empresa_id))
-    return None
+    if scope != "own":
+        return None, None
+    dept_ids = set(await get_user_departamento_ids(pool, user_id, empresa_id))
+    conexao_ids: set[int] | None = None
+    if await is_conexao_scope_ativo(pool, empresa_id):
+        conexao_ids = set(
+            await get_user_conexao_ids(pool, user_id, empresa_id, contexto="historico")
+        )
+    return dept_ids, conexao_ids
 
 
 def _parse_filtros(
@@ -166,7 +180,9 @@ async def listar_historico(
     """Lista paginada do histórico com filtros + ordenação."""
     if sort_field not in _SORT_FIELDS:
         raise HTTPException(status_code=400, detail="sort_field inválido")
-    scope_dept_ids = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept_ids, scope_conexao_ids = await _resolve_scope(
+        request, user_id, empresa_id
+    )
     filtros = _parse_filtros(
         created_de=created_de,
         created_ate=created_ate,
@@ -192,6 +208,7 @@ async def listar_historico(
         limit=limit,
         offset=(page - 1) * limit,
         scope_departamento_ids=scope_dept_ids,
+        scope_conexao_ids=scope_conexao_ids,
     )
     return {"rows": rows, "total": total, "page": page, "limit": limit}
 
@@ -219,7 +236,9 @@ async def exportar_historico(
     """Exporta o histórico filtrado em CSV ou XLSX (download)."""
     if formato not in ("csv", "xlsx"):
         raise HTTPException(status_code=400, detail="formato deve ser csv ou xlsx")
-    scope_dept_ids = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept_ids, scope_conexao_ids = await _resolve_scope(
+        request, user_id, empresa_id
+    )
     filtros = _parse_filtros(
         created_de=created_de,
         created_ate=created_ate,
@@ -237,7 +256,11 @@ async def exportar_historico(
     )
     pool = await get_pool()
     rows, truncado = await iter_historico_rows_para_export(
-        pool, empresa_id, filtros=filtros, scope_departamento_ids=scope_dept_ids
+        pool,
+        empresa_id,
+        filtros=filtros,
+        scope_departamento_ids=scope_dept_ids,
+        scope_conexao_ids=scope_conexao_ids,
     )
     logger.info(
         "historico_export",
@@ -267,9 +290,15 @@ async def relatorio_resumo(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, Any]:
-    scope = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept, scope_conexao = await _resolve_scope(request, user_id, empresa_id)
     pool = await get_pool()
-    return await rel.resumo(pool, empresa_id, dias=dias, scope_departamento_ids=scope)
+    return await rel.resumo(
+        pool,
+        empresa_id,
+        dias=dias,
+        scope_departamento_ids=scope_dept,
+        scope_conexao_ids=scope_conexao,
+    )
 
 
 @router.get("/relatorios/por-operador")
@@ -279,11 +308,15 @@ async def relatorio_por_operador(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, Any]:
-    scope = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept, scope_conexao = await _resolve_scope(request, user_id, empresa_id)
     pool = await get_pool()
     return {
         "items": await rel.por_operador(
-            pool, empresa_id, dias=dias, scope_departamento_ids=scope
+            pool,
+            empresa_id,
+            dias=dias,
+            scope_departamento_ids=scope_dept,
+            scope_conexao_ids=scope_conexao,
         )
     }
 
@@ -295,11 +328,15 @@ async def relatorio_por_departamento(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, Any]:
-    scope = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept, scope_conexao = await _resolve_scope(request, user_id, empresa_id)
     pool = await get_pool()
     return {
         "items": await rel.por_departamento(
-            pool, empresa_id, dias=dias, scope_departamento_ids=scope
+            pool,
+            empresa_id,
+            dias=dias,
+            scope_departamento_ids=scope_dept,
+            scope_conexao_ids=scope_conexao,
         )
     }
 
@@ -311,11 +348,15 @@ async def relatorio_por_canal(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
 ) -> dict[str, Any]:
-    scope = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept, scope_conexao = await _resolve_scope(request, user_id, empresa_id)
     pool = await get_pool()
     return {
         "items": await rel.por_canal(
-            pool, empresa_id, dias=dias, scope_departamento_ids=scope
+            pool,
+            empresa_id,
+            dias=dias,
+            scope_departamento_ids=scope_dept,
+            scope_conexao_ids=scope_conexao,
         )
     }
 
@@ -329,15 +370,23 @@ async def detalhe_historico(
 ) -> dict[str, Any]:
     """Detalhe agregado de um atendimento (timeline + transferências +
     avaliação + tags + anotações + eventos)."""
-    scope_dept_ids = await _resolve_scope(request, user_id, empresa_id)
+    scope_dept_ids, scope_conexao_ids = await _resolve_scope(
+        request, user_id, empresa_id
+    )
     pool = await get_pool()
     detalhe = await get_historico_detalhe(pool, atendimento_id, empresa_id)
     if detalhe is None:
         raise HTTPException(status_code=404, detail="Atendimento não encontrado")
-    # RBAC record-level: escopo .own só vê deptos vinculados.
+    # RBAC record-level: escopo .own só vê deptos/conexões vinculados. 404
+    # (não 403) pelo mesmo motivo do resto do arquivo — não vaza que o
+    # atendimento existe fora do escopo do user.
     if scope_dept_ids is not None:
         dep = detalhe["atendimento"].get("departamento_id")
         if dep not in scope_dept_ids:
+            raise HTTPException(status_code=404, detail="Atendimento não encontrado")
+    if scope_conexao_ids is not None:
+        cx = detalhe["atendimento"].get("conexao_id")
+        if cx not in scope_conexao_ids:
             raise HTTPException(status_code=404, detail="Atendimento não encontrado")
     return detalhe
 
