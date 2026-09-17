@@ -10,6 +10,8 @@ gancho automático do worker (`conexao.transcrever_audio_sempre`).
 
 from __future__ import annotations
 
+import base64
+
 import structlog
 from psycopg_pool import AsyncConnectionPool
 
@@ -52,7 +54,7 @@ async def transcrever_mensagem(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT media_url, media_type, transcricao, empresa_id
+            SELECT media_url, media_arquivo_uuid::text, media_type, transcricao, empresa_id
               FROM message_queue
              WHERE {" AND ".join(where)}
             """,  # type: ignore[arg-type]  # noqa: S608 — colunas fixas; valores via placeholder
@@ -62,11 +64,28 @@ async def transcrever_mensagem(
 
     if row is None:
         raise MensagemSemAudioError("Mensagem não encontrada.")
-    media_url, media_type, existente, empresa_da_linha = row
+    media_url, media_arquivo_uuid, media_type, existente, empresa_da_linha = row
     if existente is not None:
         return existente
-    if not media_url or not (media_type or "").startswith("audio/"):
+    if (not media_url and not media_arquivo_uuid) or not (media_type or "").startswith(
+        "audio/"
+    ):
         raise MensagemSemAudioError("Esta mensagem não tem áudio para transcrever.")
+
+    if not media_url and media_arquivo_uuid:
+        # Object storage (mig 183/184): áudio no bucket, `media_url` fica NULL
+        # de propósito e só a referência é guardada. Mesma resolução de
+        # `worker/processor.py` e `agents/tools/midia.py::_media_url_da_fila` —
+        # materializa em `data:` inline (`download_media` decoda abaixo).
+        from whatsapp_langchain.shared import arquivo as arquivo_lib
+        from whatsapp_langchain.shared import storage
+
+        arq = await arquivo_lib.get_arquivo(pool, media_arquivo_uuid)
+        if arq is None:
+            raise MensagemSemAudioError("Esta mensagem não tem áudio para transcrever.")
+        dados = await storage.ler_bytes(arq)
+        mime = arq.mime_type or media_type or "application/octet-stream"
+        media_url = f"data:{mime};base64,{base64.b64encode(dados).decode()}"
 
     media_bytes, mime_real = await download_media(media_url)
     # Custo visível à governança: esta transcrição era um POST cru ao
