@@ -17,6 +17,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import base_conhecimento
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.file_extractor import (
@@ -45,6 +46,7 @@ async def list_documentos(
     pasta_id: int | None = None,
     raiz: bool = False,
     incluir_subpastas: bool = False,
+    _perm: None = Depends(require_permission("base_conhecimento.read")),
 ) -> dict[str, list[DocumentoConhecimento]]:
     """Lista documentos da empresa.
 
@@ -88,6 +90,7 @@ async def list_documentos(
 async def get_documento(
     doc_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("base_conhecimento.read")),
 ) -> DocumentoConhecimento:
     pool = await get_pool()
     doc = await base_conhecimento.get_documento(pool, empresa_id, doc_id)
@@ -101,6 +104,7 @@ async def create_documento(
     body: DocumentoConhecimentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> DocumentoConhecimento:
     pool = await get_pool()
     out = await base_conhecimento.upsert_documento(
@@ -122,6 +126,7 @@ async def update_documento(
     body: DocumentoConhecimentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> DocumentoConhecimento:
     pool = await get_pool()
     existing = await base_conhecimento.get_documento(pool, empresa_id, doc_id)
@@ -145,6 +150,7 @@ async def delete_documento(
     doc_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> None:
     pool = await get_pool()
     deleted = await base_conhecimento.delete_documento(pool, empresa_id, doc_id)
@@ -178,6 +184,7 @@ class _BuscarResultado(BaseModel):
 async def buscar_documentos(
     body: _BuscarBody,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("base_conhecimento.read")),
 ) -> dict[str, list[_BuscarResultado]]:
     """Endpoint de teste — espelha o que a tool do agente vê."""
     pool = await get_pool()
@@ -207,6 +214,7 @@ async def upload_documento(
     split_md_headers: bool = Form(default=True),
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> dict:
     """Cria documento(s) a partir de upload de PDF/DOCX/MD/TXT.
 

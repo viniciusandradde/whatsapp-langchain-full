@@ -32,7 +32,7 @@ def _modelo(**overrides) -> ModeloMensagem:
 
 
 @pytest.fixture
-def client():
+def client(api_sem_banco):
     """TestClient com auth desabilitada e empresa_id=1, user=user-x."""
     app.dependency_overrides[verify_service_token] = lambda: None
     app.dependency_overrides[get_empresa_context] = lambda: 1

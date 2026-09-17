@@ -11,6 +11,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.departamento import (
     DuplicateDepartamentoError,
@@ -38,6 +39,7 @@ router = APIRouter(
 async def list_my_departamentos(
     empresa_id: int = Depends(get_empresa_context),
     com_users: bool = False,
+    _perm: None = Depends(require_permission("departamento.read")),
 ) -> dict[str, list[Departamento]]:
     pool = await get_pool()
     rows = await list_departamentos(pool, empresa_id, com_users_count=com_users)
@@ -48,6 +50,7 @@ async def list_my_departamentos(
 async def get_my_departamento(
     dep_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("departamento.read")),
 ) -> Departamento:
     pool = await get_pool()
     row = await get_departamento_by_id(pool, empresa_id, dep_id)
@@ -61,6 +64,7 @@ async def create(
     body: DepartamentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("departamento.write")),
 ) -> Departamento:
     pool = await get_pool()
     try:
@@ -83,6 +87,7 @@ async def update(
     body: DepartamentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("departamento.write")),
 ) -> Departamento:
     pool = await get_pool()
     existing = await get_departamento_by_id(pool, empresa_id, dep_id)
@@ -109,6 +114,7 @@ async def delete(
     dep_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("departamento.write")),
 ) -> None:
     pool = await get_pool()
     deleted = await delete_departamento(pool, empresa_id, dep_id)
@@ -133,6 +139,7 @@ class AssignUserInput(BaseModel):
 async def list_dep_users(
     dep_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("departamento.read")),
 ) -> dict:
     """Lista users atribuídos ao departamento (com nome/email)."""
     pool = await get_pool()
@@ -148,6 +155,7 @@ async def assign_dep_user(
     dep_id: int,
     body: AssignUserInput,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("departamento.write")),
 ) -> dict:
     pool = await get_pool()
     existing = await get_departamento_by_id(pool, empresa_id, dep_id)
@@ -167,6 +175,7 @@ async def unassign_dep_user(
     dep_id: int,
     target_user_id: str,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("departamento.write")),
 ) -> None:
     pool = await get_pool()
     ok = await unassign_user_from_departamento(

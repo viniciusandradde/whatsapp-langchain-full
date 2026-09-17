@@ -91,7 +91,18 @@ faz o sistema dele parecer completo.
    auditoria, custa uma coluna) e **opt-in por empresa** (ligar para todos de uma vez quebraria os
    clientes atuais).
 
-7. **Não adotamos permissão direta no usuário.** *Reforçada pela 2ª introspecção:* o ZigChat **não tem
+8. **Exigir `X` é satisfeito por `X`, `X.own` ou `X.all`.** Descoberto ao executar a Etapa 1:
+   `require_permission` comparava string exata, e **nenhum perfil system concede o código-base** —
+   `PERFIS_SYSTEM` dá `atendimento.write.own` ao Operador e `atendimento.write.all` ao Gestor. Toda
+   rota gateada no código-base era, na prática, **Admin-only**. O defeito ficou escondido porque os
+   perfis da empresa 1 vieram das migs 083/084, que gravaram também os códigos-base (46/23
+   permissões, contra 39/17 nas empresas semeadas pelo código) — ou seja, o ambiente onde se testava
+   era o único onde funcionava. O painel já usava esta regra (`hasPerm`), então front e backend
+   discordavam: a UI mostrava o botão e a API devolvia 403. O portão responde "pode fazer isso em
+   algum escopo?"; **quais linhas** o usuário vê continua sendo do handler. A recíproca não vale:
+   quem exige `.all` não se contenta com o código-base. Em `dependencies_rbac.py::tem_permissao`.
+
+9. **Não adotamos permissão direta no usuário.** *Reforçada pela 2ª introspecção:* o ZigChat **não tem
    perfil nenhum** — não existe vínculo usuário↔grupo no schema; `GrupoSistema` é um preset que a tela
    copia para `Usuario.permissoes[]`. Logo ele não é um contra-exemplo, é a demonstração do custo:
    mudar a regra de um cargo vira edição usuário a usuário, "quem pode exportar clientes?" vira
@@ -104,11 +115,42 @@ faz o sistema dele parecer completo.
 | Etapa | O quê | Risco |
 |---|---|---|
 | **0** | Migração role→perfil + conferência pelo raio-X — `scripts/migrar_role_para_perfil.py` (dry-run padrão). **FEITA no dev 2026-09-16:** divergência 0, membros sem perfil 0 | baixo (só concede) |
-| **1** | `require_permission` nas 17 rotas sem gate, com as permissões que já existem | **médio — pode tirar acesso**; validar no dev |
+| **1** | `require_permission` nas rotas sem gate, com as permissões que já existem. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 17 → **5**, órfãs 38 → **11**. Ver "Resultado da Etapa 1" abaixo | **médio — pode tirar acesso**; validado no dev |
 | **2** | Permissões novas (lacunas do ZigChat) + aplicar | médio |
 | **3** | `is_admin_of` deriva de permissão (fecha o A4) | médio, destravado pela etapa 0 |
 | **4** | Escopo por conexão | médio |
 | **5** | UI em árvore (a tabela `permissao` **já tem `modulo`**) + raio-X como tela | baixo |
+
+## Resultado da Etapa 1 (dev, 2026-09-16)
+
+Portões aplicados usando **só permissões que já existiam** no catálogo:
+`cliente`, `variavel`, `departamento`, `modelo_mensagem`, `hook` (+ `hook.dlq.retry`),
+`base_conhecimento`, `pasta` (organiza a base — mesma permissão do conteúdo), `agendamento`,
+`lgpd.audit.read`, `horario.write` nas escritas, os GETs de `conexao` e — o que mais importava —
+`claim` / `close` / `transfer` / `reset-thread` do atendimento, que tinham permissão própria no
+catálogo e **nenhum portão na rota**.
+
+| | Antes | Depois |
+|---|--:|--:|
+| Rotas de negócio sem gate | 17 | **5** |
+| Permissões órfãs | 38 de 70 (54%) | **11 de 70 (16%)** |
+
+Duas correções de medição, ambas no `scripts/raio_x_acesso.py`: `disparador.py` e `captura.py` são
+autenticados por **chave de API da empresa** (`verify_api_key` / `require_scope`), não por sessão —
+não há `user_id` para resolver perfil, então são exceção legítima como os webhooks, e contá-los
+inflava o número.
+
+Sobraram 5, todas dependendo de permissão que **ainda não existe** (Etapa 2): `admin.py`,
+`historico.py`, `hitl.py`, `relatorios_nps.py`, `dataset_import.py`.
+
+Uma permissão precisou ser concedida para não tirar acesso: **`conexao.read` ao Operador**
+(mig `186`). O modal "Nova conversa" lê `GET /api/conexoes` para saber se a primeira mensagem é
+texto livre ou template — sem o grant, a Etapa 1 derrubaria o operador. Não alarga nada: hoje ele já
+lê a lista sem portão nenhum; restringir de verdade é a Etapa 4.
+
+Conferido no dev pela API, com um Operador da empresa 900 (perfil **sem** os códigos-base):
+200 em conexões/clientes/atendimentos/departamentos/modelos/base/pastas/agendamentos,
+403 em variáveis, hooks, LGPD e em toda escrita fora do escopo dele.
 
 ## Consequências
 

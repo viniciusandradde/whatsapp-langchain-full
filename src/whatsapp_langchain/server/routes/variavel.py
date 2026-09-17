@@ -15,6 +15,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.models import VariavelAmbiente, VariavelAmbienteInput
 from whatsapp_langchain.shared.variavel import (
@@ -38,6 +39,7 @@ router = APIRouter(
 @router.get("")
 async def list_my_variaveis(
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("variavel.read")),
 ) -> dict[str, list[VariavelAmbiente]]:
     pool = await get_pool()
     rows = await list_variaveis(pool, empresa_id)
@@ -48,6 +50,7 @@ async def list_my_variaveis(
 async def get_my_variavel(
     var_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("variavel.read")),
 ) -> VariavelAmbiente:
     pool = await get_pool()
     row = await get_variavel_by_id(pool, empresa_id, var_id)
@@ -61,6 +64,7 @@ async def create(
     body: VariavelAmbienteInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("variavel.write")),
 ) -> VariavelAmbiente:
     pool = await get_pool()
     try:
@@ -83,6 +87,7 @@ async def update(
     body: VariavelAmbienteInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("variavel.write")),
 ) -> VariavelAmbiente:
     pool = await get_pool()
     existing = await get_variavel_by_id(pool, empresa_id, var_id)
@@ -109,6 +114,7 @@ async def delete(
     var_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("variavel.write")),
 ) -> None:
     pool = await get_pool()
     deleted = await delete_variavel(pool, empresa_id, var_id)

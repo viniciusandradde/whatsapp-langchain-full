@@ -15,6 +15,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook import (
     EVENTOS_VALIDOS,
@@ -56,6 +57,7 @@ def _validate_evento(evento: str) -> None:
 async def list_my_hooks(
     evento: str | None = Query(default=None),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("hook.read")),
 ) -> dict[str, list[Hook]]:
     if evento:
         _validate_evento(evento)
@@ -65,7 +67,9 @@ async def list_my_hooks(
 
 
 @router.get("/eventos")
-async def list_eventos() -> dict[str, list[str]]:
+async def list_eventos(
+    _perm: None = Depends(require_permission("hook.read")),
+) -> dict[str, list[str]]:
     """Eventos válidos — útil pro dropdown da UI."""
     return {"eventos": sorted(EVENTOS_VALIDOS)}
 
@@ -99,6 +103,7 @@ async def create(
     body: HookInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("hook.write")),
 ) -> Hook:
     _validate_evento(body.evento)
     await _validar_url_saida(body.url)
@@ -121,6 +126,7 @@ async def update(
     body: HookInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("hook.write")),
 ) -> Hook:
     await _load_hook_in_empresa(hook_id, empresa_id)
     _validate_evento(body.evento)
@@ -144,6 +150,7 @@ async def delete(
     hook_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("hook.write")),
 ) -> None:
     await _load_hook_in_empresa(hook_id, empresa_id)
     pool = await get_pool()
@@ -161,6 +168,7 @@ async def read_logs(
     hook_id: int,
     limit: int = Query(default=50, ge=1, le=200),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("hook.read")),
 ) -> dict[str, list[HookLog]]:
     """Últimas N tentativas de entrega do hook (200=ok, 4xx/5xx=erro)."""
     await _load_hook_in_empresa(hook_id, empresa_id)
@@ -179,6 +187,7 @@ async def list_dlq(
     status: str | None = Query(default="pending"),
     limit: int = Query(default=100, ge=1, le=500),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("hook.read")),
 ) -> dict[str, list[dict]]:
     """Lista entradas DLQ da empresa.
 
@@ -197,6 +206,7 @@ async def retry_dlq(
     dlq_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("hook.dlq.retry")),
 ) -> dict:
     """Reagenda entrega do hook da DLQ entry.
 
@@ -239,6 +249,7 @@ async def archive_dlq(
     dlq_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("hook.dlq.retry")),
 ) -> dict:
     """Marca DLQ entry como `archived` (operador decidiu ignorar)."""
     pool = await get_pool()

@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.atendimento import list_atendimentos_by_cliente
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
 from whatsapp_langchain.shared.cliente import (
@@ -76,6 +77,7 @@ async def list_my_clientes(
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("cliente.read")),
 ) -> dict[str, list[Cliente]]:
     """Lista clientes da empresa ativa (mais recente primeiro).
 
@@ -126,6 +128,7 @@ async def _load_cliente_in_empresa(cliente_id: int, empresa_id: int) -> Cliente:
 async def read_cliente(
     cliente_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("cliente.read")),
 ) -> ClienteDetail:
     """Detalhe de um cliente — inclui tags (no objeto) e anotações."""
     cliente = await _load_cliente_in_empresa(cliente_id, empresa_id)
@@ -205,7 +208,8 @@ async def update_cliente_endpoint(
     body: ClienteUpdateInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
-    request: __import__("fastapi").Request = None,  # type: ignore[assignment]
+    request: __import__("fastapi").Request = None,  # type: ignore[assignment],
+    _perm: None = Depends(require_permission("cliente.write")),
 ) -> Cliente:
     """Atualiza dados do cliente (nome, email, endereço, etc.).
 
@@ -312,6 +316,7 @@ async def create_anotacao(
     body: AnotacaoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("cliente.write")),
 ) -> ClienteAnotacao:
     """Adiciona anotação livre vinculada ao operador autenticado."""
     await _load_cliente_in_empresa(cliente_id, empresa_id)
@@ -332,6 +337,7 @@ async def create_tag(
     cliente_id: int,
     body: TagInput,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("cliente.write")),
 ) -> None:
     """Adiciona tag ao cliente (idempotente — duplicata é silenciosa)."""
     await _load_cliente_in_empresa(cliente_id, empresa_id)
@@ -350,6 +356,7 @@ async def delete_tag(
     cliente_id: int,
     tag: str,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("cliente.write")),
 ) -> None:
     """Remove tag (idempotente — sem 404 quando não existe)."""
     await _load_cliente_in_empresa(cliente_id, empresa_id)
@@ -369,6 +376,7 @@ async def list_atendimentos_anteriores(
     limit: int = Query(default=10, ge=1, le=100),
     exclude_id: int | None = Query(default=None, ge=1),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("cliente.read")),
 ) -> dict:
     """Histórico de atendimentos do cliente (mais recente primeiro).
 

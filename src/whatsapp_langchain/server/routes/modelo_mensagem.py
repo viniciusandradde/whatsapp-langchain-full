@@ -14,6 +14,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.modelo_mensagem import (
     DuplicateTituloError,
@@ -38,6 +39,7 @@ router = APIRouter(
 async def list_my_modelos(
     search: str | None = Query(default=None, max_length=200),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("modelo_mensagem.read")),
 ) -> dict[str, list[ModeloMensagem]]:
     """Lista modelos da empresa ativa em ordem alfabética."""
     pool = await get_pool()
@@ -60,6 +62,7 @@ async def create(
     body: ModeloMensagemInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("modelo_mensagem.write")),
 ) -> ModeloMensagem:
     pool = await get_pool()
     try:
@@ -82,6 +85,7 @@ async def update(
     body: ModeloMensagemInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("modelo_mensagem.write")),
 ) -> ModeloMensagem:
     await _load_modelo_in_empresa(modelo_id, empresa_id)
     pool = await get_pool()
@@ -106,6 +110,7 @@ async def delete(
     modelo_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("modelo_mensagem.write")),
 ) -> None:
     await _load_modelo_in_empresa(modelo_id, empresa_id)
     pool = await get_pool()

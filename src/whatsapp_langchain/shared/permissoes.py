@@ -291,6 +291,9 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "modelo_mensagem.read",
             "base_conhecimento.read",
             "departamento.read",
+            # O modal "Nova conversa" lê a conexão padrão pra saber se a
+            # primeira mensagem é texto livre ou template (mig 186).
+            "conexao.read",
             "atendimento.aba.manage",
             "atendimento.tag.aplicar",
             "atendimento.nota_interna.criar",

@@ -792,6 +792,7 @@ async def claim(
     atendimento_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.claim")),
 ) -> Atendimento:
     """Operador "puxa" o atendimento — vira em_andamento + assigned=user.
 
@@ -923,6 +924,7 @@ async def close(
     body: CloseInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.close")),
 ) -> Atendimento:
     """Fecha atendimento. status='resolvido' (default) ou 'abandonado'."""
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
@@ -1124,6 +1126,7 @@ async def transfer(
     body: TransferInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.transfer")),
 ) -> Atendimento:
     """Transfere o atendimento — modo `user_id` (atribui a outro operador,
     mantém em_andamento) OU modo `departamento_id` (limpa atendente, volta
@@ -1216,6 +1219,7 @@ async def reset_thread(
     atendimento_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.reset_thread")),
 ) -> dict:
     """Apaga checkpoint LangGraph do thread (phone:agent_id) do atendimento.
 

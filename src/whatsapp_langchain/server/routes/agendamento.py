@@ -20,6 +20,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.agendamento import (
     VALID_STATUS,
     get_by_id,
@@ -55,6 +56,7 @@ async def list_agendamentos(
     cliente_id: int | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("agendamento.read")),
 ) -> dict[str, list[Agendamento]]:
     """Lista agendamentos da empresa cuja `data_inicio ∈ [inicio, fim]`."""
     now = datetime.now(UTC)
@@ -85,6 +87,7 @@ async def get_historico(
     agendamento_id: int,
     limit: int = Query(default=100, ge=1, le=500),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("agendamento.read")),
 ) -> dict[str, list[dict]]:
     """Histórico de mudanças do agendamento (S5).
 

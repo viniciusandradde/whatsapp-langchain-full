@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.lgpd import (
     EVENT_TYPES,
@@ -42,6 +43,7 @@ async def list_eventos(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("lgpd.audit.read")),
 ) -> dict[str, Any]:
     """Lista eventos LGPD da empresa com filtros + paginação.
 
@@ -83,6 +85,7 @@ async def list_eventos(
 @router.get("/eventos/tipos")
 async def list_event_types(
     _empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("lgpd.audit.read")),
 ) -> dict[str, list[str]]:
     """Retorna lista de event_types válidos pra dropdowns no painel."""
     return {"event_types": sorted(EVENT_TYPES)}

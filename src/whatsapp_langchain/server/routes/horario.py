@@ -14,6 +14,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.horario import (
     DuplicateFeriadoError,
@@ -64,6 +65,7 @@ async def create(
     body: HorarioFuncionamentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("horario.write")),
 ) -> HorarioFuncionamento:
     if body.hora_fim <= body.hora_inicio:
         raise HTTPException(
@@ -86,6 +88,7 @@ async def delete_horario_route(
     horario_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("horario.write")),
 ) -> None:
     pool = await get_pool()
     deleted = await delete_horario(pool, empresa_id, horario_id)
@@ -126,6 +129,7 @@ async def create_feriado_route(
     body: FeriadoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("horario.write")),
 ) -> Feriado:
     pool = await get_pool()
     try:
@@ -147,6 +151,7 @@ async def delete_feriado_route(
     feriado_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("horario.write")),
 ) -> None:
     pool = await get_pool()
     deleted = await delete_feriado(pool, empresa_id, feriado_id)

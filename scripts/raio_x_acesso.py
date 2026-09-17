@@ -50,6 +50,13 @@ SEM_GATE_OK = {
     "webhook_sync.py",  # só fora de produção
 }
 
+# Routers autenticados por CHAVE DE API da empresa (`verify_api_key`), não por
+# sessão de usuário: não existe `user_id` para resolver perfil, então
+# `require_permission` não se aplica — o escopo vem da própria chave. É a mesma
+# exceção dos webhooks, e contá-los como "sem gate" inflava o número da Etapa 1.
+# `require_scope("x")` é açúcar em cima de `verify_api_key` (dependencies.py).
+_RE_API_KEY = re.compile(r"Depends\(\s*(?:verify_api_key\s*\)|require_scope\()")
+
 _RE_PERM = re.compile(r"""require_permission\(\s*["']([^"']+)["']""")
 _RE_ROTA = re.compile(r"""@\w*router\w*\.(get|post|put|patch|delete)\(""")
 
@@ -59,6 +66,7 @@ def varrer_codigo() -> dict:
     com_perm: dict[str, list[str]] = {}
     com_admin_of: list[str] = []
     so_superadmin: list[str] = []
+    por_api_key: list[str] = []
     sem_gate: list[tuple[str, int]] = []
     perms_no_codigo: set[str] = set()
 
@@ -75,6 +83,8 @@ def varrer_codigo() -> dict:
             com_admin_of.append(nome)
         elif "_exigir_superadmin" in txt or "is_superadmin" in txt:
             so_superadmin.append(nome)
+        elif _RE_API_KEY.search(txt):
+            por_api_key.append(nome)
         elif nome not in SEM_GATE_OK and n_rotas > 0:
             sem_gate.append((nome, n_rotas))
 
@@ -82,6 +92,7 @@ def varrer_codigo() -> dict:
         "com_perm": com_perm,
         "com_admin_of": com_admin_of,
         "so_superadmin": so_superadmin,
+        "por_api_key": por_api_key,
         "sem_gate": sem_gate,
         "perms_no_codigo": perms_no_codigo,
     }
@@ -197,6 +208,7 @@ def montar_relatorio(codigo: dict, banco: dict) -> dict:
         len(codigo["com_perm"])
         + len(codigo["com_admin_of"])
         + len(codigo["so_superadmin"])
+        + len(codigo["por_api_key"])
         + len(codigo["sem_gate"])
     )
 
@@ -209,10 +221,12 @@ def montar_relatorio(codigo: dict, banco: dict) -> dict:
             "arquivos_com_permissao": len(codigo["com_perm"]),
             "arquivos_com_is_admin_of": len(codigo["com_admin_of"]),
             "arquivos_so_superadmin": len(codigo["so_superadmin"]),
+            "arquivos_por_api_key": len(codigo["por_api_key"]),
             "arquivos_sem_gate": len(codigo["sem_gate"]),
             "total_classificado": total_arqs,
         },
         "rotas_sem_gate": codigo["sem_gate"],
+        "rotas_por_api_key": codigo["por_api_key"],
         "rotas_is_admin_of": codigo["com_admin_of"],
         "permissoes_orfas": orfas,
         "orfas_por_modulo": dict(por_modulo),
@@ -239,6 +253,9 @@ def imprimir(r: dict) -> None:
     print(f"   com require_permission : {c['arquivos_com_permissao']}")
     print(f"   no is_admin_of (legado): {c['arquivos_com_is_admin_of']}")
     print(f"   só superadmin          : {c['arquivos_so_superadmin']}")
+    print(
+        f"   por chave de API       : {c['arquivos_por_api_key']} (escopo vem da chave)"
+    )
     print(f"   SEM gate de permissão  : {c['arquivos_sem_gate']}")
 
     if r["rotas_is_admin_of"]:

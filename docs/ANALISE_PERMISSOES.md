@@ -60,7 +60,12 @@ DATABASE_URL=... uv run python scripts/raio_x_acesso.py          # texto
 DATABASE_URL=... uv run python scripts/raio_x_acesso.py --json   # máquina
 ```
 
-**Cobertura das rotas (dev):** 25 com `require_permission` · 5 no `is_admin_of` · 6 só superadmin · **17 de negócio sem gate nenhum** — entre elas `admin.py` (12 endpoints), `hook.py` (9), `departamento.py` (8), `cliente.py` (7), `historico.py` (7), `lgpd.py` (2).
+**Cobertura das rotas (dev, medição original):** 25 com `require_permission` · 5 no `is_admin_of` · 6 só superadmin · **17 de negócio sem gate nenhum** — entre elas `admin.py` (12 endpoints), `hook.py` (9), `departamento.py` (8), `cliente.py` (7), `historico.py` (7), `lgpd.py` (2).
+
+> ✅ **Etapa 1 executada no dev (2026-09-16):** 35 com `require_permission` · 5 no `is_admin_of` ·
+> 6 só superadmin · 2 por chave de API · **5 sem gate**. Órfãs: **11 de 70**. As 5 que sobraram
+> (`admin.py`, `historico.py`, `hitl.py`, `relatorios_nps.py`, `dataset_import.py`) dependem de
+> permissão que ainda não existe — são a Etapa 2. Detalhe em `docs/ADR-002-modelo-de-autorizacao.md`.
 
 **Permissões órfãs: 38 de 70 (54%)** — mais da metade do catálogo aparece na tela de perfil e não é exigida por rota alguma. Inclui `cliente.*` inteiro, `variavel.*`, `modelo_mensagem.*`, `hook.*`, `base_conhecimento.*`, `agendamento.*` inteiro, e ações críticas do dia a dia: `atendimento.claim`, `atendimento.close`, `atendimento.transfer`, e **`empresa.update`** (que existe, mas quem manda de fato é o `is_admin_of`).
 

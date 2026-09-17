@@ -49,8 +49,35 @@ async def _resolve_user_perms(
     return perms
 
 
+def tem_permissao(perms: set[str], codigo: str) -> bool:
+    """Exigir `X` é satisfeito por `X`, `X.own` ou `X.all`.
+
+    O catálogo tem o código-base E as variantes de escopo (`cliente.read`,
+    `cliente.read.own`, `cliente.read.all`). Quem decide QUAIS linhas o
+    usuário enxerga é o handler (filtro por departamento); o portão só
+    responde "pode fazer isso em algum escopo?".
+
+    Isso não é preciosismo: os perfis system definidos em
+    `shared/permissoes.py::PERFIS_SYSTEM` concedem **só as variantes** —
+    Operador tem `atendimento.write.own`, Gestor tem `atendimento.write.all`,
+    e **nenhum dos dois tem o código-base**. Com igualdade exata, toda rota
+    gateada no código-base virava Admin-only na prática. Os perfis da
+    empresa 1 escondiam o defeito porque foram semeados pelas migs 083/084,
+    que gravaram também os códigos-base (46/23 permissões contra 39/17 das
+    empresas semeadas pelo código).
+
+    É a mesma regra do `hasPerm` do painel
+    (`frontend/src/components/permissions-context.tsx`) — antes daqui, front
+    e backend discordavam: a UI mostrava o botão e a API devolvia 403.
+    """
+    return codigo in perms or f"{codigo}.all" in perms or f"{codigo}.own" in perms
+
+
 def require_permission(codigo: str):
-    """Factory de dependency que checa se o user tem `codigo`."""
+    """Factory de dependency que checa se o user tem `codigo`.
+
+    Aceita as variantes de escopo — ver `tem_permissao`.
+    """
 
     async def _checker(
         request: Request,
@@ -58,7 +85,7 @@ def require_permission(codigo: str):
         empresa_id: int = Depends(get_empresa_context),
     ) -> None:
         perms = await _resolve_user_perms(request, user_id, empresa_id)
-        if codigo not in perms:
+        if not tem_permissao(perms, codigo):
             logger.warning(
                 "permission_denied",
                 user_id=user_id,

@@ -33,7 +33,7 @@ def _var(**overrides) -> VariavelAmbiente:
 
 
 @pytest.fixture
-def client():
+def client(api_sem_banco):
     app.dependency_overrides[verify_service_token] = lambda: None
     app.dependency_overrides[get_empresa_context] = lambda: 1
     app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"

@@ -68,6 +68,7 @@ router = APIRouter(
 @router.get("")
 async def list_my_conexoes(
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("conexao.read")),
 ) -> dict[str, list[Conexao]]:
     """Lista conexões da empresa ativa, default primeiro."""
     pool = await get_pool()
@@ -102,6 +103,7 @@ async def list_my_conexoes(
 async def read_conexao(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("conexao.read")),
 ) -> Conexao:
     pool = await get_pool()
     conexao = await get_conexao_by_id(pool, conexao_id)
@@ -193,6 +195,7 @@ async def patch_conexao_endpoint(
 async def read_conexao_quota(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("conexao.read")),
 ) -> dict[str, object]:
     """Teto diário / aquecimento (anti-ban): teto efetivo do dia, quanto já
     saiu e quanto resta para esta conexão."""
@@ -903,6 +906,7 @@ async def evolution_provision(
 async def get_qr(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("conexao.write")),
 ) -> dict[str, Any]:
     """Retorna QR atual. Re-gera se expirou (Evolution only)."""
     pool = await get_pool()
@@ -1009,6 +1013,7 @@ async def regenerate_pairing_code(
 async def get_status(
     conexao_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("conexao.read")),
 ) -> dict[str, Any]:
     """Polling-friendly: retorna state atual. Atualiza DB se Evolution mudou."""
     pool = await get_pool()

@@ -4,6 +4,7 @@ Este arquivo é carregado automaticamente pelo pytest.
 Contém fixtures reutilizáveis em todos os testes.
 """
 
+import contextlib
 import os
 
 import pytest
@@ -38,6 +39,61 @@ def live_openrouter_api_key():
         )
 
     return os.environ["OPENROUTER_API_KEY"]
+
+
+@pytest.fixture
+def api_sem_banco():
+    """Tira o Postgres do caminho dos testes de ROTA (ADR-002, Etapa 1).
+
+    Faz duas coisas, pelo mesmo motivo — o assunto desses testes é o
+    handler (status, JSON, validação), não a infraestrutura:
+
+    1. **Permissões.** Depois que as rotas de negócio ganharam portão,
+       `require_permission` resolve o perfil no banco. Sem isto, um teste de
+       serialização passa a responder 403 e a acusar um problema que não é o
+       dele. Quem cobre a autorização de verdade é
+       `tests/unit/test_permissao_escopo.py` (a regra) e
+       `test_endpoint_permission_invariant.py` (quem tem portão).
+
+    2. **Pool.** Os handlers chamam `await get_pool()` antes de usar a função
+       de dados — que o teste já substitui por mock. O pool sobrava: abria
+       conexão de verdade dentro do portal do `TestClient` (criado sem
+       `lifespan`), e o desmonte do portal ficava esperando para sempre as
+       tarefas do pool num event loop já fechado. Era o travamento local
+       registrado em `gotcha_suite_trava_testclient_pool` — existe desde antes
+       desta etapa e some com isto.
+
+    Os módulos de rota fazem `from ... import get_pool`, então o nome vive em
+    cada módulo: trocar só em `shared.db` não teria efeito.
+    """
+    import sys
+    from unittest.mock import patch
+
+    class _TudoLiberado(set):
+        def __contains__(self, _item: object) -> bool:
+            return True
+
+    async def _perms(*_args, **_kwargs):
+        return _TudoLiberado()
+
+    async def _pool(*_args, **_kwargs):
+        return object()  # sentinela: o teste mocka quem de fato usaria
+
+    alvos = [
+        nome
+        for nome, mod in list(sys.modules.items())
+        if nome.startswith("whatsapp_langchain.server.routes.")
+        and getattr(mod, "get_pool", None) is not None
+    ]
+
+    with patch(
+        "whatsapp_langchain.server.dependencies_rbac._resolve_user_perms",
+        new=_perms,
+    ):
+        with contextlib.ExitStack() as pilha:
+            for nome in alvos:
+                pilha.enter_context(patch(f"{nome}.get_pool", new=_pool))
+            yield
 
 
 @pytest.fixture

@@ -11,6 +11,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import pasta as pasta_lib
 from whatsapp_langchain.shared.db import get_pool
 
@@ -37,6 +38,7 @@ class MoveDocInput(BaseModel):
 async def list_pastas_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     com_docs: bool = False,
+    _perm: None = Depends(require_permission("base_conhecimento.read")),
 ) -> dict:
     pool = await get_pool()
     items = await pasta_lib.list_pastas(pool, empresa_id, com_docs_count=com_docs)
@@ -45,7 +47,9 @@ async def list_pastas_endpoint(
 
 @router.get("/{pasta_id}")
 async def get_pasta_endpoint(
-    pasta_id: int, empresa_id: int = Depends(get_empresa_context)
+    pasta_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("base_conhecimento.read")),
 ) -> dict:
     pool = await get_pool()
     out = await pasta_lib.get_pasta(pool, empresa_id, pasta_id)
@@ -59,6 +63,7 @@ async def create_pasta_endpoint(
     body: PastaInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> dict:
     pool = await get_pool()
     try:
@@ -85,6 +90,7 @@ async def update_pasta_endpoint(
     pasta_id: int,
     body: PastaInput,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> dict:
     pool = await get_pool()
     try:
@@ -109,6 +115,7 @@ async def update_pasta_endpoint(
 async def delete_pasta_endpoint(
     pasta_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> None:
     pool = await get_pool()
     ok = await pasta_lib.delete_pasta(pool, empresa_id, pasta_id)
@@ -121,6 +128,7 @@ async def move_doc_to_pasta(
     pasta_id: int,
     doc_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("base_conhecimento.write")),
 ) -> dict:
     """Move documento pra esta pasta. pasta_id=0 → raiz (NULL)."""
     pool = await get_pool()
