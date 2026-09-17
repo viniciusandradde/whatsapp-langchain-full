@@ -25,6 +25,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -66,6 +67,7 @@ async def list_pendentes(
     empresa_id: int = Depends(get_empresa_context),
     status: str = Query(default="pending"),
     limit: int = Query(default=50, ge=1, le=200),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ) -> list[AcaoPendente]:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -103,6 +105,7 @@ async def approve(
     body: ReviewBody,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ) -> dict:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -136,6 +139,7 @@ async def reject(
     body: ReviewBody,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ) -> dict:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -166,6 +170,7 @@ async def reject(
 @router.get("/events")
 async def events_stream(
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ):
     """SSE — emite eventos quando acao_pendente é INSERT/UPDATE.
 

@@ -49,7 +49,10 @@ Consequência: **qualquer membro da empresa — inclusive um perfil "somente lei
 Mesma família do padrão já registrado no projeto: *a UI promete o que o backend ignora*.
 
 ### 2.2 Módulos sem permissão no catálogo
-Telas que existem mas não têm permissão própria — e por isso caíram no `is_admin_of` ou em nada: **workflow**, **billing/plano**, **relatórios/dashboard**, **NPS/qualidade**, **uso**, **histórico**, **traces**.
+Telas que existem mas não têm permissão própria — e por isso caíram no `is_admin_of` ou em nada:
+**workflow**, **billing/plano**, **relatórios/dashboard** (geral), **uso**, **traces**.
+~~NPS/qualidade~~ e ~~histórico~~ ganharam cobertura na Etapa 2 (`relatorio.nps.read`;
+`historico.py` era gate manual já existente, só invisível ao raio-X antigo).
 
 ## 2.3 Resultado do raio-X (`scripts/raio_x_acesso.py`, 2026-09-16)
 
@@ -65,7 +68,13 @@ DATABASE_URL=... uv run python scripts/raio_x_acesso.py --json   # máquina
 > ✅ **Etapa 1 executada no dev (2026-09-16):** 35 com `require_permission` · 5 no `is_admin_of` ·
 > 6 só superadmin · 2 por chave de API · **5 sem gate**. Órfãs: **11 de 70**. As 5 que sobraram
 > (`admin.py`, `historico.py`, `hitl.py`, `relatorios_nps.py`, `dataset_import.py`) dependem de
-> permissão que ainda não existe — são a Etapa 2. Detalhe em `docs/ADR-002-modelo-de-autorizacao.md`.
+> permissão que ainda não existia — eram a Etapa 2.
+>
+> ✅ **Etapa 2 executada no dev (2026-09-16):** 40 com `require_permission` · **0 sem gate**.
+> `historico.py` era falso-positivo (já gateava manualmente via `effective_scope`, raio-X corrigido
+> pra reconhecer o padrão). As outras 4 reusaram `agente.config`/`atendimento.read` ou ganharam
+> permissão nova (`atendimento.hitl.approve`, `relatorio.nps.read` — mig 187). Detalhe em
+> `docs/ADR-002-modelo-de-autorizacao.md`.
 
 **Permissões órfãs: 38 de 70 (54%)** — mais da metade do catálogo aparece na tela de perfil e não é exigida por rota alguma. Inclui `cliente.*` inteiro, `variavel.*`, `modelo_mensagem.*`, `hook.*`, `base_conhecimento.*`, `agendamento.*` inteiro, e ações críticas do dia a dia: `atendimento.claim`, `atendimento.close`, `atendimento.transfer`, e **`empresa.update`** (que existe, mas quem manda de fato é o `is_admin_of`).
 

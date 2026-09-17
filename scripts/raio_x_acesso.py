@@ -58,6 +58,12 @@ SEM_GATE_OK = {
 _RE_API_KEY = re.compile(r"Depends\(\s*(?:verify_api_key\s*\)|require_scope\()")
 
 _RE_PERM = re.compile(r"""require_permission\(\s*["']([^"']+)["']""")
+# `effective_scope(perms, "codigo")` é o outro jeito de gatear: resolve
+# manualmente pra aplicar escopo .own/.all à MÃO (filtro por departamento
+# antes da query), em vez de via `Depends`. `historico.py` faz isso e
+# levanta 403 se `effective_scope` volta None — é gate de verdade, só não
+# no formato que o regex de cima pega. Ver `_resolve_scope` lá.
+_RE_SCOPE = re.compile(r"""effective_scope\(\s*\w+\s*,\s*["']([^"']+)["']""")
 _RE_ROTA = re.compile(r"""@\w*router\w*\.(get|post|put|patch|delete)\(""")
 
 
@@ -73,7 +79,7 @@ def varrer_codigo() -> dict:
     for arq in sorted(ROTAS_DIR.glob("*.py")):
         txt = arq.read_text(encoding="utf-8")
         nome = arq.name
-        perms = sorted(set(_RE_PERM.findall(txt)))
+        perms = sorted(set(_RE_PERM.findall(txt)) | set(_RE_SCOPE.findall(txt)))
         n_rotas = len(_RE_ROTA.findall(txt))
         perms_no_codigo.update(perms)
 

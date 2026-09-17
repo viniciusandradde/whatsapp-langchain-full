@@ -21,6 +21,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 
 router = APIRouter(
@@ -106,6 +107,7 @@ _NPS_SCORE_EXPR = """
 async def nps_geral(
     periodo: int = Query(default=30, ge=1, le=365),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("relatorio.nps.read")),
 ) -> NPSResumo:
     """Score NPS geral + breakdown + série diária no período."""
     pool = await get_pool()
@@ -178,6 +180,7 @@ async def nps_geral(
 async def nps_por_departamento(
     periodo: int = Query(default=30, ge=1, le=365),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("relatorio.nps.read")),
 ) -> list[NPSPorDepartamento]:
     """Agrega NPS por departamento. ORDER BY score DESC."""
     pool = await get_pool()
@@ -222,6 +225,7 @@ async def nps_por_departamento(
 async def nps_ranking_operadores(
     periodo: int = Query(default=30, ge=1, le=365),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("relatorio.nps.read")),
 ) -> list[RankingOperadorNPS]:
     """Ranking de operadores por NPS no período. JOIN com auth.user pra nome."""
     pool = await get_pool()
@@ -270,6 +274,7 @@ async def nps_avaliacoes(
     pagina: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("relatorio.nps.read")),
 ) -> NPSAvaliacoesPage:
     """Lista paginada de avaliações com comentários. Filtro opcional por
     categoria (`promotor`/`neutro`/`detrator`).

@@ -31,6 +31,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -78,6 +79,9 @@ def _parse_csv(content: str) -> list[dict[str, Any]]:
 async def import_dataset(
     file: UploadFile = File(...),
     empresa_id: int = Depends(get_empresa_context),
+    # Mesma permissão do resto do módulo RAG/agente (rag_stats.py,
+    # catalogo.py): importar dataset alimenta few-shot e é tuning de agente.
+    _perm: None = Depends(require_permission("agente.config")),
 ) -> ImportResult:
     """Importa dataset histórico (JSONL ou CSV).
 

@@ -7,20 +7,27 @@ from fastapi.testclient import TestClient
 
 from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
+    get_user_id_from_request,
     verify_service_token,
 )
 from whatsapp_langchain.server.main import app
 
 
 @pytest.fixture
-def client():
+def client(api_sem_banco):
     """TestClient com auth desabilitada e empresa_id=1 fixo no contexto.
 
     Pra testes de routing/lógica, override de dependencies é mais limpo
-    do que injetar headers manualmente em cada chamada.
+    do que injetar headers manualmente em cada chamada. `get_user_id_from_
+    request` precisa de override desde a Etapa 2 (ADR-002): os endpoints
+    de config de agente ganharam `require_permission("agente.config")`,
+    que depende dele — sem o override, `X-User-Id` ausente vira 401 antes
+    de chegar no handler. `api_sem_banco` neutraliza o require_permission
+    em si (ver tests/conftest.py).
     """
     app.dependency_overrides[verify_service_token] = lambda: None
     app.dependency_overrides[get_empresa_context] = lambda: 1
+    app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"
     try:
         yield TestClient(app)
     finally:

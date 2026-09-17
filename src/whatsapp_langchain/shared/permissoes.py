@@ -93,6 +93,11 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
         "Ver atendimentos só do próprio departamento (deprecated, use .own)",
         "atendimento",
     ),
+    (
+        "atendimento.hitl.approve",
+        "Aprovar/rejeitar ação do agente pendente de revisão humana (HITL)",
+        "atendimento",
+    ),
     # Agendamento (Calendar v2)
     ("agendamento.read", "Ver agendamentos da empresa", "agendamento"),
     ("agendamento.create", "Criar agendamento", "agendamento"),
@@ -206,6 +211,10 @@ CATALOGO: Final[list[tuple[str, str, str]]] = [
     ),
     # LGPD
     ("lgpd.audit.read", "Ver auditoria/logs LGPD", "lgpd"),
+    # Relatórios (Sprint X NPS foi o 1º; módulo aberto pra outros dashboards
+    # — "relatórios/dashboard" e "NPS/qualidade" ficaram como lacunas
+    # separadas em ANALISE_PERMISSOES.md §2.2, mas o código é 1 só arquivo)
+    ("relatorio.nps.read", "Ver dashboards de NPS/CSAT", "relatorio"),
 ]
 
 
@@ -234,6 +243,9 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             # WhatsApp ao cliente. Quem pode um, pode o outro.
             "atendimento.reprocessar",
             "atendimento.iniciar",
+            # HITL: aprovar/rejeitar ação do agente é supervisão, não
+            # operação de linha — por isso Gestor tem e Operador não.
+            "atendimento.hitl.approve",
             "agendamento.read",
             "agendamento.create",
             "agendamento.cancel",
@@ -266,6 +278,7 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "waba_template.read",
             "waba_template.write",
             "whitelist.manage",
+            "relatorio.nps.read",
         ],
     ),
     (
@@ -313,6 +326,7 @@ PERFIS_SYSTEM: Final[list[tuple[str, str, str | list[str]]]] = [
             "base_conhecimento.read",
             "departamento.read",
             "security.audit.read",
+            "relatorio.nps.read",
         ],
     ),
 ]

@@ -21,6 +21,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.agente_ia import (
     delete_agente_ia_config,
     get_agente_ia_config,
@@ -48,6 +49,12 @@ router = APIRouter(
 )
 
 
+# `/agents`, `/models` e `/empresas` ficam SEM `require_permission` de propósito
+# (ADR-002, Etapa 2) — não são dados de negócio da empresa: os dois primeiros
+# são catálogo global (agent_ids do código, modelos curados — nada aqui
+# depende de empresa_id nem é sensível), e `/empresas` é literalmente "em
+# quais empresas EU sou membro", auto-escopado por user_id — gatear com
+# permissão de empresa não faz sentido pra uma consulta sobre o próprio user.
 @router.get("/agents")
 async def get_agents() -> dict[str, list[str]]:
     """Lista agentes disponíveis no catálogo.
@@ -93,6 +100,7 @@ async def list_my_empresas(
 async def get_agent_config(
     agent_id: str,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("agente.config")),
 ) -> AgentLLMConfigResponse:
     """Retorna a configuração de modelos resolvida (DB ou env) + overrides crus."""
     if agent_id not in list_agents():
@@ -126,6 +134,7 @@ async def update_agent_config(
     agent_id: str,
     body: UpdateAgentLLMConfigRequest,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("agente.config")),
 ) -> AgentLLMConfigResponse:
     """Atualiza overrides de modelo. None ou string vazia limpa o override."""
     if agent_id not in list_agents():
@@ -177,6 +186,7 @@ def _load_default_system_prompt(agent_id: str) -> str:
 async def get_agente_ia_config_route(
     agent_id: str,
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("agente.config")),
 ) -> dict:
     """Retorna o override (se existir) + o prompt default do catálogo."""
     if agent_id not in list_agents():
@@ -195,6 +205,7 @@ async def update_agente_ia_config_route(
     body: AgenteIAConfigInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("agente.config")),
 ) -> AgenteIAConfig:
     if agent_id not in list_agents():
         raise AgentNotFoundError(agent_id)
@@ -219,6 +230,7 @@ async def delete_agente_ia_config_route(
     agent_id: str,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("agente.config")),
 ) -> None:
     if agent_id not in list_agents():
         raise AgentNotFoundError(agent_id)
@@ -238,6 +250,7 @@ async def get_chats(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("atendimento.read")),
 ) -> dict:
     """Lista conversas ativas da empresa ativa, ordenadas por última mensagem.
 
@@ -293,6 +306,7 @@ async def get_chat_messages(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("atendimento.read")),
 ) -> dict:
     """Lista mensagens de uma conversa específica (na empresa ativa)."""
     pool = await get_pool()
@@ -337,6 +351,7 @@ async def get_chat_messages(
 @router.get("/metrics")
 async def get_metrics(
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("atendimento.read")),
 ) -> dict:
     """Métricas operacionais da fila — escopadas pela empresa ativa."""
     pool = await get_pool()
@@ -399,6 +414,7 @@ async def get_metrics(
 @router.get("/queue")
 async def get_queue(
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("atendimento.read")),
 ) -> dict:
     """Visão da fila — contadores, métricas operacionais e últimas 50 mensagens.
 

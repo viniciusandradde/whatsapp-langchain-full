@@ -116,14 +116,10 @@ ALLOWLIST: list[tuple[str, str]] = [
 # NÃO ADICIONE endpoints novos aqui — adicione `require_permission` no
 # handler. Esta lista é só pra dívida pre-existente.
 TECH_DEBT_KNOWN_OFFENDERS: set[str] = {
-    "DELETE /api/agents/{agent_id}/agente-ia-config",
     "DELETE /api/conexoes/{conexao_id}",
     "DELETE /api/empresas/{empresa_id}/membros/{member_user_id}",
     "DELETE /api/google-calendar/config",
     "PATCH /api/conexoes/{conexao_id}",
-    "POST /api/admin/hitl/{acao_id}/approve",
-    "POST /api/admin/hitl/{acao_id}/reject",
-    "POST /api/admin/rag/dataset/import",
     "POST /api/admin/rag/fewshot/backfill",
     "POST /api/admin/rag/langsmith/sync",
     "POST /api/admin/rag/learner/run",
@@ -148,8 +144,6 @@ TECH_DEBT_KNOWN_OFFENDERS: set[str] = {
     "POST /api/conexoes/{conexao_id}/disconnect",
     "POST /api/conexoes/{conexao_id}/test",
     "PUT /api/admin/workflows/{workflow_id}",
-    "PUT /api/agents/{agent_id}/agente-ia-config",
-    "PUT /api/agents/{agent_id}/config",
     "PUT /api/calendar/regras",
     "PUT /api/empresas/{empresa_id}",
     "PUT /api/empresas/{empresa_id}/csat",

@@ -118,7 +118,7 @@ faz o sistema dele parecer completo.
 |---|---|---|
 | **0** | Migração role→perfil + conferência pelo raio-X — `scripts/migrar_role_para_perfil.py` (dry-run padrão). **FEITA no dev 2026-09-16:** divergência 0, membros sem perfil 0 | baixo (só concede) |
 | **1** | `require_permission` nas rotas sem gate, com as permissões que já existem. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 17 → **5**, órfãs 38 → **11**. Ver "Resultado da Etapa 1" abaixo | **médio — pode tirar acesso**; validado no dev |
-| **2** | Permissões novas (lacunas do ZigChat) + aplicar | médio |
+| **2** | Permissões novas para as rotas sem catálogo. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 5 → **0**. Ver "Resultado da Etapa 2" abaixo | médio |
 | **3** | `is_admin_of` deriva de permissão (fecha o A4) | médio, destravado pela etapa 0 |
 | **4** | Escopo por conexão | médio |
 | **5** | UI em árvore (a tabela `permissao` **já tem `modulo`**) + raio-X como tela | baixo |
@@ -154,6 +154,38 @@ Conferido no dev pela API, com um Operador da empresa 900 (perfil **sem** os có
 200 em conexões/clientes/atendimentos/departamentos/modelos/base/pastas/agendamentos,
 403 em variáveis, hooks, LGPD e em toda escrita fora do escopo dele.
 
+
+## Resultado da Etapa 2 (dev, 2026-09-16)
+
+Das 5 rotas que sobraram sem gate: **1 era falso-positivo do raio-X** (`historico.py` já resolve
+`atendimento.read` manualmente via `effective_scope()` para aplicar escopo `.own`/`.all` — o raio-X
+só reconhecia `require_permission(...)`; corrigido para reconhecer os dois padrões). Das 4 restantes:
+
+- **`admin.py`** — 9 endpoints legados de agente/chat/métrica sem gate nenhum. Os 5 de config de
+  agente (`GET/PUT /agents/{id}/config`, `GET/PUT/DELETE /agents/{id}/agente-ia-config`) **reusam
+  `agente.config`**, a mesma permissão que `agente.py`/`catalogo.py` já usam para o mesmo conceito —
+  esses endpoints são a versão antiga do CRUD, ainda consumida pelo frontend (`lib/api.ts`). Os 4 de
+  dump/observabilidade (`/chats`, `/chats/{phone}`, `/metrics`, `/queue`) reusam `atendimento.read`
+  — conteúdo de conversa é dado de atendimento, mesmo sem o filtro por departamento que
+  `historico.py` aplica (gap de escopo registrado, não desta etapa). `/agents`, `/models` e
+  `/empresas` ficam **sem gate de propósito**: catálogo global sem `empresa_id`, ou auto-escopado
+  por `user_id` (documentado inline no arquivo).
+- **`hitl.py`** — 4 endpoints de aprovação humana (HITL: `transfer_to_human`, `cancelar_agendamento`,
+  `criar_agendamento`) sem gate nenhum. Permissão **nova**: `atendimento.hitl.approve` — Admin +
+  Gestor, **não** Operador (é supervisão sobre o agente, não atendimento de linha).
+- **`relatorios_nps.py`** — 4 endpoints de dashboard NPS/CSAT sem gate. Permissão **nova**:
+  `relatorio.nps.read` (abre o módulo `relatorio` no catálogo) — Admin + Gestor + Leitura (é
+  acompanhamento, o propósito do perfil Leitura), **não** Operador.
+- **`dataset_import.py`** — o `POST /import` (mutador) reusa `agente.config` (mesmo domínio de
+  `rag_stats.py`/`catalogo.py`: alimenta few-shot do agente). O `GET /template` fica sem gate —
+  é conteúdo estático de documentação, sem `empresa_id`.
+
+Migração `187`: cria as 2 permissões e concede a Admin/Gestor/Leitura dos perfis system já
+existentes no banco (o código sozinho não alcança quem já foi semeado antes do deploy).
+
+Conferido no dev pela API: Operador (sem as 2 perms) toma 403 em HITL e NPS; usuário promovido a
+Gestor na hora (perfil real, não simulado) passa nos dois; Leitura passa em NPS e toma 403 em HITL.
+`tests/unit/test_permissoes_etapa2.py` trava a intenção de cada grant contra `PERFIS_SYSTEM`.
 ## Consequências
 
 - **Positivas:** uma fonte de verdade; a tela de perfil passa a significar o que mostra; ações sensíveis
