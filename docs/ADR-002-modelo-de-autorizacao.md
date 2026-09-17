@@ -94,10 +94,12 @@ faz o sistema dele parecer completo.
 8. **Exigir `X` é satisfeito por `X`, `X.own` ou `X.all`.** Descoberto ao executar a Etapa 1:
    `require_permission` comparava string exata, e **nenhum perfil system concede o código-base** —
    `PERFIS_SYSTEM` dá `atendimento.write.own` ao Operador e `atendimento.write.all` ao Gestor. Toda
-   rota gateada no código-base era, na prática, **Admin-only**. O defeito ficou escondido porque os
-   perfis da empresa 1 vieram das migs 083/084, que gravaram também os códigos-base (46/23
-   permissões, contra 39/17 nas empresas semeadas pelo código) — ou seja, o ambiente onde se testava
-   era o único onde funcionava. O painel já usava esta regra (`hasPerm`), então front e backend
+   rota gateada no código-base era, na prática, **Admin-only**. **No dev**, o defeito ficou escondido porque
+   os perfis da empresa 1 vieram das migs 083/084, que gravaram também os códigos-base (46/23
+   permissões, contra 39/17 nas empresas semeadas pelo código) — o ambiente onde se testava era o
+   único onde funcionava. **Em produção nem a empresa 1 escapa** (medido 2026-09-16: Gestor 39,
+   Operador 17, e nenhuma outra empresa tem perfil system): todo membro não-superadmin que não seja
+   Admin toma 403 no envio de mensagem hoje. O painel já usava esta regra (`hasPerm`), então front e backend
    discordavam: a UI mostrava o botão e a API devolvia 403. O portão responde "pode fazer isso em
    algum escopo?"; **quais linhas** o usuário vê continua sendo do handler. A recíproca não vale:
    quem exige `.all` não se contenta com o código-base. Em `dependencies_rbac.py::tem_permissao`.
