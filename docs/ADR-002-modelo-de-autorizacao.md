@@ -32,6 +32,15 @@ Medição do raio-X (2026-09-16):
 | **Sem nenhum perfil** | — | **9** |
 | **`role='admin'` sem permissão equivalente em perfil** | — | **8** |
 
+> ⚠️ **Correção (2026-09-16, ao implementar a Etapa 0):** a linha
+> "`role='admin'` sem permissão equivalente em perfil = 8" foi medida por um raio-X que **não olhava
+> `is_superadmin`**. Como `is_admin_of` checa superadmin **antes** do role, para um superadmin não existe
+> divergência possível — ele passa nos dois modelos. O script foi corrigido para separar esses vínculos,
+> e o risco real em produção precisa ser **remedido** com a versão nova. No dev, onde o dono é superadmin
+> em todas as empresas, a divergência real era **1** (um membro não-superadmin da empresa 1018) e foi
+> zerada pela Etapa 0. Isso **não invalida a Etapa 0** — os membros sem perfil continuavam dependendo do
+> fallback legado —, mas reduz a urgência atribuída à Decisão 3.
+
 Duas leituras:
 
 1. **A UI promete o que o backend ignora.** 54% do catálogo aparece na tela de perfil e não é exigido por
@@ -94,7 +103,7 @@ faz o sistema dele parecer completo.
 
 | Etapa | O quê | Risco |
 |---|---|---|
-| **0** | Migração role→perfil + conferência pelo raio-X | baixo (só concede) |
+| **0** | Migração role→perfil + conferência pelo raio-X — `scripts/migrar_role_para_perfil.py` (dry-run padrão). **FEITA no dev 2026-09-16:** divergência 0, membros sem perfil 0 | baixo (só concede) |
 | **1** | `require_permission` nas 17 rotas sem gate, com as permissões que já existem | **médio — pode tirar acesso**; validar no dev |
 | **2** | Permissões novas (lacunas do ZigChat) + aplicar | médio |
 | **3** | `is_admin_of` deriva de permissão (fecha o A4) | médio, destravado pela etapa 0 |

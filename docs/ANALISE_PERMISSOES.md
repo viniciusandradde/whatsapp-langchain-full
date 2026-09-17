@@ -75,7 +75,9 @@ DATABASE_URL=... uv run python scripts/raio_x_acesso.py --json   # máquina
 | **`role='admin'` SEM permissão de admin em perfil** | **8** |
 | Perfil de admin sem o role | 0 |
 
-Ou seja: o dono é `admin` em 9 empresas e tem perfil com `empresa.update` **em apenas uma** (empresa 1). **Implementar "perfis são a fonte única" sem migração de dados tiraria o acesso administrativo dele em 8 empresas** (999, 1000, 1012, 1013, 1016, 1017, 1018, 1024).
+Ou seja: o dono é `admin` em 9 empresas e tem perfil com `empresa.update` **em apenas uma** (empresa 1).
+
+> ⚠️ **Correção de 2026-09-16 (ao implementar a Etapa 0):** esta medição **não olhava `is_superadmin`**, e `is_admin_of` checa superadmin **antes** do role — para um superadmin não existe divergência possível. No dev, o dono é `is_superadmin=true` em todas as empresas, então a divergência real era **1** (um membro não-superadmin da 1018), não 8. O raio-X foi corrigido para separar os vínculos de superadmin; **o número de produção precisa ser remedido** com a versão nova. A conclusão que se mantém: os membros **sem perfil** dependiam do fallback legado, e é isso que a Etapa 0 resolve.
 
 Portanto a Decisão 2 / A4 tem um pré-requisito obrigatório: **migração que conceda aos membros atuais, via perfil, o que o `role` já lhes dá hoje** — e o fallback para role legado deve permanecer até essa migração rodar e ser conferida.
 

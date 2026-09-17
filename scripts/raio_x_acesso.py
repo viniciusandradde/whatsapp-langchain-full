@@ -105,13 +105,18 @@ async def consultar_banco(dsn: str, empresa_id: int | None) -> dict:
         filtro = "AND m.empresa_id = %s" if empresa_id else ""
         args = (empresa_id,) if empresa_id else ()
         # `perfil_permissao` liga pelo CÓDIGO da permissão (não por id).
+        # `is_superadmin` entra na conta porque `is_admin_of` checa superadmin
+        # ANTES do role: para esse usuário não existe divergência possível —
+        # ele passa nos dois modelos. Contá-lo inflava o risco da Decisão 3.
         sql_div = f"""
             SELECT m.empresa_id, m.user_id, m.role,
                    COALESCE(
                      BOOL_OR(pp.permissao_codigo LIKE 'empresa.update%%'), FALSE
                    ) AS tem_perm,
-                   COUNT(DISTINCT up.perfil_id) AS qtd_perfis
+                   COUNT(DISTINCT up.perfil_id) AS qtd_perfis,
+                   COALESCE(BOOL_OR(u.is_superadmin), FALSE) AS superadmin
               FROM empresa_membro m
+              LEFT JOIN auth."user" u ON u.id = m.user_id
               LEFT JOIN usuario_perfil up
                      ON up.user_id = m.user_id AND up.empresa_id = m.empresa_id
               LEFT JOIN perfil_permissao pp ON pp.perfil_id = up.perfil_id
@@ -122,18 +127,31 @@ async def consultar_banco(dsn: str, empresa_id: int | None) -> dict:
 
         divergentes = []
         sem_perfil = []
-        for emp, uid, role, tem_perm, qtd_perfis in linhas:
+        superadmins = []
+        for emp, uid, role, tem_perm, qtd_perfis, superadmin in linhas:
+            if superadmin:
+                # Não é divergência: passa por `is_superadmin` nos dois modelos.
+                superadmins.append({"empresa_id": emp, "user_id": uid, "role": role})
+                continue
             if qtd_perfis == 0:
                 sem_perfil.append({"empresa_id": emp, "user_id": uid, "role": role})
             elif role == "admin" and not tem_perm:
                 divergentes.append(
-                    {"empresa_id": emp, "user_id": uid, "role": role,
-                     "situacao": "role admin SEM permissão de admin no perfil"}
+                    {
+                        "empresa_id": emp,
+                        "user_id": uid,
+                        "role": role,
+                        "situacao": "role admin SEM permissão de admin no perfil",
+                    }
                 )
             elif role != "admin" and tem_perm:
                 divergentes.append(
-                    {"empresa_id": emp, "user_id": uid, "role": role,
-                     "situacao": "perfil de admin MAS role não-admin (toma 403 no is_admin_of)"}
+                    {
+                        "empresa_id": emp,
+                        "user_id": uid,
+                        "role": role,
+                        "situacao": "perfil de admin MAS role não-admin (toma 403 no is_admin_of)",
+                    }
                 )
 
         perfis_vazios = await (
@@ -153,6 +171,7 @@ async def consultar_banco(dsn: str, empresa_id: int | None) -> dict:
         "modulos": modulos,
         "divergentes": divergentes,
         "sem_perfil": sem_perfil,
+        "superadmins": superadmins,
         "perfis_vazios": [
             {"empresa_id": e, "perfil_id": i, "nome": n} for e, i, n in perfis_vazios
         ],
@@ -174,9 +193,12 @@ def montar_relatorio(codigo: dict, banco: dict) -> dict:
     orfas = sorted(c for c in catalogo if not usada(c))
     fantasmas = sorted(u for u in usadas if u not in catalogo)
 
-    total_arqs = len(codigo["com_perm"]) + len(codigo["com_admin_of"]) + len(
-        codigo["so_superadmin"]
-    ) + len(codigo["sem_gate"])
+    total_arqs = (
+        len(codigo["com_perm"])
+        + len(codigo["com_admin_of"])
+        + len(codigo["so_superadmin"])
+        + len(codigo["sem_gate"])
+    )
 
     por_modulo = defaultdict(list)
     for c in orfas:
@@ -197,6 +219,7 @@ def montar_relatorio(codigo: dict, banco: dict) -> dict:
         "permissoes_fantasma": fantasmas,
         "divergencia_role_perfil": banco["divergentes"],
         "usuarios_sem_perfil": banco["sem_perfil"],
+        "membros_superadmin": banco["superadmins"],
         "perfis_sem_usuario": banco["perfis_vazios"],
         "totais": {
             "catalogo": len(catalogo),
@@ -229,8 +252,10 @@ def imprimir(r: dict) -> None:
             print(f"   - {nome:32s} {n} endpoint(s)")
 
     t = r["totais"]
-    print(f"\n4. PERMISSÕES ÓRFÃS — no catálogo, exigidas por ninguém "
-          f"({t['orfas']} de {t['catalogo']})")
+    print(
+        f"\n4. PERMISSÕES ÓRFÃS — no catálogo, exigidas por ninguém "
+        f"({t['orfas']} de {t['catalogo']})"
+    )
     for mod, cods in sorted(r["orfas_por_modulo"].items()):
         print(f"   {mod}: {', '.join(cods)}")
 
@@ -245,13 +270,25 @@ def imprimir(r: dict) -> None:
     if not d:
         print("   nenhuma")
     for x in d[:20]:
-        print(f"   - empresa {x['empresa_id']} · user {x['user_id'][:12]}… "
-              f"role={x['role']} → {x['situacao']}")
+        print(
+            f"   - empresa {x['empresa_id']} · user {x['user_id'][:12]}… "
+            f"role={x['role']} → {x['situacao']}"
+        )
+    sa = r.get("membros_superadmin") or []
+    if sa:
+        print(
+            f"   ({len(sa)} vínculo(s) de superadmin fora da conta — passam "
+            "por `is_superadmin` nos dois modelos, não divergem)"
+        )
 
-    print(f"\n7. USUÁRIOS SEM PERFIL: {len(r['usuarios_sem_perfil'])}"
-          f"   ·   PERFIS SEM USUÁRIO: {len(r['perfis_sem_usuario'])}")
+    print(
+        f"\n7. USUÁRIOS SEM PERFIL: {len(r['usuarios_sem_perfil'])}"
+        f"   ·   PERFIS SEM USUÁRIO: {len(r['perfis_sem_usuario'])}"
+    )
     for x in r["usuarios_sem_perfil"][:10]:
-        print(f"   - empresa {x['empresa_id']} · user {x['user_id'][:12]}… role={x['role']}")
+        print(
+            f"   - empresa {x['empresa_id']} · user {x['user_id'][:12]}… role={x['role']}"
+        )
     for x in r["perfis_sem_usuario"][:10]:
         print(f"   - perfil vazio: empresa {x['empresa_id']} · {x['nome']}")
     print()

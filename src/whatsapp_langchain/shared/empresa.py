@@ -389,6 +389,41 @@ async def create_empresa(
                 """,
                 (empresa.id, criador_user_id),
             )
+
+        # Perfis system + criador no perfil Admin (ADR-002, Decisão 1: o perfil
+        # é a fonte única; o `role='admin'` acima é só compatibilidade).
+        # Sem isso a empresa nasce SEM perfil nenhum: o fallback legado procura
+        # o perfil pelo nome, não acha e devolve conjunto vazio — o criador
+        # passa no `is_admin_of` e é barrado em tudo que exige permissão.
+        # O boot (`server/main.py`) só semeia a empresa 1.
+        try:
+            from whatsapp_langchain.shared.perfil import assign_perfil
+            from whatsapp_langchain.shared.permissoes import seed_default_perfis
+
+            await seed_default_perfis(pool, empresa.id)
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    """
+                    SELECT id FROM perfil_acesso
+                     WHERE empresa_id = %s AND nome = 'Admin' AND is_system
+                    """,
+                    (empresa.id,),
+                )
+                row = await cur.fetchone()
+            if row:
+                await assign_perfil(
+                    pool,
+                    empresa_id=empresa.id,
+                    user_id=criador_user_id,
+                    perfil_id=row[0],
+                )
+        except Exception as exc:  # noqa: BLE001
+            # Empresa criada vale mais que perfil semeado — o
+            # `scripts/migrar_role_para_perfil.py` conserta depois.
+            logger.warning(
+                "empresa_seed_perfis_falhou", empresa_id=empresa.id, error=str(exc)
+            )
+
     return empresa
 
 
