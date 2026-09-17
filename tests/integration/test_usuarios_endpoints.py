@@ -484,3 +484,48 @@ class TestE2EIsolamento:
         finally:
             with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
                 cur.execute('DELETE FROM auth."user" WHERE id = %s', (uid_a,))
+
+    def test_cross_empresa_exists_e_sessions_invalidate_404(
+        self,
+        db_url: str,
+        empresa_id: int,
+        admin_user_id: str,
+        empresa_b_id: int,
+        admin_b_id: str,
+    ) -> None:
+        """Red team A2/M11: antes da correção, B confirmava existência
+        (nome/email) e forçava logout de A sem ser membro da empresa dele —
+        IDOR cross-tenant. `exists` e `sessions/invalidate` fazem lookup
+        GLOBAL em `auth.user`/`auth.session` (sem RLS); o guard de empresa
+        tem que vir do handler, não do banco."""
+        ha = _h(admin_user_id, empresa_id)
+        r = httpx.post(
+            f"{API_BASE_URL}/api/usuarios",
+            json={"nome": f"AonlyA-idor {_RUN}"},
+            headers=ha,
+            timeout=10,
+        )
+        assert r.status_code == 201, r.text
+        uid_a = r.json()["id"]
+        try:
+            hb = _h(admin_b_id, empresa_b_id)
+            # B não confirma existência de A → 404 (não revela nome/email)
+            r = httpx.get(
+                f"{API_BASE_URL}/api/usuarios/exists/{uid_a}", headers=hb, timeout=10
+            )
+            assert r.status_code == 404, r.text
+            # B não força logout de A → 404, sessão de A intacta
+            r = httpx.post(
+                f"{API_BASE_URL}/api/usuarios/{uid_a}/sessions/invalidate",
+                headers=hb,
+                timeout=10,
+            )
+            assert r.status_code == 404, r.text
+            # O dono de A (empresa correta) segue confirmando existência normal
+            r = httpx.get(
+                f"{API_BASE_URL}/api/usuarios/exists/{uid_a}", headers=ha, timeout=10
+            )
+            assert r.status_code == 200, r.text
+        finally:
+            with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+                cur.execute('DELETE FROM auth."user" WHERE id = %s', (uid_a,))

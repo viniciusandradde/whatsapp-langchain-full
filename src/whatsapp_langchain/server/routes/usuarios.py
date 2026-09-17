@@ -455,13 +455,24 @@ async def convite_endpoint(
 @router.get("/exists/{user_id}")
 async def exists_endpoint(
     user_id: str,
+    empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("empresa.member.add")),
 ):
     """Confirma se user existe (pra Server Action validar antes de reset).
 
     Sprint U.4 — não busca por email (que pode ser NULL). Busca por id.
+
+    Red team A2/M11: `verificar_user_existe` faz lookup GLOBAL em `auth.user`
+    (a tabela é sem RLS, `empresa_scope(None, bypass=True)`) — sem escopar
+    por empresa, qualquer membro com `empresa.member.add` (Operador/Gestor
+    de QUALQUER tenant) confirmava nome/email de user de OUTRO tenant. O
+    404 de "não é membro desta empresa" (`get_usuario`) é indistinguível do
+    404 de "não existe" — não vaza qual dos dois é o caso.
     """
     pool = await get_pool()
+    membro = await get_usuario(pool, empresa_id, user_id)
+    if membro is None:
+        raise HTTPException(status_code=404, detail="Usuário não existe.")
     found = await verificar_user_existe(pool, user_id)
     if found is None:
         raise HTTPException(status_code=404, detail="Usuário não existe.")
@@ -471,11 +482,23 @@ async def exists_endpoint(
 @router.post("/{user_id}/sessions/invalidate", status_code=204)
 async def invalidate_sessions_endpoint(
     user_id: str,
+    empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("empresa.member.add")),
 ):
     """Apaga todas auth.session do user (força re-login).
-    Chamado após Better Auth.setUserPassword pra invalidar tokens antigos."""
+    Chamado após Better Auth.setUserPassword pra invalidar tokens antigos.
+
+    Red team A2: `invalidar_sessions` faz `DELETE auth.session WHERE userId=$1`
+    GLOBAL (RLS bypass) sem confirmar que o alvo é membro da empresa ativa —
+    IDOR cross-tenant: force-logout repetido de user/superadmin de OUTRO
+    tenant (DoS de autenticação). `get_usuario` é o mesmo guard de
+    `get_endpoint`/`exists_endpoint` acima.
+    """
     pool = await get_pool()
+    if await get_usuario(pool, empresa_id, user_id) is None:
+        raise HTTPException(
+            status_code=404, detail="Usuário não encontrado nesta empresa."
+        )
     n = await invalidar_sessions(pool, user_id)
     logger.info("usuario_sessions_invalidated", user_id=user_id, count=n)
 

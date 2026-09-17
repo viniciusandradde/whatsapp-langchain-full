@@ -8,6 +8,12 @@ Método: 6 agentes de revisão em paralelo (um por domínio) + recon de infraest
 
 Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info · 30+ defesas corretas.**
 
+**Atualização 2026-09-17** (contagem original preservada acima como registro do achado original):
+- **Críticos:** C1 ✅ EM PRODUÇÃO · C2 aberto (infra, dono executa) — **1 de 2 corrigido**
+- **Altos:** A1 ✅ EM PRODUÇÃO · A2 ✅ dev · A4 ✅ dev (bloqueado pra prod até Etapa 0 `--apply` lá) · A3, A5, A6 abertos — **3 de 6 corrigidos**
+- **Médios:** M11, M12 ✅ dev · demais abertos — **2 de 13 corrigidos**
+- "✅ dev" = na branch `docs/adr-permissoes-blueprint`, validado no dev, **NÃO em produção** — segue o contrato dev-first (mostrar ao dono → PR → CI → merge).
+
 ---
 
 ## Severidade
@@ -24,10 +30,10 @@ Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info �
 ## 🔴 Críticos
 
 ### C1 — Server Actions de reset de senha sem autenticação → account takeover cross-tenant
-- **Domínio:** Auth/RBAC (frontend) · **Status:** ABERTO
-- `frontend/src/app/companies/[id]/members/actions.ts` não tem **nenhuma** chamada de `getSession`/`requireSession`, e contém `resetMemberPasswordAction` (:180) e `generateResetLinkAction` (:116). `frontend/src/app/usuarios/actions.ts:204` (`resetarSenhaUsuarioAction`) idem. Recebem um `userId` arbitrário, executam `upsertUserPassword` + `DELETE auth.session` e **retornam a senha em texto** (ou o link de reset de 1h), falando direto no `authPool`/Better Auth. Não existe `middleware.ts` global. A irmã `uploadAvatarAction` (usuarios/actions.ts:235) **checa** a sessão — o guard existe no arquivo e foi omitido justo nas actions perigosas.
-- **Impacto:** qualquer usuário logado (qualquer papel/empresa) reseta a senha de qualquer conta, inclusive superadmin. Os UUIDs vazam pelas telas de membros e por `GET /api/usuarios/exists/{id}` (M11).
-- **Correção:** no início de cada action que toca `authPool`/Better Auth: `requireSession()` + checar `is_superadmin` OU `is_admin_of(empresa ativa)` + membership do alvo. Idealmente rotear pelo backend (que já tem `require_permission`).
+- **Domínio:** Auth/RBAC (frontend) · **Status:** ✅ CORRIGIDO **EM PRODUÇÃO** (PR #132, `775000a`, 2026-09-16)
+- `frontend/src/app/companies/[id]/members/actions.ts` não tinha **nenhuma** chamada de `getSession`/`requireSession`, e continha `resetMemberPasswordAction` (:180) e `generateResetLinkAction` (:116). `frontend/src/app/usuarios/actions.ts:204` (`resetarSenhaUsuarioAction`) idem. Recebiam um `userId` arbitrário, executavam `upsertUserPassword` + `DELETE auth.session` e **retornavam a senha em texto** (ou o link de reset de 1h), falando direto no `authPool`/Better Auth. A irmã `uploadAvatarAction` (usuarios/actions.ts:235) **checa** a sessão — o guard existia no arquivo e foi omitido justo nas actions perigosas.
+- **Impacto:** qualquer usuário logado (qualquer papel/empresa) resetava a senha de qualquer conta, inclusive superadmin.
+- **Correção aplicada:** cada action chama `getUsuario(userId)` antes de tocar o Better Auth, herdando o gate do backend (`require_permission("empresa.member.add")` + escopo de empresa, 404 cross-tenant).
 
 ### C2 — Painel Dokploy exposto na internet pública (porta 3000)
 - **Domínio:** Infraestrutura · **Status:** ABERTO
@@ -39,16 +45,16 @@ Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info �
 ## 🟠 Altos
 
 ### A1 — SSRF via URL de hook/menu/MCP (sem a guarda que só a mídia tem)
-- **Domínio:** Injeção/SSRF · **Status:** ABERTO
-- A guarda anti-SSRF forte (`_host_is_public` + revalidação de cada redirect) existe só no download de mídia. Os canais que fazem requisição de saída para URL configurada pela empresa **não** a usam: hooks (`shared/models.py:584` aceita `url` sem validar; POST em `shared/hook_dispatcher.py:82`), menu `chamar_webhook` (`worker/processor.py:2149`), MCP server (`server/routes/catalogo.py:393`).
+- **Domínio:** Injeção/SSRF · **Status:** ✅ CORRIGIDO **EM PRODUÇÃO** (PR #132, `775000a`, 2026-09-16)
+- A guarda anti-SSRF forte (`_host_is_public` + revalidação de cada redirect) existia só no download de mídia. Os canais que fazem requisição de saída para URL configurada pela empresa **não** a usavam: hooks (`shared/models.py:584` aceitava `url` sem validar; POST em `shared/hook_dispatcher.py:82`), menu `chamar_webhook` (`worker/processor.py:2149`), MCP server (`server/routes/catalogo.py:393`).
 - **Impacto:** admin cria hook para `http://169.254.169.254/…` (metadata) ou serviço interno; ao trocar mensagens, o backend faz o POST. Resposta 4xx/5xx → corpo (até 1000 chars) em `hook_dead_letter`, lido via `GET /api/hooks/dead-letter` → **oráculo de exfiltração**. Para 200, SSRF cego com oráculo de status/timing.
-- **Correção:** extrair `_validate_media_url`/`_host_is_public` para um util anti-SSRF único e chamá-lo na criação e antes de cada requisição de saída controlada por tenant. Combina com M12.
+- **Correção aplicada:** guarda única `shared/ssrf_guard.py::assert_url_externa`, chamada nos três canais (`hook_dispatcher.py`, `worker/processor.py`, `routes/catalogo.py`). Combina com M12, também corrigido.
 
 ### A2 — IDOR cross-tenant: invalidar sessões de qualquer usuário
-- **Domínio:** Auth/RBAC · **Status:** ABERTO
+- **Domínio:** Auth/RBAC · **Status:** ✅ CORRIGIDO (dev, branch `docs/adr-permissoes-blueprint`, 2026-09-17)
 - `POST /api/usuarios/{user_id}/sessions/invalidate` (`server/routes/usuarios.py:471`) exige só `require_permission("empresa.member.add")` e passa `user_id` direto para `invalidar_sessions` (`shared/usuarios.py:542`, `DELETE auth.session WHERE userId=$1` global, RLS bypass). Não valida que o alvo é da empresa do chamador.
 - **Impacto:** force-logout repetido de usuário/superadmin de outro tenant (DoS de autenticação cross-tenant).
-- **Correção:** validar `get_usuario(empresa_id, user_id) is not None` antes de invalidar.
+- **Correção:** valida `get_usuario(empresa_id, user_id) is not None` antes de invalidar (404 se não é membro) — mesmo guard já usado em `get_endpoint`.
 
 ### A3 — INTERNAL_SERVICE_TOKEN na query string dos docs de produção
 - **Domínio:** Segredos / Web · **Status:** ABERTO
@@ -56,9 +62,9 @@ Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info �
 - **Correção:** aceitar o token só via header `Authorization`; nunca embutir na URL. (A comparação é timing-safe e devolve 404 — o problema é o canal.)
 
 ### A4 — is_admin_of lê role legado e ignora perfis
-- **Domínio:** Auth/RBAC · **Status:** ABERTO (é a decisão arquitetural 2 já aprovada)
+- **Domínio:** Auth/RBAC · **Status:** ✅ CORRIGIDO (dev, branch `docs/adr-permissoes-blueprint`, Etapa 3 do ADR-002, 2026-09-17) — **NÃO em produção**, e bloqueado até a Etapa 0 `--apply` rodar lá (ver o ADR)
 - `shared/empresa.py:632` concede acesso por `empresa_membro.role == 'admin'` cru, ignorando perfis. Endpoints com `require_permission` resolvem por perfil; os gateados por `is_admin_of` (editar empresa, logo/branding, CSAT, resumo, billing, workflow, calendar, atendimento) resolvem por role legado. Usuário rebaixado para perfil "Leitura" mas com `role='admin'` continua editando empresa/branding (vetor do XSS M5).
-- **Correção:** `is_admin_of` deriva de `get_user_permissions`/perfil, com fallback no role só para quem não tem perfil. ~1–2h; maior risco da leva.
+- **Correção:** `is_admin_of` deriva de `get_user_permissions`/perfil (checa `empresa.update`), com fallback no role só para quem não tem perfil — feita. **Pré-condição de deploy em produção**: `scripts/raio_x_acesso.py` seção 8 tem que reportar 0 empresas sem perfil system "Admin" (hoje só a empresa 1 tem). Ver `docs/ADR-002-modelo-de-autorizacao.md`, "Resultado da Etapa 3".
 
 ### A5 — SSH e serviços de host expostos sem firewall nem fail2ban; 187 updates
 - **Domínio:** Infraestrutura · **Status:** ABERTO
@@ -86,8 +92,8 @@ Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info �
 | M8 | Segredos | Chave que cifra as credenciais dos clientes derivada do `INTERNAL_SERVICE_TOKEN` (sem separação de chaves; SHA-256 1 rodada) | integrations/crypto.py:23; config.py:156 | exigir `INTEGRACOES_ENCRYPTION_KEY` dedicada em prod | ABERTO |
 | M9 | Segredos/DoS | Validação de apikey do webhook Evolution off por default; só exigida em `OUTBOUND_MODE=real` → em modo mock aceita webhook forjado | evolution_webhook.py:167; config.py:359,362,468 | exigir apikey independente do outbound_mode | ABERTO |
 | M10 | Upload | `file.read()` carrega o corpo inteiro em RAM antes do check; `responder-midia` sem cap | atendimento.py:1044; usuarios.py:501; empresa_admin.py:312 | streaming com corte no cap; limite no Traefik | ABERTO |
-| M11 | Auth/RBAC | `GET /api/usuarios/exists/{id}` sem escopo → id/nome/email de qualquer user global | usuarios.py:455; shared/usuarios.py:523 | escopar por membership da empresa ativa | ABERTO |
-| M12 | Auth/RBAC | Hooks sem `require_permission` — qualquer membro cria webhook e exfiltra mensagens do tenant (e habilita A1) | routes/hook.py:54–109 | gate de permissão/role na criação | ABERTO |
+| M11 | Auth/RBAC | `GET /api/usuarios/exists/{id}` sem escopo → id/nome/email de qualquer user global | usuarios.py:455; shared/usuarios.py:523 | escopar por membership da empresa ativa | ✅ CORRIGIDO (dev, junto com A2) |
+| M12 | Auth/RBAC | Hooks sem `require_permission` — qualquer membro cria webhook e exfiltra mensagens do tenant (e habilita A1) | routes/hook.py:54–109 | gate de permissão/role na criação | ✅ CORRIGIDO (dev, Etapa 1 do ADR-002 — `hook.read`/`hook.write`/`hook.dlq.retry` em todos os endpoints) |
 | M13 | Dependências | `python-multipart` 0.0.22 (5 CVEs), `starlette` 0.52.1 (6 PYSEC), `urllib3` 2.6.3 / `requests` 2.32.5, `setuptools`, `python-dotenv` | uv.lock | upgrade + regen `uv.lock`; starlette é upgrade maior (testar) | ABERTO |
 
 ---
