@@ -10,7 +10,7 @@ Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info �
 
 **Atualização 2026-09-17** (contagem original preservada acima como registro do achado original):
 - **Críticos:** C1 ✅ EM PRODUÇÃO · C2 aberto (infra, dono executa) — **1 de 2 corrigido**
-- **Altos:** A1 ✅ EM PRODUÇÃO · A2 ✅ dev · A4 ✅ dev (bloqueado pra prod até Etapa 0 `--apply` lá) · A3, A5, A6 abertos — **3 de 6 corrigidos**
+- **Altos:** A1, A6 ✅ EM PRODUÇÃO · A2 ✅ dev · A4 ✅ dev (bloqueado pra prod até Etapa 0 `--apply` lá) · A3, A5 abertos — **4 de 6 corrigidos**
 - **Médios:** M11, M12 ✅ dev · demais abertos — **2 de 13 corrigidos**
 - "✅ dev" = na branch `docs/adr-permissoes-blueprint`, validado no dev, **NÃO em produção** — segue o contrato dev-first (mostrar ao dono → PR → CI → merge).
 
@@ -72,9 +72,9 @@ Placar em 2026-09-16: **2 críticos · 6 altos · 13 médios · 11 baixos/info �
 - **Correção:** restringir 22 ao tailnet; `PermitRootLogin no`; regras no `DOCKER-USER` (80/443 público, resto tailnet); desabilitar pcp/rpcbind; `dnf-automatic` security + reboot mensal.
 
 ### A6 — pypdf 5.1.0: DoS via PDF malicioso do cliente
-- **Domínio:** Dependências · **Status:** ABERTO
+- **Domínio:** Dependências · **Status:** ✅ EM PRODUÇÃO (PR #135, 2026-09-17 — pypdf 6.19.0)
 - CVE-2026-57204 + 3 PYSEC. Cliente manda PDF pelo WhatsApp → worker extrai texto (`shared/file_extractor.py`) → loop infinito / DoS do worker serial (segura a fila de todas as empresas).
-- **Correção:** pypdf 6.16+ e regenerar `uv.lock` (senão o build Docker quebra). Ver M13.
+- **Correção:** pypdf 6.16+ e regenerar `uv.lock` (senão o build Docker quebra). Ver M13. A API usada (`PdfReader`/`.pages`/`.extract_text()`) não mudou entre as majors; `tests/unit/test_file_extractor.py` 23/23.
 
 ---
 
