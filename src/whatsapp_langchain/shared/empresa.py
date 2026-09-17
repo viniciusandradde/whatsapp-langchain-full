@@ -19,6 +19,7 @@ import structlog
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.models import Empresa, EmpresaMembro
+from whatsapp_langchain.shared.perfil import get_user_permissions, tem_permissao
 
 logger = structlog.get_logger()
 
@@ -664,12 +665,31 @@ async def remove_member(
     return True
 
 
+PERM_ADMIN = "empresa.update"
+
+
 async def is_admin_of(pool: AsyncConnectionPool, empresa_id: int, user_id: str) -> bool:
-    """True se o user é admin da empresa OU superadmin global."""
+    """True se o user é admin da empresa OU superadmin global.
+
+    ADR-002, Decisão 1/3: deriva de **permissão** (`empresa.update`), não
+    de `empresa_membro.role` cru. Usa `get_user_permissions` — a mesma
+    resolução do `require_permission` (superadmin → perfis explícitos →
+    fallback via `role` legado) — então perfil é, de fato, a fonte única:
+    quem tem o perfil Admin (ou perfil custom com `empresa.update`) passa
+    aqui mesmo com `role` desatualizado, e o inverso também vale.
+
+    O fallback legado (passo 3 de `get_user_permissions`) é o que mantém
+    isto equivalente ao comportamento antigo para quem ainda não tem
+    perfil explícito — MAS só funciona se a empresa tiver o perfil system
+    "Admin" semeado. Deploy em produção exige ter rodado
+    `scripts/migrar_role_para_perfil.py --apply` antes (Etapa 0) — sem
+    isso, toda empresa sem perfil system vira 403 pra quem hoje é
+    `role='admin'`. Ver `gotcha_permissao_codigo_base_vs_escopo`.
+    """
     if await is_superadmin(pool, user_id):
         return True
-    m = await get_empresa_membership(pool, empresa_id, user_id)
-    return m is not None and m.role == "admin"
+    perms = await get_user_permissions(pool, user_id, empresa_id)
+    return tem_permissao(perms, PERM_ADMIN)
 
 
 # ---------------------------------------------------------------------------

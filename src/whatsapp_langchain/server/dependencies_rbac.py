@@ -30,7 +30,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
 )
 from whatsapp_langchain.shared.db import get_pool
-from whatsapp_langchain.shared.perfil import get_user_permissions
+from whatsapp_langchain.shared.perfil import get_user_permissions, tem_permissao
 
 logger = structlog.get_logger()
 
@@ -47,30 +47,6 @@ async def _resolve_user_perms(
     perms = await get_user_permissions(pool, user_id, empresa_id)
     request.state._user_perms = perms
     return perms
-
-
-def tem_permissao(perms: set[str], codigo: str) -> bool:
-    """Exigir `X` é satisfeito por `X`, `X.own` ou `X.all`.
-
-    O catálogo tem o código-base E as variantes de escopo (`cliente.read`,
-    `cliente.read.own`, `cliente.read.all`). Quem decide QUAIS linhas o
-    usuário enxerga é o handler (filtro por departamento); o portão só
-    responde "pode fazer isso em algum escopo?".
-
-    Isso não é preciosismo: os perfis system definidos em
-    `shared/permissoes.py::PERFIS_SYSTEM` concedem **só as variantes** —
-    Operador tem `atendimento.write.own`, Gestor tem `atendimento.write.all`,
-    e **nenhum dos dois tem o código-base**. Com igualdade exata, toda rota
-    gateada no código-base virava Admin-only na prática. Os perfis da
-    empresa 1 escondiam o defeito porque foram semeados pelas migs 083/084,
-    que gravaram também os códigos-base (46/23 permissões contra 39/17 das
-    empresas semeadas pelo código).
-
-    É a mesma regra do `hasPerm` do painel
-    (`frontend/src/components/permissions-context.tsx`) — antes daqui, front
-    e backend discordavam: a UI mostrava o botão e a API devolvia 403.
-    """
-    return codigo in perms or f"{codigo}.all" in perms or f"{codigo}.own" in perms
 
 
 def require_permission(codigo: str):

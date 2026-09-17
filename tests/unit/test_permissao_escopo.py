@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from whatsapp_langchain.server.dependencies_rbac import tem_permissao
+from whatsapp_langchain.shared.perfil import tem_permissao
 from whatsapp_langchain.shared.permissoes import PERFIS_SYSTEM
 
 

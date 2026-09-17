@@ -119,7 +119,7 @@ faz o sistema dele parecer completo.
 | **0** | Migração role→perfil + conferência pelo raio-X — `scripts/migrar_role_para_perfil.py` (dry-run padrão). **FEITA no dev 2026-09-16:** divergência 0, membros sem perfil 0 | baixo (só concede) |
 | **1** | `require_permission` nas rotas sem gate, com as permissões que já existem. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 17 → **5**, órfãs 38 → **11**. Ver "Resultado da Etapa 1" abaixo | **médio — pode tirar acesso**; validado no dev |
 | **2** | Permissões novas para as rotas sem catálogo. **FEITA no dev 2026-09-16:** rotas de negócio sem gate 5 → **0**. Ver "Resultado da Etapa 2" abaixo | médio |
-| **3** | `is_admin_of` deriva de permissão (fecha o A4) | médio, destravado pela etapa 0 |
+| **3** | `is_admin_of` deriva de permissão (fecha o A4). **FEITA no dev 2026-09-17.** Ver "Resultado da Etapa 3" abaixo | médio, destravado pela etapa 0 |
 | **4** | Escopo por conexão | médio |
 | **5** | UI em árvore (a tabela `permissao` **já tem `modulo`**) + raio-X como tela | baixo |
 
@@ -185,6 +185,40 @@ existentes no banco (o código sozinho não alcança quem já foi semeado antes 
 
 Conferido no dev pela API: Operador (sem as 2 perms) toma 403 em HITL e NPS; usuário promovido a
 Gestor na hora (perfil real, não simulado) passa nos dois; Leitura passa em NPS e toma 403 em HITL.
+
+## Resultado da Etapa 3 (dev, 2026-09-17)
+
+`shared/empresa.py::is_admin_of` deixou de ler `empresa_membro.role`. Agora: superadmin (bypass,
+ordem preservada) → `get_user_permissions` → `tem_permissao(perms, "empresa.update")` — a MESMA
+resolução do `require_permission`, então perfil é, de fato, a fonte única; role fica só de
+compatibilidade em quem lê a coluna direto. `tem_permissao` migrou de `dependencies_rbac.py` para
+`shared/perfil.py` (ao lado de `get_user_permissions`) porque `shared/` não importa de `server/` —
+`dependencies_rbac.py` agora importa de lá.
+
+**Pré-condição, verificável em código, não só em prosa:** o raio-X ganhou a seção 8 — lista toda
+empresa com membro e **sem** perfil system "Admin". Nessas empresas, o fallback legado de
+`get_user_permissions` (passo 3) procura o perfil pelo nome e não acha: devolve conjunto vazio, e
+`role='admin'` não-superadmin vira 403 no lugar de passar. `scripts/migrar_role_para_perfil.py --apply`
+resolve — mesmo sem atribuir ninguém, **só semear o perfil já conserta o fallback** (a mesma
+consequência contraintuitiva documentada na Etapa 0).
+
+No dev: 1 empresa bloqueada (1012 — o conflito de nome já conhecido da Etapa 0). Conferido que não
+há regressão viva ali: o único `role='admin'` da 1012 é o dono, `is_superadmin=true`, passa pelo
+bypass de qualquer forma. O guard fica mesmo assim — é estrutural, não específico deste caso.
+
+**Em produção, a seção 8 do raio-X é a pergunta que decide se pode deployar.** Com só a empresa 1
+tendo perfil system (medido nesta sessão), e ela em 39/17 sem código-base mas COM o perfil "Admin"
+existindo, a pré-condição desta etapa especificamente (existir o perfil, não ter o código-base) já
+está satisfeita para a empresa 1 — mas nenhuma outra empresa tem o perfil, então rodar a Etapa 3
+em produção **hoje** derrubaria `is_admin_of` para todo `role='admin'` fora da empresa 1. **Etapa 0
+`--apply` em produção continua pré-requisito de fato, não só de papel.**
+
+Conferido no dev pela API (`PUT /api/calendar/regras`, mesmo `is_admin_of` de billing/workflows/
+empresa_admin/perfil): perfil Admin explícito não-superadmin passa na empresa certa (200) e toma
+403 na empresa onde não é membro — confirma que a checagem continua por empresa, não global.
+Operador e usuário sem perfil algum tomam 403. `tests/unit/test_is_admin_of.py` cobre a composição
+(bypass de superadmin, código exato, variante `.own`/`.all`, ausência de `empresa.update` mesmo com
+outras permissões no set).
 `tests/unit/test_permissoes_etapa2.py` trava a intenção de cada grant contra `PERFIS_SYSTEM`.
 ## Consequências
 

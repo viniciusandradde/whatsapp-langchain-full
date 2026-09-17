@@ -246,6 +246,31 @@ async def list_user_perfis(
     return [{"id": r[0], "nome": r[1]} for r in rows]
 
 
+def tem_permissao(perms: set[str], codigo: str) -> bool:
+    """Exigir `X` é satisfeito por `X`, `X.own` ou `X.all`.
+
+    O catálogo tem o código-base E as variantes de escopo (`cliente.read`,
+    `cliente.read.own`, `cliente.read.all`). Quem decide QUAIS linhas o
+    usuário enxerga é o handler (filtro por departamento); esta função só
+    responde "pode fazer isso em algum escopo?".
+
+    Isso não é preciosismo: os perfis system definidos em
+    `shared/permissoes.py::PERFIS_SYSTEM` concedem **só as variantes** —
+    Operador tem `atendimento.write.own`, Gestor tem `atendimento.write.all`,
+    e **nenhum dos dois tem o código-base**. Com igualdade exata, toda rota
+    (ou checagem, como `is_admin_of`) que exige o código-base virava
+    Admin-only na prática — achado da Etapa 1/3 do ADR-002.
+
+    É a mesma regra do `hasPerm` do painel
+    (`frontend/src/components/permissions-context.tsx`).
+
+    Fica ao lado de `get_user_permissions` (não em `server/dependencies_rbac.py`,
+    que a usa) porque `is_admin_of` (`shared/empresa.py`) também precisa dela,
+    e `shared/` não importa de `server/`.
+    """
+    return codigo in perms or f"{codigo}.all" in perms or f"{codigo}.own" in perms
+
+
 async def get_user_permissions(
     pool: AsyncConnectionPool, user_id: str, empresa_id: int
 ) -> set[str]:

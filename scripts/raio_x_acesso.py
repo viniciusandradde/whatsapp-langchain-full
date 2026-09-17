@@ -183,6 +183,26 @@ async def consultar_banco(dsn: str, empresa_id: int | None) -> dict:
             )
         ).fetchall()
 
+        # Pré-condição da Etapa 3 (`is_admin_of` por permissão, ADR-002 Decisão 3):
+        # sem o perfil system "Admin", o fallback legado de `get_user_permissions`
+        # devolve conjunto VAZIO pra role='admin' — a empresa perderia o admin.
+        # `scripts/migrar_role_para_perfil.py --apply` semeia o perfil (mesmo sem
+        # atribuir usuário nenhum) e fecha o buraco. Ver
+        # `gotcha_permissao_codigo_base_vs_escopo`.
+        empresas_sem_admin_system = await (
+            await conn.execute(
+                """
+                SELECT DISTINCT m.empresa_id
+                  FROM empresa_membro m
+                  LEFT JOIN perfil_acesso pa
+                         ON pa.empresa_id = m.empresa_id
+                        AND pa.is_system = TRUE AND pa.nome = 'Admin'
+                 WHERE pa.id IS NULL
+                 ORDER BY m.empresa_id
+                """
+            )
+        ).fetchall()
+
     return {
         "catalogo": catalogo,
         "modulos": modulos,
@@ -192,6 +212,7 @@ async def consultar_banco(dsn: str, empresa_id: int | None) -> dict:
         "perfis_vazios": [
             {"empresa_id": e, "perfil_id": i, "nome": n} for e, i, n in perfis_vazios
         ],
+        "empresas_sem_admin_system": [r[0] for r in empresas_sem_admin_system],
     }
 
 
@@ -241,6 +262,7 @@ def montar_relatorio(codigo: dict, banco: dict) -> dict:
         "usuarios_sem_perfil": banco["sem_perfil"],
         "membros_superadmin": banco["superadmins"],
         "perfis_sem_usuario": banco["perfis_vazios"],
+        "empresas_sem_admin_system": banco["empresas_sem_admin_system"],
         "totais": {
             "catalogo": len(catalogo),
             "usadas_no_codigo": len(usadas),
@@ -314,6 +336,21 @@ def imprimir(r: dict) -> None:
         )
     for x in r["perfis_sem_usuario"][:10]:
         print(f"   - perfil vazio: empresa {x['empresa_id']} · {x['nome']}")
+
+    sem_admin = r.get("empresas_sem_admin_system") or []
+    print("\n8. PRÉ-CONDIÇÃO DA ETAPA 3 (`is_admin_of` por permissão)")
+    if sem_admin:
+        print(
+            f"   ❌ BLOQUEADA — {len(sem_admin)} empresa(s) com membro e SEM perfil "
+            'system "Admin":'
+        )
+        print(f"   {sem_admin[:30]}{' ...' if len(sem_admin) > 30 else ''}")
+        print(
+            "   Rode `scripts/migrar_role_para_perfil.py --apply` nelas antes de "
+            "deployar a Etapa 3 — sem o perfil, role='admin' vira 403."
+        )
+    else:
+        print('   ✅ LIBERADA — toda empresa com membro tem o perfil system "Admin".')
     print()
 
 
