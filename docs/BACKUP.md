@@ -139,6 +139,33 @@ a conexão. Dump com a Evolution rodando serve de seguro contra desastre, mas
 pode custar re-parear. Dump com a Evolution **parada** é o que garante migração
 sem QR. Migração planejada usa o frio — a ordem completa está no runbook.
 
+## Espelho completo diário na VPS local (18h, via Tailscale)
+
+Desde a emergência de 2026-09-17 (a máquina da OCI podia ser desligada), a VPS
+local puxa **todos os dias às 18:00** (America/Campo_Grande) um espelho completo
+do host — `scripts/backup_espelho_vps.sh`, no crontab do usuário `vps`. É a
+terceira cópia, e a única que não depende de nada na OCI para restaurar:
+
+| Etapa | O quê | Como se prova |
+|---|---|---|
+| 1 | `exportar_producao.sh` com `DUMP_NOVO=1` — dump da app **de agora** (o do timer é da madrugada), Evolution (sessões), Dokploy (envs), envs dos 6 containers do Nexus, `/etc/dokploy`, units, `rclone.conf`, inventário, manifesto | `--verificar` restaura em Postgres descartável |
+| 2 | verificação do export | sessões Baileys com credencial, `compose.env` com bytes, sha256 |
+| 3 | `rsync` de **`/var/lib/docker/volumes/` inteiro** (MinIO, avatars, logos, disparador, evolution_pgdata/redis, dokploy-postgres, registry, e os volumes de projetos parados no host), `/home/opc`, `/etc/dokploy`, env de **todos** os containers | `--link-dest` no snapshot anterior: arquivo igual vira hardlink, só o delta custa disco |
+| 4 | revalidação contra o host | lista de volumes do host × copiados (qualquer um faltando = falha); 2ª passada do rsync pega o que mudou durante a 1ª; containers rodando × envs capturados; dumps não vazios |
+| 5 | relatório, `ultimo ->`, retenção (14 dias, só apaga se o dia ficou íntegro) | `~/backups/chatnexus-espelho/.ultimo_ok` (mtime) |
+
+Layout: `~/backups/chatnexus-espelho/<AAAA-MM-DD_HHMM>/{export,volumes,host,RELATORIO.txt}`,
+`ultimo` aponta para o último íntegro, logs em `log/`.
+
+**Notificação**: WhatsApp do dono via Evolution (instância pessoal) no fim de
+toda execução, com sucesso ou falha. Se a Evolution não confirmar — que é
+exatamente o cenário "OCI fora do ar" — cai para o Telegram do monitor. Segredos
+em `~/.config/chatnexus-espelho.env` (600) na VPS; nunca no repositório.
+
+Os volumes de Postgres copiados a quente ali são **última esperança**: restaurar
+é pelos dumps do `export/`. O backup para o Google Drive (`backup_prod.sh` no
+host, 03:15) continua igual — este espelho é adicional, não substituto.
+
 ## Restaurar
 
 Sempre numa base **nova**; trocar a produção pela restaurada é decisão humana,
