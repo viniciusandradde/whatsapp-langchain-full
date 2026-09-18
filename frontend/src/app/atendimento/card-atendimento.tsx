@@ -66,7 +66,11 @@ export function CardAtendimento({
   onMarcarNaoLida,
 }: Props) {
   const telefone = formatarTelefone(a.cliente_telefone);
-  const faixa = a.aguardando_desde ? faixaEspera(a.aguardando_desde) : null;
+  // Só conversa ABERTA espera resposta: em "Todas", resolvida/abandonada também
+  // vem com `aguardando_desde` (o cliente falou por último e ninguém respondeu
+  // antes de fechar), e "Sem resposta há 2d" numa conversa encerrada é ruído.
+  const aberta = a.status === "aguardando" || a.status === "em_andamento";
+  const faixa = aberta && a.aguardando_desde ? faixaEspera(a.aguardando_desde) : null;
 
   return (
     <li className="group/card relative">
@@ -116,7 +120,7 @@ export function CardAtendimento({
           >
             {SITUACAO_LABEL[a.situacao]}
           </span>
-          {a.aguardando_desde && faixa && (
+          {faixa && a.aguardando_desde && (
             <span
               className={cn(
                 "inline-flex h-5 items-center gap-1 rounded-md px-1.5 font-mono text-[10px]",

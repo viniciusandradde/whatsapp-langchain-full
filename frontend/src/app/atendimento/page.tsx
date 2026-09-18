@@ -166,7 +166,7 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
             q={q}
             tagIds={tagIds}
             assignedTo={assignedTo}
-            className="ml-auto"
+            className="md:ml-auto"
           />
         </div>
 
