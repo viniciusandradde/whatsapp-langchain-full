@@ -68,11 +68,7 @@ from whatsapp_langchain.shared.conversa_ativa import (
     iniciar_conversa,
 )
 from whatsapp_langchain.shared.db import get_pool
-from whatsapp_langchain.shared.empresa import (
-    get_empresa_by_id,
-    is_admin_of,
-    is_conexao_scope_ativo,
-)
+from whatsapp_langchain.shared.empresa import get_empresa_by_id, is_admin_of
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Atendimento
 from whatsapp_langchain.shared.nota_interna import create_nota_interna
@@ -87,7 +83,6 @@ from whatsapp_langchain.shared.outbound import (
 from whatsapp_langchain.shared.perfil import get_user_permissions
 from whatsapp_langchain.shared.permissoes import (
     effective_scope,
-    get_user_conexao_ids,
     get_user_departamento_ids,
 )
 from whatsapp_langchain.shared.queue import reset_thread_checkpoint
@@ -228,17 +223,10 @@ async def list_my_atendimentos(
             detail="Permissão necessária: atendimento.read[.own|.all]",
         )
     scope_dept_ids: set[int] | None = None
-    scope_conexao_ids: set[int] | None = None
     if scope == "own":
         dept_ids = await get_user_departamento_ids(pool, user_id, empresa_id)
         # Set vazio = sem deptos vinculados → list_atendimentos retorna []
         scope_dept_ids = set(dept_ids)
-        # ADR-002 Etapa 4 — só entra em jogo se a EMPRESA optou (default OFF).
-        if await is_conexao_scope_ativo(pool, empresa_id):
-            conexao_ids = await get_user_conexao_ids(
-                pool, user_id, empresa_id, contexto="fila"
-            )
-            scope_conexao_ids = set(conexao_ids)
 
     # Filtro por tag (OR): resolve IDs de atendimentos que têm qualquer tag
     only_ids: list[int] | None = None
@@ -260,7 +248,6 @@ async def list_my_atendimentos(
         aba_id=aba_id,
         only_ids=only_ids,
         scope_departamento_ids=scope_dept_ids,
-        scope_conexao_ids=scope_conexao_ids,
         assigned_to_user_id=assigned_to,
     )
     return {"atendimentos": rows}
@@ -349,8 +336,6 @@ async def list_contadores(
         }
     dept_filter_sql = ""
     dept_filter_args: list = []
-    conexao_filter_sql = ""
-    conexao_filter_args: list = []
     if scope == "own":
         dept_ids = await get_user_departamento_ids(pool, user_id, empresa_id)
         if not dept_ids:
@@ -366,27 +351,6 @@ async def list_contadores(
             }
         dept_filter_sql = " AND departamento_id = ANY(%s)"
         dept_filter_args = [list(dept_ids)]
-        # ADR-002 Etapa 4 — mesmo filtro do `list_atendimentos`. Sem isto o
-        # badge da sidebar contaria atendimento que a lista não mostra
-        # (gotcha_contagem_por_endpoint_permissao: contagem por endpoint
-        # falha calada quando não espelha o mesmo escopo).
-        if await is_conexao_scope_ativo(pool, empresa_id):
-            conexao_ids = await get_user_conexao_ids(
-                pool, user_id, empresa_id, contexto="fila"
-            )
-            if not conexao_ids:
-                return {
-                    "sistema": {
-                        "aguardando": 0,
-                        "meus": 0,
-                        "outros": 0,
-                        "humano_solicitado": 0,
-                        "nao_lidas": 0,
-                    },
-                    "abas": {},
-                }
-            conexao_filter_sql = " AND conexao_id = ANY(%s)"
-            conexao_filter_args = [list(conexao_ids)]
 
     async with pool.connection() as conn:
         # Sistema. As 3 primeiras são as abas antigas (o APK instalado ainda as
@@ -406,9 +370,9 @@ async def list_contadores(
                                   AND departamento_id IS NOT NULL
                                   AND assigned_to_user_id IS NULL)
               FROM atendimento
-             WHERE empresa_id = %s{dept_filter_sql}{conexao_filter_sql}
+             WHERE empresa_id = %s{dept_filter_sql}
             """,
-            (user_id, user_id, empresa_id, *dept_filter_args, *conexao_filter_args),
+            (user_id, user_id, empresa_id, *dept_filter_args),
         )
         sys_row = await cur.fetchone() or (0, 0, 0, 0)
 
@@ -420,7 +384,7 @@ async def list_contadores(
             SELECT COUNT(*)
               FROM atendimento a
              WHERE a.empresa_id = %s
-               AND a.status IN ('aguardando', 'em_andamento'){dept_filter_sql}{conexao_filter_sql}
+               AND a.status IN ('aguardando', 'em_andamento'){dept_filter_sql}
                AND EXISTS (
                    SELECT 1 FROM message_queue m
                      LEFT JOIN atendimento_visualizacao v
@@ -434,7 +398,7 @@ async def list_contadores(
                       AND (v.ultima_visualizacao_at IS NULL
                            OR m.created_at > v.ultima_visualizacao_at))
             """,
-            (empresa_id, *dept_filter_args, *conexao_filter_args, user_id),
+            (empresa_id, *dept_filter_args, user_id),
         )
         nao_lidas = (await cur.fetchone() or (0,))[0]
 
@@ -831,7 +795,6 @@ async def claim(
     atendimento_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
-    _perm: None = Depends(require_permission("atendimento.claim")),
 ) -> Atendimento:
     """Operador "puxa" o atendimento — vira em_andamento + assigned=user.
 
@@ -963,7 +926,6 @@ async def close(
     body: CloseInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
-    _perm: None = Depends(require_permission("atendimento.close")),
 ) -> Atendimento:
     """Fecha atendimento. status='resolvido' (default) ou 'abandonado'."""
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
@@ -1165,7 +1127,6 @@ async def transfer(
     body: TransferInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
-    _perm: None = Depends(require_permission("atendimento.transfer")),
 ) -> Atendimento:
     """Transfere o atendimento — modo `user_id` (atribui a outro operador,
     mantém em_andamento) OU modo `departamento_id` (limpa atendente, volta
@@ -1258,7 +1219,6 @@ async def reset_thread(
     atendimento_id: int,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
-    _perm: None = Depends(require_permission("atendimento.reset_thread")),
 ) -> dict:
     """Apaga checkpoint LangGraph do thread (phone:agent_id) do atendimento.
 
