@@ -136,18 +136,30 @@ ULTIMO=""
 [ -L "$RAIZ/ultimo" ] && ULTIMO="$(readlink -f "$RAIZ/ultimo")"
 LINK=()
 [ -n "$ULTIMO" ] && [ -d "$ULTIMO/volumes" ] && LINK=(--link-dest="$ULTIMO/volumes")
-if rsync -a --delete --timeout=300 --rsync-path="sudo rsync" "${LINK[@]}" \
-     "$HOST:/var/lib/docker/volumes/" "$DEST/volumes/"; then
+# `.minio.sys/tmp` é lixo transitório do MinIO vivo: some no meio da cópia e
+# devolve código 24 ("vanished") toda noite. Fora do rsync, e 24 é aviso, não
+# falha — o que sumiu era temporário por definição.
+rsync -a --delete --timeout=300 --rsync-path="sudo rsync" "${LINK[@]}" \
+  --exclude='**/.minio.sys/tmp/' \
+  "$HOST:/var/lib/docker/volumes/" "$DEST/volumes/"
+RC=$?
+if [ "$RC" -eq 0 ] || [ "$RC" -eq 24 ]; then
+  [ "$RC" -eq 24 ] && AVISOS+=("rsync volumes: arquivos temporários sumiram durante a cópia (código 24)")
   log "volumes ok — $(du -sh "$DEST/volumes" | cut -f1) aparentes"
 else
-  erro "rsync dos volumes falhou"; FALHAS=$((FALHAS+1))
+  erro "rsync dos volumes falhou (código $RC)"; FALHAS=$((FALHAS+1))
 fi
 
+# --link-dest é relativo ao DESTINO de cada rsync: tem que apontar pro mesmo
+# subdiretório no snapshot anterior, senão o rsync não acha nada e copia os
+# ~9 GB de /home/opc inteiros de novo (aconteceu na 1ª execução, 2026-09-17).
 LINK=()
-[ -n "$ULTIMO" ] && [ -d "$ULTIMO/host" ] && LINK=(--link-dest="$ULTIMO/host")
+[ -n "$ULTIMO" ] && [ -d "$ULTIMO/host/home-opc" ] && LINK=(--link-dest="$ULTIMO/host/home-opc")
 rsync -a --delete --timeout=300 --rsync-path="sudo rsync" "${LINK[@]}" \
   "$HOST:/home/opc/" "$DEST/host/home-opc/" || { erro "rsync /home/opc falhou"; FALHAS=$((FALHAS+1)); }
-rsync -a --delete --timeout=300 --rsync-path="sudo rsync" \
+LINK=()
+[ -n "$ULTIMO" ] && [ -d "$ULTIMO/host/etc-dokploy" ] && LINK=(--link-dest="$ULTIMO/host/etc-dokploy")
+rsync -a --delete --timeout=300 --rsync-path="sudo rsync" "${LINK[@]}" \
   "$HOST:/etc/dokploy/" "$DEST/host/etc-dokploy/" || { erro "rsync /etc/dokploy falhou"; FALHAS=$((FALHAS+1)); }
 
 # Env de TODOS os containers em execução (o export cobre só os 6 do Nexus;
@@ -174,6 +186,7 @@ fi
 # no MinIO no meio da cópia). Volumes de banco mudam sempre — não contam.
 PASSA2=$(rsync -ai --delete --timeout=300 --rsync-path="sudo rsync" \
            --exclude='*postgres*' --exclude='*pgdata*' --exclude='*redis*' \
+           --exclude='**/.minio.sys/tmp/' \
            "$HOST:/var/lib/docker/volumes/" "$DEST/volumes/" 2>/dev/null | grep -c '^[<>]f' || true)
 if [ "${PASSA2:-0}" -gt 0 ]; then
   log "2ª passada trouxe $PASSA2 arquivo(s) que mudaram durante a 1ª (agora copiados)"
