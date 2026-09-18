@@ -2,8 +2,10 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Headphones, SearchX } from "lucide-react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, Headphones, Loader2, SearchX } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 import type { Atendimento, Departamento, TipoVisualizacao } from "@/lib/api";
@@ -40,6 +42,9 @@ interface Props {
 // ~1150px pra lista + conversa, e 560 (o mock, que tem UM rail) deixaria a
 // conversa com 320. O operador arrasta até 860 quando quiser.
 const LIMITES_LISTA = { padrao: 440, min: 320, max: 860 };
+// Mesmo tamanho do render do servidor (`getAtendimentos` sem `limit` = 50 na
+// API): a 1ª página é o `initialData`, as seguintes vêm pelo "Carregar mais".
+const TAMANHO_PAGINA = 50;
 // Defaults ESTÁVEIS pro `useLocalStorage` (entram no memo do snapshot).
 const MODO_PADRAO: ModoAgrupamento = "status";
 const SEM_GRUPOS_TOCADOS: Record<string, boolean> = {};
@@ -74,17 +79,46 @@ export function AtendimentoList({
   // A fila passa a ser servida pelo cache do Query: o evento SSE invalida a
   // chave e SÓ esta lista revalida — antes, `router.refresh()` refazia os
   // quatro fetches da página inteira a cada mensagem.
-  const { data: atendimentos } = useQuery({
+  //
+  // Paginada por `offset` ("Carregar mais"): a API devolve no máximo 50 por
+  // chamada e, agrupada, a lista escondia o resto sem avisar — em "Todas
+  // conversas" sempre, e na fila aberta nos dias de pico (77 abertas já
+  // medidas na 1018). A invalidação do SSE refaz as páginas já carregadas.
+  const {
+    data: paginas,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["atendimentos", filtros],
-    queryFn: async () => {
-      const r = await carregarAtendimentosAction(filtros);
+    queryFn: async ({ pageParam }) => {
+      const r = await carregarAtendimentosAction({
+        ...filtros,
+        limit: TAMANHO_PAGINA,
+        offset: pageParam,
+      });
       // Lançar (em vez de devolver o erro) é o que liga o retry/backoff do
       // Query — inclusive o recuo no 429.
       if (!r.ok) throw new Error(r.error);
       return r.atendimentos;
     },
-    initialData: iniciais,
+    initialPageParam: 0,
+    getNextPageParam: (ultima, todas) =>
+      ultima.length < TAMANHO_PAGINA ? undefined : todas.length * TAMANHO_PAGINA,
+    initialData: { pages: [iniciais], pageParams: [0] },
   });
+  // Offset sobre uma lista viva repete item quando uma conversa sobe entre
+  // duas páginas — fica a primeira ocorrência (a mais recente).
+  const atendimentos = useMemo(() => {
+    const vistos = new Set<number>();
+    const lista: Atendimento[] = [];
+    for (const a of paginas.pages.flat()) {
+      if (vistos.has(a.id)) continue;
+      vistos.add(a.id);
+      lista.push(a);
+    }
+    return lista;
+  }, [paginas]);
 
   // --- agrupamento ---------------------------------------------------------
   const [modo, setModo] = useLocalStorage<ModoAgrupamento>("atd-agrupar-por", MODO_PADRAO);
@@ -256,6 +290,27 @@ export function AtendimentoList({
                 ))}
               </GrupoFila>
             ))}
+            {hasNextPage && (
+              <li className="p-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                >
+                  {isFetchingNextPage ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <ChevronDown className="size-3.5" aria-hidden />
+                  )}
+                  {isFetchingNextPage
+                    ? "Carregando…"
+                    : `Carregar mais (${atendimentos.length} carregadas)`}
+                </Button>
+              </li>
+            )}
           </ul>
         )}
       </div>
