@@ -78,6 +78,26 @@ Antes de crescer: executar o **backfill** dos 884 MB + `VACUUM FULL` e ligar o *
 
 ---
 
+## 4b. Baseline medido — teste de carga de 2026-09-18
+
+Locust (`stress/`, perfil Evolution) contra o **dev**: 20 clientes simultâneos (10 normais + 10 em
+rajada), rampa 5/s, 45 s, empresa 1, IA ligada, saída em `mock`; 20 streams SSE abertos (operadores).
+
+| Camada | Medido |
+|---|---|
+| Webhook (API) | 233 msgs de 20 telefones, 19 req/s, p50 21 ms / max 372 ms, 0 × 5xx |
+| Rate limit por telefone | 147 × 429 nos usuários em rajada (dev = 30/h; produção = 120/h) — proteção, não falha |
+| SSE / `NotifyHub` (PR #143) | 20 streams → **1 `LISTEN`** no Postgres; 20/20 com 319 eventos idênticos; sem descarte nem reconexão |
+| Debounce (PR #138) | 233/233 `done`, 0 erros no worker |
+| **Worker** | **14,7 msg/min** (serial; cada mensagem é um turno de IA, ~4 s). Latência média 6,7 min, máxima 12 min até a fila drenar |
+
+Leitura: a leva de 18/09 (TanStack #141/#142, Better Auth #140, NotifyHub #143, aviso de deploy #144)
+aguentou 20 simultâneos sem degradar — o painel deixou de ser o limite (operador parado: 48 → 4
+req/min; conexões `LISTEN` por processo, não por aba). O limite agora é o **worker serial**: 20
+conversas simultâneas com IA é ~5× o que ele entrega. Próximo trabalho de capacidade: paralelismo por
+telefone (N workers ou concorrência por thread), preservando a ordem dentro de cada conversa — antes
+de qualquer VPS maior.
+
 ## 5. VPS — custo-benefício
 
 | Opção | vCPU/RAM/NVMe | R$/mês promo → renovação | Nota |
