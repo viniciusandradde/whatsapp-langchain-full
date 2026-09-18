@@ -256,7 +256,7 @@ function GrupoDeNavegacao({
                   {itens.map((item) => (
                     <DropdownMenuItem
                       key={item.href}
-                      render={<Link href={item.href} />}
+                      render={<Link href={item.href} prefetch={false} />}
                       className={cn(
                         isItemActive(pathname, item.href) &&
                           "bg-accent font-medium text-accent-foreground"
@@ -309,7 +309,7 @@ function GrupoDeNavegacao({
                     // ela que o tour ilumina "Fila de atendimento".
                     data-tour={item.href}
                     isActive={isItemActive(pathname, item.href)}
-                    render={<Link href={item.href} />}
+                    render={<Link href={item.href} prefetch={false} />}
                   >
                     <span>{item.label}</span>
                   </SidebarMenuSubButton>

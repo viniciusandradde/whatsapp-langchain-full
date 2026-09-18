@@ -164,6 +164,7 @@ export function AtendimentoSidebar({
               <li key={tab.tipo}>
                 <Link
                   href={`/atendimento?tipo=${tab.tipo}`}
+                  prefetch={false}
                   onClick={handleNav}
                   title={collapsed ? `${tab.label}${count > 0 ? ` (${count})` : ""}` : undefined}
                   className={cn(
@@ -241,6 +242,7 @@ export function AtendimentoSidebar({
               <li key={aba.id} className="group flex items-center gap-1">
                 <Link
                   href={`/atendimento?aba_id=${aba.id}`}
+                  prefetch={false}
                   onClick={handleNav}
                   title={
                     collapsed
