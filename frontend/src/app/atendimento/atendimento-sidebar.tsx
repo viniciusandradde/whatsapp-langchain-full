@@ -19,11 +19,13 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useColunaRedimensionavel } from "@/hooks/use-colunas-redimensionaveis";
 import { usePermission } from "@/hooks/use-permission";
 import { cn } from "@/lib/utils";
 import type { Aba, ContadoresAtendimento } from "@/lib/api";
 
 import { AbaModal } from "./aba-modal";
+import { AlcaColuna } from "./alca-coluna";
 import {
   deleteAbaAction,
   loadAbasAction,
@@ -59,6 +61,11 @@ interface Props {
   initialContadores: ContadoresAtendimento | null;
   initialAbas: Aba[];
 }
+
+// Rail redimensionável (inbox agrupado): 256 é o `w-64` de sempre; 224 é o
+// mínimo em que "Não Resolvidas" + badge ficam numa linha; acima de 400 é
+// espaço roubado da conversa.
+const LIMITES_RAIL = { padrao: 256, min: 224, max: 400 };
 
 /**
  * Sidebar de atendimento — agrupa fila por:
@@ -150,6 +157,7 @@ export function AtendimentoSidebar({
 
   const { state, mobileOpen, closeMobile, isMobile } = useAtendimentoShell();
   const collapsed = !isMobile && state === "collapsed";
+  const rail = useColunaRedimensionavel("atd-largura-rail", LIMITES_RAIL);
 
   // Em mobile, sidebar inline não aparece — usa overlay
   const showInline = !isMobile;
@@ -333,19 +341,26 @@ export function AtendimentoSidebar({
     </>
   );
 
-  // Desktop: sidebar inline na flex (w-64 ou w-14 quando collapsed).
-  // Cor sólida (não bg-card que é quase transparente no tema dark) +
-  // backdrop-blur leve pra dar profundidade contra a área principal.
+  // Desktop: sidebar inline na flex (largura arrastável, ou w-14 quando
+  // collapsed). Cor sólida (não bg-card que é quase transparente no tema
+  // dark) + backdrop-blur leve pra dar profundidade contra a área principal.
+  // A alça vem como irmã do <aside> no flex do shell (o aside rola em Y, e
+  // uma alça absoluta dentro dele rolaria junto).
   if (showInline) {
     return (
-      <aside
-        className={cn(
-          "flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-r bg-background/95 p-3 backdrop-blur transition-[width] duration-200",
-          collapsed ? "w-14" : "w-64"
-        )}
-      >
-        {sidebarBody}
-      </aside>
+      <>
+        <aside
+          className={cn(
+            "flex h-full shrink-0 flex-col gap-4 overflow-y-auto border-r bg-background/95 p-3 backdrop-blur duration-200",
+            rail.arrastando ? "transition-none" : "transition-[width]",
+            collapsed && "w-14"
+          )}
+          style={collapsed ? undefined : { width: rail.largura }}
+        >
+          {sidebarBody}
+        </aside>
+        {!collapsed && <AlcaColuna alcaProps={rail.alcaProps} className="md:block" />}
+      </>
     );
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useLocalStorage } from "./use-local-storage";
 
@@ -27,6 +27,10 @@ export function useColunaRedimensionavel(
   limites: LimitesColuna
 ): {
   largura: number;
+  /** Verdadeiro entre o pointerdown e o pointerup — quem anima a largura
+   *  (o rail tem `transition-[width]`) desliga a transição enquanto arrasta,
+   *  senão a coluna corre 200 ms atrás do mouse. */
+  arrastando: boolean;
   redefinir: () => void;
   alcaProps: {
     onPointerDown: (e: React.PointerEvent) => void;
@@ -40,6 +44,7 @@ export function useColunaRedimensionavel(
 } {
   const [largura, setLargura] = useLocalStorage<number>(chave, limites.padrao);
   const arrasto = useRef<{ x0: number; l0: number } | null>(null);
+  const [arrastando, setArrastando] = useState(false);
 
   const limitar = useCallback(
     (px: number) => Math.min(limites.max, Math.max(limites.min, Math.round(px))),
@@ -56,6 +61,7 @@ export function useColunaRedimensionavel(
       if (e.button !== 0) return;
       e.preventDefault();
       arrasto.current = { x0: e.clientX, l0: largura };
+      setArrastando(true);
       const body = document.body;
       const cursorAntes = body.style.cursor;
       const selectAntes = body.style.userSelect;
@@ -68,6 +74,7 @@ export function useColunaRedimensionavel(
       };
       const soltar = () => {
         arrasto.current = null;
+        setArrastando(false);
         body.style.cursor = cursorAntes;
         body.style.userSelect = selectAntes;
         window.removeEventListener("pointermove", mover);
@@ -85,6 +92,7 @@ export function useColunaRedimensionavel(
 
   return {
     largura,
+    arrastando,
     redefinir,
     alcaProps: {
       onPointerDown,

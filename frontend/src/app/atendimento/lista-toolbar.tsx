@@ -132,7 +132,9 @@ export function ListaToolbar({ q, modo, onModo, algumAberto, onAlternarTodos }: 
       </div>
 
       <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+        {/* Some quando a lista está estreita (container query da coluna):
+            a 320px os três botões não cabem ao lado do rótulo. */}
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground @max-[400px]:sr-only">
           Agrupar por
         </span>
         <div
@@ -152,7 +154,7 @@ export function ListaToolbar({ q, modo, onModo, algumAberto, onAlternarTodos }: 
                 variant="ghost"
                 onClick={() => onModo(m.valor)}
                 className={cn(
-                  "h-6 flex-1 text-[11px]",
+                  "h-6 min-w-0 flex-1 px-1 text-[11px]",
                   ativo
                     ? "bg-background text-foreground shadow-sm hover:bg-background"
                     : "text-muted-foreground"

@@ -7,7 +7,6 @@ import { Headphones, SearchX } from "lucide-react";
 import { toast } from "sonner";
 
 import type { Atendimento, Departamento, TipoVisualizacao } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import { useColunaRedimensionavel } from "@/hooks/use-colunas-redimensionaveis";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useMediaQuery } from "@/hooks/use-mobile";
@@ -19,6 +18,7 @@ import {
   type FiltrosFila,
 } from "./actions";
 import { agruparAtendimentos, type ModoAgrupamento } from "./agrupar";
+import { AlcaColuna } from "./alca-coluna";
 import { AtendimentoDrawer } from "./atendimento-drawer";
 import { CardAtendimento } from "./card-atendimento";
 import { GrupoFila } from "./grupo-fila";
@@ -223,7 +223,7 @@ export function AtendimentoList({
   return (
     <div className="flex min-h-0 flex-1 gap-0 lg:gap-1">
       <div
-        className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border lg:w-(--largura-lista) lg:shrink-0"
+        className="@container flex w-full min-w-0 flex-col overflow-hidden rounded-lg border lg:w-(--largura-lista) lg:shrink-0"
         style={{ "--largura-lista": `${largura}px` } as React.CSSProperties}
       >
         <ListaToolbar
@@ -260,17 +260,9 @@ export function AtendimentoList({
         )}
       </div>
 
-      {/* Alça entre lista e conversa — só desktop. */}
-      <div
-        {...alcaProps}
-        title="Arraste para redimensionar · duplo clique redefine"
-        className={cn(
-          "hidden w-2 shrink-0 cursor-col-resize items-stretch justify-center lg:flex",
-          "group/alca"
-        )}
-      >
-        <div className="w-px bg-border transition-colors group-hover/alca:w-0.5 group-hover/alca:bg-brand-primary/60" />
-      </div>
+      {/* Alça entre lista e conversa — só desktop. Arrastar pra esquerda
+          encolhe a lista (mín. 320px) e a conversa fica com o resto. */}
+      <AlcaColuna alcaProps={alcaProps} />
 
       {/* Coluna da conversa — só desktop. `w-0` (e não só `min-w-0`): a
           largura intrínseca do drawer (barra de ações sem quebra) subia pela
