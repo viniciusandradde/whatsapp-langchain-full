@@ -85,6 +85,14 @@ interface Props {
    * Inbox do Chatvolt — resolve isso com duas colunas fixas.
    */
   modo?: "drawer" | "painel";
+  /**
+   * Chamado quando uma ação de estado (atender, devolver à IA, transferir)
+   * deu certo. Sem ele, o drawer FECHA a conversa (comportamento do overlay
+   * antigo); com ele, a conversa fica aberta e quem chamou revalida a fila
+   * pra o cabeçalho refletir o novo estado. Resolver/abandonar sempre fecha:
+   * a conversa sai da caixa.
+   */
+  onAcaoConcluida?: () => void;
 }
 
 function formatTime(iso: string | null): string {
@@ -96,6 +104,7 @@ export function AtendimentoDrawer({
   atendimento,
   onClose,
   modo = "drawer",
+  onAcaoConcluida,
 }: Props) {
   const [mensagens, setMensagens] = useState<AtendimentoMensagem[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -271,12 +280,25 @@ export function AtendimentoDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atendimento.id, atendimento.status]);
 
-  function runAction(fn: () => Promise<{ ok: true } | { ok: false; error: string }>) {
+  function runAction(
+    fn: () => Promise<{ ok: true } | { ok: false; error: string }>,
+    opts: { encerra?: boolean } = {}
+  ) {
     setError(null);
     startTransition(async () => {
       const r = await fn();
-      if (!r.ok) setError(r.error);
-      else onClose();
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      if (onAcaoConcluida) {
+        onAcaoConcluida();
+        // Resolver/abandonar tira a conversa da caixa: o painel não tem o
+        // que mostrar e fecha; o resto fica aberto com o estado novo.
+        if (opts.encerra) onClose();
+      } else {
+        onClose();
+      }
     });
   }
 
@@ -340,7 +362,7 @@ export function AtendimentoDrawer({
       )
     )
       return;
-    runAction(() => closeAction(atendimento.id, status));
+    runAction(() => closeAction(atendimento.id, status), { encerra: true });
   }
 
   async function handleResetThread() {

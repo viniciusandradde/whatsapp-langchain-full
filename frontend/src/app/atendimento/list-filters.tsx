@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Search, Tag as TagIcon, X } from "lucide-react";
+import { Tag as TagIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -56,7 +56,6 @@ export function ListFilters({
 }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
-  const [busca, setBusca] = useState(q ?? "");
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagOpen, setTagOpen] = useState(false);
   const [atendentes, setAtendentes] = useState<AtendenteStatus[]>([]);
@@ -79,11 +78,6 @@ export function ListFilters({
     }
     if (!params.get("tipo")) params.set("tipo", tipo);
     router.push(`/atendimento?${params.toString()}`);
-  };
-
-  const submitBusca = (e: React.FormEvent) => {
-    e.preventDefault();
-    setParam("q", busca.trim() || undefined);
   };
 
   const toggleTag = (id: number) => {
@@ -166,21 +160,9 @@ export function ListFilters({
         </Select>
       )}
 
-      <form onSubmit={submitBusca} className="flex items-center gap-1">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar nome ou protocolo…"
-            className={`${inputCls} pl-8 w-56`}
-          />
-        </div>
-        <Button type="submit" size="sm" variant="outline">
-          Buscar
-        </Button>
-      </form>
+      {/* A busca (nome, telefone ou protocolo) mora na toolbar da lista
+          (`lista-toolbar.tsx`) desde o inbox agrupado — `q` continua sendo
+          um param da URL e entra no "Limpar" daqui. */}
 
       {tags.length > 0 && (
         <div className="relative">
@@ -235,8 +217,8 @@ export function ListFilters({
           size="sm"
           variant="ghost"
           onClick={() => {
-            setBusca("");
-            router.push(`/atendimento?tipo=${tipo}`);
+            const id = sp.get("id");
+            router.push(`/atendimento?tipo=${tipo}${id ? `&id=${id}` : ""}`);
           }}
         >
           <X className="size-3.5" />

@@ -11,12 +11,9 @@ import {
   Inbox,
   Layers,
   Loader2,
-  MailOpen,
-  MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
-  UserRoundSearch,
   X,
 } from "lucide-react";
 
@@ -35,28 +32,25 @@ import {
 import { useAtendimentoShell } from "./atendimento-shell";
 
 type SystemTab = {
-  tipo: "nao_resolvidas" | "nao_lidas" | "humano_solicitado" | "resolvidas" | "todas";
+  tipo: "nao_resolvidas" | "resolvidas" | "todas";
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   /**
-   * Chave em `contadores.sistema`. Só duas abas têm badge, como no Chatvolt:
-   * "Não Lidas" e "Humano Solicitado". Contador em toda aba vira ruído — o
-   * número deixa de significar "olhe aqui".
+   * Chave em `contadores.sistema`. Só "Não Resolvidas" tem badge — o número
+   * de conversas com mensagem nova, que é o "olhe aqui". Contador em toda
+   * aba vira ruído.
    */
-  contador?: "nao_lidas" | "humano_solicitado";
-  /** Vermelho para o que exige leitura, âmbar para o que exige gente. */
-  urgente?: boolean;
+  contador?: "nao_lidas";
 };
 
+/**
+ * Três itens, como no mock do inbox agrupado (2026-09): "Não Lidas" e
+ * "Humano Solicitado" viraram GRUPOS dentro da lista (agrupar por status),
+ * não abas. `?tipo=nao_lidas` e `?tipo=humano_solicitado` continuam
+ * funcionando como deep link — só saíram do rail.
+ */
 const SYSTEM_TABS: SystemTab[] = [
-  { tipo: "nao_resolvidas", label: "Não Resolvidas", icon: Inbox },
-  { tipo: "nao_lidas", label: "Não Lidas", icon: MailOpen, contador: "nao_lidas", urgente: true },
-  {
-    tipo: "humano_solicitado",
-    label: "Humano Solicitado",
-    icon: UserRoundSearch,
-    contador: "humano_solicitado",
-  },
+  { tipo: "nao_resolvidas", label: "Não Resolvidas", icon: Inbox, contador: "nao_lidas" },
   { tipo: "resolvidas", label: "Resolvidas", icon: CheckCircle2 },
   { tipo: "todas", label: "Todas conversas", icon: Layers },
 ];
@@ -83,6 +77,10 @@ export function AtendimentoSidebar({
   const sp = useSearchParams();
   const tipoAtual = sp.get("tipo") ?? "nao_resolvidas";
   const abaAtual = sp.get("aba_id");
+  // A conversa aberta (`?id=`) sobrevive à troca de caixa: o operador olha a
+  // aba "Resolvidas" e volta sem perder onde estava.
+  const idAtual = sp.get("id");
+  const comId = (href: string) => (idAtual ? `${href}&id=${idAtual}` : href);
   const canManageAbas = usePermission("atendimento.aba.manage");
 
   const queryClient = useQueryClient();
@@ -177,7 +175,7 @@ export function AtendimentoSidebar({
             return (
               <li key={tab.tipo}>
                 <Link
-                  href={`/atendimento?tipo=${tab.tipo}`}
+                  href={comId(`/atendimento?tipo=${tab.tipo}`)}
                   prefetch={false}
                   onClick={handleNav}
                   title={collapsed ? `${tab.label}${count > 0 ? ` (${count})` : ""}` : undefined}
@@ -201,12 +199,8 @@ export function AtendimentoSidebar({
                   {!collapsed && count > 0 && (
                     <Badge
                       variant="secondary"
-                      className={cn(
-                        "h-5 px-1.5 text-xs",
-                        tab.urgente
-                          ? "bg-red-600 text-white"
-                          : "bg-amber-500/20 text-amber-700 dark:text-amber-300"
-                      )}
+                      className="h-5 bg-destructive px-1.5 text-xs text-destructive-foreground"
+                      title={`${count} conversa(s) com mensagem nova`}
                     >
                       {count > 99 ? "99+" : count}
                     </Badge>
@@ -255,7 +249,7 @@ export function AtendimentoSidebar({
             return (
               <li key={aba.id} className="group flex items-center gap-1">
                 <Link
-                  href={`/atendimento?aba_id=${aba.id}`}
+                  href={comId(`/atendimento?aba_id=${aba.id}`)}
                   prefetch={false}
                   onClick={handleNav}
                   title={

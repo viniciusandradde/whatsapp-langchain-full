@@ -59,17 +59,19 @@ function isValidPrioridade(v: string | undefined): v is Prioridade {
 }
 
 /**
- * Página /atendimento — layout 2 colunas (sidebar + lista).
+ * Página /atendimento — rail + lista agrupada + conversa (inbox agrupado).
  *
- * Sidebar (Sprint Atendimento UX) tem 2 seções:
- *  - Sistema: Aguardando / Meus / Outros (status-derived, contadores)
- *  - Minhas Abas: pastas customizáveis pelo user logado (mig 085)
+ * Rail (`AtendimentoSidebar`) tem 2 seções:
+ *  - Sistema: Não Resolvidas / Resolvidas / Todas (contadores)
+ *  - Minhas Abas: filtros salvos por cliente do user logado (mig 085)
  *
- * Quando `?aba_id=` está presente, a lista mostra só atendimentos
- * pinneados naquela aba do user — sobrepondo o `?tipo=` system.
+ * Quando `?aba_id=` está presente, a lista mostra os atendimentos abertos
+ * dos clientes daquela aba — sobrepondo o `?tipo=` system. `?id=` é a
+ * conversa aberta: vive só no cliente (`AtendimentoList`), esta página não
+ * a lê.
  */
 export default async function AtendimentoPage({ searchParams }: PageProps) {
-  await requireSession();
+  const session = await requireSession();
   const sp = await searchParams;
   const abaId = sp.aba_id ? Number(sp.aba_id) : undefined;
   // Quando aba está selecionada, mostramos todos os status abertos
@@ -196,6 +198,8 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
                 tagIds,
                 assignedTo,
               }}
+              userId={session.user.id}
+              departamentos={departamentos}
             />
           </div>
         )}

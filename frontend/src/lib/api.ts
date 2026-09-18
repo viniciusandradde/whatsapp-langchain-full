@@ -635,6 +635,13 @@ export interface Atendimento {
    * apagada vem como "Mensagem apagada".
    */
   ultima_mensagem_preview?: string | null;
+  /**
+   * Desde quando o cliente espera resposta (inbox agrupado 2026-09): ISO
+   * da última mensagem visível quando ela é do cliente e ninguém respondeu
+   * (marker interno do worker não conta). `null` quando a última fala é do
+   * operador/IA. Alimenta o chip "Sem resposta há X".
+   */
+  aguardando_desde?: string | null;
   /** Tags do CLIENTE (identificam a pessoa; alimentam as abas). */
   cliente_tags: string[];
   // Sprint 3 padrão profissional (mig 047)
