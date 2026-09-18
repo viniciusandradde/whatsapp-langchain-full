@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Search, Tag as TagIcon, X } from "lucide-react";
+import { Tag as TagIcon, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -30,8 +30,10 @@ const PRIORIDADES = [
   { v: "baixa", l: "Baixa" },
 ] as const;
 
+// `px-2` no celular: na grade de 2 colunas a 390px, "Todos departamentos"
+// perdia a última letra com os 12px de cada lado.
 const inputCls =
-  "h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  "h-9 rounded-md border border-input bg-transparent px-2 py-1 text-[13px] shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-ring md:px-3 md:text-sm";
 
 interface Props {
   tipo: TipoVisualizacao;
@@ -56,7 +58,6 @@ export function ListFilters({
 }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
-  const [busca, setBusca] = useState(q ?? "");
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagOpen, setTagOpen] = useState(false);
   const [atendentes, setAtendentes] = useState<AtendenteStatus[]>([]);
@@ -81,11 +82,6 @@ export function ListFilters({
     router.push(`/atendimento?${params.toString()}`);
   };
 
-  const submitBusca = (e: React.FormEvent) => {
-    e.preventDefault();
-    setParam("q", busca.trim() || undefined);
-  };
-
   const toggleTag = (id: number) => {
     const params = new URLSearchParams(sp.toString());
     const current = params.getAll("tag_id").map(Number);
@@ -103,14 +99,21 @@ export function ListFilters({
 
   return (
     // Toolbar inline (sem moldura): divide a linha com o título da página.
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+    // No celular vira grade de DUAS colunas (pedido do dono, 2026-09-18): os
+    // três selects empilhados um por linha comiam meia tela antes da fila.
+    <div
+      className={cn(
+        "grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:items-center",
+        className
+      )}
+    >
       <select
         value={depId ?? ""}
         onChange={(e) => setParam("dep_id", e.target.value || undefined)}
-        className={inputCls}
+        className={cn(inputCls, "w-full md:w-auto")}
         aria-label="Filtrar por departamento"
       >
-        <option value="">Todos os departamentos</option>
+        <option value="">Todos departamentos</option>
         {departamentos
           .filter((d) => d.ativo)
           .map((d) => (
@@ -123,10 +126,10 @@ export function ListFilters({
       <select
         value={prioridade ?? ""}
         onChange={(e) => setParam("prioridade", e.target.value || undefined)}
-        className={inputCls}
+        className={cn(inputCls, "w-full md:w-auto")}
         aria-label="Filtrar por prioridade"
       >
-        <option value="">Todas as prioridades</option>
+        <option value="">Todas prioridades</option>
         {PRIORIDADES.map((p) => (
           <option key={p.v} value={p.v}>
             {p.l}
@@ -144,19 +147,19 @@ export function ListFilters({
           }
         >
           <SelectTrigger
-            className="h-9 w-48"
+            className="h-9 w-full md:w-48"
             aria-label="Filtrar por responsável"
           >
             <SelectValue>
               {(v: string | null) => {
-                if (!v) return "Todos os responsáveis";
+                if (!v) return "Todos responsáveis";
                 const a = atendentes.find((x) => x.user_id === v);
                 return a?.nome || a?.email || "Responsável";
               }}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={null}>Todos os responsáveis</SelectItem>
+            <SelectItem value={null}>Todos responsáveis</SelectItem>
             {atendentes.map((a) => (
               <SelectItem key={a.user_id} value={a.user_id}>
                 {a.nome || a.email || a.user_id}
@@ -166,21 +169,9 @@ export function ListFilters({
         </Select>
       )}
 
-      <form onSubmit={submitBusca} className="flex items-center gap-1">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar nome ou protocolo…"
-            className={`${inputCls} pl-8 w-56`}
-          />
-        </div>
-        <Button type="submit" size="sm" variant="outline">
-          Buscar
-        </Button>
-      </form>
+      {/* A busca (nome, telefone ou protocolo) mora na toolbar da lista
+          (`lista-toolbar.tsx`) desde o inbox agrupado — `q` continua sendo
+          um param da URL e entra no "Limpar" daqui. */}
 
       {tags.length > 0 && (
         <div className="relative">
@@ -188,7 +179,7 @@ export function ListFilters({
             type="button"
             size="sm"
             variant="outline"
-            className="h-9 gap-1"
+            className="h-9 w-full gap-1 md:w-auto"
             onClick={() => setTagOpen((v) => !v)}
           >
             <TagIcon className="h-3.5 w-3.5" />
@@ -234,9 +225,10 @@ export function ListFilters({
           type="button"
           size="sm"
           variant="ghost"
+          className="w-full md:w-auto"
           onClick={() => {
-            setBusca("");
-            router.push(`/atendimento?tipo=${tipo}`);
+            const id = sp.get("id");
+            router.push(`/atendimento?tipo=${tipo}${id ? `&id=${id}` : ""}`);
           }}
         >
           <X className="size-3.5" />

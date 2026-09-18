@@ -86,7 +86,58 @@ export const PRIORIDADE_PONTO: Record<string, string> = {
   alta: "bg-warning",
 };
 
+/**
+ * Chip de automação do card agrupado (inbox agrupado 2026-09) — a versão
+ * com texto do `SITUACAO_PONTO`, e com o MESMO significado: vermelho só na
+ * resposta perdida; sem automação/resolvida/abandonada são neutros. Só
+ * tokens do tema, pelo mesmo portão de métricas.
+ */
+export const SITUACAO_CHIP: Record<SituacaoAtendimento, string> = {
+  resposta_perdida: "bg-destructive/10 text-destructive",
+  com_ia: "bg-success/10 text-success",
+  aguardando_humano: "bg-warning/10 text-warning",
+  em_atendimento: "bg-brand-primary/10 text-brand-primary",
+  sem_automacao: "bg-muted text-muted-foreground",
+  resolvida: "bg-muted text-muted-foreground",
+  abandonada: "bg-muted text-muted-foreground",
+};
+
 /** `99+` acima de 99, como no Chatvolt — número maior não muda a decisão. */
 export function formatarNaoLidas(n: number): string {
   return n > 99 ? "99+" : String(n);
+}
+
+export type FaixaEspera = "normal" | "aviso" | "critico";
+
+/**
+ * Faixa do chip "Sem resposta há X": até 1 h é rotina, de 1 a 4 h pede
+ * atenção, acima de 4 h é o cliente falando sozinho. Não é SLA por
+ * departamento (`tolerancia_atend_inativo_min` segue sem uso) — é um
+ * limiar fixo pra fila inteira, escolhido pra separar o dia do turno.
+ */
+export function faixaEspera(iso: string, agora: number = Date.now()): FaixaEspera {
+  const min = (agora - new Date(iso).getTime()) / 60_000;
+  if (min >= 240) return "critico";
+  if (min >= 60) return "aviso";
+  return "normal";
+}
+
+export const FAIXA_ESPERA_CLASSE: Record<FaixaEspera, string> = {
+  normal: "bg-muted text-muted-foreground",
+  aviso: "bg-warning/10 text-warning",
+  critico: "bg-destructive/10 text-destructive",
+};
+
+/**
+ * Tempo de espera legível: "agora", "12min", "3h 05min", "2d". Diferente do
+ * `formatRelative` do card (que arredonda): aqui minutos ficam visíveis até
+ * o dia, porque é a medida do que o cliente já esperou.
+ */
+export function formatarEspera(iso: string, agora: number = Date.now()): string {
+  const min = Math.max(0, Math.floor((agora - new Date(iso).getTime()) / 60_000));
+  if (min < 1) return "agora";
+  if (min < 60) return `${min}min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h ${String(min % 60).padStart(2, "0")}min`;
+  return `${Math.floor(h / 24)}d`;
 }
