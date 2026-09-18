@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Frown, Headphones, Mail } from "lucide-react";
 import { toast } from "sonner";
 
@@ -9,7 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import type { Atendimento, TipoVisualizacao } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-import { marcarAtendimentoNaoLidoAction } from "./actions";
+import {
+  carregarAtendimentosAction,
+  marcarAtendimentoNaoLidoAction,
+  type FiltrosFila,
+} from "./actions";
 import { AtendimentoDrawer } from "./atendimento-drawer";
 import {
   PRIORIDADE_PONTO,
@@ -20,8 +24,12 @@ import {
 } from "./situacao";
 
 interface Props {
+  /** Render do servidor — vira `initialData` do Query (sem flash, sem refetch
+   *  no mount). A partir daí quem manda na lista é o cache. */
   atendimentos: Atendimento[];
   tipo: TipoVisualizacao;
+  /** Compõe a queryKey: trocar de filtro é outra chave, outro initialData. */
+  filtros: FiltrosFila;
 }
 
 function formatRelative(iso: string): string {
@@ -46,9 +54,28 @@ function formatRelative(iso: string): string {
  * direita. Abaixo de `lg` (tablet/celular) o drawer continua, porque 390px não
  * comportam duas colunas.
  */
-export function AtendimentoList({ atendimentos, tipo }: Props) {
+export function AtendimentoList({
+  atendimentos: iniciais,
+  tipo,
+  filtros,
+}: Props) {
   const [ativo, setAtivo] = useState<Atendimento | null>(null);
-  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  // A fila passa a ser servida pelo cache do Query: o evento SSE invalida a
+  // chave e SÓ esta lista revalida — antes, `router.refresh()` refazia os
+  // quatro fetches da página inteira a cada mensagem.
+  const { data: atendimentos } = useQuery({
+    queryKey: ["atendimentos", filtros],
+    queryFn: async () => {
+      const r = await carregarAtendimentosAction(filtros);
+      // Lançar (em vez de devolver o erro) é o que liga o retry/backoff do
+      // Query — inclusive o recuo no 429.
+      if (!r.ok) throw new Error(r.error);
+      return r.atendimentos;
+    },
+    initialData: iniciais,
+  });
 
   async function marcarNaoLida(atendimentoId: number) {
     const r = await marcarAtendimentoNaoLidoAction(atendimentoId);
@@ -56,8 +83,8 @@ export function AtendimentoList({ atendimentos, tipo }: Props) {
       toast.error(r.error);
       return;
     }
-    // O badge vem calculado no servidor — refresh pra ele reaparecer.
-    router.refresh();
+    // O badge vem calculado no servidor — revalida só a fila.
+    queryClient.invalidateQueries({ queryKey: ["atendimentos"] });
   }
 
   if (atendimentos.length === 0) {

@@ -184,7 +184,19 @@ export default async function AtendimentoPage({ searchParams }: PageProps) {
 
         {!error && (
           <div className="flex min-h-0 flex-1 flex-col">
-            <AtendimentoList atendimentos={atendimentos} tipo={tipo} />
+            <AtendimentoList
+              atendimentos={atendimentos}
+              tipo={tipo}
+              filtros={{
+                tipo,
+                depId,
+                prioridade,
+                q,
+                abaId,
+                tagIds,
+                assignedTo,
+              }}
+            />
           </div>
         )}
       </main>

@@ -10,6 +10,7 @@ import { PermissionsProvider } from "@/components/permissions-context";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
+import { QueryProvider } from "@/components/query-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { getMyEmpresas, getMyPermissions, isMyAdmin } from "@/lib/api";
 import "./globals.css";
@@ -186,6 +187,9 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <ThemeProvider>
+          {/* QueryProvider por fora do PermissionsProvider: o cache de dados
+              é do app inteiro e não depende de permissão. */}
+          <QueryProvider>
           <PermissionsProvider
             initialPerms={initialPerms.permissoes}
             initialPerfis={initialPerms.perfis}
@@ -202,6 +206,7 @@ export default async function RootLayout({
               <TourPrimeiroAcesso />
             </SidebarProvider>
           </PermissionsProvider>
+          </QueryProvider>
           <Toaster position="bottom-right" />
         </ThemeProvider>
         <ServiceWorkerRegister />
