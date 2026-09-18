@@ -150,11 +150,16 @@ else
   erro "rsync dos volumes falhou (código $RC)"; FALHAS=$((FALHAS+1))
 fi
 
+# --link-dest é relativo ao DESTINO de cada rsync: tem que apontar pro mesmo
+# subdiretório no snapshot anterior, senão o rsync não acha nada e copia os
+# ~9 GB de /home/opc inteiros de novo (aconteceu na 1ª execução, 2026-09-17).
 LINK=()
-[ -n "$ULTIMO" ] && [ -d "$ULTIMO/host" ] && LINK=(--link-dest="$ULTIMO/host")
+[ -n "$ULTIMO" ] && [ -d "$ULTIMO/host/home-opc" ] && LINK=(--link-dest="$ULTIMO/host/home-opc")
 rsync -a --delete --timeout=300 --rsync-path="sudo rsync" "${LINK[@]}" \
   "$HOST:/home/opc/" "$DEST/host/home-opc/" || { erro "rsync /home/opc falhou"; FALHAS=$((FALHAS+1)); }
-rsync -a --delete --timeout=300 --rsync-path="sudo rsync" \
+LINK=()
+[ -n "$ULTIMO" ] && [ -d "$ULTIMO/host/etc-dokploy" ] && LINK=(--link-dest="$ULTIMO/host/etc-dokploy")
+rsync -a --delete --timeout=300 --rsync-path="sudo rsync" "${LINK[@]}" \
   "$HOST:/etc/dokploy/" "$DEST/host/etc-dokploy/" || { erro "rsync /etc/dokploy falhou"; FALHAS=$((FALHAS+1)); }
 
 # Env de TODOS os containers em execução (o export cobre só os 6 do Nexus;
