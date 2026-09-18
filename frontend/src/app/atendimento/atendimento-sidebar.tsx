@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
   Folder,
@@ -84,27 +85,40 @@ export function AtendimentoSidebar({
   const abaAtual = sp.get("aba_id");
   const canManageAbas = usePermission("atendimento.aba.manage");
 
-  const [abas, setAbas] = useState<Aba[]>(initialAbas);
-  const [contadores, setContadores] =
-    useState<ContadoresAtendimento | null>(initialContadores);
+  const queryClient = useQueryClient();
+  // ADR-003: o render do servidor entra como `initialData` (sem refetch no
+  // mount) e o evento SSE da fila invalida `["contadores"]` junto com a lista
+  // — o badge acompanha a mensagem em vez de esperar o timer. O intervalo
+  // fica só como rede de segurança pra quando o SSE não entrega.
+  const { data: abas } = useQuery({
+    queryKey: ["abas"],
+    queryFn: async () => {
+      const r = await loadAbasAction();
+      if (!r.ok) throw new Error(r.error);
+      return r.abas;
+    },
+    initialData: initialAbas,
+    staleTime: 60_000,
+  });
+  const { data: contadores } = useQuery({
+    queryKey: ["contadores"],
+    queryFn: async () => {
+      const r = await loadContadoresAction();
+      if (!r.ok) throw new Error(r.error);
+      return r.contadores;
+    },
+    initialData: initialContadores,
+    refetchInterval: 60_000,
+  });
   const [modalAba, setModalAba] = useState<Aba | "new" | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [, startTransition] = useTransition();
 
-  const refresh = useCallback(async () => {
-    const [a, c] = await Promise.all([
-      loadAbasAction(),
-      loadContadoresAction(),
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["abas"] }),
+      queryClient.invalidateQueries({ queryKey: ["contadores"] }),
     ]);
-    if (a.ok) setAbas(a.abas);
-    if (c.ok) setContadores(c.contadores);
-  }, []);
-
-  // Refresh contadores a cada 30s (fallback se SSE não fizer event).
-  useEffect(() => {
-    const id = setInterval(refresh, 30_000);
-    return () => clearInterval(id);
-  }, [refresh]);
 
   const handleDelete = (aba: Aba) => {
     if (
@@ -318,7 +332,7 @@ export function AtendimentoSidebar({
           aba={modalAba === "new" ? null : modalAba}
           onClose={(refreshed) => {
             setModalAba(null);
-            if (refreshed) refresh();
+            if (refreshed) void refresh();
           }}
         />
       )}

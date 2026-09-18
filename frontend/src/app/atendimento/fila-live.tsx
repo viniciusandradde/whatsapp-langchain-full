@@ -125,6 +125,9 @@ export function FilaLive({
         // os quatro fetches da página a cada evento. O circuit breaker acima
         // continua como defesa, mas o custo por evento caiu para 1 request.
         queryClient.invalidateQueries({ queryKey: ["atendimentos"] });
+        // Badges da barra lateral seguem o mesmo evento — contagem e lista
+        // têm que concordar (gotcha_contagem_por_endpoint_permissao).
+        queryClient.invalidateQueries({ queryKey: ["contadores"] });
       }, DEBOUNCE_MS);
     }
 
