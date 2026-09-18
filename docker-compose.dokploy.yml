@@ -136,9 +136,12 @@ services:
       # Quando mexer: medir antes de chutar —
       #   SELECT count(*), min(created_at) FROM message_queue
       #    WHERE status = 'queued';
-      # Linhas esperando de forma sustentada = subir. O claim usa
-      # FOR UPDATE SKIP LOCKED, então escalar é seguro: réplicas não brigam
-      # pela mesma mensagem.
+      # Linhas esperando de forma sustentada = subir. O claim é serializado
+      # POR CONVERSA (advisory lock + NOT EXISTS de row em processing com
+      # lease válido), então escalar é seguro: réplicas não brigam pela
+      # mesma mensagem nem rodam dois turnos no mesmo thread do LangGraph.
+      # Pré-condição: LEASE_SECONDS curto (180) — com a trava, uma row
+      # presa em processing após crash prende a conversa até o lease vencer.
       replicas: 2
       resources:
         limits:

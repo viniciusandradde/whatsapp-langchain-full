@@ -12,7 +12,7 @@ Implementado (núcleo do harness):
 - API FastAPI com webhook assíncrono multi-provider (`POST /webhook/evolution`, `/webhook/waba`)
 - validação criptográfica real por provider — `apikey` na Evolution, HMAC-SHA256 no WABA
 - fila em PostgreSQL (`message_queue`) com debounce texto-only, flush antes de mídia e lease
-- worker assíncrono consumindo fila com `FOR UPDATE SKIP LOCKED`
+- worker assíncrono consumindo fila com claim serializado por conversa (advisory lock + lease)
 - cliente outbound resolvido por `Conexao.provider` via `OutboundClient` Protocol (Evolution/WABA, mesmo contrato)
 - typing indicator best-effort antes da execução do agente
 - envio da resposta para o WhatsApp via provider da conexão antes de `mark_done`
@@ -63,7 +63,7 @@ Limitações conhecidas:
       |
       v
 [Worker]
-  - claim com lease
+  - claim com lease, um turno por conversa (`phone:agent`)
   - processa mídia
   - envia typing
   - invoca agente
@@ -197,7 +197,7 @@ No estado atual do projeto:
 - texto faz debounce
 - mídia não faz debounce
 - antes de inserir mídia, textos pendentes do mesmo `phone+agent` são flushed
-- concorrência do mesmo remetente/agente é serializada com advisory lock
+- concorrência do mesmo remetente/agente é serializada com advisory lock — no webhook **e no claim do worker** (mesma chave, `chave_lock_conversa`): nunca duas rows da mesma conversa em `processing` com lease válido, em qualquer número de réplicas
 - múltiplas mídias num único webhook (NumMedia > 1) viram N rows independentes com o mesmo `message_id`; o worker processa cada uma como turn separado do agente; o checkpointer LangGraph agrega o histórico por `thread_id`
 
 ### Retry com backoff

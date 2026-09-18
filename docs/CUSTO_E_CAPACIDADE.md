@@ -70,7 +70,7 @@ Host atual (OCI, `vps-dev-hermes`): 2 vCPU AMD EPYC, 11 GB RAM, 178 GB (40% usad
 Demanda projetada (10 clientes = 3 porte hospital + 7 PME): 140k msgs/mês, ~6.400/dia útil, pico ~23 msg/min. Vazão atual: 2 workers seriais = **17,6 msg/min**. Conexões PG: ~90–110 (SSE abre 1 LISTEN por operador).
 
 **Veredito: cabe, mas não como está.** Gargalos (nenhum é CPU):
-1. **Worker estritamente serial** — cada réplica processa 1 msg por vez, ~7s esperando o LLM (CPU 0,35%). Solução: concorrência interna por `asyncio.Semaphore(4)` na réplica → ~70 msg/min com as mesmas 2 réplicas, sem RAM extra (o claim com `FOR UPDATE SKIP LOCKED` já é seguro). Réplicas a mais empurraram o host para o swap em 26/07.
+1. **Worker estritamente serial** — cada réplica processa 1 msg por vez, ~7s esperando o LLM (CPU 0,35%). Solução: concorrência interna por `asyncio.Semaphore(4)` na réplica → ~70 msg/min com as mesmas 2 réplicas, sem RAM extra. Réplicas a mais empurraram o host para o swap em 26/07. **Pré-requisito descoberto em 18/09**: o claim com `FOR UPDATE SKIP LOCKED` puro **não era seguro por conversa** — medidas 75 execuções de IA sobrepostas no mesmo atendimento em 30 dias (3.404 execuções, 608 atendimentos) com as 2 réplicas atuais; dois turnos no mesmo `thread_id` disputam o checkpoint do LangGraph. Corrigido com o claim serializado por conversa (`claim_next`: advisory lock com a mesma chave do webhook + `NOT EXISTS` de row `processing` com lease válido), que também exige `LEASE_SECONDS` curto em produção (era 5000; com a trava, crash = conversa presa 83 min).
 2. **Fila global sem justiça entre empresas** — um burst do hospital atrasa todos. Precisa de claim round-robin por empresa (ou teto de mensagens em voo por empresa).
 3. **Postgres de fábrica** — `shared_buffers` 128 MB num host de 11 GB; e o SSE abre 1 conexão `LISTEN` por operador. Subir para 200–300 e, a médio prazo, multiplexar o LISTEN ou PgBouncer (modo transação). Ver `docs/SEGURANCA.md` M3.
 
@@ -90,6 +90,13 @@ rajada), rampa 5/s, 45 s, empresa 1, IA ligada, saída em `mock`; 20 streams SSE
 | SSE / `NotifyHub` (PR #143) | 20 streams → **1 `LISTEN`** no Postgres; 20/20 com 319 eventos idênticos; sem descarte nem reconexão |
 | Debounce (PR #138) | 233/233 `done`, 0 erros no worker |
 | **Worker** | **14,7 msg/min** (serial; cada mensagem é um turno de IA, ~4 s). Latência média 6,7 min, máxima 12 min até a fila drenar |
+
+**Repetição com o claim serializado por conversa** (mesma carga, 18/09 à tarde): 252/252 `done`, **0 mensagens
+fora de ordem por telefone, 0 execuções de IA sobrepostas por atendimento, 0 deadlock**, 21,8 msg/min (1 réplica;
+a diferença para 14,7 é variação do LLM — p50 1,9 s / p95 3,6 s — não ganho da PR). Achado: **229 de 252 respostas
+foram "superadas"** (chegou mensagem mais nova do mesmo telefone antes do envio). É a forma da carga (~12 msgs por
+telefone em 45 s), mas mostra o desperdício: um turno de IA por row, quase todos engolidos. Em produção são 6,9 %.
+Próxima alavanca depois da concorrência: absorver as rows `queued` da conversa ANTES de invocar o agente.
 
 Leitura: a leva de 18/09 (TanStack #141/#142, Better Auth #140, NotifyHub #143, aviso de deploy #144)
 aguentou 20 simultâneos sem degradar — o painel deixou de ser o limite (operador parado: 48 → 4

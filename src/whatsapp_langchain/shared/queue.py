@@ -48,6 +48,48 @@ logger = structlog.get_logger()
 ORIGENS_FLUXO_GUIADO = frozenset({"menu", "workflow", "coleta", "csat", "aprovacao"})
 
 
+# Fragmentos do claim, usados no SELECT do candidato e re-avaliados no UPDATE
+# (ver `claim_next`). Alias fixo `c` = a row candidata.
+_SQL_ELEGIVEL = """
+    (
+        c.status = 'queued'
+        AND c.process_after <= NOW()
+        AND c.attempts < c.max_attempts
+    )
+    OR (
+        c.status = 'processing'
+        AND c.lease_until IS NOT NULL
+        AND c.lease_until <= NOW()
+        AND c.attempts < c.max_attempts
+    )
+"""
+# Lease NULL não ocupa: `NULL > NOW()` é falso de propósito.
+_SQL_CONVERSA_OCUPADA = """
+    SELECT 1 FROM message_queue AS p
+     WHERE p.phone_number = c.phone_number
+       AND p.agent_id = c.agent_id
+       AND p.status = 'processing'
+       AND p.lease_until > NOW()
+"""
+
+
+def chave_lock_conversa(phone_number: str, agent_id: str) -> int:
+    """Chave do `pg_advisory_xact_lock` de uma conversa (`phone:agent`).
+
+    É a MESMA chave no webhook (`enqueue_or_buffer`) e no worker (`claim_next`):
+    é isso que serializa os dois por conversa — o debounce não mescla texto numa
+    row que o worker está reivindicando, e o claim não reivindica enquanto o
+    webhook está mesclando. Os 8 bytes iniciais do SHA-256 viram int64 signed
+    (o que o advisory lock aceita), sem colisão prática.
+    """
+    thread_id = f"{phone_number}:{agent_id}"
+    return int.from_bytes(
+        hashlib.sha256(thread_id.encode()).digest()[:8],
+        byteorder="big",
+        signed=True,
+    )
+
+
 async def detectar_fluxo_guiado(
     pool: AsyncConnectionPool,
     *,
@@ -131,6 +173,11 @@ async def existe_mensagem_mais_nova(
     # Fail-safe invertido em relação a `detectar_fluxo_guiado`: na dúvida,
     # ENVIA. Resposta duplicada é ruído; resposta engolida por engano é o
     # cliente sem atendimento.
+    #
+    # Com o claim serializado por conversa, a row mais nova só pode estar
+    # `queued` enquanto esta é processada. `processing` fica no IN pelo caso
+    # do lease DESTA row ter vencido e outra réplica já ter assumido a próxima:
+    # aí esta resposta é de um zumbi e deve mesmo ser engolida.
     try:
         async with pool.connection() as conn:
             cursor = await conn.execute(
@@ -261,20 +308,13 @@ async def enqueue_or_buffer(
     Returns:
         EnqueueResult com message_id e se foi buffered.
     """
-    thread_id = f"{phone_number}:{agent_id}"
     # Mídia pode chegar como base64 em media_url (fluxo antigo) OU como
     # referência ao storage em media_arquivo_uuid (mig 184). Qualquer uma
     # fura o debounce e absorve o texto pendente.
     has_media = media_url is not None or media_arquivo_uuid is not None
 
-    # Hash determinístico para pg_advisory_xact_lock.
-    # Usa os 8 bytes iniciais do SHA-256 convertidos para int64 signed,
-    # garantindo chave única por phone+agent sem risco de colisão prática.
-    lock_key = int.from_bytes(
-        hashlib.sha256(thread_id.encode()).digest()[:8],
-        byteorder="big",
-        signed=True,
-    )
+    thread_id = f"{phone_number}:{agent_id}"
+    lock_key = chave_lock_conversa(phone_number, agent_id)
 
     async with pool.connection() as conn:
         # Sprint A.2.3 — seta RLS context da empresa antes de qualquer
@@ -321,11 +361,12 @@ async def enqueue_or_buffer(
                 process_after_midia = inicio_do_lote
             else:
                 # Absorção: o texto pendente vira o `body` desta row de mídia e
-                # a row de texto é removida. DELETE ... RETURNING num statement
-                # só porque `claim_next` não pega o advisory lock — entre um
-                # SELECT e um DELETE separados o worker poderia reivindicar a
-                # row. Se o worker chegou primeiro, o DELETE não acha nada e a
-                # mídia segue como row independente (degrada, não quebra).
+                # a row de texto é removida. `claim_next` toma o mesmo advisory
+                # lock desta conversa, então o worker não reivindica a row no
+                # meio disto; o DELETE ... RETURNING num statement só fica por
+                # ser mais simples. Se a row de texto já foi reivindicada antes
+                # do lock, o DELETE não acha nada e a mídia segue como row
+                # independente (degrada, não quebra).
                 cursor = await conn.execute(
                     """
                     DELETE FROM message_queue
@@ -506,12 +547,42 @@ async def enqueue_or_buffer(
 async def claim_next(
     pool: AsyncConnectionPool,
     lease_seconds: int = 60,
+    *,
+    max_tentativas: int = 5,
 ) -> MessageQueue | None:
-    """Busca e reserva a próxima mensagem pronta para processamento.
+    """Reivindica a próxima mensagem pronta, UMA POR CONVERSA.
 
-    Usa FOR UPDATE SKIP LOCKED para concorrência segura entre múltiplos workers.
-    Só retorna mensagens com process_after <= NOW() (debounce concluído) e
-    dentro do limite de tentativas.
+    Invariante: nunca existem duas rows da mesma `(phone_number, agent_id)` em
+    `status = 'processing'` com lease válido ao mesmo tempo — em N réplicas e N
+    slots por réplica. O `thread_id` do LangGraph é `phone:agent`, e dois turnos
+    concorrentes no mesmo thread disputam o checkpoint (medido em produção:
+    75 execuções de IA sobrepostas no mesmo atendimento em 30 dias, com duas
+    réplicas e o claim antigo de `FOR UPDATE SKIP LOCKED` puro).
+
+    Como fecha a corrida, em três passos numa transação:
+    1. SELECT do candidato mais antigo cuja conversa não tenha row `processing`
+       com lease válido — SEM lock de row. A ordem de locks tem que ser
+       `advisory → row` igual ao `enqueue_or_buffer`; travar a row antes do
+       advisory abriria deadlock com o webhook.
+    2. `pg_advisory_xact_lock` da conversa, com a MESMA chave do webhook
+       (`chave_lock_conversa`). Quem chega segundo espera o primeiro commitar.
+    3. UPDATE condicionado à elegibilidade E ao `NOT EXISTS` de novo. Em READ
+       COMMITTED cada statement abre snapshot novo, então este UPDATE já enxerga
+       a row que o primeiro deixou em `processing` e não afeta linha nenhuma.
+       Aí é rollback (solta o lock) e próximo candidato, até `max_tentativas`.
+
+    `mark_done`/`mark_failed`/`renew_lease` não tomam o advisory lock e nunca
+    esperam por ele segurando row: sem ciclo possível. O UPDATE de expiração
+    (lease vencido sem tentativas) roda em transação própria, ANTES do loop —
+    ele trava rows de outras conversas e não pode ficar aberto esperando o
+    advisory de uma delas.
+
+    `lease_until` é calculado no banco (`NOW() + make_interval`), porque o
+    `NOT EXISTS` compara com o `NOW()` do banco — relógio de container não
+    entra. `lease_until IS NULL` não ocupa a conversa (`mark_failed` zera o
+    lease ao devolver a row pra `queued`; um zumbi com NULL não pode prender a
+    conversa pra sempre). Retry com backoff continua deixando uma row mais nova
+    da conversa passar na frente — comportamento anterior, fora deste contrato.
 
     Sprint A.2.6: cross-tenant por design (worker precisa ver fila de TODAS
     as empresas). Caller (`worker/consumer.py::claim_next_message`) deve
@@ -522,15 +593,16 @@ async def claim_next(
     Args:
         pool: Pool de conexões do psycopg.
         lease_seconds: Segundos de lock para o worker processar.
+        max_tentativas: Candidatos a tentar antes de devolver None nesta
+            chamada (o próximo poll tenta de novo).
 
     Returns:
         MessageQueue se houver mensagem disponível, None caso contrário.
     """
-    lease_until = datetime.now(UTC) + timedelta(seconds=lease_seconds)
-
     async with pool.connection() as conn:
         # Evita mensagens presas eternamente em processing após crash:
         # se o lease expirou e não há mais tentativas, marca como failed.
+        # Transação própria — ver docstring.
         await conn.execute(
             """
             UPDATE message_queue
@@ -547,54 +619,74 @@ async def claim_next(
               AND attempts >= max_attempts
             """
         )
-
-        cursor = await conn.execute(
-            """
-            UPDATE message_queue
-            SET status = 'processing',
-                lease_until = %s,
-                attempts = attempts + 1,
-                updated_at = NOW()
-            WHERE id = (
-                SELECT id FROM message_queue
-                WHERE (
-                    status = 'queued'
-                    AND process_after <= NOW()
-                    AND attempts < max_attempts
-                )
-                OR (
-                    status = 'processing'
-                    AND lease_until IS NOT NULL
-                    AND lease_until <= NOW()
-                    AND attempts < max_attempts
-                )
-                ORDER BY created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id, empresa_id, atendimento_id, message_id, phone_number,
-                      to_number, agent_id, thread_id, incoming_message,
-                      media_url, media_type, normalized_input,
-                      media_processing_status, media_processing_error,
-                      status, process_after, attempts, max_attempts,
-                      lease_until, response, error,
-                      created_at, updated_at, processed_at,
-                      conexao_id,
-                      (
-                          SELECT provider FROM conexao
-                          WHERE id = message_queue.conexao_id
-                      ) AS conexao_provider,
-                      -- Fora de ordem de propósito: o mapeamento abaixo é por
-                      -- índice, e inserir no meio renumeraria 15 campos.
-                      media_filename,
-                      media_arquivo_uuid::text
-            """,
-            (lease_until,),
-        )
-        row = await cursor.fetchone()
         await conn.commit()
 
-        if row is None:
+        perdidos: list[int] = []
+        for _ in range(max_tentativas):
+            cursor = await conn.execute(
+                f"""
+                SELECT c.id, c.phone_number, c.agent_id
+                  FROM message_queue AS c
+                 WHERE ({_SQL_ELEGIVEL})
+                   AND NOT (c.id = ANY(%s::bigint[]))
+                   AND NOT EXISTS ({_SQL_CONVERSA_OCUPADA})
+                 ORDER BY c.created_at ASC
+                 LIMIT 1
+                """,
+                (perdidos,),
+            )
+            candidato = await cursor.fetchone()
+            if candidato is None:
+                await conn.commit()
+                return None
+            candidato_id, phone_number, agent_id = candidato
+
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (chave_lock_conversa(phone_number, agent_id),),
+            )
+
+            cursor = await conn.execute(
+                f"""
+                UPDATE message_queue AS c
+                SET status = 'processing',
+                    lease_until = NOW() + make_interval(secs => %s),
+                    attempts = attempts + 1,
+                    updated_at = NOW()
+                WHERE c.id = %s
+                  AND ({_SQL_ELEGIVEL})
+                  AND NOT EXISTS ({_SQL_CONVERSA_OCUPADA})
+                RETURNING c.id, c.empresa_id, c.atendimento_id, c.message_id,
+                          c.phone_number, c.to_number, c.agent_id, c.thread_id,
+                          c.incoming_message, c.media_url, c.media_type,
+                          c.normalized_input, c.media_processing_status,
+                          c.media_processing_error, c.status, c.process_after,
+                          c.attempts, c.max_attempts, c.lease_until, c.response,
+                          c.error, c.created_at, c.updated_at, c.processed_at,
+                          c.conexao_id,
+                          (
+                              SELECT provider FROM conexao
+                              WHERE id = c.conexao_id
+                          ) AS conexao_provider,
+                          -- Fora de ordem de propósito: o mapeamento abaixo é
+                          -- por índice, e inserir no meio renumeraria 15 campos.
+                          c.media_filename,
+                          c.media_arquivo_uuid::text
+                """,
+                (lease_seconds, candidato_id),
+            )
+            row = await cursor.fetchone()
+            if row is not None:
+                await conn.commit()
+                break
+
+            # Outro slot/réplica levou o candidato ou ocupou a conversa entre o
+            # SELECT e o lock. Rollback solta o advisory; o próximo SELECT abre
+            # snapshot novo e pula este id.
+            await conn.rollback()
+            perdidos.append(candidato_id)
+            logger.debug("claim_candidate_lost", message_id=candidato_id)
+        else:
             return None
 
         message = MessageQueue(
