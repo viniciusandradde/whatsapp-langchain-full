@@ -107,16 +107,62 @@ def _sem_whitelist():
         yield
 
 
+def _pool_falso():
+    """Pool cujo `connection()` é um async CM de verdade, com leituras vazias.
+
+    Os poucos SELECTs que sobram no caminho até o agente (lookup do
+    `agente_ia.id` pra telemetria, supersede antes do envio, absorção) leem
+    "nada" e seguem. Escritas viram no-op.
+    """
+    from contextlib import asynccontextmanager
+
+    cursor = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value=None)
+    cursor.fetchall = AsyncMock(return_value=[])
+    conn = AsyncMock()
+    conn.execute = AsyncMock(return_value=cursor)
+
+    @asynccontextmanager
+    async def connection():
+        yield conn
+
+    pool = MagicMock()
+    pool.connection = connection
+    return pool
+
+
+def _agente_runtime_minimo():
+    """O que `resolve_agente_runtime` devolve pra um agente da empresa.
+
+    Desde a #125 (2026-08-20) `None` NÃO é mais "caminho legado do catálogo":
+    é "modo IA sem agente cadastrado" e o turno termina em `mark_done` com
+    `SEM_AGENTE_MARKER` — foi isso que quebrou esta suíte inteira, porque o
+    harness patchava com `None` e nada chegava ao agente nem ao envio.
+    """
+    from whatsapp_langchain.shared.agente import AgenteRuntime
+
+    return AgenteRuntime(
+        slug="vsa_tech",
+        template_catalog="vsa_tech",
+        prompt_override=None,
+        modelo=None,
+        temperatura=0.2,
+        top_p=1.0,
+        max_tokens=None,
+        tools_enabled=[],
+        base_conhecimento_ids=[],
+    )
+
+
 @pytest.fixture(autouse=True)
 def _patch_early_handlers():
     """Neutraliza os handlers que rodam ANTES do agente no `process_message`.
 
     O processor cresceu com gates de pré-agente (approval / CSAT / encerrar /
-    wizard de coleta / menu chatbot), cada um abrindo `pool.connection()`.
-    Como o pool nos testes é um AsyncMock puro (não é async CM real), qualquer
-    um deles levantaria TypeError e o fluxo cairia em mark_failed antes de
-    chegar no send/agente. Aqui forçamos todos a retornar False = "não tratei,
-    siga adiante" — preservando o caminho normal (texto → agente → send).
+    wizard de coleta / menu chatbot). Forçamos todos a retornar False = "não
+    tratei, siga adiante" — preservando o caminho normal (texto → agente →
+    send). O pool dos testes é `_pool_falso()`: as leituras que sobram no
+    caminho devolvem vazio.
     """
     with (
         patch(
@@ -139,11 +185,11 @@ def _patch_early_handlers():
             "whatsapp_langchain.worker.processor._try_handle_menu",
             new=AsyncMock(return_value=False),
         ),
-        # A.6 — resolução de agente via DB; None mantém o path legacy (catálogo)
-        # e evita o lookup de agente_ia.id (que abriria pool.connection()).
+        # A.6 — resolução de agente via DB. Tem que devolver um agente: desde a
+        # #125, None encerra o turno como "IA sem agente cadastrado".
         patch(
             "whatsapp_langchain.worker.processor.resolve_agente_runtime",
-            new=AsyncMock(return_value=None),
+            new=AsyncMock(return_value=_agente_runtime_minimo()),
         ),
         # ia_budget (mig 058) — None = sem orçamento estourado, não bloqueia.
         # Import é local dentro de process_message, então patcha-se na origem.
@@ -254,7 +300,7 @@ class TestSendMessageMarkDone:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -289,7 +335,7 @@ class TestSendMessageMarkDone:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -331,7 +377,7 @@ class TestSendMessageMarkDone:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -374,7 +420,7 @@ class TestSendMessageMarkDone:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -409,7 +455,7 @@ class TestAutoResponseOutbound:
 
             await process_message(
                 media_message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -445,7 +491,7 @@ class TestAutoResponseOutbound:
 
             await process_message(
                 media_message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -516,7 +562,7 @@ class TestHandoffHumano:
 
             await process_message(
                 msg,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -563,7 +609,7 @@ class TestHandoffHumano:
 
             await process_message(
                 msg,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -601,7 +647,7 @@ class TestHandoffHumano:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -653,7 +699,7 @@ class TestModoManual:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -698,7 +744,7 @@ class TestModoManual:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -730,7 +776,7 @@ class TestModoManual:
 
             await process_message(
                 parar,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -777,7 +823,7 @@ class TestWhitelist:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -814,7 +860,7 @@ class TestWhitelist:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -856,7 +902,7 @@ class TestWhitelist:
 
             await process_message(
                 message,
-                AsyncMock(),
+                _pool_falso(),
                 checkpointer=AsyncMock(),
             )
 
@@ -969,7 +1015,7 @@ class TestVozDoAgente:
 
             from whatsapp_langchain.worker.processor import process_message
 
-            await process_message(msg, AsyncMock(), checkpointer=AsyncMock())
+            await process_message(msg, _pool_falso(), checkpointer=AsyncMock())
         return SimpleNamespace(
             done=mock_done,
             failed=mock_failed,
