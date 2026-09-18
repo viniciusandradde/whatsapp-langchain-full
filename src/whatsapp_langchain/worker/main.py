@@ -9,6 +9,7 @@ Uso:
 
 import asyncio
 import contextlib
+import signal
 
 import structlog
 
@@ -33,6 +34,11 @@ logger = structlog.get_logger()
 # Alto o bastante pra não reagir a erro transitório (LLM instável, Evolution
 # fora do ar), baixo o bastante pra não passar horas sem responder cliente.
 MAX_CONSECUTIVE_FAILURES = 10
+
+# Quanto o shutdown espera pelas mensagens em voo antes de cancelar. Abaixo dos
+# 10 s que o Docker dá entre SIGTERM e SIGKILL: o que não terminar aqui volta
+# pra fila pelo lease, mas terminar é sempre melhor que reprocessar.
+SHUTDOWN_GRACE_SECONDS = 8
 
 
 async def _lease_heartbeat(pool, message) -> None:
@@ -94,6 +100,7 @@ async def main() -> None:
     logger.info(
         "worker_ready",
         poll_interval=settings.poll_interval_seconds,
+        concurrency=settings.worker_concurrency,
         memory_enabled=store is not None,
         evolution_mode=settings.evolution_outbound_mode.strip().lower() or "mock",
     )
@@ -132,81 +139,21 @@ async def main() -> None:
     # e do `pool` da app (mapeamento thread→atendimento).
     retencao_task = asyncio.create_task(_checkpoint_retencao_loop(pool, checkpointer))
 
-    # Sprint A.2.5 — importa context manager pra RLS
-    from whatsapp_langchain.shared.rls_context import empresa_scope
+    parar = asyncio.Event()
+    em_voo: set[asyncio.Task[None]] = set()
+    # SIGTERM é o que o Docker manda no deploy. Sem handler o processo morre
+    # no ato e as N mensagens em voo ficam presas em `processing` até o lease
+    # vencer — N conversas mudas por até LEASE_SECONDS. Com o handler, o loop
+    # para de reivindicar e espera o que já começou.
+    with contextlib.suppress(NotImplementedError):
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, parar.set)
 
     try:
-        while True:
-            try:
-                # Claim roda SEM context (precisa ver toda a fila, multi-tenant).
-                # Quando A.2.6 trocar DATABASE_URL pra chat_nexus_app
-                # (NOBYPASSRLS), claim vai precisar de bypass: ver A.2.6.
-                message = await claim_next_message(pool, settings.lease_seconds)
-
-                if message is None:
-                    await asyncio.sleep(settings.poll_interval_seconds)
-                    continue
-
-                # Sprint A.2.5: seta RLS context da empresa da msg antes
-                # de processar. Qualquer pool.connection() dentro de
-                # process_message (helpers shared/*.py, agente IA tools)
-                # herda app.empresa_id automaticamente via _RlsAwarePool
-                # wrapper. Garante isolamento entre mensagens de empresas
-                # diferentes processadas pelo mesmo worker.
-                #
-                # Checkpointer e store ficam FORA disso: têm pool próprio
-                # (`_open_langgraph_pool`), sem o wrapper RLS. Não é furo de
-                # isolamento — as tabelas do LangGraph não têm `empresa_id`,
-                # o escopo delas é o `thread_id`
-                # (`{phone_number}:{agent_id}`) e o namespace do store
-                # (`(user_id, "memories")`). Se algum dia uma tabela do
-                # LangGraph ganhar `empresa_id`, esse pool precisa passar a
-                # setar o contexto.
-                with empresa_scope(empresa_id=message.empresa_id):
-                    # R7: heartbeat renova o lease em background enquanto a IA
-                    # processa, pra IA lenta (>lease) não disparar reclaim +
-                    # resposta duplicada. Criado DENTRO do empresa_scope pra
-                    # herdar o contextvar de RLS (renova com app.empresa_id set).
-                    heartbeat = asyncio.create_task(_lease_heartbeat(pool, message))
-                    try:
-                        await process_message(
-                            message,
-                            pool,
-                            checkpointer=checkpointer,
-                            store=store,
-                        )
-                    finally:
-                        heartbeat.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await heartbeat
-
-                # Circuit breaker anti-zumbi. `process_message` engole a
-                # exception e chama mark_failed, então o loop segue rodando
-                # feliz enquanto nenhum cliente é respondido — foi assim que
-                # o incidente 2026-07-26 passou 40h despercebido (container
-                # `Up`, restarts=0, checkpointer com conexão morta). Falhar
-                # ruidosamente devolve o processo pro `restart:
-                # unless-stopped`, que reabre as conexões de boot.
-                if WORKER_HEALTH.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    logger.error(
-                        "worker_unhealthy_exiting",
-                        consecutive_failures=WORKER_HEALTH.consecutive_failures,
-                        threshold=MAX_CONSECUTIVE_FAILURES,
-                        reason="falhas consecutivas; reiniciando pra recriar conexões",
-                    )
-                    raise SystemExit(1)
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                raise
-            except Exception:
-                # Falha transitória (DB caiu, claim/mark_failed lançou, etc.)
-                # NÃO pode derrubar o consumo da fila inteira. Loga e segue com
-                # backoff; a msg em 'processing' é reclaimável após a lease.
-                logger.exception("worker_loop_iteration_error")
-                await asyncio.sleep(settings.poll_interval_seconds)
-
+        await _loop_consumo(pool, checkpointer, store, parar=parar, em_voo=em_voo)
     except KeyboardInterrupt:
         logger.info("worker_interrupted")
     finally:
+        await _esperar_em_voo(em_voo)
         sync_task.cancel()
         idle_task.cancel()
         cleanup_task.cancel()
@@ -234,6 +181,138 @@ async def main() -> None:
         await checkpointer_stack.aclose()
         await close_pool()
         logger.info("worker_stopped")
+
+
+async def _loop_consumo(
+    pool,
+    checkpointer,
+    store,
+    *,
+    parar: asyncio.Event,
+    em_voo: set[asyncio.Task[None]],
+) -> None:
+    """Loop de consumo: até `WORKER_CONCURRENCY` mensagens em voo por réplica.
+
+    Cada slot do semáforo é uma mensagem sendo processada numa task própria.
+    Enquanto houver slot livre o loop reivindica sem dormir (enche os slots);
+    só dorme `poll_interval_seconds` quando a fila devolve None. Com N=1 é
+    exatamente o loop serial de antes: claim → processa → claim.
+
+    Só é seguro porque `claim_next` é serializado POR CONVERSA — N slots
+    nunca rodam dois turnos no mesmo thread do LangGraph. Ordem dentro da
+    conversa vem daí; paralelismo é só entre conversas.
+
+    `parar` encerra o loop sem cancelar o que está em voo (quem espera é
+    `_esperar_em_voo`, no shutdown). `em_voo` é do chamador pra que o
+    shutdown enxergue as tasks mesmo se este loop morrer por exceção.
+    """
+    slots = asyncio.Semaphore(settings.worker_concurrency)
+
+    while not parar.is_set():
+        await slots.acquire()
+        # SIGTERM pode ter chegado enquanto todos os slots estavam ocupados:
+        # aí o slot que acabou de liberar NÃO pode virar uma mensagem nova.
+        if parar.is_set():
+            slots.release()
+            break
+        try:
+            # Circuit breaker anti-zumbi. `process_message` engole a
+            # exception e chama mark_failed, então o loop seguiria rodando
+            # feliz enquanto nenhum cliente é respondido — foi assim que
+            # o incidente 2026-07-26 passou 40h despercebido (container
+            # `Up`, restarts=0, checkpointer com conexão morta). Falhar
+            # ruidosamente devolve o processo pro `restart:
+            # unless-stopped`, que reabre as conexões de boot. Checado
+            # ANTES do claim: com N=1 é "depois de processar, antes do
+            # próximo", a semântica de sempre.
+            if WORKER_HEALTH.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                logger.error(
+                    "worker_unhealthy_exiting",
+                    consecutive_failures=WORKER_HEALTH.consecutive_failures,
+                    threshold=MAX_CONSECUTIVE_FAILURES,
+                    reason="falhas consecutivas; reiniciando pra recriar conexões",
+                )
+                raise SystemExit(1)
+
+            # Claim roda SEM context de empresa (precisa ver toda a fila,
+            # multi-tenant) — `claim_next_message` faz o bypass de RLS.
+            message = await claim_next_message(pool, settings.lease_seconds)
+        except (KeyboardInterrupt, asyncio.CancelledError, SystemExit):
+            slots.release()
+            raise
+        except Exception:
+            # Falha transitória (DB caiu, claim lançou, etc.) NÃO pode
+            # derrubar o consumo da fila inteira. Loga e segue com backoff.
+            slots.release()
+            logger.exception("worker_loop_iteration_error")
+            await asyncio.sleep(settings.poll_interval_seconds)
+            continue
+
+        if message is None:
+            slots.release()
+            await asyncio.sleep(settings.poll_interval_seconds)
+            continue
+
+        task = asyncio.create_task(
+            _processar_mensagem(message, pool, checkpointer, store, slots),
+            name=f"msg:{message.id}",
+        )
+        em_voo.add(task)
+        task.add_done_callback(em_voo.discard)
+
+
+async def _processar_mensagem(message, pool, checkpointer, store, slots) -> None:
+    """Uma mensagem, numa task própria, com escopo de RLS e heartbeat próprios.
+
+    Sprint A.2.5: o `empresa_scope` é setado DENTRO da task. `create_task`
+    copia o contexto no momento da criação, então cada task tem a sua cópia:
+    `pool.connection()` em qualquer helper (shared/*.py, tools do agente)
+    injeta o `app.empresa_id` desta mensagem, sem vazar pras tasks irmãs nem
+    pro loop. Checkpointer e store ficam FORA disso: têm pool próprio
+    (`_open_langgraph_pool`), sem o wrapper RLS — as tabelas do LangGraph não
+    têm `empresa_id`, o escopo delas é o `thread_id` e o namespace do store.
+
+    R7: o heartbeat renova o lease em background enquanto a IA processa, pra
+    IA lenta (>lease) não disparar reclaim + resposta duplicada. Criado dentro
+    do `empresa_scope` pra herdar o contextvar.
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    try:
+        with empresa_scope(empresa_id=message.empresa_id):
+            heartbeat = asyncio.create_task(_lease_heartbeat(pool, message))
+            try:
+                await process_message(
+                    message,
+                    pool,
+                    checkpointer=checkpointer,
+                    store=store,
+                )
+            finally:
+                heartbeat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        # `process_message` já engole e chama mark_failed; isto cobre falha
+        # antes/depois dele (heartbeat, escopo). A row volta pelo lease.
+        logger.exception("worker_task_error", message_id=message.id)
+    finally:
+        slots.release()
+
+
+async def _esperar_em_voo(em_voo: set[asyncio.Task[None]]) -> None:
+    """Dá `SHUTDOWN_GRACE_SECONDS` pras mensagens em voo terminarem; cancela o resto."""
+    if not em_voo:
+        return
+    logger.info("worker_draining", em_voo=len(em_voo), grace_s=SHUTDOWN_GRACE_SECONDS)
+    _, pendentes = await asyncio.wait(em_voo, timeout=SHUTDOWN_GRACE_SECONDS)
+    for task in pendentes:
+        task.cancel()
+    if pendentes:
+        await asyncio.gather(*pendentes, return_exceptions=True)
+        logger.warning("worker_drain_timeout", canceladas=len(pendentes))
 
 
 # S5: cron interno do worker — sync Google → DB a cada N minutos

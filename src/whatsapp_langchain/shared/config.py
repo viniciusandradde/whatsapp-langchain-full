@@ -227,11 +227,22 @@ class Settings(BaseSettings):
     telegram_chat_id: str | None = None
 
     # --- LLM Rate Limit ---
+    # POR SLOT de concorrência do worker: o limiter efetivo do processo é
+    # `requests_per_second * worker_concurrency` (ver `shared/llm.py`). Com 0,5
+    # fixo, 4 slots ficariam presos a 30 chamadas/min e a concorrência não
+    # renderia nada.
     llm_rate_limit_requests_per_second: float = 0.5
     llm_rate_limit_max_burst: int = 10
 
     # --- Worker ---
     poll_interval_seconds: float = 1.0
+    # Mensagens em voo por réplica (`asyncio.Semaphore`). 1 = loop serial de
+    # antes. Só faz sentido porque o claim é serializado POR CONVERSA
+    # (`shared/queue.py::claim_next`): N slots nunca rodam dois turnos no mesmo
+    # thread do LangGraph. Os pools de banco e o limiter do LLM escalam junto.
+    # Medido no dev em 18/09/2026: o worker espera o LLM (CPU 0,3 %), então 4
+    # slots cabem no mesmo container sem RAM extra.
+    worker_concurrency: int = Field(default=1, ge=1, le=16)
     # R7: teto realista do pipeline (IA + mídia + guardrails) — o worker renova
     # o lease em background (heartbeat) enquanto processa, mas um teto maior
     # reduz a janela de reclaim caso uma renovação falhe.

@@ -70,6 +70,9 @@ services:
       # vazio (sem isso o app cai no superuser e o RLS fica inerte).
       DATABASE_URL_APP: ${DATABASE_URL_APP:-}
       LOG_JSON: "true"
+      # A API não consome a fila: pool e limiter do LLM ficam no tamanho de
+      # 1 slot mesmo que o .env compartilhado defina WORKER_CONCURRENCY.
+      WORKER_CONCURRENCY: "1"
       # Object storage (mig 183/184) — vazio S3_BUCKET = storage desligado.
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-}
@@ -104,6 +107,10 @@ services:
       # chat_nexus_app e envolve cada mensagem em empresa_scope().
       DATABASE_URL_APP: ${DATABASE_URL_APP:-}
       LOG_JSON: "true"
+      # Mensagens em voo por réplica, uma por conversa (claim serializado por
+      # thread). 4 medido no dev em 18/09/2026: 89 msg/min por réplica, 4,1×
+      # o serial, sem RAM extra. Sobrescrevível pelo env do Dokploy.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
       # Object storage (mig 183/184) — mesmas envs do api.
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-}
@@ -122,16 +129,16 @@ services:
       # empurravam a máquina (11GB) pro swap — foi o que degradou o host no
       # incidente 2026-07-26.
       #
-      # Por que 2 e não 1: o loop do worker é ESTRITAMENTE SERIAL (claim de
-      # 1 mensagem → `await process_message` → repete), então cada réplica
-      # processa uma mensagem por vez. Medido sobre 2727 mensagens reais de
-      # 90 dias: média 6,85s, p50 3,43s, p95 15,73s. Logo 1 réplica ≈ 8,8
-      # msg/min, e o pico de chegada dos últimos 30 dias foi 10 msg/min —
-      # ficaria na borda. Pior: uma mensagem lenta (p95 ≈ 16s) segura a fila
-      # de TODAS as empresas enquanto roda. Com 2 réplicas a vazão vai a
-      # ~17,6 msg/min, acima de qualquer pico já observado (o maior em 90
-      # dias foi 23 msg/min, num burst de maio), e uma mensagem lenta não
-      # bloqueia o resto sozinha.
+      # Por que 2 e não 1: até 09/2026 o loop do worker era ESTRITAMENTE
+      # SERIAL (claim de 1 mensagem → `await process_message` → repete), e
+      # cada réplica processava uma mensagem por vez — 1 réplica ≈ 8,8 msg/min
+      # (medido sobre 2727 mensagens reais: média 6,85s, p50 3,43s, p95
+      # 15,73s), 2 réplicas ≈ 17,6, e o pico real chegou a 27 msg/min.
+      # Hoje cada réplica leva WORKER_CONCURRENCY mensagens em voo (uma por
+      # conversa — o claim é serializado por thread do LangGraph), então a
+      # vazão vem de N × réplicas; ver docs/CUSTO_E_CAPACIDADE.md §4b pelo
+      # número medido. Duas réplicas continuam valendo pra que um deploy ou
+      # um crash não cale todo mundo.
       #
       # Quando mexer: medir antes de chutar —
       #   SELECT count(*), min(created_at) FROM message_queue

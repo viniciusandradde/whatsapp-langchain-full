@@ -158,8 +158,13 @@ def create_chat_model(
     api_key = settings.openrouter_api_key
     secret_key = SecretStr(api_key.get_secret_value()) if api_key else None
 
+    # O limiter é por PROCESSO e a setting é por SLOT do worker: com N
+    # mensagens em voo, o teto escala junto — senão 0,5 rps (30 chamadas/min)
+    # engoliria toda a concorrência. Na API `worker_concurrency` fica em 1.
     rate_limiter = _get_rate_limiter(
-        requests_per_second=settings.llm_rate_limit_requests_per_second,
+        requests_per_second=(
+            settings.llm_rate_limit_requests_per_second * settings.worker_concurrency
+        ),
         max_bucket_size=settings.llm_rate_limit_max_burst,
     )
 
