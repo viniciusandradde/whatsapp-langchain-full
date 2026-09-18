@@ -216,7 +216,8 @@ async def enqueue_or_buffer(
     """Insere mensagem na fila ou agrupa com mensagem pendente (debounce).
 
     Regras de debounce (Fase 3):
-    - Debounce somente para texto (media_url IS NULL).
+    - Debounce somente para texto (media_url IS NULL E media_arquivo_uuid IS NULL —
+      mídia no bucket, mig 184, tem media_url NULL e NÃO é texto).
     - Concorrência protegida por pg_advisory_xact_lock(hash(phone+agent)).
 
     Janela de agrupamento (mig 144), quando `grouping_seconds > 0`:
@@ -306,6 +307,7 @@ async def enqueue_or_buffer(
                       AND status = 'queued'
                       AND process_after > NOW()
                       AND media_url IS NULL
+                      AND media_arquivo_uuid IS NULL
                     """,
                     (phone_number, agent_id),
                 )
@@ -334,6 +336,7 @@ async def enqueue_or_buffer(
                             AND status = 'queued'
                             AND process_after > NOW()
                             AND media_url IS NULL
+                            AND media_arquivo_uuid IS NULL
                           ORDER BY created_at DESC
                           LIMIT 1
                           FOR UPDATE SKIP LOCKED
@@ -412,8 +415,9 @@ async def enqueue_or_buffer(
             is_guided_flow=is_guided_flow,
         )
 
-        # Busca texto pendente para debounce (media_url IS NULL garante
-        # que não debounce texto dentro de uma mensagem de mídia)
+        # Busca texto pendente para debounce. "Texto" = sem media_url E sem
+        # media_arquivo_uuid: mídia no bucket (mig 184) tem media_url NULL e,
+        # vista como texto, era absorvida/apagada pela mídia seguinte.
         cursor = await conn.execute(
             """
             SELECT id, incoming_message, created_at
@@ -423,6 +427,7 @@ async def enqueue_or_buffer(
               AND status = 'queued'
               AND process_after > NOW()
               AND media_url IS NULL
+              AND media_arquivo_uuid IS NULL
             ORDER BY created_at DESC
             LIMIT 1
             """,

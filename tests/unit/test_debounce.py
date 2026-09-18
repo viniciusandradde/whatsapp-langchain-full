@@ -1099,3 +1099,66 @@ class TestSupersede:
         assert not await existe_mensagem_mais_nova(
             pool, phone_number="+55", agent_id="a", message_id=10
         )
+
+
+class TestMidiaNoBucketNaoEhTextoPendente:
+    """Migs 183/184: mídia no object storage tem `media_url` NULL e só
+    `media_arquivo_uuid`. As três queries de "texto pendente" precisam excluir
+    as duas colunas — filtrando só `media_url IS NULL`, a mídia do bucket era
+    vista como texto: apagada pela mídia seguinte (absorção), antecipada pelo
+    flush, ou recebendo o texto seguinte concatenado dentro dela."""
+
+    async def test_select_de_debounce_exclui_referencia_ao_bucket(self, mock_pool):
+        pool, conn = mock_pool
+        setup_no_existing(conn)
+        await enqueue_or_buffer(
+            pool, phone_number="+5511999999999", agent_id="assistant", body="Oi"
+        )
+        select_sql = conn.execute.call_args_list[2][0][0]
+        assert "media_url IS NULL" in select_sql
+        assert "media_arquivo_uuid IS NULL" in select_sql
+
+    async def test_flush_exclui_referencia_ao_bucket(self, mock_pool):
+        """Agrupamento desligado: o UPDATE de flush só pode antecipar texto."""
+        pool, conn = mock_pool
+        setup_media_no_pending(conn)
+        await enqueue_or_buffer(
+            pool,
+            phone_number="+5511999999999",
+            agent_id="assistant",
+            body="",
+            media_arquivo_uuid="11111111-1111-1111-1111-111111111111",
+            media_type="audio/ogg",
+            grouping_seconds=0.0,
+        )
+        flush_sql = conn.execute.call_args_list[2][0][0]
+        assert "UPDATE" in flush_sql
+        assert "media_arquivo_uuid IS NULL" in flush_sql
+
+    async def test_absorcao_exclui_referencia_ao_bucket(self, mock_pool):
+        """Agrupamento ligado: o DELETE ... RETURNING só pode absorver texto."""
+        pool, conn = mock_pool
+        delete_cursor = AsyncMock()
+        delete_cursor.fetchone = AsyncMock(return_value=None)
+        insert_cursor = AsyncMock()
+        insert_cursor.fetchone = AsyncMock(return_value=(51,))
+        conn.execute = AsyncMock(
+            side_effect=[
+                setconfig_cursor(),
+                lock_cursor(),
+                delete_cursor,
+                insert_cursor,
+            ]
+        )
+        await enqueue_or_buffer(
+            pool,
+            phone_number="+5511999999999",
+            agent_id="assistant",
+            body="",
+            media_arquivo_uuid="22222222-2222-2222-2222-222222222222",
+            media_type="audio/ogg",
+            grouping_seconds=8.0,
+        )
+        delete_sql = conn.execute.call_args_list[2][0][0]
+        assert "DELETE FROM message_queue" in delete_sql
+        assert "media_arquivo_uuid IS NULL" in delete_sql

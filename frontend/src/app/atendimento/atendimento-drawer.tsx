@@ -136,6 +136,16 @@ export function AtendimentoDrawer({
     []
   );
   const [loadingAtds, setLoadingAtds] = useState(false);
+  // Guarda "já tentei carregar" por fora do resultado — usar `.length === 0`
+  // como sinal de "ainda não carreguei" (abaixo) é indistinguível de "carreguei
+  // e a empresa não tem nenhum" (ex.: nenhum atendente online agora, caso
+  // normal), e a cada resolução da promise o efeito reavaliava a MESMA
+  // condição vazia e disparava a Server Action de novo — sem debounce, na
+  // velocidade da rede. Gerou uma rajada de centenas de req/s de um usuário
+  // só (20/09) até estourar o rate limit admin. `false` mantém retentativa
+  // em falha real; `true` só quando a resposta veio `ok` (mesmo com 0 itens).
+  const deptosCarregados = useRef(false);
+  const atdsCarregados = useRef(false);
 
   async function reload() {
     setLoading(true);
@@ -271,32 +281,33 @@ export function AtendimentoDrawer({
   }
 
   // Lazy: carrega departamentos + atendentes online só quando user abre o
-  // popover. Via server actions — api.ts é server-only.
+  // popover, e só uma vez (guard por ref, não por tamanho — ver acima).
+  // Via server actions — api.ts é server-only.
   useEffect(() => {
     if (!transferOpen) return;
-    if (departamentos.length === 0 && !loadingDeps) {
+    if (!deptosCarregados.current && !loadingDeps) {
       setLoadingDeps(true);
       loadDepartamentosAction()
         .then((r) => {
-          if (r.ok) setDepartamentos(r.departamentos);
+          if (r.ok) {
+            setDepartamentos(r.departamentos);
+            deptosCarregados.current = true;
+          }
         })
         .finally(() => setLoadingDeps(false));
     }
-    if (atendentesOnline.length === 0 && !loadingAtds) {
+    if (!atdsCarregados.current && !loadingAtds) {
       setLoadingAtds(true);
       loadAtendentesOnlineAction()
         .then((r) => {
-          if (r.ok) setAtendentesOnline(r.atendentes);
+          if (r.ok) {
+            setAtendentesOnline(r.atendentes);
+            atdsCarregados.current = true;
+          }
         })
         .finally(() => setLoadingAtds(false));
     }
-  }, [
-    transferOpen,
-    departamentos.length,
-    loadingDeps,
-    atendentesOnline.length,
-    loadingAtds,
-  ]);
+  }, [transferOpen, loadingDeps, loadingAtds]);
 
   const isOpen =
     atendimento.status === "aguardando" || atendimento.status === "em_andamento";
