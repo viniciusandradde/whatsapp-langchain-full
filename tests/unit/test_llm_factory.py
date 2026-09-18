@@ -21,9 +21,28 @@ class TestCreateChatModel:
         model = create_chat_model()
         limiter = model.rate_limiter
         assert isinstance(limiter, InMemoryRateLimiter)
-        expected_rps = settings.llm_rate_limit_requests_per_second
+        expected_rps = (
+            settings.llm_rate_limit_requests_per_second * settings.worker_concurrency
+        )
         assert limiter.requests_per_second == expected_rps
         assert limiter.max_bucket_size == settings.llm_rate_limit_max_burst
+
+    def test_limiter_escala_com_concorrencia(self, monkeypatch):
+        """A setting é POR SLOT: com 4 mensagens em voo o teto do processo é 4×.
+
+        Sem isso os 0,5 rps (30 chamadas/min) engoliriam toda a concorrência
+        do worker — o limiter viraria o gargalo em vez do LLM.
+        """
+        from whatsapp_langchain.shared import llm as llm_mod
+        from whatsapp_langchain.shared.config import settings
+
+        monkeypatch.setattr(settings, "llm_rate_limit_requests_per_second", 0.5)
+        monkeypatch.setattr(settings, "worker_concurrency", 4)
+        monkeypatch.setattr(llm_mod, "_RATE_LIMITERS", {})
+
+        limiter = create_chat_model().rate_limiter
+        assert isinstance(limiter, InMemoryRateLimiter)
+        assert limiter.requests_per_second == 2.0
 
     def test_custom_model_name(self):
         """Deve aceitar override do modelo."""

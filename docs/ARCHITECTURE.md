@@ -63,6 +63,7 @@ Limitações conhecidas:
       |
       v
 [Worker]
+  - N mensagens em voo por réplica (WORKER_CONCURRENCY), uma por conversa
   - claim com lease, um turno por conversa (`phone:agent`)
   - processa mídia
   - envia typing
