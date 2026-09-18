@@ -91,6 +91,13 @@ rajada), rampa 5/s, 45 s, empresa 1, IA ligada, saída em `mock`; 20 streams SSE
 | Debounce (PR #138) | 233/233 `done`, 0 erros no worker |
 | **Worker** | **14,7 msg/min** (serial; cada mensagem é um turno de IA, ~4 s). Latência média 6,7 min, máxima 12 min até a fila drenar |
 
+**Repetição com o claim serializado por conversa** (mesma carga, 18/09 à tarde): 252/252 `done`, **0 mensagens
+fora de ordem por telefone, 0 execuções de IA sobrepostas por atendimento, 0 deadlock**, 21,8 msg/min (1 réplica;
+a diferença para 14,7 é variação do LLM — p50 1,9 s / p95 3,6 s — não ganho da PR). Achado: **229 de 252 respostas
+foram "superadas"** (chegou mensagem mais nova do mesmo telefone antes do envio). É a forma da carga (~12 msgs por
+telefone em 45 s), mas mostra o desperdício: um turno de IA por row, quase todos engolidos. Em produção são 6,9 %.
+Próxima alavanca depois da concorrência: absorver as rows `queued` da conversa ANTES de invocar o agente.
+
 Leitura: a leva de 18/09 (TanStack #141/#142, Better Auth #140, NotifyHub #143, aviso de deploy #144)
 aguentou 20 simultâneos sem degradar — o painel deixou de ser o limite (operador parado: 48 → 4
 req/min; conexões `LISTEN` por processo, não por aba). O limite agora é o **worker serial**: 20
