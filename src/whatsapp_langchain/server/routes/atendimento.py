@@ -199,7 +199,8 @@ async def list_my_atendimentos(
 ) -> dict[str, list[Atendimento]]:
     """Lista atendimentos da empresa filtrados pelo tipo (4 abas) +
     filtros opcionais Sprint F.2: departamento, prioridade, busca em
-    cliente.nome/atendimento.protocolo.
+    cliente.nome/atendimento.protocolo — e, com ≥4 dígitos no `q`, também
+    nos dígitos de cliente.telefone (inbox agrupado 2026-09).
 
     Sprint Governança RBAC (mig 083): aplica filtro record-level baseado
     em `atendimento.read.own/all`. Operador (perm `.own`) só vê
