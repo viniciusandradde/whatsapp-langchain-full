@@ -15,6 +15,7 @@ import {
   type FiltrosFila,
 } from "./actions";
 import { AtendimentoDrawer } from "./atendimento-drawer";
+import { useMediaQuery } from "@/hooks/use-mobile";
 import {
   PRIORIDADE_PONTO,
   SITUACAO_AJUDA,
@@ -61,6 +62,9 @@ export function AtendimentoList({
 }: Props) {
   const [ativo, setAtivo] = useState<Atendimento | null>(null);
   const queryClient = useQueryClient();
+  // Só UM drawer montado: escondido por CSS o outro continuava vivo (SSE,
+  // LISTEN no Postgres e reload da timeline a cada evento, tudo em dobro).
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   // A fila passa a ser servida pelo cache do Query: o evento SSE invalida a
   // chave e SÓ esta lista revalida — antes, `router.refresh()` refazia os
@@ -216,7 +220,7 @@ export function AtendimentoList({
 
       {/* Coluna da conversa — só desktop. */}
       <div className="hidden min-w-0 flex-1 overflow-hidden rounded-lg border lg:flex">
-        {ativo ? (
+        {ativo && isDesktop ? (
           <AtendimentoDrawer
             key={ativo.id}
             atendimento={ativo}
@@ -232,9 +236,10 @@ export function AtendimentoList({
       </div>
 
       {/* Mobile mantém o overlay. */}
-      {ativo && (
+      {ativo && isDesktop === false && (
         <div className="lg:hidden">
           <AtendimentoDrawer
+            key={ativo.id}
             atendimento={ativo}
             onClose={() => setAtivo(null)}
           />
