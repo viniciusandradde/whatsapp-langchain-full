@@ -235,6 +235,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduled_poller_task.cancel()
     with contextlib.suppress(_asyncio.CancelledError):
         await scheduled_poller_task
+    # Mesma razão: as tasks de LISTEN do NotifyHub têm que ser esperadas, não
+    # só canceladas, senão o TestClient pendura no join.
+    from whatsapp_langchain.shared.notify_hub import fechar_hubs
+
+    await fechar_hubs()
     await close_pool()
     logger.info("server_stopped")
 

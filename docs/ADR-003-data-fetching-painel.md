@@ -100,3 +100,26 @@ Lições para as próximas telas:
   ao refresh.
 - A conexão SSE continua 1 por aba (e 1 `LISTEN` no Postgres por aba) — é o gargalo de capacidade
   da decisão 6, fora deste ADR.
+
+## Decisão 6, feita: um `LISTEN` por processo (2026-09-18)
+
+`shared/notify_hub.py`: a API mantém **uma** conexão Postgres por canal (`atendimento_event`,
+`acao_pendente_change`) e entrega cada `NOTIFY` a uma fila asyncio por assinante. Os streams SSE da
+fila, do drawer e do HITL assinam o hub em vez de abrir conexão própria (o do HITL segurava uma
+conexão **do pool**). Medido no dev: **20 streams abertos → 1 `LISTEN`** no `pg_stat_activity`;
+1 mensagem → 20/20 streams recebem; `pg_terminate_backend` na conexão → reconexão em 1 s e
+`connected` reemitido a todos (o drawer recarrega a timeline, a fila invalida a lista).
+
+O que isso muda no teto de capacidade: antes, operadores × (abas + conversas abertas) conexões
+de banco — ~30 operadores esgotavam `max_connections=100`. Agora o número de streams não toca no
+Postgres; o limite passa a ser memória/CPU do processo da API (uma fila de 256 entradas por
+stream) e as conexões do pool normal. PgBouncer continua valendo pro pool, mas deixou de ser
+pré-requisito pra escalar operadores.
+
+Regras que ficam:
+- Assinante lento (fila cheia) **perde evento** e o hub loga `notify_hub_assinante_lento`; o
+  cliente tem fallback por timer e o `connected` de reconexão força ressincronização. Não segurar
+  o produtor: travaria todos os outros streams.
+- Multi-processo (vários workers uvicorn) = um `LISTEN` por processo, não por máquina. Continua
+  sendo ordens de grandeza abaixo de "um por stream".
+- `hubs_ativos()` dá canal → assinantes pra health/relatório.

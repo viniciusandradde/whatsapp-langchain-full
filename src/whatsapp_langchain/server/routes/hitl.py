@@ -25,6 +25,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -66,6 +67,7 @@ async def list_pendentes(
     empresa_id: int = Depends(get_empresa_context),
     status: str = Query(default="pending"),
     limit: int = Query(default=50, ge=1, le=200),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ) -> list[AcaoPendente]:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -103,6 +105,7 @@ async def approve(
     body: ReviewBody,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ) -> dict:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -136,6 +139,7 @@ async def reject(
     body: ReviewBody,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ) -> dict:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -166,6 +170,7 @@ async def reject(
 @router.get("/events")
 async def events_stream(
     empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("atendimento.hitl.approve")),
 ):
     """SSE — emite eventos quando acao_pendente é INSERT/UPDATE.
 
@@ -188,26 +193,44 @@ async def events_stream(
         snapshot = {"pending_count": int(row[0] or 0)}
         yield f"event: snapshot\ndata: {json.dumps(snapshot)}\n\n"
 
-        # LISTEN
+        # LISTEN via NotifyHub: um por processo, fan-out em memória. Antes
+        # segurava uma conexão DO POOL por stream — pior que a do drawer, que
+        # ao menos abria a sua fora do pool.
+        from whatsapp_langchain.shared.notify_hub import RESYNC, get_hub
+
         try:
-            async with pool.connection() as conn:
-                await conn.set_autocommit(True)
-                await conn.execute("LISTEN acao_pendente_change")
+            hub = get_hub("acao_pendente_change")
+            async with hub.subscribe() as assinatura:
+                if not await hub.esperar_conexao():
+                    raise RuntimeError("LISTEN não conectou em 10s")
                 while True:
-                    # notifies() é um async generator: cede cada Notify até o
-                    # timeout expirar. Se nada chegou na janela, manda heartbeat.
-                    received = False
-                    async for n in conn.notifies(timeout=25.0):
-                        received = True
-                        try:
-                            payload = json.loads(n.payload)
-                        except json.JSONDecodeError:
-                            continue
-                        if payload.get("empresa_id") != empresa_id:
-                            continue
-                        yield f"event: change\ndata: {json.dumps(payload)}\n\n"
-                    if not received:
+                    try:
+                        bruto = await assinatura.get(timeout=25.0)
+                    except TimeoutError:
                         yield ": heartbeat\n\n"
+                        continue
+                    if bruto == RESYNC:
+                        # Reconectou ao Postgres: pode ter perdido mudança.
+                        # Manda o snapshot de novo em vez de fingir que nada
+                        # aconteceu.
+                        async with pool.connection() as conn:
+                            cur = await conn.execute(
+                                """
+                                SELECT COUNT(*) FROM acao_pendente
+                                 WHERE empresa_id=%s AND status='pending'
+                                """,
+                                (empresa_id,),
+                            )
+                            row = await cur.fetchone()
+                        yield f"event: snapshot\ndata: {json.dumps({'pending_count': int((row or [0])[0] or 0)})}\n\n"
+                        continue
+                    try:
+                        payload = json.loads(bruto)
+                    except json.JSONDecodeError:
+                        continue
+                    if payload.get("empresa_id") != empresa_id:
+                        continue
+                    yield f"event: change\ndata: {json.dumps(payload)}\n\n"
         except asyncio.CancelledError:
             return
         except Exception as e:
