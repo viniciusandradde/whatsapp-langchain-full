@@ -59,3 +59,44 @@ O blueprint `one-for-all` resolve isso por arquitetura: TanStack Query com inval
   migração; risco de alguém "simplificar" chamando a API direto do cliente — daí a decisão 2 ser explícita.
 - **Não adotado do blueprint:** `axios` no cliente (segurança), PocketBase, socket.io, PDF/XLSX no cliente
   (o backend já gera, com cap de linhas e envio por WhatsApp).
+
+## Resultado do piloto (medido no dev, 2026-09-17)
+
+Medição pelo `rate_limit_bucket` (requisições/min por usuário na API) e pelo access log do uvicorn
+(ligado só no container do dev). Um único usuário, `/atendimento`.
+
+| Cenário | Antes | Depois |
+|---|---|---|
+| 1 aba parada, sem evento | 32 req/min | **4 req/min** |
+| 4 abas + 6 mensagens chegando em 1 min (teste do dono) | 401 / 224 req/min | **56 req/min**, 0 × 429 |
+| Custo de 1 evento SSE, por aba | 4 fetches (página inteira) | 1 (`GET /api/atendimentos`) |
+
+O piloto (`invalidateQueries` no lugar de `router.refresh()`) funcionava desde o primeiro dia, mas
+**dois problemas fora dele escondiam o ganho** — e são o achado de verdade desta medição:
+
+1. **`nextCookies()` do Better Auth 1.5.4 re-renderizava a rota em toda Server Action.** O plugin
+   sondava se podia escrever cookie com `cookies().set(...); cookies().delete(...)` no `before` de
+   `/get-session`. Dentro de uma Server Action a sonda funciona — e deixa `mutableCookies` marcado como
+   modificado. O Next 16 então trata a action como revalidada (`x-action-revalidated: 1`) e devolve
+   layout + página re-renderizados na resposta: **7 fetches de API** (`empresas`, `perfis/me`,
+   `departamentos`, `auth/me/admin`, `abas/me`, `contadores`, `atendimentos`) por action, inclusive
+   nas periódicas (`loadContadoresAction` a cada 30 s). Todo `apiFetch` passa por `getSession()`, então
+   **toda** action pagava isso. Corrigido upstream na 1.6.2 (detecção de RSC por header, sem sonda);
+   o Nexus foi para a 1.6.33 — sem migração (tabelas core idênticas), única breaking (`freshAge`) em
+   endpoints que o painel não usa.
+2. **Re-prefetch de todos os `<Link>` visíveis depois de cada action.** Com o cache do router
+   invalidado, o Next refazia o prefetch das 5 abas da fila e das 6 rotas do menu = 11 renders de
+   página no servidor, cada um com seus fetches. `prefetch={false}` nesses links (prefetch só ao
+   passar o mouse) cortou o lado do browser de 63 para 6 req/min.
+
+Lições para as próximas telas:
+
+- **Medir na API, não no browser.** O DevTools do browser mostrava 6 req/min enquanto a API recebia
+  32: o custo estava no render server-side que a action carregava de carona.
+- Qualquer coisa que mute cookie dentro de uma Server Action (inclusive biblioteca) custa um re-render
+  da rota inteira. Vale para `setActiveEmpresa` (esperado) e valia, sem querer, para o Better Auth.
+- Custo por evento agora é **1 request por aba**: N abas do mesmo operador = N requests. Se virar
+  problema, o próximo passo é sincronizar o cache entre abas (`broadcastQueryClient`), não voltar
+  ao refresh.
+- A conexão SSE continua 1 por aba (e 1 `LISTEN` no Postgres por aba) — é o gargalo de capacidade
+  da decisão 6, fora deste ADR.
