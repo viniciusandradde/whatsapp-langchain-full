@@ -261,3 +261,21 @@ class TestClaimPorConversa:
         assert result is None
         assert conn.rollback.await_count == 3
         assert sum("SELECT c.id" in s for s in _sqls(conn)) == 3
+
+
+class TestJusticaEntreEmpresas:
+    """O candidato é escolhido pela posição na fila da própria empresa, depois
+    pela idade: round-robin entre empresas, FIFO dentro de cada uma."""
+
+    async def test_select_candidato_ordena_por_posicao_na_empresa(self, mock_pool):
+        pool, conn = mock_pool
+        conn.execute = AsyncMock(side_effect=[_cursor(), _cursor(None)])
+
+        await claim_next(pool, lease_seconds=60)
+
+        sql = _sqls(conn)[1]
+        assert "row_number() OVER" in sql
+        assert "PARTITION BY c.empresa_id ORDER BY c.created_at" in sql
+        assert "ORDER BY posicao_na_empresa ASC, created_at ASC" in sql
+        # O filtro de conversa ocupada continua DENTRO da subquery ranqueada.
+        assert sql.index("NOT EXISTS") < sql.index("AS prontas")

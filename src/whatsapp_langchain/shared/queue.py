@@ -654,6 +654,11 @@ async def claim_next(
        a row que o primeiro deixou em `processing` e não afeta linha nenhuma.
        Aí é rollback (solta o lock) e próximo candidato, até `max_tentativas`.
 
+    Ordem dos candidatos: posição na fila da própria empresa primeiro (contando
+    o que ela já tem em voo), idade depois — round-robin entre empresas, FIFO
+    dentro de cada uma. Dentro de uma conversa a ordem é sempre a de chegada:
+    as rows dela só ficam elegíveis uma por vez.
+
     `mark_done`/`mark_failed`/`renew_lease` não tomam o advisory lock e nunca
     esperam por ele segurando row: sem ciclo possível. O UPDATE de expiração
     (lease vencido sem tentativas) roda em transação própria, ANTES do loop —
@@ -706,14 +711,35 @@ async def claim_next(
 
         perdidos: list[int] = []
         for _ in range(max_tentativas):
+            # Justiça entre empresas: ordena pela POSIÇÃO da row na fila da
+            # própria empresa antes da idade absoluta — e a posição conta o
+            # que a empresa já tem EM VOO (`processing` com lease válido).
+            # Assim a 1ª mensagem de cada empresa vem antes da 2ª de qualquer
+            # outra, e quem ocupa mais slots fica atrás: round-robin sem
+            # estado e sem slot ocioso (com uma empresa só, vira FIFO). Sem
+            # o em-voo na conta, a 2ª do hospital virava "1ª entre as
+            # prontas" assim que a 1ª era reivindicada, e a PME que chegou
+            # 1 s depois do burst esperava as 50 do hospital.
             cursor = await conn.execute(
                 f"""
-                SELECT c.id, c.phone_number, c.agent_id
-                  FROM message_queue AS c
-                 WHERE ({_SQL_ELEGIVEL})
-                   AND NOT (c.id = ANY(%s::bigint[]))
-                   AND NOT EXISTS ({_SQL_CONVERSA_OCUPADA})
-                 ORDER BY c.created_at ASC
+                SELECT id, phone_number, agent_id
+                  FROM (
+                    SELECT c.id, c.phone_number, c.agent_id, c.created_at,
+                           row_number() OVER (
+                               PARTITION BY c.empresa_id ORDER BY c.created_at, c.id
+                           )
+                           + (
+                               SELECT count(*) FROM message_queue AS v
+                                WHERE v.empresa_id = c.empresa_id
+                                  AND v.status = 'processing'
+                                  AND v.lease_until > NOW()
+                           ) AS posicao_na_empresa
+                      FROM message_queue AS c
+                     WHERE ({_SQL_ELEGIVEL})
+                       AND NOT (c.id = ANY(%s::bigint[]))
+                       AND NOT EXISTS ({_SQL_CONVERSA_OCUPADA})
+                  ) AS prontas
+                 ORDER BY posicao_na_empresa ASC, created_at ASC, id ASC
                  LIMIT 1
                 """,
                 (perdidos,),
