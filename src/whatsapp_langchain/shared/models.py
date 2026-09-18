@@ -696,6 +696,13 @@ class Atendimento(BaseModel):
     # apagada vira "Mensagem apagada". None quando a conversa não tem
     # mensagem legível (ou a query de lote falhou — a listagem não cai).
     ultima_mensagem_preview: str | None = None
+    # Desde quando o cliente espera resposta (inbox agrupado 2026-09). Derivado
+    # por `derivar_aguardando_desde` da MESMA row do preview: `created_at` da
+    # última mensagem visível quando ela é do cliente e ninguém respondeu
+    # (marker interno do worker não conta como resposta). None quando a última
+    # fala é do operador/IA — a conversa não está pendente — ou quando a query
+    # de lote falhou. O card mostra "Sem resposta há X" a partir daqui.
+    aguardando_desde: datetime | None = None
 
 
 class DocumentoConhecimento(BaseModel):

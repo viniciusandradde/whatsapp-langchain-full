@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
@@ -27,6 +28,8 @@ from whatsapp_langchain.shared.atendimento_visualizacao import count_unread_para
 from whatsapp_langchain.shared.models import Atendimento
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from whatsapp_langchain.shared.models import Conexao
 
 logger = structlog.get_logger()
@@ -427,9 +430,23 @@ async def list_atendimentos(
         where += " AND a.assigned_to_user_id = %s"
         params.append(assigned_to_user_id)
     if q:
-        where += " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s)"
         like = f"%{q.strip()}%"
-        params.extend([like, like])
+        # Busca por telefone (inbox agrupado 2026-09): o operador digita o
+        # número como lembra — "(11) 99979-1234", "99979" — e `cliente.telefone`
+        # guarda E.164 com "+" em produção (2008/2008 conferidos em 2026-09-18)
+        # mas sem "+" em parte do dev. Comparar dígitos com dígitos dos dois
+        # lados é o que faz todas as grafias casarem. O piso de 4 dígitos evita
+        # que um "12" no nome de alguém varra os telefones da empresa.
+        digitos = re.sub(r"\D", "", q)
+        if len(digitos) >= 4:
+            where += (
+                " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s"
+                r" OR regexp_replace(c.telefone, '\D', '', 'g') LIKE %s)"
+            )
+            params.extend([like, like, f"%{digitos}%"])
+        else:
+            where += " AND (c.nome ILIKE %s OR a.protocolo ILIKE %s)"
+            params.extend([like, like])
     if aba_id is not None:
         # Aba é FILTRO SALVO POR CLIENTE, não pasta de conversas pinadas.
         #
@@ -549,6 +566,40 @@ def derivar_preview(
     return None
 
 
+def derivar_aguardando_desde(
+    *,
+    incoming_message: str | None,
+    tem_media: bool,
+    response: str | None,
+    tem_response_media: bool,
+    created_at: datetime | None,
+) -> datetime | None:
+    """Desde quando o cliente espera resposta (inbox agrupado 2026-09). Pura.
+
+    Olha a MESMA última row visível do preview: o cliente falou nela
+    (`incoming_message` ou mídia) e ninguém respondeu — `response` vazio ou
+    marker interno do worker (`MARKERS_INTERNOS`, que nunca chegou ao
+    cliente) e sem mídia de saída — então ele espera desde o `created_at`
+    da row. Row de saída (composer grava `incoming_message=""`) ou respondida
+    devolve None: a conversa não está pendente.
+
+    O `created_at` da row é o da PRIMEIRA mensagem do burst (o debounce e a
+    absorção só concatenam), que é o instante certo pra "sem resposta há X".
+    A row em `queued`/`processing` conta como pendente de propósito: o cliente
+    está esperando, mesmo que por segundos — e se a IA falhar de vez
+    (`failed`), o chip continua contando.
+    """
+    if created_at is None:
+        return None
+    if not incoming_message and not tem_media:
+        return None
+    if tem_response_media:
+        return None
+    if response and not response.startswith(MARKERS_INTERNOS):
+        return None
+    return created_at
+
+
 async def _preencher_derivados(
     pool: AsyncConnectionPool,
     empresa_id: int,
@@ -557,7 +608,8 @@ async def _preencher_derivados(
     *,
     current_user_id: str | None,
 ) -> None:
-    """Preenche `situacao`, `ia_ativa` e `nao_lidas` da página.
+    """Preenche `situacao`, `ia_ativa`, `nao_lidas`, `cliente_tags`,
+    `ultima_mensagem_preview` e `aguardando_desde` da página.
 
     Duas queries para a página INTEIRA, não por linha: a whitelist e o contador
     de não lidas são lookups em lote. Fazer por item transformaria uma listagem
@@ -613,7 +665,10 @@ async def _preencher_derivados(
     # perdidas (DISTINCT ON sobre os ≤50 ids da página), com dois cuidados:
     # nota interna fica fora do preview (WHERE interna=FALSE) e mídia entra
     # como boolean `IS NOT NULL` — o base64 nunca sai do banco na listagem.
+    # A mesma row alimenta `aguardando_desde` (inbox agrupado): "sem resposta
+    # há X" é a mesma pergunta que o preview responde, olhada pelo relógio.
     previews: dict[int, str | None] = {}
+    aguardando: dict[int, datetime | None] = {}
     try:
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -626,7 +681,8 @@ async def _preencher_derivados(
                        -- lista quando a última msg era mídia no bucket.
                        (media_url IS NOT NULL OR media_arquivo_uuid IS NOT NULL),
                        media_type,
-                       response_media_url IS NOT NULL, response_media_type
+                       response_media_url IS NOT NULL, response_media_type,
+                       created_at
                   FROM message_queue
                  WHERE atendimento_id = ANY(%s)
                    AND COALESCE(interna, FALSE) = FALSE
@@ -643,6 +699,13 @@ async def _preencher_derivados(
                     media_type=r[5],
                     tem_response_media=bool(r[6]),
                     response_media_type=r[7],
+                )
+                aguardando[r[0]] = derivar_aguardando_desde(
+                    incoming_message=r[1],
+                    tem_media=bool(r[4]),
+                    response=r[2],
+                    tem_response_media=bool(r[6]),
+                    created_at=r[8],
                 )
     except Exception as exc:  # noqa: BLE001
         logger.warning("situacao_preview_falhou", erro=str(exc))
@@ -695,6 +758,7 @@ async def _preencher_derivados(
         atd.nao_lidas = nao_lidas.get(atd.id, 0)
         atd.cliente_tags = tags_por_cliente.get(atd.cliente_id, [])
         atd.ultima_mensagem_preview = previews.get(atd.id)
+        atd.aguardando_desde = aguardando.get(atd.id)
 
 
 async def get_atendimento_by_id(

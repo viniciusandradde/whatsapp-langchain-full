@@ -386,6 +386,43 @@ async def test_list_atendimentos_outros_excludes_current_user():
     assert "me" in chamada.args[1]
 
 
+class TestBuscaPorTelefone:
+    """`q` com ≥4 dígitos também casa os dígitos de `cliente.telefone`.
+
+    Os dois lados são normalizados pra dígitos: o operador digita
+    "(67) 99979-1234" e o banco guarda "+5567999791234" — sem isso nenhuma
+    grafia casaria com a outra.
+    """
+
+    @pytest.mark.asyncio
+    async def test_digitos_casam_o_telefone_normalizado(self):
+        pool, conn = _mock_pool([])
+        await list_atendimentos(pool, 1, tipo="todas", q="(67) 99979-12")
+        chamada = _chamada_da_listagem(conn)
+        assert "regexp_replace(c.telefone, '\\D', '', 'g') LIKE %s" in chamada.args[0]
+        # nome e protocolo continuam no mesmo OR; o telefone recebe só dígitos
+        params = chamada.args[1]
+        assert "%(67) 99979-12%" in params
+        assert "%679997912%" in params
+
+    @pytest.mark.asyncio
+    async def test_menos_de_quatro_digitos_nao_varre_telefones(self):
+        """'12' no nome de alguém não pode devolver os telefones da empresa."""
+        pool, conn = _mock_pool([])
+        await list_atendimentos(pool, 1, tipo="todas", q="Ana 12")
+        chamada = _chamada_da_listagem(conn)
+        assert "regexp_replace" not in chamada.args[0]
+        assert "c.nome ILIKE %s OR a.protocolo ILIKE %s" in chamada.args[0]
+
+    @pytest.mark.asyncio
+    async def test_sem_digitos_e_a_busca_de_sempre(self):
+        pool, conn = _mock_pool([])
+        await list_atendimentos(pool, 1, tipo="todas", q="Fulano")
+        chamada = _chamada_da_listagem(conn)
+        assert "regexp_replace" not in chamada.args[0]
+        assert "%Fulano%" in chamada.args[1]
+
+
 @pytest.mark.asyncio
 async def test_claim_atendimento_sets_em_andamento():
     pool, conn = _mock_pool(
