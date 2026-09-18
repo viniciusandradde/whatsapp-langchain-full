@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics=""><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap"><style>
+html,body{margin:0;background:#0a0a0c;color:#f5f5f5;font-family:'Geist',ui-sans-serif,system-ui,sans-serif;font-size:13px;line-height:18px;-webkit-font-smoothing:antialiased}
+*,*::before,*::after{box-sizing:border-box}
+a{color:#22d3ee;text-decoration:none}a:hover{color:#67e8f9}
+.vsc::-webkit-scrollbar{width:9px;height:9px}.vsc::-webkit-scrollbar-track{background:transparent}.vsc::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:999px;border:2px solid transparent;background-clip:padding-box}.vsc::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2);background-clip:padding-box}
+.rail-fly{position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%) translateX(-4px);opacity:0;pointer-events:none;transition:opacity 120ms cubic-bezier(.16,1,.3,1),transform 120ms cubic-bezier(.16,1,.3,1);white-space:nowrap;z-index:60}
+.rail-item:hover .rail-fly{opacity:1;transform:translateY(-50%) translateX(0);pointer-events:auto}
+.rail-item:hover{background:rgba(255,255,255,.05)}
+</style></helmet>
+<div class="vsc" style="display:flex;height:100vh;min-height:640px;overflow-x:auto;overflow-y:hidden;background:#0a0a0c">
+
+  <nav style="{{ navStyle }}">
+    <div style="{{ navHeadStyle }}">
+      <img src="assets/vsa-logo.png" alt="VSA Nexus" style="flex:none;width:22px;height:22px;object-fit:contain;display:block">
+      <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ true }}">
+        <span style="font-size:13px;font-weight:600;letter-spacing:-0.02em">Nexus</span>
+      </sc-if>
+      <button onClick="{{ toggleNav }}" title="Recolher / expandir menu" style="{{ navToggleStyle }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4z"></path><path d="M9.5 5v14"></path><path d="{{ navToggleArrow }}" stroke-width="2.2"></path></svg>
+      </button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="font-family:'Geist Mono',monospace;font-size:10px;line-height:14px;text-transform:uppercase;letter-spacing:.14em;color:#525252;padding:0 8px 6px">Sistema</div>
+      </sc-if>
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div class="rail-item" style="{{ n.rowStyle }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex:none"><path d="{{ n.d }}"></path></svg>
+          <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ true }}">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.label }}</span>
+            <span style="{{ n.badgeStyle }}">{{ n.badge }}</span>
+          </sc-if>
+          <sc-if value="{{ navCollapsed }}" hint-placeholder-val="{{ false }}">
+            <span class="rail-fly" style="display:flex;align-items:center;gap:8px;background:rgba(17,17,20,.94);border:1px solid rgba(255,255,255,.10);backdrop-filter:blur(14px);border-radius:9px;padding:7px 11px;color:#f5f5f5;font-size:12px;box-shadow:0 12px 32px rgba(0,0,0,.4)">{{ n.label }}<span style="{{ n.badgeStyle }}">{{ n.badge }}</span></span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;padding:0 8px 6px"><span style="font-family:'Geist Mono',monospace;font-size:10px;line-height:14px;text-transform:uppercase;letter-spacing:.14em;color:#525252">Minhas abas</span><span style="margin-left:auto;color:#525252">+</span></div>
+      </sc-if>
+      <sc-for list="{{ myTabs }}" as="t" hint-placeholder-count="3">
+        <div class="rail-item" style="{{ t.rowStyle }}">
+          <span style="{{ t.markStyle }}"></span>
+          <sc-if value="{{ navOpen }}" hint-placeholder-val="{{ true }}">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.label }}</span>
+          </sc-if>
+          <sc-if value="{{ navCollapsed }}" hint-placeholder-val="{{ false }}">
+            <span class="rail-fly" style="background:rgba(17,17,20,.94);border:1px solid rgba(255,255,255,.10);backdrop-filter:blur(14px);border-radius:9px;padding:7px 11px;color:#f5f5f5;font-size:12px;box-shadow:0 12px 32px rgba(0,0,0,.4)">{{ t.label }}</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </nav>
+
+  <div onMouseDown="{{ dragNav }}" onDoubleClick="{{ resetWidths }}" title="Arraste para redimensionar · duplo clique redefine" style="{{ hNav }}" style-hover="background:rgba(249,115,22,.35)"></div>
+
+  <section style="{{ listStyle }}">
+    <div style="flex:none;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.06)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;background:#16161a;border:1px solid rgba(255,255,255,.06);border-radius:9px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#737373" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path></svg>
+          <span style="color:#525252;font-size:12px">Nome, telefone ou protocolo</span>
+        </div>
+        <button onClick="{{ toggleAll }}" style="flex:none;height:34px;padding:0 10px;background:#16161a;border:1px solid rgba(255,255,255,.06);border-radius:9px;color:#a3a3a3;font-family:'Geist',sans-serif;font-size:11px;cursor:pointer">{{ toggleAllLabel }}</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;min-width:0">
+        <span style="flex:none;font-family:'Geist Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:#525252">Agrupar por</span>
+        <div style="flex:1;min-width:0;display:flex;padding:2px;gap:2px;background:#16161a;border:1px solid rgba(255,255,255,.06);border-radius:9px">
+          <button onClick="{{ byStatus }}" style="{{ tabStatusStyle }}">Status</button>
+          <button onClick="{{ byDept }}" style="{{ tabDeptStyle }}">Departamento</button>
+          <button onClick="{{ byResp }}" style="{{ tabRespStyle }}">Responsável</button>
+        </div>
+      </div>
+    </div>
+    <div class="vsc" style="flex:1;overflow-y:auto">
+      <sc-for list="{{ groups }}" as="g" hint-placeholder-count="4">
+        <div>
+          <button onClick="{{ g.toggle }}" style="position:sticky;top:0;z-index:2;width:100%;display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(10,10,12,.94);backdrop-filter:blur(10px);border:0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;color:#e5e5e5">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="{{ g.caretStyle }}"><path d="m7 10 5 5 5-5"></path></svg>
+            <span style="{{ g.dotStyle }}"></span>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.14em">{{ g.name }}</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#737373">{{ g.count }}</span>
+            <span style="margin-left:auto;{{ g.unreadStyle }}">{{ g.unread }}</span>
+          </button>
+          <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="3">
+              <button onClick="{{ it.select }}" style="{{ it.rowStyle }}">
+                <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D366" style="flex:none"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.5-4-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.3.5-.3.3c-.1.1-.3.3-.1.6.1.3.6 1.1 1.4 1.8 1 .9 1.8 1.1 2 1.3.3.1.4.1.6-.1l.8-1c.2-.2.4-.2.6-.1l2 1c.2.1.4.2.4.3.1.2.1.6-.1 1.2z"></path></svg>
+                  <span style="font-size:13px;font-weight:600;color:#fafafa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ it.name }}</span>
+                  <span style="margin-left:auto;flex:none;font-family:'Geist Mono',monospace;font-size:10px;color:#737373">{{ it.time }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;font-family:'Geist Mono',monospace;font-size:10px;color:#525252;min-width:0">
+                  <span>{{ it.phone }}</span><span>·</span><span style="display: none">{{ it.protocol }}</span><span style="display: none">·</span><span style="flex:none;display:inline-flex;align-items:center;gap:3px;color:#f59e0b">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.4V12l3.2 2"/></svg>{{ it.wait }}</span><span>·</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ it.dept }}</span>
+                </div>
+                <sc-if value="{{ showPreview }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size:12px;line-height:17px;color:#a3a3a3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ it.preview }}</div>
+                </sc-if>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <span style="{{ it.autoStyle }}">{{ it.auto }}</span>
+                  <span style="{{ it.slaStyle }}">SLA {{ it.sla }}</span>
+                  <span style="{{ it.unreadStyle }}">{{ it.unread }}</span>
+                </div>
+              </button>
+            </sc-for>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <div onMouseDown="{{ dragList }}" onDoubleClick="{{ resetWidths }}" title="Arraste para redimensionar · duplo clique redefine" style="{{ hList }}" style-hover="background:rgba(249,115,22,.35)"></div>
+
+  <main style="flex:1;min-width:480px;display:flex;flex-direction:column;background:#0a0a0c">
+    <div style="flex:none;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:5px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:18px;line-height:26px;font-weight:600;letter-spacing:-0.02em">{{ activeName }}</span>
+        <span style="{{ activeAutoStyle }}">{{ activeAuto }}</span>
+        <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#a3a3a3;background:rgba(255,255,255,.06);border-radius:5px;padding:2px 6px">{{ activeProtocol }}</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#a3a3a3;border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:3px 9px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12V5h7l11 11-7 7z"></path><circle cx="7.5" cy="8.5" r="1.3" fill="currentColor"></circle></svg>Tags</span>
+        <span style="margin-left:auto;display:flex;gap:14px;color:#737373">⋮ ✕</span>
+      </div>
+      <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#737373">{{ activePhone }} · {{ activeDept }} · <a href="#ficha" style="color:#22d3ee;border-bottom:1px solid rgba(34,211,238,.4)">ver ficha</a></div>
+    </div>
+
+    <div style="flex:none;display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid rgba(255,255,255,.06);color:#a3a3a3">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"></circle><path d="M5 20c1.2-3.6 3.8-5.4 7-5.4s5.8 1.8 7 5.4"></path></svg>
+      <span style="font-size:13px">Painel do cliente</span>
+      <span style="margin-left:auto;font-size:11px;color:#525252">Conversa · Arquivos</span>
+    </div>
+
+    <div class="vsc" style="flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:16px;align-items:stretch">
+      <div style="max-width:560px;align-self:flex-start;background:#1c1c22;border:1px solid rgba(255,255,255,.06);border-radius:16px 16px 16px 4px;padding:11px 14px">
+        <div style="font-size:14px;line-height:20px;color:#e5e5e5">10.1.30.200 ou 10.1.30.102 ?</div>
+        <div style="margin-top:6px;font-family:'Geist Mono',monospace;font-size:10px;color:#525252">18/09/2026, 14:16:48 · cliente</div>
+      </div>
+      <div style="align-self:flex-start;display:flex;align-items:center;gap:10px">
+        <span style="font-family:'Geist Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:#525252">Número na lista de bloqueio da IA</span>
+        <button style="display:inline-flex;align-items:center;gap:6px;background:#16161a;border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:5px 11px;color:#a3a3a3;font-family:'Geist',sans-serif;font-size:11px;cursor:pointer">↻ Reprocessar com IA</button>
+      </div>
+      <div style="max-width:560px;align-self:flex-end;background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.22);border-radius:16px 16px 4px 16px;padding:11px 14px">
+        <div style="font-size:14px;line-height:20px;color:#ffe0cc">10.1.130.103 → 30.102</div>
+        <div style="margin-top:6px;font-family:'Geist Mono',monospace;font-size:10px;color:rgba(255,189,143,.6)">18/09/2026, 14:17:25 · agente</div>
+      </div>
+      <div style="max-width:560px;align-self:flex-start;background:#1c1c22;border:1px solid rgba(255,255,255,.06);border-radius:16px 16px 16px 4px;padding:11px 14px">
+        <div style="font-size:14px;line-height:20px;color:#e5e5e5">pronto esta monitorando 10.1.130.103</div>
+        <div style="margin-top:6px;font-family:'Geist Mono',monospace;font-size:10px;color:#525252">18/09/2026, 14:18:10 · cliente</div>
+      </div>
+      <div style="max-width:560px;align-self:flex-end;background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.22);border-radius:16px 16px 4px 16px;padding:11px 14px">
+        <div style="font-size:14px;line-height:20px;color:#ffe0cc">vou enviar</div>
+        <div style="margin-top:6px;font-family:'Geist Mono',monospace;font-size:10px;color:rgba(255,189,143,.6)">18/09/2026, 14:18:18 · agente</div>
+      </div>
+    </div>
+
+    <div style="flex:none;padding:12px 20px 16px;border-top:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:#737373">
+        <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border:1px solid rgba(255,255,255,.2);border-radius:3px"></span>Nota interna (não envia pro cliente)</span>
+        <span>Template</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-end">
+        <div style="flex:1;min-width:0;min-height:56px;background:#1c1c22;border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px 14px;color:#737373;font-size:13px">Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)</div>
+        <button style="flex:none;height:40px;padding:0 18px;background:#f97316;border:1px solid transparent;border-radius:8px;color:#fff;font-family:'Geist',sans-serif;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 0 0 1px rgba(249,115,22,.22),0 0 12px -2px rgba(249,115,22,.32)">Enviar</button>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <span style="background:#1c1c22;border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:6px 12px;color:#f5f5f5;font-size:13px;font-weight:600">Atender</span>
+        <span style="background:#1c1c22;border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:6px 12px;color:#f5f5f5;font-size:13px;font-weight:600">Transferir</span>
+        <span style="background:#1c1c22;border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:6px 12px;color:#f5f5f5;font-size:13px;font-weight:600">Resolver</span>
+        <span style="background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:6px 12px;color:#ef4444;font-size:13px;font-weight:600">Abandonar</span>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showPreview&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Lista&quot;}}">
+const C = {
+  danger:'#ef4444', warning:'#f59e0b', success:'#10b981', info:'#0ea5e9', cyan:'#22d3ee', orange:'#f97316', muted:'#737373'
+};
+const AUTO = {
+  'Sem automação': C.muted,
+  'Com a IA': C.cyan,
+  'Em atendimento': C.orange,
+  'Aguardando humano': C.warning
+};
+const DATA = [
+  {n:'Jean Carlos', ph:'+55 67 9979-3263', p:'#1-000807', dept:'Suporte TI', pv:'vou enviar', t:'agora', sla:'18h 47min', slaH:18, auto:'Sem automação', u:1, mine:true, st:'meus'},
+  {n:'Ricardo Zorzato', ph:'+55 67 9931-2210', p:'#1-000791', dept:'Comercial', pv:'alguns preços eu chutei aí pq não faço ideia', t:'4h', sla:'9h 12min', slaH:9, auto:'Em atendimento', u:2, st:'meus'},
+  {n:'Alison TI HE', ph:'+55 67 9908-7741', p:'#1-000774', dept:'Suporte TI', pv:'áudio', t:'4h', sla:'7h 40min', slaH:7, auto:'Com a IA', u:1, st:'meus'},
+
+  {n:'VSA Tecnologia', ph:'+55 67 9971-0033', p:'#1-000806', dept:'Suporte TI', pv:'Olá', t:'57min', sla:'2h 14min', slaH:2, auto:'Aguardando humano', u:1, st:'humano'},
+  {n:'Larissa Felix', ph:'+55 67 9164-0670', p:'#1-000788', dept:'RH', pv:'Blz', t:'4h', sla:'3h 05min', slaH:3, auto:'Aguardando humano', u:1, st:'humano'},
+
+  {n:'FILHA DO REI', ph:'+55 67 9837-5268', p:'#1-000812', dept:'Recepção', pv:'Chat aberto — cliente aguarda primeira resposta', t:'12min', sla:'18h 47min', slaH:18, auto:'Sem automação', u:1, st:'fila'},
+  {n:'Bruna Sorjoani', ph:'+55 67 9808-3354', p:'#1-000811', dept:'Comercial', pv:'Boa tarde, queria saber sobre o plano', t:'26min', sla:'19h 23min', slaH:19, auto:'Sem automação', u:1, st:'fila'},
+  {n:'Gustavo Dias Vicente', ph:'+55 67 9225-8164', p:'#1-000810', dept:'Comercial', pv:'preciso de um orçamento pra 12 licenças', t:'41min', sla:'19h 51min', slaH:19, auto:'Sem automação', u:1, st:'fila'},
+  {n:'Martina', ph:'+55 67 9164-0670', p:'#1-000809', dept:'Recepção', pv:'oi, bom dia', t:'1h', sla:'20h 52min', slaH:20, auto:'Sem automação', u:4, st:'fila'},
+  {n:'geni santana', ph:'+55 67 9934-7220', p:'#1-000808', dept:'RH', pv:'o link do holerite não abre', t:'1h', sla:'20h 58min', slaH:20, auto:'Sem automação', u:1, st:'fila'},
+  {n:'Ivone', ph:'+55 67 9976-0537', p:'#1-000805', dept:'Recepção', pv:'quero remarcar o horário de quinta', t:'2h', sla:'21h 48min', slaH:21, auto:'Sem automação', u:2, st:'fila'},
+
+  {n:'Robson Datanetwork', ph:'+55 67 9912-4408', p:'#1-000803', dept:'Suporte TI', pv:'áudio', t:'2h', sla:'6h 30min', slaH:6, auto:'Em atendimento', u:0, st:'andamento'},
+  {n:'Anderson Willian', ph:'+55 67 9903-1177', p:'#1-000800', dept:'Suporte TI', pv:'Cadastro Crachá Cancela *145741 # 1 (password)', t:'3h', sla:'5h 18min', slaH:5, auto:'Em atendimento', u:0, st:'andamento'},
+  {n:'Marcos Sesmt HE', ph:'+55 67 9880-2214', p:'#1-000795', dept:'SESMT', pv:'Entendido. Caso precise de ajuda no futuro…', t:'4h', sla:'4h 02min', slaH:4, auto:'Com a IA', u:1, st:'andamento'},
+
+  {n:'DP/RH - Hospital Mackenzie', ph:'+55 67 9856-9012', p:'#1-000790', dept:'RH', pv:'imagem — Oiii, bom dia! Poderia aprovar…', t:'4h', sla:'3h 48min', slaH:3, auto:'Com a IA', u:0, st:'ia'},
+  {n:'Eduardo Radiologia He', ph:'+55 67 9844-7781', p:'#1-000789', dept:'Radiologia', pv:'imagem', t:'4h', sla:'3h 30min', slaH:3, auto:'Com a IA', u:0, st:'ia'},
+  {n:'Felipe Biomédico Lab HE', ph:'+55 67 9812-6650', p:'#1-000786', dept:'Laboratório', pv:'confirmado, obrigado', t:'4h', sla:'2h 55min', slaH:2, auto:'Com a IA', u:0, st:'ia'}
+];
+
+const STATUS_GROUPS = [
+  {id:'meus',      name:'Meus atendimentos', color:C.orange},
+  {id:'humano',    name:'Humano solicitado', color:C.danger},
+  {id:'fila',      name:'Aguardando (fila)', color:C.warning},
+  {id:'andamento', name:'Em atendimento',    color:C.info},
+  {id:'ia',        name:'Com a IA',          color:C.cyan}
+];
+
+class Component extends DCLogic {
+  state = { mode:'status', open:{}, active:'#1-000807', w:{nav:212,groups:234,list:560}, drag:null, navCol:false, grpCol:false };
+
+  setCol(patch) {
+    this.setState(patch);
+    try { localStorage.setItem('vsa-b-collapse', JSON.stringify({ navCol:this.state.navCol, grpCol:this.state.grpCol, ...patch })); } catch (e) {}
+  }
+
+  componentDidMount() {
+    try {
+      const raw = localStorage.getItem('vsa-b-groups');
+      if (raw) this.setState({ open: JSON.parse(raw) });
+      else this.setState({ open: { meus:true, humano:true, fila:true, andamento:false, ia:false } });
+    } catch (e) { this.setState({ open:{ meus:true, humano:true, fila:true, andamento:false, ia:false } }); }
+    try {
+      const w = localStorage.getItem('vsa-b-widths');
+      if (w) this.setState({ w: { ...this.state.w, ...JSON.parse(w) } });
+      const c = localStorage.getItem('vsa-b-collapse');
+      if (c) this.setState(JSON.parse(c));
+    } catch (e) {}
+    this._move = e => {
+      const d = this._drag;
+      if (!d) return;
+      e.preventDefault();
+      const next = Math.min(d.max, Math.max(d.min, d.start + (e.clientX - d.x)));
+      this.setState({ w: { ...this.state.w, [d.key]: next } });
+    };
+    this._up = () => {
+      if (!this._drag) return;
+      this._drag = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      this.setState({ drag:null });
+      try { localStorage.setItem('vsa-b-widths', JSON.stringify(this.state.w)); } catch (e) {}
+    };
+    window.addEventListener('mousemove', this._move);
+    window.addEventListener('mouseup', this._up);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('mousemove', this._move);
+    window.removeEventListener('mouseup', this._up);
+  }
+
+  startDrag(key, min, max) {
+    return e => {
+      e.preventDefault();
+      this._drag = { key, min, max, x: e.clientX, start: this.state.w[key] };
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      this.setState({ drag: key });
+    };
+  }
+
+  resetWidths() {
+    const w = { nav:212, groups:234, list:560 };
+    this.setState({ w });
+    try { localStorage.setItem('vsa-b-widths', JSON.stringify(w)); } catch (e) {}
+  }
+
+  persist(open) {
+    this.setState({ open });
+    try { localStorage.setItem('vsa-b-groups', JSON.stringify(open)); } catch (e) {}
+  }
+
+  defs() {
+    if (this.state.mode === 'resp') {
+      const OWNERS = ['Ana Prado', 'Diego Luz', 'Marcela Reis'];
+      const own = i => OWNERS[i % OWNERS.length];
+      const names = OWNERS.concat([]);
+      return names.map(o => ({ id:'r-'+o, name:o, color:C.orange, items:DATA.filter((x, i) => own(i) === o) }));
+    }
+    if (this.state.mode === 'dept') {
+      const seen = [];
+      DATA.forEach(d => { if (seen.indexOf(d.dept) < 0) seen.push(d.dept); });
+      return seen.map(d => ({ id:'d-'+d, name:d, color:C.cyan, items:DATA.filter(x => x.dept === d) }));
+    }
+    return STATUS_GROUPS.map(g => ({ ...g, items:DATA.filter(x => x.st === g.id) }));
+  }
+
+  chip(color, bg) {
+    return 'font-family:\'Geist Mono\',monospace;font-size:10px;line-height:14px;padding:2px 7px;border-radius:999px;border:1px solid ' + bg + ';color:' + color + ';background:' + bg;
+  }
+
+  renderVals() {
+    const open = this.state.open || {};
+    const isOpen = id => open[id] !== false && open[id] !== undefined ? true : !!open[id];
+    const defs = this.defs();
+    const allOpen = defs.every(g => !!open[g.id]);
+
+    const groups = defs.map(g => {
+      const unread = g.items.reduce((s, i) => s + i.u, 0);
+      const opened = !!open[g.id];
+      return {
+        name: g.name,
+        count: g.items.length,
+        unread: unread || '',
+        open: opened,
+        toggle: () => this.persist({ ...open, [g.id]: !opened }),
+        navStyle: this.state.grpCol
+          ? 'position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;flex:none;width:40px;height:40px;border:0;border-radius:10px;cursor:pointer;font-family:\'Geist\',sans-serif;background:' + (opened ? 'rgba(255,255,255,.06)' : 'transparent') + ';box-shadow:' + (opened ? 'inset 0 0 0 1px rgba(255,255,255,.08)' : 'none')
+          : 'position:relative;display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:0;border-radius:9px;cursor:pointer;font-family:\'Geist\',sans-serif;font-size:12px;text-align:left;background:' + (opened ? 'rgba(255,255,255,.05)' : 'transparent') + ';color:' + (opened ? '#f5f5f5' : '#a3a3a3'),
+        flyState: opened ? 'visível' : 'oculto',
+        flyStateStyle: 'font-family:\'Geist Mono\',monospace;font-size:10px;color:' + (opened ? C.cyan : '#737373'),
+        dotStyle: 'flex:none;width:7px;height:7px;border-radius:999px;background:' + g.color,
+        caretStyle: 'flex:none;color:#525252;transition:transform 160ms cubic-bezier(.16,1,.3,1);transform:rotate(' + (opened ? 0 : -90) + 'deg)',
+        unreadStyle: unread ? this.chip(C.danger, 'rgba(239,68,68,.12)') : 'display:none',
+        items: g.items.map(it => ({
+          name: it.n, phone: it.ph, protocol: it.p, dept: it.dept, preview: it.pv, time: it.t, sla: it.sla, auto: it.auto,
+          wait: it.t === 'agora' ? '0min' : it.t,
+          unread: it.u || '',
+          select: () => this.setState({ active: it.p }),
+          rowStyle: 'display:flex;flex-direction:column;gap:4px;width:100%;padding:11px 12px 12px;border:0;border-bottom:1px solid rgba(255,255,255,.05);border-left:2px solid ' + (this.state.active === it.p ? C.orange : 'transparent') + ';background:' + (this.state.active === it.p ? 'rgba(249,115,22,.07)' : 'transparent') + ';cursor:pointer;text-align:left;font-family:\'Geist\',sans-serif',
+          autoStyle: this.chip(AUTO[it.auto] || C.muted, (AUTO[it.auto] || C.muted) === C.muted ? 'rgba(255,255,255,.05)' : (AUTO[it.auto] === C.cyan ? 'rgba(34,211,238,.10)' : AUTO[it.auto] === C.orange ? 'rgba(249,115,22,.10)' : 'rgba(245,158,11,.10)')),
+          slaStyle: this.chip(it.slaH <= 3 ? C.danger : it.slaH <= 8 ? C.warning : C.muted, it.slaH <= 3 ? 'rgba(239,68,68,.10)' : it.slaH <= 8 ? 'rgba(245,158,11,.10)' : 'rgba(255,255,255,.05)'),
+          unreadStyle: it.u ? 'margin-left:auto;' + this.chip(C.danger, 'rgba(239,68,68,.14)') : 'display:none'
+        }))
+      };
+    });
+
+    const act = DATA.find(d => d.p === this.state.active) || DATA[0];
+    const tab = on => 'flex:1;padding:6px 0;border:0;border-radius:7px;cursor:pointer;font-family:\'Geist\',sans-serif;font-size:11px;font-weight:500;background:' + (on ? 'rgba(255,255,255,.07)' : 'transparent') + ';color:' + (on ? '#f5f5f5' : '#737373');
+
+    const w = this.state.w, drag = this.state.drag;
+    const navCol = !!this.state.navCol, grpCol = !!this.state.grpCol;
+    const handle = (key, hidden) => hidden ? 'display:none' : 'flex:none;width:5px;margin:0 -2px;z-index:5;cursor:col-resize;background:' + (drag === key ? 'rgba(249,115,22,.55)' : 'transparent') + ';transition:background 120ms';
+    const iconBtn = 'flex:none;width:26px;height:26px;display:grid;place-items:center;background:transparent;border:1px solid rgba(255,255,255,.08);border-radius:8px;color:#a3a3a3;cursor:pointer;padding:0';
+    const railRow = active => 'position:relative;display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:9px;cursor:pointer;border:0;padding:0;font-family:\'Geist\',sans-serif;background:' + (active ? 'rgba(249,115,22,.10)' : 'transparent') + ';color:' + (active ? '#ffbd8f' : '#a3a3a3') + ';transition:background 120ms';
+    const fullRow = active => 'position:relative;display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;cursor:pointer;border:0;width:100%;font-family:\'Geist\',sans-serif;font-size:13px;text-align:left;background:' + (active ? 'rgba(249,115,22,.10)' : 'transparent') + ';color:' + (active ? '#ffbd8f' : '#a3a3a3') + ';font-weight:' + (active ? 500 : 400);
+    const badge = (color, bg, v) => v ? 'margin-left:auto;font-family:\'Geist Mono\',monospace;font-size:10px;background:' + bg + ';color:' + color + ';border-radius:999px;padding:1px 6px' : 'display:none';
+
+    const navItems = [
+      { label:'Não Resolvidas', d:'M4 13h4l2 3h4l2-3h4M4 13l2-7h12l2 7v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z', badge:'11', color:C.danger, bg:'rgba(239,68,68,.14)', active:true },
+      { label:'Resolvidas', d:'M12 3.6a8.4 8.4 0 1 0 0 16.8 8.4 8.4 0 0 0 0-16.8 M8.4 12.2l2.4 2.4 4.6-4.8', badge:'' },
+      { label:'Todas conversas', d:'M12 4l8 4-8 4-8-4z M4 12l8 4 8-4 M4 16l8 4 8-4', badge:'' }
+    ].map(n => ({
+      label:n.label, d:n.d, badge:n.badge,
+      rowStyle: navCol ? railRow(n.active) : fullRow(n.active),
+      badgeStyle: badge(n.color || C.muted, n.bg || 'rgba(255,255,255,.06)', n.badge)
+    }));
+
+    const myTabs = [
+      { label:'Familia', color:C.info }, { label:'Unigram EAD', color:C.success }, { label:'Mackenzie', color:C.danger }
+    ].map(t => ({
+      label:t.label,
+      rowStyle: navCol ? railRow(false) : fullRow(false),
+      markStyle: 'flex:none;width:9px;height:9px;border-radius:3px;border:1.5px solid ' + t.color
+    }));
+
+    return {
+      groups, navItems, myTabs,
+      navCollapsed: navCol, navOpen: !navCol,
+      grpCollapsed: grpCol, grpOpen: !grpCol,
+      toggleNav: () => this.setCol({ navCol: !navCol }),
+      toggleGrp: () => this.setCol({ grpCol: !grpCol }),
+      navToggleArrow: navCol ? 'M13 9.6l2.4 2.4-2.4 2.4' : 'M16 9.6L13.6 12l2.4 2.4',
+      grpToggleArrow: grpCol ? 'M10 8l4 4-4 4' : 'M14 8l-4 4 4 4',
+      navToggleStyle: navCol ? iconBtn : 'margin-left:auto;' + iconBtn,
+      grpToggleStyle: grpCol ? iconBtn + ';margin-top:8px' : 'margin-left:6px;' + iconBtn,
+      navHeadStyle: 'display:flex;align-items:center;gap:8px;padding:0 0 2px;' + (navCol ? 'flex-direction:column' : 'padding-left:6px'),
+      grpHeadStyle: 'padding:14px 12px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid rgba(255,255,255,.06);' + (grpCol ? 'padding:12px 8px 10px;align-items:center' : ''),
+      grpHeadRowStyle: 'display:flex;align-items:center;gap:7px;' + (grpCol ? 'flex-direction:column' : 'width:100%'),
+      grpBodyStyle: 'flex:1;display:flex;flex-direction:column;gap:2px;' + (grpCol ? 'overflow:visible;padding:8px 6px 16px;align-items:center' : 'overflow-y:auto;padding:8px 8px 16px'),
+      filaCardStyle: grpCol ? 'display:none' : 'margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.06);border-radius:12px;background:#111114;display:flex;flex-direction:column;gap:7px',
+      navStyle: 'width:' + (navCol ? 58 : w.nav) + 'px;flex:none;border-right:1px solid rgba(255,255,255,.06);background:#0a0a0c;display:flex;flex-direction:column;padding:14px 10px;gap:18px;overflow:visible;' + (navCol ? 'align-items:center;padding:14px 8px' : ''),
+      groupsStyle: 'width:' + (grpCol ? 58 : w.groups) + 'px;flex:none;border-right:1px solid rgba(255,255,255,.06);background:#0a0a0c;display:flex;flex-direction:column;overflow:visible',
+      listStyle: 'width:' + w.list + 'px;flex:none;border-right:1px solid rgba(255,255,255,.06);background:#0a0a0c;display:flex;flex-direction:column;min-width:0',
+      hNav: handle('nav', navCol), hGroups: handle('groups', grpCol), hList: handle('list'),
+      dragNav: this.startDrag('nav', 64, 360),
+      dragGroups: this.startDrag('groups', 150, 420),
+      dragList: this.startDrag('list', 320, 860),
+      resetWidths: () => this.resetWidths(),
+      showPreview: this.props.showPreview ?? true,
+      totalLabel: DATA.length + ' conversas',
+      byStatus: () => this.setState({ mode:'status' }),
+      byDept: () => this.setState({ mode:'dept' }),
+      byResp: () => this.setState({ mode:'resp' }),
+      tabRespStyle: tab(this.state.mode === 'resp'),
+      tabStatusStyle: tab(this.state.mode === 'status'),
+      tabDeptStyle: tab(this.state.mode === 'dept'),
+      toggleAll: () => { const next = {}; defs.forEach(g => next[g.id] = !allOpen); this.persist(next); },
+      toggleAllLabel: allOpen ? 'Recolher tudo' : 'Expandir tudo',
+      activeName: act.n, activeProtocol: act.p, activePhone: act.ph, activeDept: act.dept, activeAuto: act.auto,
+      activeAutoStyle: this.chip(AUTO[act.auto] || C.muted, 'rgba(255,255,255,.05)')
+    };
+  }
+}
+</script>
+</body>
+</html>
