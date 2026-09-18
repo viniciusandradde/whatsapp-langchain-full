@@ -27,6 +27,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from whatsapp_langchain.shared.queue import (
+    absorver_pendentes,
+    chave_lock_conversa,
     detectar_fluxo_guiado,
     enqueue_or_buffer,
     existe_mensagem_mais_nova,
@@ -1162,3 +1164,70 @@ class TestMidiaNoBucketNaoEhTextoPendente:
         delete_sql = conn.execute.call_args_list[2][0][0]
         assert "DELETE FROM message_queue" in delete_sql
         assert "media_arquivo_uuid IS NULL" in delete_sql
+
+
+class TestAbsorverPendentes:
+    """`absorver_pendentes` — o fragmento que chega entre o claim e a IA entra
+    no turno atual, em vez de virar um segundo turno cuja resposta engole a
+    nossa. Medido em produção: 13,6 % dos turnos de IA."""
+
+    async def test_sem_pendente_devolve_vazio_e_nao_escreve(self, mock_pool):
+        pool, conn = mock_pool
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(return_value=[])
+        conn.execute = AsyncMock(return_value=cursor)
+
+        assert (
+            await absorver_pendentes(
+                pool, phone_number="+55", agent_id="a", message_id=10
+            )
+            == []
+        )
+        sqls = [c[0][0] for c in conn.execute.call_args_list]
+        assert not any("UPDATE message_queue" in s for s in sqls)
+        conn.rollback.assert_awaited_once()
+        conn.commit.assert_not_awaited()
+
+    async def test_lock_da_conversa_antes_do_delete(self, mock_pool):
+        """Mesma chave do webhook e do claim: ninguém mescla nem reivindica no meio."""
+        pool, conn = mock_pool
+        t0 = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(
+            return_value=[
+                ("C", t0 + timedelta(seconds=2)),
+                ("B", t0 + timedelta(seconds=1)),
+            ]
+        )
+        conn.execute = AsyncMock(return_value=cursor)
+
+        textos = await absorver_pendentes(
+            pool, phone_number="+55", agent_id="a", message_id=10
+        )
+
+        assert textos == ["B", "C"], "ordem de chegada, não a do RETURNING"
+        calls = conn.execute.call_args_list
+        assert "pg_advisory_xact_lock" in calls[0][0][0]
+        assert calls[0][0][1] == (chave_lock_conversa("+55", "a"),)
+        delete_sql = calls[1][0][0]
+        assert "DELETE FROM message_queue" in delete_sql
+        assert "id > %s" in delete_sql
+        assert "status = 'queued'" in delete_sql
+        assert "media_url IS NULL" in delete_sql
+        assert "media_arquivo_uuid IS NULL" in delete_sql
+        update_sql, update_params = calls[2][0]
+        assert "incoming_message = incoming_message || %s" in update_sql
+        assert update_params == ("\nB\nC", 10)
+        conn.commit.assert_awaited_once()
+
+    async def test_falha_devolve_vazio(self, mock_pool):
+        """Fail-safe: sem absorver, o turno segue e o supersede cobre o resto."""
+        pool, conn = mock_pool
+        conn.execute = AsyncMock(side_effect=RuntimeError("conexão caiu"))
+
+        assert (
+            await absorver_pendentes(
+                pool, phone_number="+55", agent_id="a", message_id=10
+            )
+            == []
+        )

@@ -113,6 +113,22 @@ Deploy sob carga (SIGTERM com 4 em voo): `worker_draining em_voo=4` → as 4 ter
 0 rows presas em `processing`; o `restart` inteiro levou 5 s. Produção: 2 réplicas × 4 slots ≈ 180 msg/min contra
 pico real de 27 — o gargalo passa a ser o LLM (p50 1,9 s / p95 3,4 s por chamada) e as respostas superadas.
 
+**Absorção antes de invocar** (mesma carga, 4 slots, 18/09 à noite). Medido em produção antes de escrever código:
+**388 de 2.856 turnos de IA (13,6 %) já tinham a mensagem seguinte enfileirada quando a IA começou** (371 das 501
+respostas "superadas"); a espera claim→LLM é p50 4 s / p95 7 s, e só 11 rows esperaram >20 s — o ganho vem desse
+intervalo, não de backlog. Com `absorver_pendentes` antes do `ainvoke`:
+
+| | sem absorção | **com absorção** |
+|---|--:|--:|
+| Turnos de IA (rows finais) | 252 | **61** |
+| Chamadas de LLM (`ia_execucao`) | 284 | **66 (−77 %)** |
+| Respostas "superadas" | 229 | **33** (só as que chegam durante a chamada do LLM) |
+| Latência média até responder | 1,2 min | **0,3 min** |
+| Erros · sobreposição | 0 · 0 | **0 · 0** |
+
+Em produção a forma da carga é outra (8 s de janela, menos fragmentos): a expectativa é ~13 % a menos de chamadas
+de LLM e o fim da "fala fantasma" no histórico (resposta engolida que o turno seguinte enxergava).
+
 Leitura: a leva de 18/09 (TanStack #141/#142, Better Auth #140, NotifyHub #143, aviso de deploy #144)
 aguentou 20 simultâneos sem degradar — o painel deixou de ser o limite (operador parado: 48 → 4
 req/min; conexões `LISTEN` por processo, não por aba). O limite agora é o **worker serial**: 20

@@ -96,6 +96,7 @@ from whatsapp_langchain.shared.menu_chatbot import (
 from whatsapp_langchain.shared.models import Conexao, MessageQueue
 from whatsapp_langchain.shared.outbound import OutboundError, build_outbound_client
 from whatsapp_langchain.shared.queue import (
+    absorver_pendentes,
     existe_mensagem_mais_nova,
     mark_done,
     mark_failed,
@@ -2852,6 +2853,18 @@ async def process_message(
 
         # 3. Carregar agente com checkpointer + store (se memória habilitada)
         normalized_text = pre.normalized_text or message.incoming_message
+
+        # Absorção antes de invocar: o que o cliente mandou entre o claim e
+        # aqui (~4 s) entra NESTE turno, em vez de virar um segundo turno de
+        # IA cuja resposta engole a nossa. Só texto; mídia é turno próprio.
+        absorvidos = await absorver_pendentes(
+            pool,
+            phone_number=message.phone_number,
+            agent_id=message.agent_id,
+            message_id=message.id,
+        )
+        if absorvidos:
+            normalized_text = "\n".join([normalized_text or "", *absorvidos]).strip()
 
         # M6.a — sinalizamos pro agente quando estamos fora do expediente.
         # Wrapper textual no prompt do user é a forma menos invasiva: o
