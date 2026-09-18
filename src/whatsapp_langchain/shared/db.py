@@ -39,9 +39,17 @@ pool: AsyncConnectionPool | None = None
 MIGRATIONS_LOCK_ID = 8_642_000
 LANGGRAPH_BOOTSTRAP_LOCK_ID = 8_642_001
 
-# Pools do LangGraph (checkpointer/store) são pequenos: um worker processa
-# uma mensagem por vez, o teto só cobre o overlap de checkpoint + store.
-LANGGRAPH_POOL_MAX_SIZE = 3
+# Pools do LangGraph (checkpointer/store) acompanham as mensagens em voo do
+# worker (`WORKER_CONCURRENCY`): cada turno usa uma conexão de cada pool
+# enquanto grava checkpoint/store, e os dois pools são separados. Com N=1 o
+# valor volta ao 3 de antes (turno + overlap). A API cria os pools com o mesmo
+# número, mas lá `worker_concurrency` fica no default.
+LANGGRAPH_POOL_MAX_SIZE = max(3, settings.worker_concurrency + 1)
+
+# Pool da app: cada mensagem em voo usa no pico 2 conexões (caminho principal,
+# que é sequencial, + o heartbeat do lease por alguns ms), mais 1 por loop
+# auxiliar do worker. 10 cobria o loop serial; com N slots, 2N + 4.
+APP_POOL_MAX_SIZE = max(10, 2 * settings.worker_concurrency + 4)
 
 
 def _resolve_migrations_dir() -> Path:
@@ -193,7 +201,7 @@ async def get_pool() -> AsyncConnectionPool:
         inner_pool = AsyncConnectionPool(
             conninfo=url,
             min_size=2,
-            max_size=10,
+            max_size=APP_POOL_MAX_SIZE,
             open=False,
         )
         await inner_pool.open()

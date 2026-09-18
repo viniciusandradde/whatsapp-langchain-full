@@ -70,7 +70,7 @@ Host atual (OCI, `vps-dev-hermes`): 2 vCPU AMD EPYC, 11 GB RAM, 178 GB (40% usad
 Demanda projetada (10 clientes = 3 porte hospital + 7 PME): 140k msgs/mês, ~6.400/dia útil, pico ~23 msg/min. Vazão atual: 2 workers seriais = **17,6 msg/min**. Conexões PG: ~90–110 (SSE abre 1 LISTEN por operador).
 
 **Veredito: cabe, mas não como está.** Gargalos (nenhum é CPU):
-1. **Worker estritamente serial** — cada réplica processa 1 msg por vez, ~7s esperando o LLM (CPU 0,35%). Solução: concorrência interna por `asyncio.Semaphore(4)` na réplica → ~70 msg/min com as mesmas 2 réplicas, sem RAM extra. Réplicas a mais empurraram o host para o swap em 26/07. **Pré-requisito descoberto em 18/09**: o claim com `FOR UPDATE SKIP LOCKED` puro **não era seguro por conversa** — medidas 75 execuções de IA sobrepostas no mesmo atendimento em 30 dias (3.404 execuções, 608 atendimentos) com as 2 réplicas atuais; dois turnos no mesmo `thread_id` disputam o checkpoint do LangGraph. Corrigido com o claim serializado por conversa (`claim_next`: advisory lock com a mesma chave do webhook + `NOT EXISTS` de row `processing` com lease válido), que também exige `LEASE_SECONDS` curto em produção (era 5000; com a trava, crash = conversa presa 83 min).
+1. **Worker estritamente serial** — cada réplica processava 1 msg por vez, ~7s esperando o LLM (CPU 0,35%). **Entregue em 18/09**: `WORKER_CONCURRENCY` (semáforo asyncio na réplica) — medido 4,1× com 4 slots, 89 msg/min por réplica, sem RAM extra (§4b). Réplicas a mais empurraram o host para o swap em 26/07. **Pré-requisito descoberto em 18/09**: o claim com `FOR UPDATE SKIP LOCKED` puro **não era seguro por conversa** — medidas 75 execuções de IA sobrepostas no mesmo atendimento em 30 dias (3.404 execuções, 608 atendimentos) com as 2 réplicas atuais; dois turnos no mesmo `thread_id` disputam o checkpoint do LangGraph. Corrigido com o claim serializado por conversa (`claim_next`: advisory lock com a mesma chave do webhook + `NOT EXISTS` de row `processing` com lease válido), que também exige `LEASE_SECONDS` curto em produção (era 5000; com a trava, crash = conversa presa 83 min).
 2. **Fila global sem justiça entre empresas** — um burst do hospital atrasa todos. Precisa de claim round-robin por empresa (ou teto de mensagens em voo por empresa).
 3. **Postgres de fábrica** — `shared_buffers` 128 MB num host de 11 GB; e o SSE abre 1 conexão `LISTEN` por operador. Subir para 200–300 e, a médio prazo, multiplexar o LISTEN ou PgBouncer (modo transação). Ver `docs/SEGURANCA.md` M3.
 
@@ -97,6 +97,21 @@ a diferença para 14,7 é variação do LLM — p50 1,9 s / p95 3,6 s — não g
 foram "superadas"** (chegou mensagem mais nova do mesmo telefone antes do envio). É a forma da carga (~12 msgs por
 telefone em 45 s), mas mostra o desperdício: um turno de IA por row, quase todos engolidos. Em produção são 6,9 %.
 Próxima alavanca depois da concorrência: absorver as rows `queued` da conversa ANTES de invocar o agente.
+
+**Com `WORKER_CONCURRENCY=4`** (mesma carga, mesma tarde, 1 réplica):
+
+| | 1 slot | **4 slots** |
+|---|--:|--:|
+| Vazão | 21,8 msg/min | **89,0 msg/min** (4,1×, linear) |
+| Latência média / máxima até responder | 5,6 / 10,9 min | **1,2 / 2,3 min** |
+| Fora de ordem por telefone · IA sobreposta por atendimento | 0 · 0 | **0 · 0** (14 amostras ao vivo, 4 em voo, nunca 2 da mesma conversa) |
+| Erros de IA · erros do worker · deadlock | 0 | **0** |
+| RSS do worker | 115 MB | **168 MB** (CPU 0,3 %) |
+| Conexões PG do banco inteiro durante a carga | — | 16 |
+
+Deploy sob carga (SIGTERM com 4 em voo): `worker_draining em_voo=4` → as 4 terminaram em 4,4 s → `worker_stopped`,
+0 rows presas em `processing`; o `restart` inteiro levou 5 s. Produção: 2 réplicas × 4 slots ≈ 180 msg/min contra
+pico real de 27 — o gargalo passa a ser o LLM (p50 1,9 s / p95 3,4 s por chamada) e as respostas superadas.
 
 Leitura: a leva de 18/09 (TanStack #141/#142, Better Auth #140, NotifyHub #143, aviso de deploy #144)
 aguentou 20 simultâneos sem degradar — o painel deixou de ser o limite (operador parado: 48 → 4
