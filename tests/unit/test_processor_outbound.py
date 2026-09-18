@@ -267,6 +267,71 @@ MEDIA_DISABLED_PREPROCESS = MediaPreprocessResult(
 # === Testes do fluxo normal (texto) ===
 
 
+class TestAbsorcaoAntesDeInvocar:
+    """O que chegou entre o claim e a IA entra no MESMO turno (uma chamada só)."""
+
+    async def test_textos_absorvidos_entram_no_prompt(
+        self, message, mock_waba, mock_clients
+    ):
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2],
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            patch(
+                "whatsapp_langchain.worker.processor.absorver_pendentes",
+                new_callable=AsyncMock,
+                return_value=["quero saber", "o preço"],
+            ) as mock_absorver,
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {"messages": [MagicMock(content="R$ 97")]}
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(message, _pool_falso(), checkpointer=AsyncMock())
+
+            mock_absorver.assert_awaited_once()
+            assert mock_absorver.await_args.kwargs["message_id"] == message.id
+            human_msg = mock_graph.ainvoke.await_args.args[0]["messages"][0]
+            assert human_msg.content == "Olá!\nquero saber\no preço"
+
+    async def test_sem_pendente_o_prompt_e_so_a_mensagem(
+        self, message, mock_waba, mock_clients
+    ):
+        """Com o pool falso (DELETE devolve nada) a absorção real devolve []."""
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+        ):
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {
+                "messages": [MagicMock(content="Resposta")]
+            }
+            mock_load.return_value = mock_graph
+
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(message, _pool_falso(), checkpointer=AsyncMock())
+
+            human_msg = mock_graph.ainvoke.await_args.args[0]["messages"][0]
+            assert human_msg.content == "Olá!"
+            mock_done.assert_awaited_once()
+
+
 class TestSendMessageMarkDone:
     """Garante que mark_done só ocorre após send_message bem-sucedido."""
 

@@ -19,9 +19,12 @@ deixava o fragmento passar: a row da primeira era reivindicada em 2s e o
 "Boa tarde!" que chegava em 6,4s não tinha mais onde mesclar, porque row
 reivindicada não aceita merge. Três fragmentos de saudação, três respostas.
 
-O intervalo entre reivindicar a row e a resposta sair (~7s) segue fora do alcance
-do debounce — quem cobre esse buraco é `existe_mensagem_mais_nova`, chamada pelo
-worker antes de enviar.
+O intervalo entre reivindicar a row e a resposta sair (~7s) fica fora do alcance
+do debounce. Dois mecanismos cobrem esse buraco, chamados pelo worker:
+`absorver_pendentes` ANTES de invocar o agente (o que chegou entre o claim e a
+IA entra no mesmo turno — 13,6 % dos turnos em produção) e
+`existe_mensagem_mais_nova` antes de enviar (o que chegou durante a chamada do
+LLM engole a resposta, e o turno seguinte responde tudo).
 
 Uso:
     from whatsapp_langchain.shared.queue import enqueue_or_buffer
@@ -195,6 +198,86 @@ async def existe_mensagem_mais_nova(
     except Exception as exc:  # noqa: BLE001 — na dúvida, envia
         logger.warning("supersede_lookup_failed", message_id=message_id, error=str(exc))
         return False
+
+
+async def absorver_pendentes(
+    pool: AsyncConnectionPool,
+    *,
+    phone_number: str,
+    agent_id: str,
+    message_id: int,
+) -> list[str]:
+    """Puxa pro turno atual os textos da conversa que ficaram `queued` depois do claim.
+
+    Chamada pelo worker imediatamente ANTES de invocar o agente. Entre a row ser
+    reivindicada e a IA começar passam ~4 s (p50 em produção: claim, mídia,
+    typing, gates) — e o fragmento que o cliente manda nesse intervalo não tem
+    mais onde mesclar, porque row reivindicada não aceita merge. Sem isto o
+    agente rodava com a mensagem A, `existe_mensagem_mais_nova` engolia a
+    resposta, e o turno de B rodava de novo com uma fala do assistente que o
+    cliente nunca leu no histórico. Medido em produção (30 dias): 388 de 2.856
+    turnos de IA (13,6 %) já tinham a próxima mensagem na fila quando a IA
+    começou — 371 das 501 respostas engolidas.
+
+    Sob o MESMO advisory lock da conversa que o webhook e o claim usam, então
+    não corre com o debounce mesclando nem com outro slot reivindicando.
+    Só texto (`media_url` e `media_arquivo_uuid` NULL): mídia é turno próprio.
+    As rows absorvidas são apagadas e o texto delas vai pro `incoming_message`
+    da row atual — a mesma coisa que o debounce faz ao mesclar, então a timeline
+    mostra uma bolha só, como se tivessem chegado juntas.
+
+    Fail-safe: qualquer erro devolve lista vazia e o turno segue só com a
+    mensagem atual — `existe_mensagem_mais_nova` continua cobrindo o resto.
+
+    Returns:
+        Textos absorvidos, em ordem de chegada (vazio se não havia nada).
+    """
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (chave_lock_conversa(phone_number, agent_id),),
+            )
+            cursor = await conn.execute(
+                """
+                DELETE FROM message_queue
+                 WHERE phone_number = %s
+                   AND agent_id = %s
+                   AND id > %s
+                   AND status = 'queued'
+                   AND media_url IS NULL
+                   AND media_arquivo_uuid IS NULL
+                RETURNING incoming_message, created_at
+                """,
+                (phone_number, agent_id, message_id),
+            )
+            rows = await cursor.fetchall()
+            if not rows:
+                await conn.rollback()
+                return []
+            textos = [r[0] for r in sorted(rows, key=lambda r: r[1]) if r[0]]
+            await conn.execute(
+                """
+                UPDATE message_queue
+                   SET incoming_message = incoming_message || %s,
+                       updated_at = NOW()
+                 WHERE id = %s
+                """,
+                ("\n" + "\n".join(textos), message_id),
+            )
+            await conn.commit()
+    except Exception as exc:  # noqa: BLE001 — na dúvida, segue sem absorver
+        logger.warning("absorcao_falhou", message_id=message_id, error=str(exc))
+        return []
+
+    logger.info(
+        "textos_absorvidos_no_turno",
+        message_id=message_id,
+        phone=phone_number,
+        agent_id=agent_id,
+        absorvidos=len(textos),
+    )
+    return textos
 
 
 def _resolver_janela(
