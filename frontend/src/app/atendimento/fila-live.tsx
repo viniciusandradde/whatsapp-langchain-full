@@ -162,6 +162,9 @@ export function FilaLive({
     function connect() {
       es = new EventSource("/api/sse/empresa");
       es.addEventListener("connected", () => {
+        // Chega no início do stream E quando o NotifyHub da API reconecta
+        // ao Postgres — nesse caso pode ter perdido evento: ressincroniza.
+        if (openedOk) agendarRefresh();
         openedOk = true;
         if (fallbackTimer) {
           clearInterval(fallbackTimer);

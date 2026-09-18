@@ -455,53 +455,56 @@ def _sse_stream(
     - `atendimento_id`, quando dado, restringe a uma conversa (uso do drawer
       web). Sem ele, é o stream da empresa inteira (uso da lista no app).
 
-    Conexão dedicada (psycopg async standalone), fora do pool — LISTEN bloqueia
-    a conexão pra outros usos. Isso significa **uma conexão de banco por stream
-    aberto**: o app deve manter UM stream de empresa, não um por conversa.
+    Não abre conexão própria: assina o `NotifyHub` do canal — UM `LISTEN` por
+    processo, fan-out em memória (decisão 6 do ADR-003; antes era uma conexão
+    de banco por stream aberto, o gargalo de capacidade M3).
 
     Heartbeat a cada 25s pra sobreviver ao Traefik (idle timeout default 60s).
+    Se o hub reconectar ao Postgres, reemite `connected`: o cliente trata como
+    "ressincronize" (o drawer recarrega a timeline nesse evento).
     """
     import asyncio
     import json
 
-    import psycopg
-
-    from whatsapp_langchain.shared.config import settings
+    from whatsapp_langchain.shared.notify_hub import RESYNC, get_hub
 
     escopo = {"empresa_id": empresa_id}
     if atendimento_id is not None:
         escopo["atendimento_id"] = atendimento_id
+    conectado = f"event: connected\ndata: {json.dumps(escopo)}\n\n"
 
     async def event_generator():
+        hub = get_hub("atendimento_event")
         try:
-            async with await psycopg.AsyncConnection.connect(
-                settings.database_url, autocommit=True
-            ) as conn:
-                await conn.execute("LISTEN atendimento_event")
-                yield f"event: connected\ndata: {json.dumps(escopo)}\n\n"
-
-                # psycopg.notifies(timeout=N) retorna AsyncGenerator que
-                # *termina* quando o timeout expira. Loop externo re-abre
-                # o generator + emite heartbeat a cada ciclo (25s).
+            async with hub.subscribe() as assinatura:
+                if not await hub.esperar_conexao():
+                    raise RuntimeError("LISTEN não conectou em 10s")
+                yield conectado
                 while True:
-                    async for notify in conn.notifies(timeout=25):
-                        try:
-                            payload = json.loads(notify.payload)
-                        except (ValueError, TypeError):
-                            continue
-                        # Isolamento de tenant. Payload sem empresa_id vem de
-                        # trigger anterior à mig 145 — descarta em vez de
-                        # entregar sem saber de quem é.
-                        if payload.get("empresa_id") != empresa_id:
-                            continue
-                        if (
-                            atendimento_id is not None
-                            and payload.get("atendimento_id") != atendimento_id
-                        ):
-                            continue
-                        evt_name = payload.get("event", "update")
-                        yield f"event: {evt_name}\ndata: {notify.payload}\n\n"
-                    yield ": heartbeat\n\n"
+                    try:
+                        bruto = await assinatura.get(timeout=25)
+                    except TimeoutError:
+                        yield ": heartbeat\n\n"
+                        continue
+                    if bruto == RESYNC:
+                        yield conectado
+                        continue
+                    try:
+                        payload = json.loads(bruto)
+                    except (ValueError, TypeError):
+                        continue
+                    # Isolamento de tenant. Payload sem empresa_id vem de
+                    # trigger anterior à mig 145 — descarta em vez de
+                    # entregar sem saber de quem é.
+                    if payload.get("empresa_id") != empresa_id:
+                        continue
+                    if (
+                        atendimento_id is not None
+                        and payload.get("atendimento_id") != atendimento_id
+                    ):
+                        continue
+                    evt_name = payload.get("event", "update")
+                    yield f"event: {evt_name}\ndata: {bruto}\n\n"
         except (asyncio.CancelledError, GeneratorExit):
             return
         except Exception as exc:  # noqa: BLE001
