@@ -33,7 +33,7 @@ import type { Atendimento } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { ITENS_TOQUE } from "./composer-menu";
-import { iniciaisDe } from "./info-conversa";
+import { iniciaisDe, type SecaoInfo } from "./info-conversa";
 import { SITUACAO_AJUDA, SITUACAO_CHIP, SITUACAO_LABEL, SITUACAO_PONTO } from "./situacao";
 
 export interface AcoesCabecalho {
@@ -78,7 +78,7 @@ export function CabecalhoConversa({
   pendente: boolean;
   infoAberta: boolean;
   onVoltar: () => void;
-  onAbrirInfo: (secao?: "contato" | "arquivos") => void;
+  onAbrirInfo: (secao?: SecaoInfo) => void;
   acoes: AcoesCabecalho;
 }) {
   const a = atendimento;
@@ -111,17 +111,25 @@ export function CabecalhoConversa({
           <AvatarFallback className="text-xs font-medium">{iniciaisDe(a.cliente_nome)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
+          {/* O nome tem prioridade: não encolhe até 60% da linha; o chip da
+              situação fica com a sobra e trunca ("Aguardando h…"). Com os
+              dois encolhendo, "Medição 7" virava "Me…" no celular. */}
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-semibold leading-tight">{nome}</span>
+            <span className="max-w-[60%] shrink-0 truncate text-sm font-semibold leading-tight">
+              {nome}
+            </span>
             <span
               className={cn(
-                "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium",
+                "inline-flex min-w-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium",
                 SITUACAO_CHIP[a.situacao]
               )}
               title={SITUACAO_AJUDA[a.situacao]}
             >
-              <span className={cn("size-1.5 rounded-full", SITUACAO_PONTO[a.situacao])} aria-hidden />
-              {SITUACAO_LABEL[a.situacao]}
+              <span
+                className={cn("size-1.5 shrink-0 rounded-full", SITUACAO_PONTO[a.situacao])}
+                aria-hidden
+              />
+              <span className="truncate">{SITUACAO_LABEL[a.situacao]}</span>
             </span>
           </div>
           <p className="truncate font-mono text-[10px] leading-tight text-muted-foreground">

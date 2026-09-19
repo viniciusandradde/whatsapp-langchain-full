@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import {
   Bot,
@@ -24,7 +25,13 @@ import { cn } from "@/lib/utils";
 
 import { MediaPreview } from "./bolha-midia";
 import { PainelCliente } from "./painel-cliente";
-import { SITUACAO_AJUDA, SITUACAO_CHIP, SITUACAO_LABEL } from "./situacao";
+import {
+  PRIORIDADE_CHIP,
+  SENTIMENTO_CHIP,
+  SITUACAO_AJUDA,
+  SITUACAO_CHIP,
+  SITUACAO_LABEL,
+} from "./situacao";
 import { TagPopover } from "./tag-popover";
 import { formatarDataHoraCompleta } from "./timeline";
 
@@ -37,12 +44,14 @@ export function iniciaisDe(nome: string | null | undefined): string {
   return (a + b).toUpperCase();
 }
 
+export type SecaoInfo = "contato" | "arquivos" | "triagem";
+
 interface Props {
   atendimento: Atendimento;
   departamentoNome?: string | null;
   mensagens: AtendimentoMensagem[] | null;
-  /** Seção que deve abrir em destaque ("arquivos" quando veio do menu ⋮). */
-  secao?: "contato" | "arquivos";
+  /** Seção que deve abrir em destaque (veio do ⋮ ou da faixa de triagem). */
+  secao?: SecaoInfo;
   onFechar: () => void;
 }
 
@@ -59,6 +68,12 @@ export function InfoConversa({ atendimento, departamentoNome, mensagens, secao, 
   const a = atendimento;
   const nome = a.cliente_nome ?? a.cliente_telefone ?? "Cliente";
   const arquivos = (mensagens ?? []).filter((m) => m.media_url || m.media_disponivel || m.response_media_url || m.response_media_disponivel);
+
+  // Veio do ⋮ "Arquivos" ou da faixa de triagem: rola até a seção pedida.
+  useEffect(() => {
+    if (!secao || secao === "contato") return;
+    document.getElementById(`info-${secao}`)?.scrollIntoView({ block: "start" });
+  }, [secao]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -145,7 +160,7 @@ export function InfoConversa({ atendimento, departamentoNome, mensagens, secao, 
           <TagPopover atendimentoId={a.id} />
         </section>
 
-        <TriagemCard atendimento={a} />
+        <TriagemCard atendimento={a} destaque={secao === "triagem"} />
         <ColetaPreviaCard atendimento={a} />
 
         {/* Tags do cliente + último atendimento (painel do cliente de sempre) */}
@@ -291,8 +306,9 @@ function ArquivosDoAtendimento({
 }
 
 // Card "Triagem IA" — só quando o agente classificou ou gerou resumo.
-function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
+function TriagemCard({ atendimento, destaque }: { atendimento: Atendimento; destaque?: boolean }) {
   const [collapsed, setCollapsed] = useCollapseState(`triagem-${atendimento.id}`, false);
+  const [faixaOculta, setFaixaOculta] = useCollapseState(`triagem-faixa-${atendimento.id}`, false);
   const has =
     atendimento.resumo_ia ||
     atendimento.classificacao ||
@@ -300,28 +316,15 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
     atendimento.sentimento;
   if (!has) return null;
 
-  const prioClasse: Record<string, string> = {
-    urgente: "bg-destructive/10 text-destructive border-destructive/40",
-    alta: "bg-warning/10 text-warning border-warning/40",
-    media: "bg-brand-primary/10 text-brand-primary border-brand-primary/40",
-    baixa: "bg-muted text-muted-foreground border-transparent",
-  };
-  const sentClasse: Record<string, string> = {
-    frustrado: "bg-destructive/10 text-destructive border-destructive/40",
-    negativo: "bg-warning/10 text-warning border-warning/40",
-    neutro: "bg-muted text-muted-foreground border-transparent",
-    positivo: "bg-success/10 text-success border-success/40",
-  };
-
   return (
-    <section className="space-y-1.5">
+    <section className="space-y-1.5" id="info-triagem">
       <button
         type="button"
         onClick={() => setCollapsed(!collapsed)}
         className="flex w-full items-center justify-between gap-2 text-left"
         aria-expanded={!collapsed}
       >
-        <Titulo icone={Bot}>
+        <Titulo icone={Bot} destaque={destaque}>
           Triagem da IA
           {atendimento.triagem_completa && (
             <Badge variant="outline" className="ml-1 text-[10px] normal-case tracking-normal">
@@ -341,8 +344,8 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
             {atendimento.prioridade && (
               <span
                 className={cn(
-                  "inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium",
-                  prioClasse[atendimento.prioridade]
+                  "inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium",
+                  PRIORIDADE_CHIP[atendimento.prioridade]
                 )}
               >
                 prioridade: {atendimento.prioridade}
@@ -351,8 +354,8 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
             {atendimento.sentimento && (
               <span
                 className={cn(
-                  "inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium",
-                  sentClasse[atendimento.sentimento]
+                  "inline-flex items-center rounded px-2 py-0.5 text-[11px] font-medium",
+                  SENTIMENTO_CHIP[atendimento.sentimento]
                 )}
               >
                 sentimento: {atendimento.sentimento}
@@ -373,6 +376,16 @@ function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
                 {atendimento.resumo_ia}
               </pre>
             </div>
+          )}
+          {/* A faixa do topo foi fechada com o ✕: é daqui que ela volta. */}
+          {faixaOculta && (
+            <button
+              type="button"
+              onClick={() => setFaixaOculta(false)}
+              className="text-[11px] text-brand-primary hover:underline"
+            >
+              Mostrar a faixa de triagem no topo da conversa
+            </button>
           )}
         </>
       )}
@@ -433,8 +446,9 @@ function ColetaPreviaCard({ atendimento }: { atendimento: Atendimento }) {
 }
 
 // Estado de collapse persistido em localStorage por chave (preferência por
-// atendimento). Valores antigos eram "1"/"0" — por isso a coerção.
-function useCollapseState(key: string, initialCollapsed: boolean): [boolean, (next: boolean) => void] {
+// atendimento). Valores antigos eram "1"/"0" — por isso a coerção. Duas
+// instâncias com a mesma chave ficam em sincronia (o hook notifica).
+export function useCollapseState(key: string, initialCollapsed: boolean): [boolean, (next: boolean) => void] {
   const [salvo, setSalvo] = useLocalStorage<boolean | number>(
     `atendimento-card-collapsed:${key}`,
     initialCollapsed

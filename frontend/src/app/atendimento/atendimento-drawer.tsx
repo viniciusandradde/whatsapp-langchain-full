@@ -54,7 +54,8 @@ import {
   type AnexoPendente,
 } from "./composer-midia";
 import { GrupoMensagens, NotaInterna } from "./grupo-mensagens";
-import { PainelInfo } from "./info-conversa";
+import { FaixaTriagem } from "./faixa-triagem";
+import { PainelInfo, type SecaoInfo } from "./info-conversa";
 import { ModelosPopover } from "./modelos-popover";
 import { montarTimeline } from "./timeline";
 import { TransferirDialog } from "./transferir-dialog";
@@ -179,7 +180,7 @@ export function AtendimentoDrawer({
   // celular (nasce fechado).
   const [infoDesktop, setInfoDesktop] = useLocalStorage<boolean>("atd-info-aberta", false);
   const [infoMobile, setInfoMobile] = useState(false);
-  const [infoSecao, setInfoSecao] = useState<"contato" | "arquivos">("contato");
+  const [infoSecao, setInfoSecao] = useState<SecaoInfo>("contato");
   const infoAberta = modo === "painel" ? infoDesktop : infoMobile;
   const [asideRef, larguraAside] = useLarguraElemento<HTMLElement>();
   const recipienteInfo: "coluna" | "lateral" | "inferior" =
@@ -192,7 +193,7 @@ export function AtendimentoDrawer({
     if (modo === "painel") setInfoDesktop(v);
     else setInfoMobile(v);
   }
-  function abrirInfo(secao: "contato" | "arquivos" = "contato") {
+  function abrirInfo(secao: SecaoInfo = "contato") {
     setInfoSecao(secao);
     // Já aberto no contato e tocou de novo no avatar: fecha (toggle).
     if (infoAberta && secao === "contato" && infoSecao === "contato") {
@@ -547,6 +548,8 @@ export function AtendimentoDrawer({
                 : undefined,
           }}
         />
+
+        <FaixaTriagem atendimento={atendimento} onAbrir={() => abrirInfo("triagem")} />
 
         {/* Timeline — ocupa tudo entre o cabeçalho e o composer. */}
         <div
