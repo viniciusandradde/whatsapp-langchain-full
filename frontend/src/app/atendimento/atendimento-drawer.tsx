@@ -69,10 +69,10 @@ import {
 import { usePermission } from "@/hooks/use-permission";
 import { BolhaMenu } from "./bolha-menu";
 import {
-  AnexoPreview,
+  AnexosPreview,
   ComposerMidiaBotoes,
-  criarAnexo,
-  descartarAnexo,
+  criarAnexos,
+  descartarAnexos,
   enviarAnexo,
   imagemColada,
   type AnexoPendente,
@@ -132,30 +132,46 @@ export function AtendimentoDrawer({
   } | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [sending, setSending] = useState(false);
-  // Anexo pendente (foto, documento, nota de voz gravada) — o "Enviar" de
-  // sempre manda, com o texto do composer como legenda. Ver composer-midia.tsx.
-  const [anexo, setAnexo] = useState<AnexoPendente | null>(null);
+  // Anexos pendentes (fotos, documentos) — o "Enviar" de sempre manda todos
+  // em sequência, o texto do composer vai de legenda no primeiro. A nota de
+  // voz NÃO passa por aqui: parar a gravação envia na hora (como no
+  // WhatsApp). Ver composer-midia.tsx.
+  const [anexos, setAnexos] = useState<AnexoPendente[]>([]);
+  const [enviandoIndice, setEnviandoIndice] = useState<number | null>(null);
   const [arrastando, setArrastando] = useState(false);
-  const anexoRef = useRef<AnexoPendente | null>(null);
+  const anexosRef = useRef<AnexoPendente[]>([]);
   useEffect(() => {
-    anexoRef.current = anexo;
-  }, [anexo]);
-  // Fechou a conversa com anexo pendente: solta o object URL da prévia.
-  useEffect(() => () => descartarAnexo(anexoRef.current), []);
-  function anexar(file: File) {
-    const r = criarAnexo(file);
+    anexosRef.current = anexos;
+  }, [anexos]);
+  // Fechou a conversa com anexos pendentes: solta os object URLs das prévias.
+  useEffect(() => () => descartarAnexos(anexosRef.current), []);
+  function anexar(files: Iterable<File>) {
+    const { anexos: novos, erro } = criarAnexos(files);
+    setError(erro);
+    if (novos.length === 0) return;
+    setAnexos((prev) => [...prev, ...novos]);
+    composerRef.current?.focus();
+  }
+  function removerAnexo(indice: number) {
+    setAnexos((prev) => {
+      const alvo = prev[indice];
+      if (alvo) descartarAnexos([alvo]);
+      return prev.filter((_, i) => i !== indice);
+    });
+  }
+  /** Nota de voz gravada: manda na hora, sem prévia nem segundo clique. */
+  async function enviarNotaDeVoz(nota: AnexoPendente) {
+    if (sending) return;
+    setSending(true);
+    setError(null);
+    const r = await enviarAnexo(atendimento.id, nota, "");
+    descartarAnexos([nota]);
+    setSending(false);
     if (!r.ok) {
       setError(r.error);
       return;
     }
-    setError(null);
-    descartarAnexo(anexo);
-    setAnexo(r.anexo);
-    composerRef.current?.focus();
-  }
-  function removerAnexo() {
-    descartarAnexo(anexo);
-    setAnexo(null);
+    await reload();
   }
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
   const [modelosOpen, setModelosOpen] = useState(false);
@@ -485,17 +501,28 @@ export function AtendimentoDrawer({
   async function handleSend() {
     const text = composer.trim();
     if (sending) return;
-    if (anexo && !editando && !composerInterna) {
-      // Mídia: uma mensagem só, o texto vai de legenda (vazio é permitido).
+    if (anexos.length > 0 && !editando && !composerInterna) {
+      // Mídia: um envio por arquivo, em sequência; a legenda vai no primeiro.
+      // Falhou no meio → os que sobraram ficam na prévia pra tentar de novo.
       setSending(true);
       setError(null);
-      const r = await enviarAnexo(atendimento.id, anexo, text);
-      if (!r.ok) {
-        setError(r.error);
-        setSending(false);
-        return;
+      const fila = [...anexos];
+      for (let i = 0; i < fila.length; i++) {
+        setEnviandoIndice(i);
+        const r = await enviarAnexo(atendimento.id, fila[i], i === 0 ? text : "");
+        if (!r.ok) {
+          setError(`${fila[i].file.name}: ${r.error}`);
+          descartarAnexos(fila.slice(0, i));
+          setAnexos(fila.slice(i));
+          setEnviandoIndice(null);
+          setSending(false);
+          await reload();
+          return;
+        }
       }
-      removerAnexo();
+      descartarAnexos(fila);
+      setAnexos([]);
+      setEnviandoIndice(null);
       setComposer("");
       setSending(false);
       await reload();
@@ -779,10 +806,10 @@ export function AtendimentoDrawer({
             onDrop={(e) => {
               setArrastando(false);
               if (editando || composerInterna) return;
-              const f = e.dataTransfer.files?.[0];
-              if (!f) return;
+              const files = Array.from(e.dataTransfer.files ?? []);
+              if (files.length === 0) return;
               e.preventDefault();
-              anexar(f);
+              anexar(files);
             }}
           >
             {arrastando && (
@@ -821,7 +848,7 @@ export function AtendimentoDrawer({
                 <input
                   type="checkbox"
                   checked={composerInterna}
-                  disabled={editando !== null || anexo !== null}
+                  disabled={editando !== null || anexos.length > 0}
                   onChange={(e) => setComposerInterna(e.target.checked)}
                   className="h-3.5 w-3.5"
                 />
@@ -838,17 +865,22 @@ export function AtendimentoDrawer({
                 <FileText className="size-3.5" /> Template
               </button>
             </div>
-            {anexo && (
-              <AnexoPreview anexo={anexo} enviando={sending} onRemover={removerAnexo} />
+            {anexos.length > 0 && (
+              <AnexosPreview
+                anexos={anexos}
+                enviando={sending}
+                enviandoIndice={enviandoIndice}
+                onRemover={removerAnexo}
+              />
             )}
             <div className="flex items-end gap-2">
               <ComposerMidiaBotoes
                 disabled={sending || editando !== null || composerInterna}
-                onAnexo={(a) => {
-                  descartarAnexo(anexo);
+                onAnexos={(novos) => {
                   setError(null);
-                  setAnexo(a);
+                  setAnexos((prev) => [...prev, ...novos]);
                 }}
+                onGravacao={(nota) => void enviarNotaDeVoz(nota)}
                 onErro={setError}
               />
               <textarea
@@ -860,7 +892,7 @@ export function AtendimentoDrawer({
                   const img = imagemColada(e);
                   if (!img) return;
                   e.preventDefault();
-                  anexar(img);
+                  anexar([img]);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -883,10 +915,8 @@ export function AtendimentoDrawer({
                     ? "Corrija o texto da mensagem…"
                     : composerInterna
                       ? "Anotação privada da equipe… (não aparece pro cliente)"
-                      : anexo
-                        ? anexo.tipo === "audio"
-                          ? "Enter envia a nota de voz"
-                          : "Legenda (opcional)… Enter envia"
+                      : anexos.length > 0
+                        ? "Legenda (opcional)… Enter envia"
                         : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
                 }
                 rows={2}
@@ -899,10 +929,20 @@ export function AtendimentoDrawer({
               />
               <Button
                 onClick={() => void handleSend()}
-                disabled={sending || (!composer.trim() && !anexo)}
+                disabled={sending || (!composer.trim() && anexos.length === 0)}
               >
                 <Send className="size-3.5" />
-                {sending ? "Enviando…" : editando ? "Salvar" : "Enviar"}
+                {sending
+                  ? enviandoIndice !== null
+                    ? `Enviando ${enviandoIndice + 1}/${anexos.length}…`
+                    : "Enviando…"
+                  : editando
+                    ? "Salvar"
+                    : anexos.length > 1
+                      ? `Enviar ${anexos.length} anexos`
+                      : anexos.length === 1
+                        ? "Enviar anexo"
+                        : "Enviar"}
               </Button>
             </div>
           </div>

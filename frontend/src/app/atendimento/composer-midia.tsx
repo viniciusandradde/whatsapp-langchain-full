@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, Loader2, Mic, Paperclip, Square, X } from "lucide-react";
+import { FileText, Loader2, Mic, Paperclip, Send, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +15,13 @@ import { cn } from "@/lib/utils";
  * entram o clipe, o microfone, a prévia e o envio pelo proxy
  * `/api/proxy/midia/{id}` (Route Handler — Server Action tem corpo de 1 MB).
  *
- * O ESTADO do anexo pendente mora no drawer (`anexo`/`setAnexo`): é o botão
- * "Enviar" de sempre que manda, com o texto do composer como legenda — uma
- * mensagem só, como no WhatsApp. Este arquivo tem a UI (botões, gravação,
- * prévia) e os helpers puros (validar, montar, enviar).
+ * O ESTADO dos anexos pendentes mora no drawer (`anexos`/`setAnexos`): o
+ * botão "Enviar" de sempre manda todos em sequência (o texto do composer vai
+ * de legenda no primeiro). A nota de voz é diferente: **parar = enviar**,
+ * como no WhatsApp — a 1ª versão parava numa prévia e exigia um segundo
+ * "Enviar", e o dono gravou, não achou o botão e o áudio nunca saiu do
+ * navegador. Este arquivo tem a UI (botões, gravação, prévias) e os helpers
+ * puros (validar, montar, enviar).
  *
  * A gravação usa `MediaRecorder` com o formato que o navegador der (WebM no
  * Chrome, MP4 no Safari, OGG no Firefox): quem converte para OGG/Opus — o
@@ -89,6 +92,23 @@ export function descartarAnexo(anexo: AnexoPendente | null): void {
   if (anexo) URL.revokeObjectURL(anexo.previewUrl);
 }
 
+export function descartarAnexos(anexos: AnexoPendente[]): void {
+  for (const a of anexos) descartarAnexo(a);
+}
+
+/** Vários de uma vez (seletor múltiplo, arrastar N): os válidos entram, os
+ *  inválidos viram UMA mensagem de erro. */
+export function criarAnexos(files: Iterable<File>): { anexos: AnexoPendente[]; erro: string | null } {
+  const anexos: AnexoPendente[] = [];
+  const erros: string[] = [];
+  for (const f of files) {
+    const r = criarAnexo(f);
+    if (r.ok) anexos.push(r.anexo);
+    else erros.push(`${f.name}: ${r.error}`);
+  }
+  return { anexos, erro: erros.length ? erros.join(" ") : null };
+}
+
 /** Sobe o anexo pelo proxy; a legenda é o texto do composer. */
 export async function enviarAnexo(
   atendimentoId: number,
@@ -150,16 +170,18 @@ const GRAVACAO_MAX_SEGUNDOS = 10 * 60;
 
 interface BotoesProps {
   disabled?: boolean;
-  onAnexo: (anexo: AnexoPendente) => void;
+  /** Arquivos escolhidos pelo clipe (pode ser mais de um). */
+  onAnexos: (anexos: AnexoPendente[]) => void;
+  /** Nota de voz pronta: quem chama ENVIA na hora (parar = enviar). */
+  onGravacao: (anexo: AnexoPendente) => void;
   onErro: (mensagem: string) => void;
 }
 
 /**
  * Clipe + microfone. Durante a gravação, os dois viram cronômetro + Cancelar
- * + Parar; ao parar, a nota de voz vira um anexo pendente (prévia com player)
- * e o "Enviar" do composer manda.
+ * + Enviar; "Enviar" para a gravação e manda a nota de voz na hora.
  */
-export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) {
+export function ComposerMidiaBotoes({ disabled, onAnexos, onGravacao, onErro }: BotoesProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -197,12 +219,12 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
   }, []);
 
   function escolherArquivo(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!f) return;
-    const r = criarAnexo(f);
-    if (r.ok) onAnexo(r.anexo);
-    else onErro(r.error);
+    if (files.length === 0) return;
+    const { anexos, erro } = criarAnexos(files);
+    if (erro) onErro(erro);
+    if (anexos.length) onAnexos(anexos);
   }
 
   async function iniciarGravacao() {
@@ -248,7 +270,7 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
       }
       const file = new File([blob], `nota-de-voz.${extensaoDe(tipo)}`, { type: tipo });
       const r = criarAnexo(file);
-      if (r.ok) onAnexo(r.anexo);
+      if (r.ok) onGravacao(r.anexo);
       else onErro(r.error);
     };
     recorderRef.current = recorder;
@@ -292,10 +314,10 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
           size="icon-xs"
           variant="default"
           onClick={pararGravacao}
-          aria-label="Parar gravação"
-          title="Parar e revisar"
+          aria-label="Parar e enviar nota de voz"
+          title="Parar e enviar"
         >
-          <Square className="size-3" />
+          <Send className="size-3" />
         </Button>
       </div>
     );
@@ -307,6 +329,7 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
         ref={inputRef}
         type="file"
         accept={ACCEPT_ANEXO}
+        multiple
         onChange={escolherArquivo}
         className="sr-only"
         tabIndex={-1}
@@ -319,7 +342,7 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
         disabled={disabled}
         onClick={() => inputRef.current?.click()}
         aria-label="Anexar arquivo"
-        title="Anexar imagem, vídeo ou documento (ou cole/arraste no composer)"
+        title="Anexar imagens, vídeos ou documentos (ou cole/arraste no composer)"
       >
         <Paperclip className="size-4" />
       </Button>
@@ -332,7 +355,7 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
         aria-label="Gravar nota de voz"
         title={
           suportaGravacao
-            ? "Gravar nota de voz (toque para começar, toque para parar)"
+            ? "Gravar nota de voz (toque para começar, toque no avião para enviar)"
             : "Este navegador não grava áudio"
         }
       >
@@ -343,52 +366,61 @@ export function ComposerMidiaBotoes({ disabled, onAnexo, onErro }: BotoesProps) 
 }
 
 interface PreviewProps {
-  anexo: AnexoPendente;
+  anexos: AnexoPendente[];
   enviando?: boolean;
-  onRemover: () => void;
+  /** Índice do anexo sendo enviado (progresso "2/3"). */
+  enviandoIndice?: number | null;
+  onRemover: (indice: number) => void;
 }
 
-/** Prévia do anexo pendente, acima do composer. */
-export function AnexoPreview({ anexo, enviando, onRemover }: PreviewProps) {
+/** Prévias dos anexos pendentes, acima do composer. */
+export function AnexosPreview({ anexos, enviando, enviandoIndice, onRemover }: PreviewProps) {
   return (
-    <div className="mb-2 flex items-center gap-3 rounded-md border bg-muted/40 p-2 text-xs">
-      {anexo.tipo === "imagem" && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={anexo.previewUrl}
-          alt=""
-          className="size-14 shrink-0 rounded object-cover"
-        />
-      )}
-      {anexo.tipo === "video" && (
-        <video src={anexo.previewUrl} muted className="size-14 shrink-0 rounded object-cover" />
-      )}
-      {anexo.tipo === "audio" && (
-        <audio src={anexo.previewUrl} controls className="h-9 min-w-0 flex-1" />
-      )}
-      {anexo.tipo === "documento" && (
-        <FileText className="size-6 shrink-0 text-muted-foreground" aria-hidden />
-      )}
-      <div className={cn("min-w-0", anexo.tipo === "audio" ? "shrink-0" : "flex-1")}>
-        <p className="truncate font-medium">
-          {anexo.tipo === "audio" ? "Nota de voz" : anexo.file.name}
-        </p>
-        <p className="text-muted-foreground">
-          {formatarTamanho(anexo.file.size)}
-          {anexo.tipo !== "audio" && " · o texto abaixo vai como legenda"}
-        </p>
-      </div>
-      <Button
-        type="button"
-        size="icon-xs"
-        variant="ghost"
-        onClick={onRemover}
-        disabled={enviando}
-        aria-label="Remover anexo"
-        title="Remover"
-      >
-        <X className="size-3.5" />
-      </Button>
+    <div className="mb-2 flex flex-col gap-1.5">
+      {anexos.map((anexo, i) => (
+        <div
+          key={anexo.previewUrl}
+          className={cn(
+            "flex items-center gap-3 rounded-md border bg-muted/40 p-2 text-xs",
+            enviando && enviandoIndice === i && "border-brand-primary/50"
+          )}
+        >
+          {anexo.tipo === "imagem" && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={anexo.previewUrl} alt="" className="size-12 shrink-0 rounded object-cover" />
+          )}
+          {anexo.tipo === "video" && (
+            <video src={anexo.previewUrl} muted className="size-12 shrink-0 rounded object-cover" />
+          )}
+          {anexo.tipo === "audio" && (
+            <audio src={anexo.previewUrl} controls className="h-8 min-w-0 flex-1" />
+          )}
+          {anexo.tipo === "documento" && (
+            <FileText className="size-6 shrink-0 text-muted-foreground" aria-hidden />
+          )}
+          <div className={cn("min-w-0", anexo.tipo === "audio" ? "shrink-0" : "flex-1")}>
+            <p className="truncate font-medium">
+              {anexo.tipo === "audio" ? "Nota de voz" : anexo.file.name}
+            </p>
+            <p className="text-muted-foreground">
+              {formatarTamanho(anexo.file.size)}
+              {i === 0 && anexo.tipo !== "audio" && " · o texto abaixo vai como legenda"}
+              {enviando && enviandoIndice === i && " · enviando…"}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            onClick={() => onRemover(i)}
+            disabled={enviando}
+            aria-label="Remover anexo"
+            title="Remover"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }
