@@ -9,6 +9,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -24,12 +26,16 @@ import { cn } from "@/lib/utils";
  * (`pode_editar_resposta`/`pode_apagar_resposta`). Os flags são calculados na
  * listagem e ficam velhos numa timeline aberta há horas — por isso o backend
  * revalida a janela no clique e a UI apenas repassa a frase do 400.
+ *
+ * `detalhes` (conversa compacta): a bolha não repete mais data completa e
+ * remetente — isso mora aqui, como rótulo do menu, pra quem precisar.
  */
 export function BolhaMenu({
   children,
   copiarTexto,
   podeEditar = false,
   podeApagar = false,
+  detalhes,
   onEditar,
   onApagar,
 }: {
@@ -38,6 +44,8 @@ export function BolhaMenu({
   copiarTexto?: string | null;
   podeEditar?: boolean;
   podeApagar?: boolean;
+  /** Linha informativa (data completa, remetente, id) no topo do menu. */
+  detalhes?: string | null;
   onEditar?: () => void;
   onApagar?: () => Promise<void> | void;
 }) {
@@ -47,7 +55,8 @@ export function BolhaMenu({
   const temCopiar = Boolean(copiarTexto?.trim());
   const temEditar = podeEditar && Boolean(onEditar);
   const temApagar = podeApagar && Boolean(onApagar);
-  if (!temCopiar && !temEditar && !temApagar) return <>{children}</>;
+  const temDetalhes = Boolean(detalhes);
+  if (!temCopiar && !temEditar && !temApagar && !temDetalhes) return <>{children}</>;
 
   async function copiar() {
     if (!copiarTexto) return;
@@ -88,6 +97,14 @@ export function BolhaMenu({
           />
         </div>
         <DropdownMenuContent align="end" className="min-w-44">
+          {temDetalhes && (
+            <>
+              <DropdownMenuLabel className="font-mono text-[11px] font-normal">
+                {detalhes}
+              </DropdownMenuLabel>
+              {(temCopiar || temEditar || temApagar) && <DropdownMenuSeparator />}
+            </>
+          )}
           {temCopiar && (
             <DropdownMenuItem onClick={() => void copiar()}>
               <Copy /> Copiar

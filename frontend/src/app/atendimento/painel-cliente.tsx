@@ -5,20 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Clock,
-  ExternalLink,
   History,
   Loader2,
   PauseCircle,
-  Phone,
   Tag as TagIcon,
-  User as UserIcon,
   XCircle,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Atendimento, Tag } from "@/lib/api";
 
@@ -37,17 +31,17 @@ const STATUS_META: Record<
 > = {
   aguardando: {
     label: "Aguardando",
-    cls: "text-amber-600 dark:text-amber-400",
+    cls: "text-warning",
     Icon: Clock,
   },
   em_andamento: {
     label: "Em andamento",
-    cls: "text-blue-600 dark:text-blue-400",
+    cls: "text-brand-primary",
     Icon: PauseCircle,
   },
   resolvido: {
     label: "Resolvido",
-    cls: "text-green-600 dark:text-green-400",
+    cls: "text-success",
     Icon: CheckCircle2,
   },
   abandonado: {
@@ -65,50 +59,35 @@ interface Props {
 }
 
 /**
- * Painel persistente de contexto do cliente — 3a coluna do drawer.
- * Mostra info essencial + histórico de atendimentos anteriores. Foi
- * pensado pro atendente humano ter contexto sem precisar abrir ficha
- * em outra aba.
- *
- * Em desktop (lg+): coluna colapsável à direita
- * Em mobile (<lg): bloco abaixo da timeline (sempre expandido)
+ * Contexto do cliente pro atendente humano: tags da PESSOA e o último
+ * atendimento anterior. Vive dentro do painel de informações da conversa
+ * (`info-conversa.tsx`) — que só monta quando aberto, então o fetch do
+ * histórico acontece ao montar (antes havia um botão de expandir aqui; o
+ * recipiente é que abre e fecha agora). Nome e telefone ficam no cabeçalho
+ * do painel, não repetidos aqui.
  */
-export function PainelCliente({
-  atendimentoId,
-  clienteId,
-  clienteNome,
-  clienteTelefone,
-}: Props) {
-  const [open, setOpen] = useState(false);
+export function PainelCliente({ atendimentoId, clienteId }: Props) {
   const [loading, setLoading] = useState(false);
   const [historico, setHistorico] = useState<Atendimento[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Guarda "já tentei carregar ESTE cliente" — `historico.length === 0` era
   // indistinguível de "carreguei e o cliente não tem nenhum atendimento
-  // anterior", que é o caso mais comum de todos (1ª interação). Cada
-  // resolução da promise reavaliava a mesma condição vazia e disparava a
-  // Server Action de novo — mesmo bug do popover de transferência (#133),
-  // achado em produção 2026-09-17 ao resolver atendimentos em sequência.
-  // `clienteIdRef` reseta a guarda quando o cliente muda SEM remontar o
-  // componente — o drawer mobile (`atendimento-list.tsx`) não tem
-  // `key={ativo.id}` como o desktop, então troca de atendimento pode
-  // reusar a mesma instância.
+  // anterior", que é o caso mais comum (1ª interação). Cada resolução da
+  // promise reavaliava a mesma condição vazia e disparava a Server Action de
+  // novo — mesmo bug do popover de transferência (#133), achado em produção
+  // 2026-09-17. `clienteIdRef` reseta a guarda quando o cliente muda SEM
+  // remontar o componente.
   const historicoCarregado = useRef(false);
   const clienteIdRef = useRef<number | null>(null);
 
-  // Carrega só o último atendimento anterior — quem precisa ver
-  // histórico completo abre a ficha do cliente via "Ver ficha completa".
-  // Trade-off: 1 req leve no abrir vs N reqs ao listar 10 (que ainda
-  // ninguém olha caso a fila esteja cheia).
+  // Carrega só o último atendimento anterior — quem precisa ver histórico
+  // completo abre a ficha do cliente via "Ver ficha completa".
   useEffect(() => {
     if (clienteIdRef.current !== clienteId) {
-      // Só reseta a GUARDA aqui (sem setState — o fetch abaixo substitui
-      // `historico`/`error` assim que resolver; evita disparar outro
-      // render síncrono dentro do effect).
       clienteIdRef.current = clienteId;
       historicoCarregado.current = false;
     }
-    if (!open || !clienteId || historicoCarregado.current || loading) return;
+    if (!clienteId || historicoCarregado.current || loading) return;
     setLoading(true);
     void loadClienteHistoricoAction(clienteId, {
       excludeId: atendimentoId,
@@ -122,146 +101,97 @@ export function PainelCliente({
         setError(r.error);
       }
     });
-  }, [open, clienteId, atendimentoId, loading]);
+  }, [clienteId, atendimentoId, loading]);
 
   if (!clienteId) {
     return null;
   }
 
   return (
-    <section className="border-t bg-muted/20">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium hover:bg-muted/40"
-        aria-expanded={open}
-      >
-        <span className="flex items-center gap-2">
-          <UserIcon className="h-4 w-4 text-muted-foreground" />
-          Painel do cliente
-        </span>
-        {open ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
+    <>
+      {/* Tags do CLIENTE — alimentam as abas, que agrupam por pessoa.
+          Marcar aqui vale pra TODA conversa dele, inclusive as próximas;
+          tag no atendimento valeria só pra esta. */}
+      <TagsDoCliente clienteId={clienteId} />
 
-      {open && (
-        <div className="space-y-4 border-t bg-background px-4 py-3">
-          {/* Info básica */}
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2 text-sm">
-              <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="font-medium">{clienteNome ?? "—"}</span>
-            </div>
-            <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-              <Phone className="h-3.5 w-3.5 shrink-0" />
-              <span>{clienteTelefone ?? "—"}</span>
-            </div>
-            <Link
-              href={`/clientes/${clienteId}`}
-              className="inline-flex items-center gap-1 text-xs text-brand-primary hover:underline"
-            >
-              Ver ficha completa
-              <ExternalLink className="h-3 w-3" />
-            </Link>
-          </div>
-
-          {/* Tags do CLIENTE — alimentam as abas, que agrupam por pessoa.
-              Marcar aqui vale pra TODA conversa dele, inclusive as próximas;
-              tag no atendimento valeria só pra esta. */}
-          <TagsDoCliente clienteId={clienteId} />
-
-          {/* Último atendimento anterior — histórico completo via ficha */}
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <History className="h-3 w-3" />
-                Último atendimento
-              </h3>
-              <Link
-                href={`/clientes/${clienteId}`}
-                className="text-[10px] text-brand-primary hover:underline"
-              >
-                ver todos
-              </Link>
-            </div>
-
-            {loading && (
-              <p className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Carregando…
-              </p>
-            )}
-
-            {error && (
-              <p className="flex items-center gap-1.5 py-2 text-xs text-destructive">
-                <AlertCircle className="h-3 w-3" />
-                {error}
-              </p>
-            )}
-
-            {!loading && !error && historico.length === 0 && (
-              <p className="py-2 text-xs text-muted-foreground">
-                Nenhum atendimento anterior — esta é a primeira interação.
-              </p>
-            )}
-
-            {!loading && historico.length > 0 && (
-              <ul className="space-y-1.5">
-                {historico.map((atd) => {
-                  const meta = STATUS_META[atd.status as StatusKey];
-                  const Icon = meta?.Icon ?? Clock;
-                  return (
-                    <li key={atd.id}>
-                      {/* Não-clicável: re-abrir atendimento via ?focus= ainda
-                          não é suportado em page.tsx. Quem quiser detalhe vai
-                          pela ficha do cliente (link "ver todos" acima). */}
-                      <div className="flex items-start gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
-                        <Icon
-                          className={cn(
-                            "mt-0.5 h-3.5 w-3.5 shrink-0",
-                            meta?.cls ?? ""
-                          )}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="truncate font-medium">
-                              {meta?.label ?? atd.status}
-                            </span>
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              #{atd.protocolo ?? atd.id}
-                            </span>
-                          </div>
-                          {atd.classificacao && (
-                            <p className="truncate text-muted-foreground">
-                              {atd.classificacao}
-                            </p>
-                          )}
-                          <p className="text-[10px] text-muted-foreground">
-                            {atd.created_at
-                              ? new Date(atd.created_at).toLocaleDateString(
-                                  "pt-BR",
-                                  {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "2-digit",
-                                  }
-                                )
-                              : "—"}
-                          </p>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+      {/* Último atendimento anterior — histórico completo via ficha */}
+      <section>
+        <div className="mb-1.5 flex items-center justify-between">
+          <h3 className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+            <History className="size-3" />
+            Último atendimento
+          </h3>
+          <Link
+            href={`/clientes/${clienteId}`}
+            prefetch={false}
+            className="text-[10px] text-brand-primary hover:underline"
+          >
+            ver todos
+          </Link>
         </div>
-      )}
-    </section>
+
+        {loading && (
+          <p className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Carregando…
+          </p>
+        )}
+
+        {error && (
+          <p className="flex items-center gap-1.5 py-2 text-xs text-destructive">
+            <AlertCircle className="h-3 w-3" />
+            {error}
+          </p>
+        )}
+
+        {!loading && !error && historico.length === 0 && (
+          <p className="py-1 text-xs text-muted-foreground">
+            Nenhum atendimento anterior — esta é a primeira interação.
+          </p>
+        )}
+
+        {!loading && historico.length > 0 && (
+          <ul className="space-y-1.5">
+            {historico.map((atd) => {
+              const meta = STATUS_META[atd.status as StatusKey];
+              const Icon = meta?.Icon ?? Clock;
+              return (
+                <li key={atd.id}>
+                  {/* Não-clicável: re-abrir atendimento via ?focus= ainda
+                      não é suportado em page.tsx. Quem quiser detalhe vai
+                      pela ficha do cliente (link "ver todos" acima). */}
+                  <div className="flex items-start gap-2 rounded-md bg-muted/30 px-2 py-1.5 text-xs">
+                    <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", meta?.cls ?? "")} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate font-medium">
+                          {meta?.label ?? atd.status}
+                        </span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          #{atd.protocolo ?? atd.id}
+                        </span>
+                      </div>
+                      {atd.classificacao && (
+                        <p className="truncate text-muted-foreground">{atd.classificacao}</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground">
+                        {atd.created_at
+                          ? new Date(atd.created_at).toLocaleDateString("pt-BR", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "2-digit",
+                            })
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -314,9 +244,9 @@ function TagsDoCliente({ clienteId }: { clienteId: number }) {
   if (disponiveis.length === 0) return null;
 
   return (
-    <div>
-      <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        <TagIcon className="h-3 w-3" />
+    <section>
+      <h3 className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+        <TagIcon className="size-3" />
         Tags do cliente
       </h3>
       <div className="flex flex-wrap gap-1.5">
@@ -344,6 +274,6 @@ function TagsDoCliente({ clienteId }: { clienteId: number }) {
         })}
       </div>
       {erro && <p className="mt-1 text-xs text-destructive">{erro}</p>}
-    </div>
+    </section>
   );
 }

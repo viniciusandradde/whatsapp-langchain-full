@@ -170,6 +170,11 @@ const GRAVACAO_MAX_SEGUNDOS = 10 * 60;
 
 interface BotoesProps {
   disabled?: boolean;
+  /**
+   * Mostra o clipe ao lado do microfone. O composer compacto (2026-09) põe
+   * o "Anexar" no menu `+` e passa `false` — só o microfone fica visível.
+   */
+  clipe?: boolean;
   /** Arquivos escolhidos pelo clipe (pode ser mais de um). */
   onAnexos: (anexos: AnexoPendente[]) => void;
   /** Nota de voz pronta: quem chama ENVIA na hora (parar = enviar). */
@@ -181,7 +186,13 @@ interface BotoesProps {
  * Clipe + microfone. Durante a gravação, os dois viram cronômetro + Cancelar
  * + Enviar; "Enviar" para a gravação e manda a nota de voz na hora.
  */
-export function ComposerMidiaBotoes({ disabled, onAnexos, onGravacao, onErro }: BotoesProps) {
+export function ComposerMidiaBotoes({
+  disabled,
+  clipe = true,
+  onAnexos,
+  onGravacao,
+  onErro,
+}: BotoesProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -335,17 +346,19 @@ export function ComposerMidiaBotoes({ disabled, onAnexos, onGravacao, onErro }: 
         tabIndex={-1}
         aria-hidden
       />
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-        aria-label="Anexar arquivo"
-        title="Anexar imagens, vídeos ou documentos (ou cole/arraste no composer)"
-      >
-        <Paperclip className="size-4" />
-      </Button>
+      {clipe && (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={disabled}
+          onClick={() => inputRef.current?.click()}
+          aria-label="Anexar arquivo"
+          title="Anexar imagens, vídeos ou documentos (ou cole/arraste no composer)"
+        >
+          <Paperclip className="size-4" />
+        </Button>
+      )}
       <Button
         type="button"
         size="icon"

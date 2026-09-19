@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Check, Loader2, Plus, Search, Tag as TagIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePermission } from "@/hooks/use-permission";
 import type { AtendimentoTag, Tag } from "@/lib/api";
 
@@ -27,6 +28,11 @@ interface Props {
  * marca as que já estão aplicadas. Click toggle (apply/remove via delta API).
  *
  * Admin (perm `tag.manage`) vê botão "+ Nova tag" pra criar inline.
+ *
+ * `Popover` do kit (portal): antes era `absolute` num overlay à mão, que
+ * ficava cortado dentro do painel rolável de informações da conversa — que é
+ * onde as tags moram agora (conversa compacta, 2026-09). As tags aplicadas
+ * aparecem ao lado do botão, não só como contagem.
  */
 export function TagPopover({ atendimentoId, initialTags, onChange }: Props) {
   const canManageTags = usePermission("tag.manage");
@@ -45,18 +51,23 @@ export function TagPopover({ atendimentoId, initialTags, onChange }: Props) {
     [applied]
   );
 
-  // Carrega lista quando abrir
+  // As aplicadas aparecem ao lado do botão: carrega ao montar (o painel de
+  // informações só monta quando aberto). O catálogo inteiro, só ao abrir.
+  useEffect(() => {
+    let vivo = true;
+    void loadTagsAtendimentoAction(atendimentoId).then((a) => {
+      if (vivo && a.ok) setApplied(a.tags);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [atendimentoId]);
   useEffect(() => {
     if (!open) return;
-    (async () => {
-      const [a, t] = await Promise.all([
-        loadTagsAtendimentoAction(atendimentoId),
-        loadTagsAction(true),
-      ]);
-      if (a.ok) setApplied(a.tags);
+    void loadTagsAction(true).then((t) => {
       if (t.ok) setAllTags(t.tags);
-    })();
-  }, [open, atendimentoId]);
+    });
+  }, [open]);
 
   const visibleTags = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -111,104 +122,89 @@ export function TagPopover({ atendimentoId, initialTags, onChange }: Props) {
   };
 
   return (
-    <div className="relative inline-block">
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => setOpen((v) => !v)}
-        className="h-7 gap-1"
-      >
-        <TagIcon className="h-3.5 w-3.5" />
-        Tags
-        {applied.length > 0 && (
-          <span className="ml-1 rounded-full bg-brand-primary/15 px-1.5 text-xs font-medium text-brand-primary">
-            {applied.length}
-          </span>
-        )}
-      </Button>
-
-      {open && (
-        <>
-          {/* Backdrop pra fechar ao clicar fora */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div className="absolute right-0 z-50 mt-1 w-72 rounded-lg border bg-popover p-3 shadow-lg">
-            <div className="mb-2 flex items-center gap-2 rounded-md border bg-background px-2 py-1">
-              <Search className="h-3.5 w-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar tag..."
-                className="w-full bg-transparent text-sm focus:outline-none"
-              />
-            </div>
-
-            <ul className="max-h-64 space-y-0.5 overflow-y-auto">
-              {visibleTags.length === 0 && (
-                <li className="py-2 text-center text-xs text-muted-foreground">
-                  {search ? "Nenhuma tag encontrada." : "Nenhuma tag cadastrada."}
-                </li>
-              )}
-              {visibleTags.map((tag) => {
-                const isOn = appliedIds.has(tag.id);
-                return (
-                  <li key={tag.id}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(tag)}
-                      disabled={busy === tag.id}
-                      className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted transition-colors disabled:opacity-50"
-                    >
-                      <TagChip nome={tag.nome} cor={tag.cor} size="sm" />
-                      {busy === tag.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      ) : isOn ? (
-                        <Check className="h-3.5 w-3.5 text-brand-primary" />
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-
-            {canManageTags && (
-              <div className="mt-2 border-t pt-2">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && create()}
-                    placeholder="Nova tag..."
-                    className="w-full rounded-md border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 shrink-0 p-0"
-                    onClick={create}
-                    disabled={!newName.trim() || creating}
-                  >
-                    {creating ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Plus className="h-3 w-3" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <p className="mt-2 text-xs text-destructive">{error}</p>
-            )}
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* As tags aplicadas ficam visíveis; o botão abre a seleção. */}
+      {applied.map((t) => (
+        <TagChip key={t.id} nome={t.nome} cor={t.cor} size="sm" />
+      ))}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={<Button size="sm" variant="outline" className="h-7 gap-1" />}
+        >
+          <TagIcon className="h-3.5 w-3.5" />
+          {applied.length > 0 ? "Editar tags" : "Adicionar tag"}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-72 gap-0 p-3">
+          <div className="mb-2 flex items-center gap-2 rounded-md border bg-background px-2 py-1">
+            <Search className="h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar tag..."
+              className="w-full bg-transparent text-sm focus:outline-none"
+            />
           </div>
-        </>
-      )}
+
+          <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+            {visibleTags.length === 0 && (
+              <li className="py-2 text-center text-xs text-muted-foreground">
+                {search ? "Nenhuma tag encontrada." : "Nenhuma tag cadastrada."}
+              </li>
+            )}
+            {visibleTags.map((tag) => {
+              const isOn = appliedIds.has(tag.id);
+              return (
+                <li key={tag.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(tag)}
+                    disabled={busy === tag.id}
+                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted transition-colors disabled:opacity-50"
+                  >
+                    <TagChip nome={tag.nome} cor={tag.cor} size="sm" />
+                    {busy === tag.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    ) : isOn ? (
+                      <Check className="h-3.5 w-3.5 text-brand-primary" />
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {canManageTags && (
+            <div className="mt-2 border-t pt-2">
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && create()}
+                  placeholder="Nova tag..."
+                  className="w-full rounded-md border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0 p-0"
+                  onClick={create}
+                  disabled={!newName.trim() || creating}
+                >
+                  {creating ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Plus className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
