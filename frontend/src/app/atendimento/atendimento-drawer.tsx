@@ -68,6 +68,15 @@ import {
 } from "./actions";
 import { usePermission } from "@/hooks/use-permission";
 import { BolhaMenu } from "./bolha-menu";
+import {
+  AnexoPreview,
+  ComposerMidiaBotoes,
+  criarAnexo,
+  descartarAnexo,
+  enviarAnexo,
+  imagemColada,
+  type AnexoPendente,
+} from "./composer-midia";
 import { ModelosPopover } from "./modelos-popover";
 import { PainelCliente } from "./painel-cliente";
 import { SITUACAO_AJUDA, SITUACAO_CLASSE, SITUACAO_LABEL } from "./situacao";
@@ -123,6 +132,31 @@ export function AtendimentoDrawer({
   } | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  // Anexo pendente (foto, documento, nota de voz gravada) — o "Enviar" de
+  // sempre manda, com o texto do composer como legenda. Ver composer-midia.tsx.
+  const [anexo, setAnexo] = useState<AnexoPendente | null>(null);
+  const [arrastando, setArrastando] = useState(false);
+  const anexoRef = useRef<AnexoPendente | null>(null);
+  useEffect(() => {
+    anexoRef.current = anexo;
+  }, [anexo]);
+  // Fechou a conversa com anexo pendente: solta o object URL da prévia.
+  useEffect(() => () => descartarAnexo(anexoRef.current), []);
+  function anexar(file: File) {
+    const r = criarAnexo(file);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setError(null);
+    descartarAnexo(anexo);
+    setAnexo(r.anexo);
+    composerRef.current?.focus();
+  }
+  function removerAnexo() {
+    descartarAnexo(anexo);
+    setAnexo(null);
+  }
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
   const [modelosOpen, setModelosOpen] = useState(false);
   // Atalho "/" no composer vazio (leva fila) — popover de busca de modelos,
@@ -450,7 +484,24 @@ export function AtendimentoDrawer({
 
   async function handleSend() {
     const text = composer.trim();
-    if (!text || sending) return;
+    if (sending) return;
+    if (anexo && !editando && !composerInterna) {
+      // Mídia: uma mensagem só, o texto vai de legenda (vazio é permitido).
+      setSending(true);
+      setError(null);
+      const r = await enviarAnexo(atendimento.id, anexo, text);
+      if (!r.ok) {
+        setError(r.error);
+        setSending(false);
+        return;
+      }
+      removerAnexo();
+      setComposer("");
+      setSending(false);
+      await reload();
+      return;
+    }
+    if (!text) return;
     setSending(true);
     setError(null);
     const r = editando
@@ -713,7 +764,32 @@ export function AtendimentoDrawer({
         )}
 
         {isOpen && (
-          <div className="relative border-t bg-background/40 p-3">
+          <div
+            className="relative border-t bg-background/40 p-3"
+            onDragOver={(e) => {
+              if (editando || composerInterna) return;
+              if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+              e.preventDefault();
+              setArrastando(true);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+              setArrastando(false);
+            }}
+            onDrop={(e) => {
+              setArrastando(false);
+              if (editando || composerInterna) return;
+              const f = e.dataTransfer.files?.[0];
+              if (!f) return;
+              e.preventDefault();
+              anexar(f);
+            }}
+          >
+            {arrastando && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-brand-primary/60 bg-background/90 text-sm font-medium text-brand-primary">
+                Solte para anexar
+              </div>
+            )}
             {slashOpen && (
               <ModelosPopover
                 modelos={modelos}
@@ -745,7 +821,7 @@ export function AtendimentoDrawer({
                 <input
                   type="checkbox"
                   checked={composerInterna}
-                  disabled={editando !== null}
+                  disabled={editando !== null || anexo !== null}
                   onChange={(e) => setComposerInterna(e.target.checked)}
                   className="h-3.5 w-3.5"
                 />
@@ -762,11 +838,30 @@ export function AtendimentoDrawer({
                 <FileText className="size-3.5" /> Template
               </button>
             </div>
+            {anexo && (
+              <AnexoPreview anexo={anexo} enviando={sending} onRemover={removerAnexo} />
+            )}
             <div className="flex items-end gap-2">
+              <ComposerMidiaBotoes
+                disabled={sending || editando !== null || composerInterna}
+                onAnexo={(a) => {
+                  descartarAnexo(anexo);
+                  setError(null);
+                  setAnexo(a);
+                }}
+                onErro={setError}
+              />
               <textarea
                 ref={composerRef}
                 value={composer}
                 onChange={(e) => setComposer(e.target.value)}
+                onPaste={(e) => {
+                  if (editando || composerInterna) return;
+                  const img = imagemColada(e);
+                  if (!img) return;
+                  e.preventDefault();
+                  anexar(img);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -788,7 +883,11 @@ export function AtendimentoDrawer({
                     ? "Corrija o texto da mensagem…"
                     : composerInterna
                       ? "Anotação privada da equipe… (não aparece pro cliente)"
-                      : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
+                      : anexo
+                        ? anexo.tipo === "audio"
+                          ? "Enter envia a nota de voz"
+                          : "Legenda (opcional)… Enter envia"
+                        : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
                 }
                 rows={2}
                 disabled={sending}
@@ -800,7 +899,7 @@ export function AtendimentoDrawer({
               />
               <Button
                 onClick={() => void handleSend()}
-                disabled={sending || !composer.trim()}
+                disabled={sending || (!composer.trim() && !anexo)}
               >
                 <Send className="size-3.5" />
                 {sending ? "Enviando…" : editando ? "Salvar" : "Enviar"}
