@@ -260,3 +260,9 @@ select {
   background-color: var(--background);
   color: var(--foreground);
 }
+
+/* reCAPTCHA (login): o selo flutuante sai da tela; o aviso obrigatório do
+   Google fica em texto no formulário (components/login-form.tsx). */
+.grecaptcha-badge {
+  visibility: hidden;
+}

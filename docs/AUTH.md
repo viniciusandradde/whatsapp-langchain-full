@@ -169,3 +169,38 @@ Limite por IP. Excedido → HTTP 429.
 - Migration 024 — `auth.user.status`
 - Migration 025 — `auth.password_reset_pending`
 - Migration 026 — `auth_login_event`
+
+
+## reCAPTCHA no login (2026-09-19)
+
+Camada contra bots e credential stuffing no `/login`, por cima do rate limit do Better Auth
+(15 tentativas / 15 min por IP). Implementação em `frontend/src/lib/captcha.ts` (plugin
+`captchaLogin()` registrado em `lib/auth.ts`) + `components/login-form.tsx`.
+
+- **Como funciona**: com `RECAPTCHA_SITE_KEY` no env, o formulário carrega
+  `https://www.google.com/recaptcha/enterprise.js?render=<site key>` e, no submit, executa a
+  ação `LOGIN` (chave por pontuação, invisível — sem desafio) e manda o token no header
+  `x-captcha-response` do `POST /api/auth/sign-in/email`. O plugin verifica o token no Google
+  antes de o Better Auth conferir a senha.
+- **App Android passa sem captcha**: o plugin só exige token quando o pedido tem header
+  `Origin` (navegador); o cliente nativo não manda. Limitação conhecida: quem omite o `Origin`
+  na mão também entra sem captcha — por isso o caminho SEM token tem um teto próprio de
+  **5 tentativas / 15 min por IP** (em memória, além dos 15/15 min do Better Auth); o SDK
+  Android do reCAPTCHA é leva futura.
+- **Verificação** (uma das duas): `RECAPTCHA_API_KEY` + `GOOGLE_CLOUD_PROJECT_ID` →
+  `createAssessment` do reCAPTCHA Enterprise (recomendado); ou `RECAPTCHA_SECRET_KEY` →
+  `siteverify` legado (a "chave secreta legada" da mesma chave). `RECAPTCHA_MIN_SCORE`
+  (default 0,5) é o corte da pontuação.
+- **Falhas**: sem token (navegador) → 400 `CAPTCHA_AUSENTE`; token inválido / ação errada /
+  pontuação baixa → 403 `CAPTCHA_RECUSADO`; **Google indisponível ou credencial recusada →
+  login liberado com `[captcha]` no log do frontend** (trancar todos os operadores por uma
+  indisponibilidade do Google é pior que 5 minutos só com o rate limit).
+- **Setup no Google Cloud (projeto `vsanexus`)**: (1) reCAPTCHA → Chaves → Criar chave →
+  Site → tipo **pontuação** → domínios `chat.vsanexus.com` e
+  `chatnexus.hospitalevangelico.com.br` → copiar a **site key**; (2) APIs e serviços →
+  Credenciais → Criar credenciais → **Chave de API**, restringir à "reCAPTCHA Enterprise API";
+  (3) no Dokploy: `RECAPTCHA_SITE_KEY`, `RECAPTCHA_API_KEY`, `GOOGLE_CLOUD_PROJECT_ID=vsanexus`.
+  O selo flutuante é escondido (`globals.css`) e o aviso obrigatório do Google fica em texto no
+  formulário.
+- **Validado no dev** com as chaves de teste públicas do Google (siteverify legado sempre
+  aprova): navegador sem token 400, com token 200, app (sem Origin) 200, senha errada 401.

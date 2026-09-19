@@ -1,6 +1,7 @@
 import { LoginForm } from "@/components/login-form";
 import { getBootstrapAdminEmail } from "@/lib/admin-defaults";
 import { ensureDefaultAdmin } from "@/lib/bootstrap-admin";
+import { configCaptcha } from "@/lib/captcha";
 import { ensureFrontendRuntimeConfig } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,10 @@ export default async function LoginPage() {
       defaultPassword=""
       showBootstrapHint={bootstrap.bootstrapped}
       helperMessage={helperMessage}
+      // Site key lida no servidor em runtime (não NEXT_PUBLIC_: o build do CI
+      // não a tem e a inlinaria vazia). Sem ela o formulário nem carrega o
+      // script do Google.
+      recaptchaSiteKey={configCaptcha()?.siteKey ?? null}
     />
   );
 }

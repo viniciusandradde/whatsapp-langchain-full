@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
@@ -11,6 +12,38 @@ interface LoginFormProps {
   defaultPassword?: string;
   showBootstrapHint?: boolean;
   helperMessage?: string;
+  /** Site key do reCAPTCHA Enterprise; null = captcha desligado (dev sem chave). */
+  recaptchaSiteKey?: string | null;
+}
+
+// `grecaptcha.enterprise` chega pelo script do Google (enterprise.js).
+declare global {
+  interface Window {
+    grecaptcha?: {
+      enterprise: {
+        ready: (cb: () => void) => void;
+        execute: (siteKey: string, opts: { action: string }) => Promise<string>;
+      };
+    };
+  }
+}
+
+/**
+ * Token do reCAPTCHA para a ação LOGIN. Chave por pontuação: invisível, sem
+ * desafio — o Google pontua o comportamento e o servidor (`lib/captcha.ts`)
+ * decide. Se o script não carregou (bloqueador, rede), devolve null e o
+ * servidor responde "verificação ausente" — o operador vê a mensagem e
+ * recarrega, em vez de o login ficar pendurado.
+ */
+async function obterTokenRecaptcha(siteKey: string): Promise<string | null> {
+  const g = window.grecaptcha?.enterprise;
+  if (!g) return null;
+  try {
+    await new Promise<void>((resolve) => g.ready(resolve));
+    return await g.execute(siteKey, { action: "LOGIN" });
+  } catch {
+    return null;
+  }
 }
 
 export function LoginForm({
@@ -18,6 +51,7 @@ export function LoginForm({
   defaultPassword = "",
   showBootstrapHint = false,
   helperMessage,
+  recaptchaSiteKey = null,
 }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState(defaultEmail);
@@ -30,11 +64,21 @@ export function LoginForm({
     setError("");
     setLoading(true);
 
-    const { error: authError } = await signIn.email({
-      email,
-      password,
-      callbackURL: "/",
-    });
+    // Com captcha ligado, o token vai no header que o plugin do servidor lê.
+    const headers: Record<string, string> = {};
+    if (recaptchaSiteKey) {
+      const token = await obterTokenRecaptcha(recaptchaSiteKey);
+      if (token) headers["x-captcha-response"] = token;
+    }
+
+    const { error: authError } = await signIn.email(
+      {
+        email,
+        password,
+        callbackURL: "/",
+      },
+      { headers }
+    );
 
     if (authError) {
       setError(authError.message || "Erro ao fazer login");
@@ -48,6 +92,12 @@ export function LoginForm({
 
   return (
     <div className="flex min-h-screen items-center justify-center px-6 py-12">
+      {recaptchaSiteKey && (
+        <Script
+          src={`https://www.google.com/recaptcha/enterprise.js?render=${encodeURIComponent(recaptchaSiteKey)}`}
+          strategy="afterInteractive"
+        />
+      )}
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
           <Image
@@ -125,6 +175,32 @@ export function LoginForm({
             {loading ? "Entrando..." : "Entrar"}
           </Button>
         </form>
+
+        {recaptchaSiteKey && (
+          // O Google exige este aviso quando o selo flutuante é escondido
+          // (globals.css: .grecaptcha-badge). Texto e links são os pedidos.
+          <p className="mt-6 text-center text-[11px] leading-relaxed text-muted-foreground">
+            Este site é protegido pelo reCAPTCHA e se aplicam a{" "}
+            <a
+              href="https://policies.google.com/privacy"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              Política de Privacidade
+            </a>{" "}
+            e os{" "}
+            <a
+              href="https://policies.google.com/terms"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              Termos de Serviço
+            </a>{" "}
+            do Google.
+          </p>
+        )}
       </div>
     </div>
   );

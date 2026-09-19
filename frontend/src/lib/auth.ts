@@ -11,6 +11,8 @@ import { bearer } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import { Pool } from "pg";
 
+import { captchaLogin } from "@/lib/captcha";
+
 export const authPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   options: "-c search_path=auth,public",
@@ -192,5 +194,9 @@ export const auth = betterAuth({
   // `set-auth-token`, e a API valida esse token direto em `auth.session`
   // (server/dependencies.py::_resolve_session_user). Não muda nada pro
   // frontend web, que continua no cookie.
-  plugins: [bearer(), nextCookies()],
+  //
+  // captchaLogin() exige o token do reCAPTCHA no /sign-in/email quando o
+  // pedido vem de navegador (header Origin); o app nativo passa sem. Ligado
+  // só com RECAPTCHA_SITE_KEY no env — ver lib/captcha.ts.
+  plugins: [bearer(), nextCookies(), captchaLogin()],
 });
