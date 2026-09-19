@@ -176,6 +176,30 @@ function vemDeNavegador(headers: Headers | undefined): boolean {
   return !!headers?.get("origin");
 }
 
+// Quem entra SEM captcha (app nativo — ou quem omite o `Origin` na mão, que
+// é o buraco da isenção) ganha um teto próprio, mais curto que o do Better
+// Auth (15/15 min): 5 tentativas por IP a cada 15 min. Em memória por
+// processo (o painel roda num container só); zera no restart, o que é
+// aceitável para um freio de força bruta.
+const SEM_CAPTCHA_MAX = 5;
+const SEM_CAPTCHA_JANELA_MS = 15 * 60 * 1000;
+const semCaptcha = new Map<string, { n: number; ate: number }>();
+
+function excedeuSemCaptcha(ip: string | undefined): boolean {
+  const chave = ip ?? "desconhecido";
+  const agora = Date.now();
+  const atual = semCaptcha.get(chave);
+  if (!atual || atual.ate <= agora) {
+    semCaptcha.set(chave, { n: 1, ate: agora + SEM_CAPTCHA_JANELA_MS });
+    if (semCaptcha.size > 10_000) {
+      for (const [k, v] of semCaptcha) if (v.ate <= agora) semCaptcha.delete(k);
+    }
+    return false;
+  }
+  atual.n += 1;
+  return atual.n > SEM_CAPTCHA_MAX;
+}
+
 export function captchaLogin(): BetterAuthPlugin {
   return {
     id: "captcha-login",
@@ -187,7 +211,16 @@ export function captchaLogin(): BetterAuthPlugin {
             const cfg = configCaptcha();
             if (!cfg) return;
             const headers = ctx.headers ?? ctx.request?.headers;
-            if (!vemDeNavegador(headers)) return;
+            if (!vemDeNavegador(headers)) {
+              if (excedeuSemCaptcha(ipDe(headers))) {
+                console.warn("[captcha] sem Origin acima do teto, ip:", ipDe(headers));
+                throw new APIError("TOO_MANY_REQUESTS", {
+                  message: "Muitas tentativas. Aguarde alguns minutos e tente de novo.",
+                  code: "SEM_CAPTCHA_TETO",
+                });
+              }
+              return;
+            }
 
             const token = headers?.get("x-captcha-response")?.trim();
             if (!token) {

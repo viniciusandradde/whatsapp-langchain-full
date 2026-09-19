@@ -184,7 +184,9 @@ Camada contra bots e credential stuffing no `/login`, por cima do rate limit do 
   antes de o Better Auth conferir a senha.
 - **App Android passa sem captcha**: o plugin só exige token quando o pedido tem header
   `Origin` (navegador); o cliente nativo não manda. Limitação conhecida: quem omite o `Origin`
-  na mão também passa só pelo rate limit — o SDK Android do reCAPTCHA é leva futura.
+  na mão também entra sem captcha — por isso o caminho SEM token tem um teto próprio de
+  **5 tentativas / 15 min por IP** (em memória, além dos 15/15 min do Better Auth); o SDK
+  Android do reCAPTCHA é leva futura.
 - **Verificação** (uma das duas): `RECAPTCHA_API_KEY` + `GOOGLE_CLOUD_PROJECT_ID` →
   `createAssessment` do reCAPTCHA Enterprise (recomendado); ou `RECAPTCHA_SECRET_KEY` →
   `siteverify` legado (a "chave secreta legada" da mesma chave). `RECAPTCHA_MIN_SCORE`
