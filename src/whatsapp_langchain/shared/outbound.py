@@ -21,6 +21,7 @@ explícito mandando refazer o Embedded Signup — é de lá que vem o `phone_id`
 
 from __future__ import annotations
 
+import asyncio
 import base64
 
 import structlog
@@ -31,6 +32,10 @@ from whatsapp_langchain.integrations.waba.client import WabaClient
 from whatsapp_langchain.shared.atendimento import (
     avaliar_alteracao_resposta,
     get_atendimento_by_id,
+)
+from whatsapp_langchain.shared.audio import (
+    AudioInvalidoError,
+    converter_para_nota_de_voz,
 )
 from whatsapp_langchain.shared.cliente import get_cliente_by_id
 from whatsapp_langchain.shared.conexao import (
@@ -577,8 +582,19 @@ async def send_outbound_manual_midia(
             "Use uma conexão Evolution para anexos e áudio."
         )
 
-    base64_puro = base64.b64encode(arquivo).decode("ascii")
     e_audio = mime.startswith("audio/")
+    if e_audio:
+        # Nota de voz precisa ser OGG/Opus. O app grava assim; o navegador
+        # grava WebM (Chrome), MP4/AAC (Safari) ou OGG (Firefox) — converter
+        # aqui é o que faz a nota de voz do painel web chegar com player em
+        # vez de virar arquivo. O que vai pro banco é o convertido: a bolha
+        # do painel toca o mesmo áudio que o cliente recebeu. CPU-bound →
+        # thread, pra não segurar o event loop da API.
+        try:
+            arquivo, mime = await asyncio.to_thread(converter_para_nota_de_voz, arquivo)
+        except AudioInvalidoError as e:
+            raise OutboundError(str(e)) from e
+    base64_puro = base64.b64encode(arquivo).decode("ascii")
     texto = legenda.strip()
 
     try:
