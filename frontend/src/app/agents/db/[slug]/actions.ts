@@ -202,12 +202,15 @@ export async function analiseModeloAction(slug: string) {
  * mesmo passo).
  */
 export async function carregarCatalogoModelosAction(): Promise<
-  Result<import("@/lib/api").ModeloCatalogo[]>
+  Result<{
+    itens: import("@/lib/api").ModeloCatalogo[];
+    plano: import("@/lib/api").PlanoCatalogo;
+  }>
 > {
   try {
     const { getCatalogoModelos } = await import("@/lib/api");
     const r = await getCatalogoModelos();
-    return { ok: true, data: r.itens };
+    return { ok: true, data: { itens: r.itens, plano: r.plano } };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

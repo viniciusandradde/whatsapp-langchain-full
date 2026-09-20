@@ -21,7 +21,7 @@ O dono quer a experiência do Chatvolt: todos os modelos em cards com **custo po
 |---|---|---|
 | D1 | A tela lista o **catálogo completo** (`openrouter_modelo`, ativo=true). Os curados (`modelo_llm`) ganham selo **Recomendado** e vêm primeiro em "Relevância". | Só o curado (visual novo, mas não "todos os LLMs"). |
 | D2 | Custo exibido em **créditos estimados por mensagem**: `1 crédito = US$ 0,001`. Fórmula na §4.3. US$ real no tooltip. | Mostrar US$ direto (menos parecido com a referência). |
-| D3 | "Premium"/"BLOQUEADO" é **só visual** nesta leva. Nada trava. | Gate por plano agora — risco de travar agente em produção (empresa 1018). |
+| D3 | "Premium"/"BLOQUEADO" foi só visual na PR B; **desde a mig 188 é gate real por plano** (`plano.features.contexto_max` e `modelos_premium`): 402 no PUT, trava na tela e o worker aplica o menor tier. Downgrade rebaixa, nunca derruba o agente. | Deixar só visual — o dono decidiu (20/09) que o tier liberado depende do plano contratado. |
 | D4 | **"Tamanho do Contexto" substitui "Janela de memória (msgs)"** na UI e vira `agente_ia.contexto_tamanho` (`lite|regular|medium|large|extended`, NULL = legado). O worker passa a **honrar** o tier (corte por caracteres). | Só tabela de custo sem mexer na memória. |
 | D5 | Fonte única dos tiers e da fórmula no backend (`shared/contexto.py`) **e** um espelho puro no front (`creditos.ts`) com o mesmo teste de valores. | Calcular só no front (o app Android e relatórios não teriam a mesma conta). |
 | D6 | Endpoint novo `GET /api/v1/modelos-llm/catalogo` com a permissão **`agente.config`** (a mesma do editor). As rotas `/api/openrouter/*` continuam superadmin. | Reusar `/api/openrouter/modelos` (superadmin-only; o operador comum não veria a tela). |
@@ -205,4 +205,4 @@ Sem runner de testes no front: validar com um script `node --experimental-strip-
 ## 7. Consequências
 - **Positivas:** operador escolhe entre todos os modelos com custo comparável de relance; o tamanho do contexto passa a ser real (hoje a UI mente); base pronta para o gate por plano (Premium já sinalizado).
 - **Negativas/limites:** créditos são **estimativa** (não faturamento); custo real continua em `ia_execucao`. Trim por caracteres é aproximação de tokens (÷4). `tipo_memoria` buffer/summary/none seguem sem efeito no worker (fora desta leva — registrar como pendência).
-- **Fora desta leva:** gate por plano; créditos como moeda de cobrança; tela no app Android (campo é aditivo, não quebra).
+- **Fora desta leva:** créditos como moeda de cobrança; tela no app Android (campo é aditivo, não quebra). O gate por plano entrou na mig 188 (ver CLAUDE.md).

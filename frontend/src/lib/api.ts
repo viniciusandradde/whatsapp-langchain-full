@@ -4662,9 +4662,19 @@ export interface ModeloCatalogo {
   curado: boolean;
 }
 
+/** O que o plano da empresa libera no seletor (mig 188): tier máximo e modelos premium. */
+export interface PlanoCatalogo {
+  slug: string;
+  nome: string;
+  contexto_max: TierContexto;
+  modelos_premium: boolean;
+  upgrade_sugerido: string | null;
+}
+
 export async function getCatalogoModelos(): Promise<{
   itens: ModeloCatalogo[];
   gerado_em: string;
+  plano: PlanoCatalogo;
 }> {
   return apiFetch(`/api/v1/modelos-llm/catalogo`);
 }

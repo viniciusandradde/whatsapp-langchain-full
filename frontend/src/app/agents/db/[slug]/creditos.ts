@@ -10,7 +10,7 @@
  * Crédito é unidade de EXIBIÇÃO (1 C = US$ 0,001), não de cobrança.
  */
 
-import type { ModeloCatalogo, TierContexto } from "@/lib/api";
+import type { ModeloCatalogo, PlanoCatalogo, TierContexto } from "@/lib/api";
 
 export const TIERS: Record<TierContexto, number> = {
   lite: 6_000,
@@ -71,13 +71,32 @@ export function usdPorMensagem(
 }
 
 /**
- * Preço de prompt acima disto marca o modelo como "Premium" no card — só
- * visual (D3). US$ 5/Mtok é onde ficam os modelos de topo (Opus, GPT-5 Pro).
+ * Preço de ENTRADA acima disto torna o modelo "premium" (mig 188): só planos
+ * com `modelos_premium`. US$ 5/Mtok é onde ficam os modelos de topo
+ * (GPT-5 Pro, o1-pro); Opus/Sonnet a US$ 5 ficam liberados. Espelho de
+ * `shared/contexto.py::PRECO_PROMPT_PREMIUM`.
  */
 export const PRECO_PROMPT_PREMIUM = 5e-6;
 
-export function ehPremium(modelo: Pick<ModeloCatalogo, "preco_prompt">, tier: TierContexto) {
-  return PREMIUM.has(tier) || (modelo.preco_prompt ?? 0) > PRECO_PROMPT_PREMIUM;
+export function modeloPremium(modelo: Pick<ModeloCatalogo, "preco_prompt">): boolean {
+  return modelo.preco_prompt !== null && modelo.preco_prompt > PRECO_PROMPT_PREMIUM;
+}
+
+/** O plano não libera este modelo (o PUT devolveria 402). */
+export function modeloBloqueado(
+  modelo: Pick<ModeloCatalogo, "preco_prompt">,
+  plano: Pick<PlanoCatalogo, "modelos_premium">
+): boolean {
+  return !plano.modelos_premium && modeloPremium(modelo);
+}
+
+/** O plano não libera este tier (o PUT devolveria 402). */
+export function tierBloqueado(tier: TierContexto, plano: Pick<PlanoCatalogo, "contexto_max">) {
+  return ORDEM.indexOf(tier) > ORDEM.indexOf(plano.contexto_max);
+}
+
+export function rotuloPlano(slug: string | null): string {
+  return slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : "";
 }
 
 export function formatarChars(n: number): string {
