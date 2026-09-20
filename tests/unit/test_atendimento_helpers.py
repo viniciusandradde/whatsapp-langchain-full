@@ -94,7 +94,11 @@ def _row_with_cliente(*, nome="Fulano", telefone="+5511999", **kwargs):
 #: ninguém notar (o `make ci` não roda a suíte completa aqui). Com a asserção
 #: de tamanho, quem mexer no SELECT descobre no ato — e com uma mensagem que
 #: diz o que fazer, em vez de um IndexError no meio do mapeamento.
-_COLUNAS_MENSAGEM = 22
+#:
+#: 25 desde a mig 186: mig 184 acrescentou `media_arquivo_uuid IS NOT NULL`
+#: (23) e a 186 os dois nomes de arquivo (`media_filename`,
+#: `response_media_filename`).
+_COLUNAS_MENSAGEM = 25
 
 
 def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
@@ -552,6 +556,10 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
             None,
             None,
             0.0,
+            # Mig 184: mídia no bucket; migs 164/186: nome do arquivo nos 2 lados.
+            False,
+            None,
+            None,
         )
     ]
     assert len(rows[0]) == _COLUNAS_MENSAGEM
@@ -611,6 +619,9 @@ async def test_incluir_midia_false_nao_seleciona_o_blob():
             None,  # message_id
             None,  # provider da conexão
             0.0,  # idade em segundos
+            False,  # media_arquivo_uuid IS NOT NULL (mig 184)
+            "comprovante.jpg",  # media_filename (mig 164)
+            None,  # response_media_filename (mig 186)
         )
     ]
     assert len(rows[0]) == _COLUNAS_MENSAGEM
@@ -626,19 +637,22 @@ async def test_incluir_midia_false_nao_seleciona_o_blob():
     assert out[0]["media_url"] is None
     assert out[0]["media_type"] == "image/jpeg"
     assert out[0]["response_media_disponivel"] is False
+    # Nome real do arquivo sai nos dois lados (migs 164/186).
+    assert out[0]["media_filename"] == "comprovante.jpg"
+    assert out[0]["response_media_filename"] is None
 
 
 @pytest.mark.asyncio
 async def test_get_mensagem_midia_decodifica_data_url():
     dados = b"\x89PNG\r\n\x1a\n conteudo binario"
     data_url = "data:image/png;base64," + base64.b64encode(dados).decode()
-    pool, conn = _mock_pool((data_url, "image/png"))
+    pool, conn = _mock_pool((data_url, "image/png", None, "print.png"))
 
     out = await get_mensagem_midia(
         pool, mensagem_id=9, atendimento_id=42, empresa_id=7, lado="in"
     )
 
-    assert out == (dados, "image/png")
+    assert out == (dados, "image/png", "print.png")
     # Escopo: id da mensagem sozinho deixaria adivinhar mídia de outro tenant, e
     # o RLS não protegeria — a conexão do pool é a da aplicação.
     args = conn.execute.await_args.args[1]
@@ -649,17 +663,18 @@ async def test_get_mensagem_midia_decodifica_data_url():
 async def test_get_mensagem_midia_lado_out_le_a_coluna_do_operador():
     dados = b"ogg-fake"
     data_url = "data:audio/ogg;base64," + base64.b64encode(dados).decode()
-    pool, conn = _mock_pool((data_url, "audio/ogg"))
+    pool, conn = _mock_pool((data_url, "audio/ogg", None, None))
 
     out = await get_mensagem_midia(
         pool, mensagem_id=9, atendimento_id=42, empresa_id=7, lado="out"
     )
 
-    assert out == (dados, "audio/ogg")
+    assert out == (dados, "audio/ogg", None)
     sql = conn.execute.await_args.args[0]
     # `out` é o que o OPERADOR mandou (mig 146). Ler `media_url` aqui devolveria
-    # a mídia do cliente no lugar da dele.
+    # a mídia do cliente no lugar da dele — e o nome vem da coluna do mesmo lado.
     assert "response_media_url" in sql
+    assert "response_media_filename" in sql
     assert "SELECT media_url" not in sql
 
 
@@ -670,7 +685,7 @@ async def test_get_mensagem_midia_devolve_none_fora_do_formato_data_url():
     Devolver bytes de uma string que não é base64 faria o cliente renderizar
     imagem corrompida; com None ele mostra o rótulo de anexo.
     """
-    pool, _ = _mock_pool(("https://exemplo.com/arquivo.jpg", "image/jpeg"))
+    pool, _ = _mock_pool(("https://exemplo.com/arquivo.jpg", "image/jpeg", None, None))
     assert (
         await get_mensagem_midia(pool, mensagem_id=9, atendimento_id=42, empresa_id=7)
         is None

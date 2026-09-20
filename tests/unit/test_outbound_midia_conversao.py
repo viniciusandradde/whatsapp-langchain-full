@@ -101,6 +101,28 @@ async def test_imagem_nao_passa_pela_conversao() -> None:
     assert cliente.audio == []
     assert cliente.media and cliente.media[0]["mediatype"] == "image"
     assert persist.await_args.kwargs["media_type"] == "image/png"
+    # O nome real do arquivo vai pro banco (mig 186) — é o que a timeline mostra.
+    assert persist.await_args.kwargs["media_filename"] == "x"
+
+
+async def test_nota_de_voz_nao_guarda_nome() -> None:
+    """ "nota-de-voz.webm" não interessa a ninguém e o formato mudou pra OGG."""
+    conversor = lambda dados: (b"OggS", "audio/ogg")  # noqa: E731
+    _, _, persist = await _enviar(b"\x1aE", "audio/webm", conversor=conversor)
+    assert persist.await_args.kwargs["media_filename"] is None
+
+
+def test_nome_de_arquivo_seguro() -> None:
+    from whatsapp_langchain.shared.outbound import nome_de_arquivo_seguro
+
+    assert nome_de_arquivo_seguro("orçamento final.pdf") == "orçamento final.pdf"
+    # Caminho inteiro (Windows antigo / navegador esquisito) → só o nome.
+    assert nome_de_arquivo_seguro("C:\\Users\\x\\rel.xlsx") == "rel.xlsx"
+    assert nome_de_arquivo_seguro("/tmp/a/b.png") == "b.png"
+    assert nome_de_arquivo_seguro('a"b\nc.pdf') == "abc.pdf"
+    assert nome_de_arquivo_seguro("") is None
+    assert nome_de_arquivo_seguro(None) is None
+    assert len(nome_de_arquivo_seguro("x" * 300) or "") == 255
 
 
 async def test_audio_invalido_vira_outbound_error_antes_de_enviar() -> None:

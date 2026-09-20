@@ -9,6 +9,7 @@ em `shared/atendimento.py`.
 from __future__ import annotations
 
 from typing import Literal
+from urllib.parse import quote
 
 import structlog
 from fastapi import (
@@ -783,12 +784,16 @@ async def read_mensagem_midia(
     if midia is None:
         raise HTTPException(status_code=404, detail="Mídia não encontrada.")
 
-    dados, mime = midia
-    return Response(
-        content=dados,
-        media_type=mime,
-        headers={"Cache-Control": "private, max-age=86400, immutable"},
-    )
+    dados, mime, nome = midia
+    headers = {"Cache-Control": "private, max-age=86400, immutable"}
+    if nome:
+        # `inline` (não `attachment`): imagem e áudio seguem renderizando na
+        # bolha; o nome só entra quando o navegador salva/abre o arquivo.
+        # RFC 5987 pro acento/espaço ("orçamento final.pdf").
+        headers["Content-Disposition"] = (
+            f"inline; filename*=UTF-8''{quote(nome, safe='')}"
+        )
+    return Response(content=dados, media_type=mime, headers=headers)
 
 
 @router.post("/{atendimento_id}/claim")

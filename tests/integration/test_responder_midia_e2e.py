@@ -141,7 +141,7 @@ class TestE2E:
         cur = conn.execute(
             """
             SELECT response_media_type, left(response_media_url, 22), incoming_message,
-                   response, message_id
+                   response, message_id, response_media_filename
               FROM message_queue
              WHERE atendimento_id = %s
              ORDER BY id
@@ -157,26 +157,53 @@ class TestE2E:
         assert r.status_code == 200, r.text
         msg = r.json()["mensagem"]
         assert msg["response_media_type"] == "audio/ogg"
+        # Nota de voz não guarda nome: "gravacao.webm" nem é mais o formato.
+        assert msg["response_media_filename"] is None
         rows = self._rows(dados)
         assert len(rows) == 1
-        tipo, prefixo, incoming, response, message_id = rows[0]
+        tipo, prefixo, incoming, response, message_id, nome = rows[0]
         assert tipo == "audio/ogg"
         assert prefixo == "data:audio/ogg;base64,"
         assert incoming == ""  # row de saída, não fala do cliente
         assert message_id.startswith("mock-evo-audio-")
+        assert nome is None
 
     def test_2_imagem_com_legenda_nao_e_convertida(self, dados) -> None:
         r = self._post(
             dados, "foto.png", _PNG_1PX, "image/png", legenda="Olá {{cliente.nome}}"
         )
         assert r.status_code == 200, r.text
+        # Nome real do arquivo (mig 186) na resposta E na listagem — é o que a
+        # bolha mostra no lugar de "image/png".
+        assert r.json()["mensagem"]["response_media_filename"] == "foto.png"
         rows = self._rows(dados)
         assert len(rows) == 2
-        tipo, prefixo, _, response, _ = rows[1]
+        tipo, prefixo, _, response, _, nome = rows[1]
         assert tipo == "image/png"
         assert prefixo.startswith("data:image/png;base64")
+        assert nome == "foto.png"
         # legenda renderizada com o nome do cliente
         assert response == f"Olá Cliente Midia {_RUN}"
+        lista = httpx.get(
+            f"{API_BASE_URL}/api/atendimentos/{dados['atd_id']}/mensagens",
+            headers=self._h(dados),
+            params={"incluir_midia": "false"},
+            timeout=30,
+        )
+        assert lista.status_code == 200, lista.text
+        ultima = lista.json()["mensagens"][-1]
+        assert ultima["response_media_filename"] == "foto.png"
+        assert ultima["media_filename"] is None
+        # E o download leva o nome no Content-Disposition (abrir/baixar salva
+        # "foto.png", não o id da mensagem).
+        midia = httpx.get(
+            f"{API_BASE_URL}/api/atendimentos/{dados['atd_id']}/mensagens/{ultima['id']}/midia",
+            headers=self._h(dados),
+            params={"lado": "out"},
+            timeout=30,
+        )
+        assert midia.status_code == 200, midia.text
+        assert "foto.png" in midia.headers.get("content-disposition", "")
 
     def test_3_audio_invalido_e_400_sem_row(self, dados) -> None:
         r = self._post(dados, "lixo.webm", b"isto nao e audio" * 200, "audio/webm")

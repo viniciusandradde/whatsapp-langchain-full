@@ -57,11 +57,15 @@ export async function GET(
 
     // Stream direto, sem materializar na memória do Next — um PDF de 5 MB
     // atravessa sem virar Buffer.
+    // `Content-Disposition` vem do backend com o nome real do arquivo (migs
+    // 164/186): é o que faz "abrir/baixar" salvar `orcamento.pdf` e não `5849`.
+    const disposicao = r.headers.get("content-disposition");
     return new NextResponse(r.body, {
       status: 200,
       headers: {
         "Content-Type": r.headers.get("content-type") ?? "application/octet-stream",
         "Cache-Control": "private, max-age=86400, immutable",
+        ...(disposicao ? { "Content-Disposition": disposicao } : {}),
       },
     });
   } catch (e) {

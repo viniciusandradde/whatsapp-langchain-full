@@ -52,6 +52,8 @@ export interface BolhaMidia {
   mediaUrl: string;
   mediaType: string | null;
   caption?: string;
+  /** Nome real do arquivo (migs 164/186); sem ele a bolha rotula pelo tipo. */
+  nome?: string | null;
   /** Só inbound de áudio (mig 169): habilita a transcrição no painel. */
   transcrevivel?: boolean;
 }
@@ -178,6 +180,7 @@ function bolhasDaRow(m: AtendimentoMensagem, atendimentoId: number): Bolha[] {
       mediaUrl: m.media_url ?? `/api/proxy/midia/${atendimentoId}/${m.id}?lado=in`,
       mediaType: m.media_type ?? null,
       caption: m.incoming_message || undefined,
+      nome: m.media_filename ?? null,
       transcrevivel: (m.media_type ?? "").startsWith("audio/"),
     });
   } else if (m.incoming_message) {
@@ -210,6 +213,7 @@ function bolhasDaRow(m: AtendimentoMensagem, atendimentoId: number): Bolha[] {
         m.response_media_url ?? `/api/proxy/midia/${atendimentoId}/${m.id}?lado=out`,
       mediaType: m.response_media_type ?? null,
       caption: !ehMarker && m.response ? m.response : undefined,
+      nome: m.response_media_filename ?? null,
     });
   } else if (m.response && !ehMarker) {
     // Apagada para todos (mig 172): mostrar o texto faria o painel afirmar
