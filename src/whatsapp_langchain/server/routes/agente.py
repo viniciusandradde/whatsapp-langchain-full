@@ -20,6 +20,8 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.server.dependencies_plano import (
     assert_plano_feature,
+    levantar_feature_indisponivel,
+    require_plano_feature,
     require_plano_limit,
 )
 from whatsapp_langchain.server.dependencies_rbac import (
@@ -275,6 +277,26 @@ _RECURSOS_LLM_DO_AGENTE: tuple[tuple[str, str, str], ...] = (
 )
 
 
+async def _exigir_retencao_no_plano(pool, empresa_id: int, dias: int) -> None:
+    from whatsapp_langchain.shared.plano_limits import get_plano_info
+
+    plano = await get_plano_info(pool, empresa_id)
+    if "retencao_max_dias" not in plano.features:
+        return
+    teto = plano.limite_numerico("retencao_max_dias")
+    if teto is None:
+        return
+    if dias == 0 or dias > teto:
+        raise levantar_feature_indisponivel(
+            plano,
+            "retencao_max_dias",
+            mensagem=(
+                f"O plano {plano.plano_nome} guarda o histórico por até {teto} dias. "
+                "Faça upgrade para reter por mais tempo."
+            ),
+        )
+
+
 @router.put("/{slug}")
 async def update_endpoint(
     slug: str,
@@ -323,6 +345,11 @@ async def update_endpoint(
                 chave,
                 mensagem=f"{rotulo} não está incluído no seu plano. Faça upgrade para ligar.",
             )
+
+    # ADR-005 leva C2: `retencao_max_dias` — retenção acima do teto do plano
+    # é 402 (0 = "não apaga" conta como o máximo possível).
+    if fields.get("retencao_dias") is not None:
+        await _exigir_retencao_no_plano(pool, empresa_id, int(fields["retencao_dias"]))
 
     # `nota` viaja dentro de `fields` e casa com o parâmetro nomeado de
     # `update_agente` — não vira coluna no SET.
@@ -898,6 +925,8 @@ async def testar_bateria_endpoint(
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
     _acl: None = Depends(require_agente_access("read")),
+    # ADR-005 leva C2: bateria de regressão custa LLM por caso — Pessoal+.
+    _plano: None = Depends(require_plano_feature("bateria_testes")),
 ) -> dict:
     """Roda os cenários canônicos contra cada modelo (thread limpa por
     modelo+cenário) e devolve a matriz de resultados + placar agregado."""

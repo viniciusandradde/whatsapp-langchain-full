@@ -21,6 +21,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 
@@ -29,7 +30,11 @@ logger = structlog.get_logger()
 router = APIRouter(
     prefix="/api/admin/rag",
     tags=["rag-stats"],
-    dependencies=[Depends(verify_service_token)],
+    # ADR-005 leva C2: `qualidade_ia` é Pro/Enterprise — o router inteiro.
+    dependencies=[
+        Depends(verify_service_token),
+        Depends(require_plano_feature("qualidade_ia")),
+    ],
 )
 
 

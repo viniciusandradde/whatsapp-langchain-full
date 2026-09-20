@@ -30,6 +30,7 @@ from fastapi import Depends, HTTPException
 from whatsapp_langchain.server.dependencies import get_empresa_context
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.plano_limits import (
+    PlanoInfo,
     count_recurso,
     get_plano_info,
 )
@@ -48,17 +49,59 @@ RECURSOS_CONTAVEIS: tuple[str, ...] = (
     "atendimentos_mes",
     "documentos_kb",
     "agentes",
+    "departamentos",
+    "workflows",
+    "menus",
 )
 
 
 # Como o recurso aparece na mensagem do 402 (a UI mostra `message` direto).
+# Regra do dono (20/09): texto para o usuário final — sem termo técnico, sem
+# `_`, sem "pro/pra".
 _ROTULO_RECURSO = {
-    "conexoes": "conexões",
+    "conexoes": "conexões de WhatsApp",
     "usuarios": "usuários",
-    "atendimentos_mes": "atendimentos no mês",
+    "atendimentos_mes": "atendimentos por mês",
     "documentos_kb": "documentos na base de conhecimento",
     "agentes": "agentes de IA",
+    "departamentos": "departamentos",
+    "workflows": "workflows ativos",
+    "menus": "menus de chatbot",
 }
+
+# Nome humano de cada recurso de plano (`plano.features`) para a mensagem
+# padrão do 402 — quem chama pode mandar `mensagem=` própria.
+_ROTULO_FEATURE = {
+    "calendar": "A integração com o Google Agenda",
+    "voz": "A voz do agente",
+    "disparador": "O Disparador (campanhas, contatos e extensão)",
+    "webhooks": "Os webhooks de saída",
+    "rbac": "Os perfis de acesso personalizados",
+    "waba": "A conexão pela API oficial da Meta (WhatsApp Business)",
+    "mcp": "Os servidores MCP",
+    "menu_moderno": "O menu moderno com botões do WhatsApp",
+    "white_label": "A marca própria (nome, logo e cores)",
+    "transcricao_operador": "A transcrição de áudio para o operador",
+    "documentos_cliente": "A leitura de documentos enviados pelo cliente",
+    "imagem_cliente": "A leitura de imagens enviadas pelo cliente",
+    "fewshot": "O aprendizado com exemplos",
+    "catalogo_completo": "O catálogo completo de modelos",
+    "csat": "A pesquisa de satisfação",
+    "resumo_diario": "O resumo diário por WhatsApp",
+    "bateria_testes": "A bateria de testes do agente",
+    "observabilidade": "A fila de mensagens e os rastreamentos",
+    "qualidade_ia": "Os relatórios de qualidade da IA",
+    "orcamento_ia": "O orçamento de IA",
+    "retencao_max_dias": "A retenção estendida do histórico",
+    "modelos_premium": "Os modelos premium",
+    "contexto_max": "Os tamanhos maiores de contexto",
+}
+
+
+def _frase_upgrade(upgrade: str | None, verbo: str) -> str:
+    if upgrade:
+        return f"Faça upgrade para o plano {upgrade.title()} para {verbo}."
+    return "Fale com o suporte para ampliar o seu plano."
 
 
 async def assert_plano_limit(empresa_id: int, recurso: str) -> None:
@@ -98,13 +141,9 @@ async def assert_plano_limit(empresa_id: int, recurso: str) -> None:
         plano=plano.plano_slug,
     )
     detail_pt = (
-        f"Limite do plano {plano.plano_nome} atingido: "
-        f"{usado}/{limite} {_ROTULO_RECURSO.get(recurso, recurso)}. "
-        + (
-            f"Faça upgrade pro plano {upgrade.title()} pra continuar."
-            if upgrade
-            else "Entre em contato pra aumentar o limite."
-        )
+        f"O plano {plano.plano_nome} permite até {limite} "
+        f"{_ROTULO_RECURSO.get(recurso, recurso)} (você já tem {usado}). "
+        + _frase_upgrade(upgrade, "continuar")
     )
     raise HTTPException(
         status_code=_STATUS_QUOTA_EXCEEDED,
@@ -141,6 +180,35 @@ def require_plano_limit(recurso: str):
     return _checker
 
 
+def levantar_feature_indisponivel(
+    plano: PlanoInfo, feature: str, *, mensagem: str | None = None
+) -> HTTPException:
+    """Monta o 402 `feature_unavailable` (mesmo payload do `assert_`) para
+    gates que decidem sozinhos — ex.: tetos numéricos como `retencao_max_dias`,
+    onde `tem_feature` não serve (30 é truthy)."""
+    upgrade = plano.upgrade_sugerido()
+    logger.warning(
+        "feature_unavailable",
+        empresa_id=plano.empresa_id,
+        feature=feature,
+        plano=plano.plano_slug,
+    )
+    detail_pt = mensagem or (
+        f"{_ROTULO_FEATURE.get(feature, 'Este recurso')} não está incluído no plano "
+        f"{plano.plano_nome}. " + _frase_upgrade(upgrade, "liberar")
+    )
+    return HTTPException(
+        status_code=_STATUS_QUOTA_EXCEEDED,
+        detail={
+            "error": "feature_unavailable",
+            "feature": feature,
+            "plano_atual": plano.plano_slug,
+            "upgrade_to": upgrade,
+            "message": detail_pt,
+        },
+    )
+
+
 async def assert_plano_feature(
     empresa_id: int, feature: str, *, mensagem: str | None = None
 ) -> None:
@@ -173,33 +241,7 @@ async def assert_plano_feature(
 
     if plano.tem_feature(feature):
         return
-
-    upgrade = plano.upgrade_sugerido()
-    logger.warning(
-        "feature_unavailable",
-        empresa_id=empresa_id,
-        feature=feature,
-        plano=plano.plano_slug,
-    )
-    detail_pt = mensagem or (
-        f"Feature '{feature}' não está disponível no plano "
-        f"{plano.plano_nome}. "
-        + (
-            f"Faça upgrade pro plano {upgrade.title()} pra liberar."
-            if upgrade
-            else "Feature exclusiva — entre em contato."
-        )
-    )
-    raise HTTPException(
-        status_code=_STATUS_QUOTA_EXCEEDED,
-        detail={
-            "error": "feature_unavailable",
-            "feature": feature,
-            "plano_atual": plano.plano_slug,
-            "upgrade_to": upgrade,
-            "message": detail_pt,
-        },
-    )
+    raise levantar_feature_indisponivel(plano, feature, mensagem=mensagem)
 
 
 def require_plano_feature(feature: str):

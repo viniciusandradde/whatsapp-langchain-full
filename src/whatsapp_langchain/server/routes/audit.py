@@ -16,6 +16,7 @@ from whatsapp_langchain.server.dependencies import (
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.audit import list_audit
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.plano_limits import get_plano_info
 
 logger = structlog.get_logger()
 
@@ -37,8 +38,12 @@ async def list_audit_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("security.audit.read")),
 ) -> dict:
-    """Lista audit logs com filtros. Permite paginação."""
+    """Lista audit logs com filtros. Permite paginação.
+
+    ADR-005 leva C2: o plano limita a janela consultável (`auditoria_dias`,
+    30/90/∞/∞) — em vez de 402, a lista simplesmente para no teto."""
     pool = await get_pool()
+    plano = await get_plano_info(pool, empresa_id)
     items = await list_audit(
         pool,
         empresa_id,
@@ -48,5 +53,8 @@ async def list_audit_endpoint(
         action=action,
         limit=limit,
         offset=offset,
+        dias=plano.limite_numerico("auditoria_dias")
+        if "auditoria_dias" in plano.features
+        else None,
     )
     return {"items": items, "limit": limit, "offset": offset}

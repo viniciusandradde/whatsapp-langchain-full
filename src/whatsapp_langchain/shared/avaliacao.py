@@ -307,6 +307,12 @@ async def trigger_csat_se_ativo(
         config = await get_empresa_csat_config(pool, empresa_id)
         if config is None:
             return False
+        # ADR-005 leva C2: interruptor ligado de um plano antigo — degrada.
+        from whatsapp_langchain.shared.plano_gate import plano_libera
+
+        if not await plano_libera(pool, empresa_id, "csat"):
+            log.info("csat_pulado_pelo_plano", empresa_id=empresa_id)
+            return False
         pergunta = config["pergunta"] + "\n\nResponda com um número de *0* a *10*."
         await send_system_outbound(
             pool,

@@ -11,6 +11,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_limit
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.departamento import (
     DuplicateDepartamentoError,
@@ -61,6 +62,8 @@ async def create(
     body: DepartamentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    # ADR-005 leva C2: `departamentos_max` (1/2/10/∞).
+    _plano: None = Depends(require_plano_limit("departamentos")),
 ) -> Departamento:
     pool = await get_pool()
     try:

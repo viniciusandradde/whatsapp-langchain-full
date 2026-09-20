@@ -115,10 +115,17 @@ async def list_audit(
     action: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    dias: int | None = None,
 ) -> list[dict]:
-    """Lista audit rows com filtros opcionais — usado pelo painel admin."""
+    """Lista audit rows com filtros opcionais — usado pelo painel admin.
+
+    `dias` (ADR-005 leva C2, `auditoria_dias`): janela máxima que o plano
+    deixa consultar; None = sem teto."""
     where = ["empresa_id = %s"]
     params: list[Any] = [empresa_id]
+    if dias is not None:
+        where.append("at >= NOW() - make_interval(days => %s)")
+        params.append(int(dias))
     if entity_type:
         where.append("entity_type = %s")
         params.append(entity_type)

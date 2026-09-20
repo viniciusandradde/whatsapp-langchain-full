@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Final, LiteralString
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -37,6 +37,14 @@ _CACHE_TTL_SECONDS: Final = 30.0
 
 # Cache: empresa_id → (timestamp, PlanoInfo)
 _plano_cache: dict[int, tuple[float, PlanoInfo]] = {}
+
+
+# Recursos contáveis cujo teto mora em `plano.features` (mig 192), não em coluna.
+LIMITES_EM_FEATURES: Final = {
+    "departamentos": "departamentos_max",
+    "workflows": "workflows_max",
+    "menus": "menus_max",
+}
 
 
 @dataclass
@@ -67,9 +75,25 @@ class PlanoInfo:
             "documentos_kb": self.limite_documentos_kb,
             "agentes": self.limite_agentes,
         }
-        if recurso not in mapa:
-            raise ValueError(f"Recurso desconhecido: {recurso}")
-        return mapa[recurso]
+        if recurso in mapa:
+            return mapa[recurso]
+        if recurso in LIMITES_EM_FEATURES:
+            return self.limite_numerico(LIMITES_EM_FEATURES[recurso])
+        raise ValueError(f"Recurso desconhecido: {recurso}")
+
+    def limite_numerico(self, chave: str) -> int | None:
+        """Teto guardado em `features` (ADR-005 leva C2, mig 192): JSON `null`
+        = ilimitado; chave AUSENTE = 0 (errar para o lado barato, como
+        `contexto_max`); valor não numérico = 0 também."""
+        if chave not in self.features:
+            return 0
+        valor = self.features.get(chave)
+        if valor is None:
+            return None
+        try:
+            return int(valor) if not isinstance(valor, bool) else 0
+        except (TypeError, ValueError):
+            return 0
 
     def passou_limite(self, recurso: str, usado: int) -> bool:
         """True se `usado` excede o limite do recurso (limite None = nunca)."""
@@ -306,6 +330,37 @@ async def count_documentos_kb(pool: AsyncConnectionPool, empresa_id: int) -> int
     return int(row[0]) if row else 0
 
 
+async def _count_simples(
+    pool: AsyncConnectionPool, empresa_id: int, sql: LiteralString
+) -> int:
+    with empresa_scope(empresa_id=empresa_id):
+        async with pool.connection() as conn:
+            cur = await conn.execute(sql, (empresa_id,))
+            row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+async def count_departamentos(pool: AsyncConnectionPool, empresa_id: int) -> int:
+    return await _count_simples(
+        pool, empresa_id, "SELECT count(*) FROM departamento WHERE empresa_id = %s"
+    )
+
+
+async def count_workflows(pool: AsyncConnectionPool, empresa_id: int) -> int:
+    """Só workflows ATIVOS contam (o teto é de automação rodando, não de rascunho)."""
+    return await _count_simples(
+        pool,
+        empresa_id,
+        "SELECT count(*) FROM workflow_chatbot WHERE empresa_id = %s AND ativo",
+    )
+
+
+async def count_menus(pool: AsyncConnectionPool, empresa_id: int) -> int:
+    return await _count_simples(
+        pool, empresa_id, "SELECT count(*) FROM menu_chatbot WHERE empresa_id = %s"
+    )
+
+
 # Mapa recurso → função de contagem
 _COUNTERS = {
     "conexoes": count_conexoes,
@@ -313,6 +368,9 @@ _COUNTERS = {
     "usuarios": count_usuarios,
     "atendimentos_mes": count_atendimentos_mes,
     "documentos_kb": count_documentos_kb,
+    "departamentos": count_departamentos,
+    "workflows": count_workflows,
+    "menus": count_menus,
 }
 
 

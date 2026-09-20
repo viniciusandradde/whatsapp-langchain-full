@@ -29,6 +29,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import assert_plano_limit
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import (
     get_empresa_membership,
@@ -293,6 +294,16 @@ async def toggle_workflow_active(
 ):
     pool = await get_pool()
     await _require_admin(pool, empresa_id, user_id)
+    # ADR-005 leva C2: ATIVAR um workflow conta contra `workflows_max`
+    # (0/0/3/∞). Desativar sempre pode; editar rascunho também.
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT ativo FROM workflow_chatbot WHERE id = %s AND empresa_id = %s",
+            (workflow_id, empresa_id),
+        )
+        atual = await cur.fetchone()
+    if atual is not None and not atual[0]:
+        await assert_plano_limit(empresa_id, "workflows")
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
