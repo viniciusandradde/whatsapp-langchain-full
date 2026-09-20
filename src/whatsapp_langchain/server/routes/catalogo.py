@@ -28,7 +28,9 @@ from whatsapp_langchain.shared.catalogo import (
     update_modelo_llm,
 )
 from whatsapp_langchain.shared.catalogo_modelos import listar_catalogo_modelos
+from whatsapp_langchain.shared.contexto_plano import resumo_plano
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.plano_limits import get_plano_info
 from whatsapp_langchain.shared.ssrf_guard import assert_url_externa
 
 # =====================================================================
@@ -88,17 +90,21 @@ async def list_modelos_endpoint(
 # em 422 se a rota genérica casasse primeiro.
 @router_modelo_llm.get("/catalogo")
 async def catalogo_completo_endpoint(
-    _empresa_id: int = Depends(get_empresa_context),
+    empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
     """Catálogo COMPLETO do OpenRouter pro seletor do agente (ADR-004).
 
     Mesma permissão do editor do agente — as rotas `/api/openrouter/*`
     continuam superadmin porque são observabilidade de plataforma; aqui é
-    só o que o card do modelo mostra.
+    só o que o card do modelo mostra. `plano` (mig 188) vai junto, por
+    empresa, fora do cache do catálogo: é o que trava tiers e modelos
+    premium na tela antes do 402 do PUT.
     """
     pool = await get_pool()
-    return await listar_catalogo_modelos(pool)
+    catalogo = await listar_catalogo_modelos(pool)
+    plano = await get_plano_info(pool, empresa_id)
+    return {**catalogo, "plano": resumo_plano(plano)}
 
 
 @router_modelo_llm.get("/{modelo_id}")

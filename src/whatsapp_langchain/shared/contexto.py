@@ -56,3 +56,34 @@ def creditos_por_mensagem(
         + TOKENS_SAIDA_ESTIMADOS * preco_completion
     )
     return max(1, math.ceil(usd / USD_POR_CREDITO))
+
+
+# ---- Gate por plano (mig 188) --------------------------------------------
+
+# Preço de ENTRADA (US$/token) acima do qual o modelo é "premium": só planos
+# com `modelos_premium`. US$ 5/Mtok é onde ficam os modelos de topo.
+PRECO_PROMPT_PREMIUM = 5e-6
+
+
+def tier_maximo_de(features: dict | None) -> TierContexto:
+    """`plano.features['contexto_max']` validado; ausente ou inválido = `lite`.
+
+    Plano sem a chave (custom, ou anterior à mig 188) fica no mais barato:
+    o mesmo "sem feature = sem recurso" da voz — errar para o lado do custo
+    baixo, nunca liberar Extended sem querer.
+    """
+    valor = (features or {}).get("contexto_max")
+    return valor if valor in TIERS else "lite"  # type: ignore[return-value]
+
+
+def tier_permitido(tier: str, maximo: str) -> bool:
+    return ORDEM.index(tier) <= ORDEM.index(maximo)
+
+
+def limitar_tier(tier: str, maximo: str) -> str:
+    """O menor dos dois — é o que o worker aplica."""
+    return tier if tier_permitido(tier, maximo) else maximo
+
+
+def modelo_e_premium(preco_prompt: float | None) -> bool:
+    return preco_prompt is not None and preco_prompt > PRECO_PROMPT_PREMIUM

@@ -39,6 +39,7 @@ from whatsapp_langchain.shared.agente import (
 )
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
 from whatsapp_langchain.shared.contexto import TierContexto
+from whatsapp_langchain.shared.contexto_plano import checar_gate_plano
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -277,6 +278,24 @@ async def update_endpoint(
     # PATCH parcial — exclude_unset envia só campos explicitamente setados
     # pelo user (permite enviar null pra limpar). Ver docs/dev/PATCH_PATTERN.md.
     fields: dict[str, Any] = body.model_dump(exclude_unset=True)
+
+    # Gate por plano (mig 188): tier de contexto e modelo premium acima do
+    # plano viram 402 legível ANTES de gravar. O modelo é o que o PATCH está
+    # montando (provedor/nome novos, ou os atuais quando só um dos dois veio).
+    provedor = fields.get("modelo_provedor", before.modelo_provedor)
+    nome_modelo = fields.get("modelo_nome", before.modelo_nome)
+    mexeu_no_modelo = "modelo_provedor" in fields or "modelo_nome" in fields
+    bloqueio = await checar_gate_plano(
+        pool,
+        empresa_id,
+        contexto_tamanho=fields.get("contexto_tamanho"),
+        modelo_slug=f"{provedor}/{nome_modelo}"
+        if mexeu_no_modelo and provedor and nome_modelo
+        else None,
+    )
+    if bloqueio is not None:
+        raise HTTPException(status_code=402, detail=bloqueio.detail())
+
     # `nota` viaja dentro de `fields` e casa com o parâmetro nomeado de
     # `update_agente` — não vira coluna no SET.
     updated = await update_agente(pool, empresa_id, slug, user_id=user_id, **fields)

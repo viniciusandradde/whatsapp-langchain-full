@@ -4,7 +4,9 @@ Smoke (sem DB): a rota existe, exige service token e vem ANTES de
 `/{modelo_id}` (senão `/catalogo` cairia em 422).
 E2E (stack rodando): operador com `agente.config` lê o catálogo inteiro com
 os 15 campos do card; salvar `contexto_tamanho` no agente zera
-`janela_memoria`; tier inválido é 422.
+`janela_memoria`; tier inválido é 422. Gate por plano (mig 188): a empresa
+do teste é Pro (até Large, premium liberado) e uma segunda é Free (só
+Lite, sem premium) — tier ou modelo acima do plano é 402 legível.
 
 Rodar E2E contra o dev:
     DATABASE_URL=postgresql://postgres:postgres@localhost:5434/whatsapp_langchain \\
@@ -94,14 +96,57 @@ def db_url() -> str:
 @pytest.fixture(scope="module")
 def empresa_id(db_url: str):
     with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+        # Plano Pro (mig 188: contexto até Large, modelos premium liberados).
         cur.execute(
-            "INSERT INTO empresa (nome, slug, plano, status) "
-            "VALUES (%s, %s, 'free', 'active') RETURNING id",
+            "INSERT INTO empresa (nome, slug, plano, status, plano_id) "
+            "VALUES (%s, %s, 'pro', 'active', (SELECT id FROM plano WHERE slug = 'pro')) "
+            "RETURNING id",
             (f"test-catalogo-{_RUN}", f"test-catalogo-{_RUN}"),
         )
         row = cur.fetchone()
         assert row is not None
         eid = int(row[0])
+    yield eid
+    with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM empresa WHERE id = %s", (eid,))
+
+
+@pytest.fixture(scope="module")
+def empresa_free_id(db_url: str, admin_user_id: str):
+    """Segunda empresa, plano Free (só Lite, sem premium); o mesmo user é admin."""
+    with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO empresa (nome, slug, plano, status, plano_id) "
+            "VALUES (%s, %s, 'free', 'active', (SELECT id FROM plano WHERE slug = 'free')) "
+            "RETURNING id",
+            (f"test-catalogo-free-{_RUN}", f"test-catalogo-free-{_RUN}"),
+        )
+        row = cur.fetchone()
+        assert row is not None
+        eid = int(row[0])
+        cur.execute(
+            "INSERT INTO empresa_membro (empresa_id, user_id, role, is_default) "
+            "VALUES (%s, %s, 'admin', FALSE)",
+            (eid, admin_user_id),
+        )
+        cur.execute(
+            "INSERT INTO perfil_acesso (empresa_id, nome, descricao, is_system) "
+            "VALUES (%s, 'Admin', 'Acesso total', TRUE) RETURNING id",
+            (eid,),
+        )
+        row = cur.fetchone()
+        assert row is not None
+        perfil_id = int(row[0])
+        cur.execute(
+            "INSERT INTO perfil_permissao (perfil_id, permissao_codigo) "
+            "SELECT %s, codigo FROM permissao ON CONFLICT DO NOTHING",
+            (perfil_id,),
+        )
+        cur.execute(
+            "INSERT INTO usuario_perfil (user_id, perfil_id, empresa_id, assigned_by_user_id) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            (admin_user_id, perfil_id, eid, admin_user_id),
+        )
     yield eid
     with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM empresa WHERE id = %s", (eid,))
@@ -181,10 +226,19 @@ class TestE2E:
         for item in itens:
             assert set(item) == CHAVES_ITEM, item
             assert isinstance(item["visao"], bool)
-            assert item["provedor"] == item["slug"].split("/")[0]
+            # `~anthropic/…-latest` (alias): o provedor vem sem o `~`.
+            assert item["provedor"] == item["slug"].split("/")[0].lstrip("~")
         # O dev tem o curado global (gemini/gpt) sincronizado no OpenRouter.
         assert any(i["curado"] for i in itens), "nenhum curado casou com o catálogo"
         assert all(i["promo"] for i in itens if i["slug"].endswith(":free"))
+        # Gate por plano (mig 188) viaja junto, por empresa.
+        assert corpo["plano"] == {
+            "slug": "pro",
+            "nome": "Pro",
+            "contexto_max": "large",
+            "modelos_premium": True,
+            "upgrade_sugerido": "enterprise",
+        }
 
     def test_02_salvar_tier_zera_janela_memoria(
         self, db_url: str, empresa_id: int, admin_user_id: str
@@ -213,12 +267,12 @@ class TestE2E:
         r = httpx.put(
             f"{API_BASE_URL}/api/v1/agentes/{slug}",
             headers=h,
-            json={"contexto_tamanho": "extended"},
+            json={"contexto_tamanho": "large"},
             timeout=15,
         )
         assert r.status_code == 200, r.text
         corpo = r.json()
-        assert corpo["contexto_tamanho"] == "extended"
+        assert corpo["contexto_tamanho"] == "large"
         assert corpo["janela_memoria"] is None, "um só manda: o tier zera a janela"
 
         with psycopg.connect(db_url) as conn, conn.cursor() as cur:
@@ -227,7 +281,7 @@ class TestE2E:
                 "WHERE empresa_id = %s AND slug = %s",
                 (empresa_id, slug),
             )
-            assert cur.fetchone() == ("extended", None)
+            assert cur.fetchone() == ("large", None)
 
     def test_03_tier_invalido_422(self, empresa_id: int, admin_user_id: str) -> None:
         h = _headers(admin_user_id, empresa_id)
@@ -238,3 +292,102 @@ class TestE2E:
             timeout=15,
         )
         assert r.status_code == 422, r.text
+
+    def test_04_pro_nao_libera_extended_402(
+        self, empresa_id: int, admin_user_id: str
+    ) -> None:
+        h = _headers(admin_user_id, empresa_id)
+        r = httpx.put(
+            f"{API_BASE_URL}/api/v1/agentes/cat-{_RUN}",
+            headers=h,
+            json={"contexto_tamanho": "extended"},
+            timeout=15,
+        )
+        assert r.status_code == 402, r.text
+        d = r.json()["detail"]
+        assert d["feature"] == "contexto_max"
+        assert d["plano_atual"] == "pro" and d["upgrade_to"] == "enterprise"
+        assert "Extended" in d["message"] and "Large" in d["message"]
+
+    def test_05_free_so_lite_e_sem_premium(
+        self, db_url: str, empresa_free_id: int, admin_user_id: str
+    ) -> None:
+        h = _headers(admin_user_id, empresa_free_id)
+        r = httpx.get(
+            f"{API_BASE_URL}/api/v1/modelos-llm/catalogo", headers=h, timeout=15
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["plano"]["contexto_max"] == "lite"
+        assert r.json()["plano"]["modelos_premium"] is False
+
+        slug = f"cat-free-{_RUN}"
+        r = httpx.post(
+            f"{API_BASE_URL}/api/v1/agentes",
+            headers=h,
+            json={"slug": slug, "nome": "Free", "template_catalog": "agente"},
+            timeout=15,
+        )
+        assert r.status_code == 201, r.text
+
+        # Regular já passa do Free.
+        r = httpx.put(
+            f"{API_BASE_URL}/api/v1/agentes/{slug}",
+            headers=h,
+            json={"contexto_tamanho": "regular"},
+            timeout=15,
+        )
+        assert r.status_code == 402, r.text
+        assert r.json()["detail"]["feature"] == "contexto_max"
+
+        # Modelo premium (entrada > US$ 5/Mtok) — pega um do catálogo.
+        with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT slug FROM openrouter_modelo WHERE ativo "
+                " AND NULLIF(pricing->>'prompt','')::float8 > 5e-6 ORDER BY slug LIMIT 1"
+            )
+            row = cur.fetchone()
+        assert row is not None, "o catálogo do dev não tem modelo premium?"
+        provedor, nome = row[0].split("/", 1)
+        r = httpx.put(
+            f"{API_BASE_URL}/api/v1/agentes/{slug}",
+            headers=h,
+            json={"modelo_provedor": provedor, "modelo_nome": nome},
+            timeout=15,
+        )
+        assert r.status_code == 402, r.text
+        assert r.json()["detail"]["feature"] == "modelos_premium"
+
+        # Lite + modelo barato passa.
+        r = httpx.put(
+            f"{API_BASE_URL}/api/v1/agentes/{slug}",
+            headers=h,
+            json={
+                "contexto_tamanho": "lite",
+                "modelo_provedor": "google",
+                "modelo_nome": "gemini-2.5-flash-lite",
+            },
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["contexto_tamanho"] == "lite"
+
+    def test_06_pro_salva_modelo_premium(
+        self, db_url: str, empresa_id: int, admin_user_id: str
+    ) -> None:
+        h = _headers(admin_user_id, empresa_id)
+        with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT slug FROM openrouter_modelo WHERE ativo "
+                " AND NULLIF(pricing->>'prompt','')::float8 > 5e-6 ORDER BY slug LIMIT 1"
+            )
+            row = cur.fetchone()
+        assert row is not None
+        provedor, nome = row[0].split("/", 1)
+        r = httpx.put(
+            f"{API_BASE_URL}/api/v1/agentes/cat-{_RUN}",
+            headers=h,
+            json={"modelo_provedor": provedor, "modelo_nome": nome},
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["modelo_nome"] == nome

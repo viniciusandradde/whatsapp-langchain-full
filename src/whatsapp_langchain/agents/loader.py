@@ -25,8 +25,9 @@ from whatsapp_langchain.shared.agente import AgenteRuntime
 from whatsapp_langchain.shared.agente_ia import resolve_runtime_config
 from whatsapp_langchain.shared.base_conhecimento import has_active_documents
 from whatsapp_langchain.shared.calendar_integration import get_calendar_config
-from whatsapp_langchain.shared.contexto import TIERS
+from whatsapp_langchain.shared.contexto import TIERS, limitar_tier
 from whatsapp_langchain.shared.llm import get_agent_llm_config
+from whatsapp_langchain.shared.plano_limits import get_plano_info
 from whatsapp_langchain.shared.variavel import build_render_context, render_template
 
 logger = structlog.get_logger()
@@ -190,11 +191,36 @@ async def load_graph(
     )
     # Tier de contexto (ADR-004) → teto em caracteres do trim. NULL = legado
     # (agente nunca salvo pela tela nova): fica no TRIM_KEEP_TURNS global.
-    contexto_chars = (
-        TIERS[agente_runtime.contexto_tamanho]
+    # Gate por plano (mig 188): vale o MENOR entre o tier do agente e o do
+    # plano — downgrade rebaixa sozinho, sem 402 e sem tocar no agente
+    # (mesma ideia da voz). Plano ilegível não derruba o turno: fica o tier
+    # do agente.
+    tier_efetivo: str | None = (
+        agente_runtime.contexto_tamanho
         if agente_runtime and agente_runtime.contexto_tamanho in TIERS
         else None
     )
+    if tier_efetivo and pool is not None:
+        try:
+            plano = await get_plano_info(pool, empresa_id)
+            tier_efetivo = limitar_tier(tier_efetivo, plano.contexto_max)
+        except Exception as exc:  # noqa: BLE001 — gating não pode calar o agente
+            logger.warning(
+                "plano_contexto_ilegivel", empresa_id=empresa_id, error=str(exc)
+            )
+    if (
+        tier_efetivo
+        and agente_runtime
+        and tier_efetivo != agente_runtime.contexto_tamanho
+    ):
+        logger.info(
+            "contexto_rebaixado_pelo_plano",
+            empresa_id=empresa_id,
+            agente=agente_runtime.slug,
+            tier_agente=agente_runtime.contexto_tamanho,
+            tier_efetivo=tier_efetivo,
+        )
+    contexto_chars = TIERS[tier_efetivo] if tier_efetivo else None
     return module.build_graph(
         checkpointer=checkpointer,
         store=store,

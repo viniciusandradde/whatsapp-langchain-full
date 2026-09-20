@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
@@ -30,20 +31,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { AgenteIA, ModeloCatalogo, ModeloLLM, TierContexto } from "@/lib/api";
+import type {
+  AgenteIA,
+  ModeloCatalogo,
+  ModeloLLM,
+  PlanoCatalogo,
+  TierContexto,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { carregarCatalogoModelosAction } from "./actions";
 import {
   ORDEM,
-  PREMIUM,
   TIER_PADRAO,
   TIERS,
   cabeNoModelo,
   creditosPorMensagem,
-  ehPremium,
   formatarChars,
+  modeloBloqueado,
+  rotuloPlano,
   rotuloTier,
+  tierBloqueado,
   usdPorMensagem,
 } from "./creditos";
 import { LogoProvedor } from "./logos-provedor";
@@ -63,6 +71,12 @@ import { LogoProvedor } from "./logos-provedor";
  *
  * Catálogo indisponível → `SeletorCurado` (os dois selects do curado de
  * sempre), para a aba nunca ficar sem jeito de escolher modelo.
+ *
+ * Gate por plano (mig 188): o catálogo traz `plano` (tier máximo e se
+ * libera modelos premium). Tier e modelo acima do plano ficam travados na
+ * tela (toast ao tocar) — o PUT devolveria 402 de qualquer jeito. Agente
+ * salvo acima do plano (downgrade) é mostrado rebaixado, que é o que o
+ * worker aplica.
  */
 
 type Ordem = "relevancia" | "nome" | "preco" | "contexto" | "novos";
@@ -175,13 +189,22 @@ export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: 
 
   const provedorSel = slugSelecionado?.split("/")[0] ?? "";
   const nomeSel = slugSelecionado?.split("/").slice(1).join("/") ?? "";
+  const plano = catalogo.data?.plano ?? null;
+  const itens = catalogo.data?.itens;
+  const selecionado = itens?.find((m) => m.slug === slugSelecionado) ?? null;
+
+  // Tier acima do plano (agente salvo antes de um downgrade): o que vai no
+  // form e o que o resumo mostra é o rebaixado — o mesmo que o worker
+  // aplica. Derivação pura, sem efeito.
+  const tierEfetivo: TierContexto = plano && tierBloqueado(tier, plano) ? plano.contexto_max : tier;
+  const modeloAtualBloqueado = !!(plano && selecionado && modeloBloqueado(selecionado, plano));
 
   return (
     <div className="space-y-4 md:col-span-2">
       {/* O que o form salva. `readOnly`: o valor vem do estado, não de digitação. */}
       <Input type="hidden" name="modelo_provedor" value={provedorSel} readOnly />
       <Input type="hidden" name="modelo_nome" value={nomeSel} readOnly />
-      <Input type="hidden" name="contexto_tamanho" value={tier} readOnly />
+      <Input type="hidden" name="contexto_tamanho" value={tierEfetivo} readOnly />
 
       {catalogo.isPending ? (
         <SkeletonCatalogo />
@@ -201,20 +224,36 @@ export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: 
         </>
       ) : (
         <Catalogo
-          itens={catalogo.data}
+          itens={catalogo.data.itens}
+          plano={catalogo.data.plano}
           slugSelecionado={slugSelecionado}
           onSelecionar={setSlugSelecionado}
-          tier={tier}
+          tier={tierEfetivo}
         />
       )}
 
+      {modeloAtualBloqueado && plano && (
+        <p
+          role="alert"
+          className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground"
+        >
+          O modelo atual do agente é premium e não está no plano {plano.nome}. Escolha outro
+          modelo para salvar
+          {plano.upgrade_sugerido
+            ? ` — ou faça upgrade para o plano ${rotuloPlano(plano.upgrade_sugerido)}.`
+            : "."}
+        </p>
+      )}
+
       <TamanhoDoContexto
-        tier={tier}
+        tier={tierEfetivo}
+        tierSalvo={tier}
+        plano={plano}
         onChange={setTier}
-        modelo={catalogo.data?.find((m) => m.slug === slugSelecionado) ?? null}
+        modelo={selecionado}
       />
 
-      {(agente.prompt_override ?? "").length > TIERS[tier] && (
+      {(agente.prompt_override ?? "").length > TIERS[tierEfetivo] && (
         <p
           role="alert"
           className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
@@ -232,11 +271,13 @@ export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: 
 
 function Catalogo({
   itens,
+  plano,
   slugSelecionado,
   onSelecionar,
   tier,
 }: {
   itens: ModeloCatalogo[];
+  plano: PlanoCatalogo;
   slugSelecionado: string | null;
   onSelecionar: (slug: string) => void;
   tier: TierContexto;
@@ -475,6 +516,7 @@ function Catalogo({
               key={m.slug}
               modelo={m}
               tier={tier}
+              plano={plano}
               selecionado={m.slug === slugSelecionado}
               onSelecionar={() => onSelecionar(m.slug)}
             />
@@ -534,24 +576,40 @@ function AbaProvedor({
 function CardModelo({
   modelo: m,
   tier,
+  plano,
   selecionado,
   onSelecionar,
 }: {
   modelo: ModeloCatalogo;
   tier: TierContexto;
+  plano: PlanoCatalogo;
   selecionado: boolean;
   onSelecionar: () => void;
 }) {
-  const premium = ehPremium(m, tier);
+  const bloqueado = modeloBloqueado(m, plano);
+  function escolher() {
+    if (bloqueado) {
+      toast.info(
+        `${nomeCurto(m)} é um modelo premium — não está no plano ${plano.nome}.` +
+          (plano.upgrade_sugerido
+            ? ` Disponível a partir do plano ${rotuloPlano(plano.upgrade_sugerido)}.`
+            : "")
+      );
+      return;
+    }
+    onSelecionar();
+  }
   return (
     <li className="min-w-0">
       <button
         type="button"
         aria-pressed={selecionado}
-        onClick={onSelecionar}
+        aria-disabled={bloqueado || undefined}
+        onClick={escolher}
         className={cn(
           "w-full rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-          selecionado && "border-l-4 border-l-success bg-success/5"
+          selecionado && "border-l-4 border-l-success bg-success/5",
+          bloqueado && "opacity-70"
         )}
       >
         <div className="flex items-start gap-2.5">
@@ -582,10 +640,10 @@ function CardModelo({
                 </span>
               )}
               {m.curado && <Badge variant="secondary">Recomendado</Badge>}
-              {premium && (
+              {bloqueado && (
                 <span
                   className="inline-flex items-center gap-1 rounded-md bg-brand-primary/10 px-1.5 py-px font-mono text-[10px] font-bold text-brand-primary"
-                  title="Recurso Premium — em breve por plano"
+                  title={`Modelo premium — não está no plano ${plano.nome}`}
                 >
                   <Lock className="size-3" aria-hidden />
                   BLOQUEADO →
@@ -698,19 +756,50 @@ function CardForaDoCatalogo({ slug }: { slug: string }) {
 
 function TamanhoDoContexto({
   tier,
+  tierSalvo,
+  plano,
   onChange,
   modelo,
 }: {
   tier: TierContexto;
+  /** O que o agente tem gravado — difere de `tier` quando o plano rebaixou. */
+  tierSalvo: TierContexto;
+  plano: PlanoCatalogo | null;
   onChange: (t: TierContexto) => void;
   modelo: ModeloCatalogo | null;
 }) {
+  function escolher(t: TierContexto) {
+    if (plano && tierBloqueado(t, plano)) {
+      toast.info(
+        `${rotuloTier(t)} não está no plano ${plano.nome} — ele libera até ${rotuloTier(plano.contexto_max)}.` +
+          (plano.upgrade_sugerido
+            ? ` Disponível a partir do plano ${rotuloPlano(plano.upgrade_sugerido)}.`
+            : "")
+      );
+      return;
+    }
+    onChange(t);
+  }
   return (
     <div className="space-y-2 border-t pt-4">
       <h3 className="text-base font-semibold">Tamanho do Contexto</h3>
+      {plano && tierSalvo !== tier && (
+        <p
+          role="alert"
+          className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground"
+        >
+          O agente estava em {rotuloTier(tierSalvo)}, mas o plano {plano.nome} libera até{" "}
+          {rotuloTier(plano.contexto_max)} — ele já opera como {rotuloTier(tier)} e é assim que
+          vai ficar salvo
+          {plano.upgrade_sugerido
+            ? `, até o upgrade para o plano ${rotuloPlano(plano.upgrade_sugerido)}.`
+            : "."}
+        </p>
+      )}
       <div className="space-y-2" role="radiogroup" aria-label="Tamanho do contexto">
         {ORDEM.map((t) => {
           const ativo = t === tier;
+          const bloqueado = !!plano && tierBloqueado(t, plano);
           const cabe = modelo ? cabeNoModelo(modelo, t) : true;
           const creditos =
             modelo && cabe
@@ -722,10 +811,12 @@ function TamanhoDoContexto({
               type="button"
               role="radio"
               aria-checked={ativo}
-              onClick={() => onChange(t)}
+              aria-disabled={bloqueado || undefined}
+              onClick={() => escolher(t)}
               className={cn(
                 "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                ativo ? "border-2 border-brand-primary bg-brand-primary/5" : "border-border"
+                ativo ? "border-2 border-brand-primary bg-brand-primary/5" : "border-border",
+                bloqueado && "opacity-70"
               )}
             >
               <div className="min-w-0">
@@ -741,9 +832,17 @@ function TamanhoDoContexto({
                 <Badge variant={ativo ? "warning" : "outline"} className="font-mono tabular-nums">
                   {modelo ? (cabe ? `${creditos ?? "?"} C` : "—") : "? C"}
                 </Badge>
-                {PREMIUM.has(t) && (
-                  <Badge variant="warning" title="Recurso Premium — em breve por plano">
+                {bloqueado && plano && (
+                  <Badge
+                    variant="warning"
+                    title={`Não está no plano ${plano.nome}`}
+                    className="gap-1"
+                  >
+                    <Lock className="size-3" aria-hidden />
                     Premium
+                    {plano.upgrade_sugerido
+                      ? ` · a partir do ${rotuloPlano(plano.upgrade_sugerido)}`
+                      : ""}
                   </Badge>
                 )}
               </div>

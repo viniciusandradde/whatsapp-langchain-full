@@ -77,11 +77,24 @@ class PlanoInfo:
 
     def upgrade_sugerido(self) -> str | None:
         """Próximo plano superior pra sugerir ao user."""
-        if self.plano_slug == "free":
+        if self.plano_slug in ("free", "pessoal"):
             return "pro"
         if self.plano_slug == "pro":
             return "enterprise"
         return None
+
+    # ---- Contexto e modelos (mig 188, ADR-004) ----
+
+    @property
+    def contexto_max(self) -> str:
+        """Maior tier de contexto que o plano libera (`lite` se a chave faltar)."""
+        from whatsapp_langchain.shared.contexto import tier_maximo_de
+
+        return tier_maximo_de(self.features)
+
+    @property
+    def modelos_premium(self) -> bool:
+        return self.tem_feature("modelos_premium")
 
 
 def clear_plano_cache(empresa_id: int | None = None) -> None:
