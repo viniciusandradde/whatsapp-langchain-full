@@ -60,7 +60,7 @@ Chaves de `plano.features` (boolean, ou número quando é teto):
 | `fewshot` | off | off | on | on | B | `PUT agente` (402 ao ligar) + worker (não injeta exemplos) |
 | `catalogo_completo` | off | off | on | on | B | `GET /modelos-llm/catalogo` devolve só `curado=true` quando off (a tela já cai no curado) |
 | `disparador` | **off** (hoje `true` no seed — corrigir) | off | on | on | C1 | rotas `/api/campanhas*`, `/api/disparador*`, `/api/captura*` + menu |
-| `mcp` | off | off | off | on | C1 | `POST/PUT mcp_server` + `PUT agente` com `mcp_server_ids` |
+| `mcp` | off | off | off | on | **adiada** (dono 20/09: "não vamos mexer agora com MCP") | chave semeada, sem gate no código |
 | `rbac` | off | off | on | on | C1 | `POST/PUT /api/perfis` (perfis system continuam) |
 | `white_label` | off | off | off | on | C1 | `PUT /api/empresas/{id}` (campos `logo_path/nome_exibicao/cor_*`) + `POST …/logo` |
 | `menu_moderno` | off | off | on | on | C1 | `PUT menu_chatbot` com `menu_moderno=true` |
@@ -199,8 +199,8 @@ Mantida para o caso de o volume justificar voltar: as especificações abaixo fo
 | A.0 | Consulta de uso em produção + flags de grandfathering | — | ✅ | 20/09/2026 | ninguém acima de usuários/KB/atendimentos; só a sandbox 999 (8 agentes) → flag `plano.limite_agentes=null` semeada na mig 189; `ia_budget` da 1018 = US$ 10 (consumo US$ 3,49) < teto Pro US$ 100 — sem exceção |
 | B | Custo de LLM por mensagem (transcrição do operador, documentos, imagem, few-shot, catálogo completo) | `feat/plano-leva-b-llm` / **#166** (`337e91d`) | ✅ em produção | 20/09/2026 | mig 190 em `_migrations` (184); api/worker-1/2/frontend recriados e conferidos por conteúdo (`transcricao_operador`, `plano_libera`, `plano_bloqueado`, "mostra os modelos recomendados"); 0 erros; painel/API 200 |
 | B.0 | Consulta de uso + grandfathering | — | ✅ | 20/09/2026 | ninguém com `transcrever_audio_sempre`; documentos/imagem/few-shot em uso só na 1 (Ent) e 1018 (Pro); modelo fora do curado só na 1; sandbox 999 → flags `plano.documentos_cliente/imagem_cliente/fewshot` na mig 190 |
-| C1 | Módulos (disparador, mcp, rbac, white_label, menu_moderno, webhooks, waba) + feature-flags superadmin | `feat/plano-leva-c1-modulos` | ⬜ | | mig 191 |
-| C1.0 | Consulta de uso + grandfathering | — | ⬜ | | |
+| C1 | Módulos (disparador, rbac, white_label, menu_moderno, webhooks, waba — **MCP adiado**) + feature-flags superadmin | `feat/plano-leva-c1-modulos` | 🔍 no dev, aguardando o dono | 20/09/2026 | mig 191; `test_plano_leva_c1_endpoints.py` (18 verdes) + 7 suítes de disparador/captura/conexões ajustadas (Pro) |
+| C1.0 | Consulta de uso + grandfathering | — | ✅ | 20/09/2026 | campanhas/MCP/hooks/WABA = 0 em todas; perfil custom só na 1018 (Pro, tem rbac); menu moderno só na 1; **white-label fora da matriz em 1012 (Free), 1013/1016/1018 (Pro) → flags `plano.white_label` na mig 191** |
 | C2 | Quantidades e retenção (departamentos, workflows, menus, retenção, auditoria, csat, resumo, bateria, observabilidade, qualidade) | `feat/plano-leva-c2-quantidades` | ⬜ | | mig 192 |
 | C2.0 | Consulta de uso + grandfathering | — | ⬜ | | |
 | D | Painel: `usePlano`, cadeados no menu e nas telas, `/billing` com as chaves reais | `feat/plano-leva-d-painel` | ⬜ | | capturas claro/escuro 1440/390 |

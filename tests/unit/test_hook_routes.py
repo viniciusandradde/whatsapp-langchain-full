@@ -47,13 +47,44 @@ def _log(**overrides) -> HookLog:
     return HookLog(**base)
 
 
+def _plano_com_webhooks():
+    """ADR-005 leva C1: criar/editar hook exige `webhooks` no plano. Aqui o
+    plano é mockado (sem DB) — o 402 tem teste próprio em
+    tests/integration/test_plano_leva_c1_endpoints.py."""
+    from whatsapp_langchain.shared.plano_limits import PlanoInfo
+
+    return PlanoInfo(
+        empresa_id=1,
+        plano_id=1,
+        plano_slug="pro",
+        plano_nome="Pro",
+        preco_mensal_brl=299.0,
+        limite_usuarios=10,
+        limite_conexoes=3,
+        limite_atendimentos_mes=5000,
+        limite_orcamento_ia_usd=100.0,
+        limite_documentos_kb=100,
+        features={"webhooks": True},
+    )
+
+
 @pytest.fixture
 def client():
     app.dependency_overrides[verify_service_token] = lambda: None
     app.dependency_overrides[get_empresa_context] = lambda: 1
     app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"
     try:
-        yield TestClient(app)
+        with (
+            patch(
+                "whatsapp_langchain.server.dependencies_plano.get_pool",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "whatsapp_langchain.server.dependencies_plano.get_plano_info",
+                new=AsyncMock(return_value=_plano_com_webhooks()),
+            ),
+        ):
+            yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
 

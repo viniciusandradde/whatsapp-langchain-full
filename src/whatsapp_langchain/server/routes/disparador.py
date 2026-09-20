@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import require_scope, verify_api_key
+from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
 from whatsapp_langchain.shared import campanha as camp_lib
 from whatsapp_langchain.shared.api_key import ApiKeyContext
 from whatsapp_langchain.shared.conexao import get_conexao_by_id, list_conexoes
@@ -30,6 +31,11 @@ def _suporta_template(provider: str | None) -> bool:
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/disparador", tags=["disparador"])
+
+_MSG_DISPARADOR = (
+    "O Disparador (campanhas, contatos e extensão) não está incluído no seu "
+    "plano. Faça upgrade para usar."
+)
 
 
 @router.get("/status")
@@ -93,6 +99,9 @@ async def ext_criar_campanha(
 ) -> dict:
     """Cria uma campanha origem_envio='extensao' (status 'running') pro disparo
     in-browser. Retorna o id + os destinatários normalizados pra enviar."""
+    # ADR-005 leva C1: o Disparador é Pro/Enterprise — a extensão recebe o
+    # 402 legível como qualquer outra rota (a empresa vem da API key).
+    await assert_plano_feature(ctx.empresa_id, "disparador", mensagem=_MSG_DISPARADOR)
     pool = await get_pool()
     from whatsapp_langchain.shared.disparo import checar_limite_plano_disparo
 
@@ -210,6 +219,9 @@ async def ext_campanha_template(
 
     Sem `scheduled_at` → despacha já (fire-and-forget). Com `scheduled_at` →
     agendada (o poller do backend envia na hora marcada)."""
+    # ADR-005 leva C1: o Disparador é Pro/Enterprise — a extensão recebe o
+    # 402 legível como qualquer outra rota (a empresa vem da API key).
+    await assert_plano_feature(ctx.empresa_id, "disparador", mensagem=_MSG_DISPARADOR)
     pool = await get_pool()
     conn = await get_conexao_by_id(pool, body.conexao_id)
     if conn is None or conn.empresa_id != ctx.empresa_id:

@@ -193,7 +193,7 @@ class TestHardDeleteConexao:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             eid = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"del-{_RUN}", f"del-{_RUN}"),
             ).fetchone()[0]
         yield eid
@@ -309,7 +309,7 @@ class TestGateAgenteModoIA:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             eid = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"gate-{_RUN}", f"gate-{_RUN}"),
             ).fetchone()[0]
         yield eid

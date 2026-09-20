@@ -148,7 +148,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { secao: "Regras", label: "Regras de agendamento", href: "/settings/calendar-rules", requires: "agendamento.regras.write" },
       // Veio de Observabilidade: ligar/desligar recurso é configuração, não
       // observação. Estava no grupo dos gráficos só por morar em /settings.
-      { secao: "Regras", label: "Recursos ativados", href: "/settings/feature-flags", requires: "empresa.update" },
+      { secao: "Regras", label: "Recursos ativados", href: "/settings/feature-flags", requires: "empresa.update", requiresSuperadmin: true },
     ],
   },
   {

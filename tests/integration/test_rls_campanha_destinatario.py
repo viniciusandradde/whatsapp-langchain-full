@@ -35,7 +35,7 @@ class TestRlsCampanhaDestinatario:
         with psycopg.connect(db, autocommit=True) as conn:
             for lado in ("a", "b"):
                 eid = conn.execute(
-                    "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                    "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                     (f"rls-{lado}-{_RUN}", f"rls-{lado}-{_RUN}"),
                 ).fetchone()[0]
                 cid = conn.execute(

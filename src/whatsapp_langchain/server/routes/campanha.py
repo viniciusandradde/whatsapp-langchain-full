@@ -20,6 +20,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import campanha as camp_lib
 from whatsapp_langchain.shared.db import get_pool
@@ -164,6 +165,8 @@ async def create_endpoint(
     body: CampanhaCreate,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    # ADR-005 leva C1: o módulo Disparador é Pro/Enterprise (`disparador`).
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     pool = await get_pool()
     try:
@@ -230,6 +233,7 @@ async def update_endpoint(
     body: CampanhaUpdate,
     empresa_id: int = Depends(get_empresa_context),
     _perm: None = Depends(require_permission("disparador.disparar")),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     """Edita uma campanha em rascunho/agendada (campos parciais)."""
     campos = body.model_dump(exclude_unset=True)
@@ -254,6 +258,7 @@ async def add_destinatarios_endpoint(
     body: AddDestinatariosInput,
     empresa_id: int = Depends(get_empresa_context),
     _perm: None = Depends(require_permission("disparador.disparar")),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     """Adiciona destinatários (lista de telefones e/ou filtro do CRM)."""
     pool = await get_pool()
@@ -282,6 +287,7 @@ async def clonar_endpoint(
     camp_id: int,
     empresa_id: int = Depends(get_empresa_context),
     _perm: None = Depends(require_permission("disparador.disparar")),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     """Clona a campanha como novo rascunho (reenviar). Original intacta."""
     pool = await get_pool()
@@ -311,6 +317,7 @@ async def preview_crm(
     body: PreviewCrmInput,
     empresa_id: int = Depends(get_empresa_context),
     _perm: None = Depends(require_permission("disparador.disparar")),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     """Resolve telefones de clientes do CRM por filtros (tags/segmento/
     lifecycle/busca) pra alimentar os destinatários da campanha."""
@@ -333,6 +340,7 @@ async def upload_media_endpoint(
     file: UploadFile = File(...),
     empresa_id: int = Depends(get_empresa_context),
     _perm: None = Depends(require_permission("disparador.disparar")),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     """Upload de foto pra campanha. Valida MIME+tamanho, re-encoda via Pillow
     (nunca confia no MIME do client), salva em DISPARADOR_MEDIA_DIR e devolve
@@ -372,6 +380,7 @@ async def upload_media_endpoint(
 async def dispatch_endpoint(
     camp_id: int,
     empresa_id: int = Depends(get_empresa_context),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> dict:
     """Inicia envio em background. Retorna 202 imediatamente.
 

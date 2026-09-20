@@ -29,7 +29,7 @@ class TestCapturaSchema:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"capt-{_RUN}", f"capt-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -170,7 +170,7 @@ class TestCapturaUpsertPromocao:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"capt-up-{_RUN}", f"capt-up-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -235,7 +235,7 @@ class TestContarPromoverTodos:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"capt-todos-{_RUN}", f"capt-todos-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -294,7 +294,7 @@ class TestBuscaContatos:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"capt-busca-{_RUN}", f"capt-busca-{_RUN}"),
             ).fetchone()
             assert row is not None

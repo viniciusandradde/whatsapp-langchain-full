@@ -83,7 +83,7 @@ class TestDisparoExt:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"ext-{_RUN}", f"ext-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -154,7 +154,7 @@ class TestEditar:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"edit-{_RUN}", f"edit-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -262,7 +262,7 @@ class TestAgendamento:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"agd-{_RUN}", f"agd-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -317,7 +317,7 @@ class TestCrmTargeting:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"crm-{_RUN}", f"crm-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -371,7 +371,7 @@ class TestCampanhaAntiBanPersistencia:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"ab-{_RUN}", f"ab-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -540,7 +540,7 @@ class TestTetoDiario:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             eid = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"teto-{_RUN}", f"teto-{_RUN}"),
             ).fetchone()[0]
             cid = conn.execute(

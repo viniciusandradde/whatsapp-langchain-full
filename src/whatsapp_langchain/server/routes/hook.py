@@ -15,6 +15,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook import (
     EVENTOS_VALIDOS,
@@ -99,6 +100,9 @@ async def create(
     body: HookInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    # ADR-005 leva C1: webhooks de saída são Pro/Enterprise (`webhooks`). Os
+    # hooks já cadastrados continuam disparando (grandfathering de fato).
+    _plano: None = Depends(require_plano_feature("webhooks")),
 ) -> Hook:
     _validate_evento(body.evento)
     await _validar_url_saida(body.url)
@@ -121,6 +125,7 @@ async def update(
     body: HookInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    _plano: None = Depends(require_plano_feature("webhooks")),
 ) -> Hook:
     await _load_hook_in_empresa(hook_id, empresa_id)
     _validate_evento(body.evento)

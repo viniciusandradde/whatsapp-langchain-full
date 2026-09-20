@@ -156,6 +156,30 @@ async def create_empresa_endpoint(
     return empresa
 
 
+_WHITE_LABEL_MSG = (
+    "Marca própria (nome de exibição, logo e cores) não está incluída no seu "
+    "plano. Faça upgrade para personalizar."
+)
+
+
+async def _exigir_white_label_se_mudou(pool, empresa_id: int, body) -> None:
+    """402 `white_label` quando o PATCH altera nome_exibicao/cor_primaria/
+    cor_secundaria para um valor diferente do gravado."""
+    campos = ("nome_exibicao", "cor_primaria", "cor_secundaria")
+    enviados = {
+        c: getattr(body, c) for c in campos if getattr(body, c, None) is not None
+    }
+    if not enviados:
+        return
+    from whatsapp_langchain.shared.empresa import get_empresa_by_id
+
+    atual = await get_empresa_by_id(pool, empresa_id)
+    if atual is None:
+        return  # o endpoint devolve 404 logo adiante
+    if any(getattr(atual, c, None) != v for c, v in enviados.items()):
+        await assert_plano_feature(empresa_id, "white_label", mensagem=_WHITE_LABEL_MSG)
+
+
 @router.put("/{empresa_id}", response_model=Empresa)
 async def update_empresa_endpoint(
     empresa_id: int,
@@ -183,6 +207,12 @@ async def update_empresa_endpoint(
     # a config fica guardada pra quando o plano voltar a ter a feature.
     if body.voz_ativa is True:
         await assert_plano_feature(empresa_id, "voz", mensagem=_VOZ_PLANO_MSG)
+
+    # ADR-005 leva C1: white-label (nome de marca + cores) é Enterprise. Só
+    # MUDAR um desses campos exige a feature — o form reenvia tudo a cada
+    # save, e o que já está gravado continua sendo exibido (grandfathering
+    # das empresas que já tinham marca: flags `plano.white_label`).
+    await _exigir_white_label_se_mudou(pool, empresa_id, body)
 
     # Se slug enviado == slug atual, skipa pra não disparar UNIQUE check.
     if body.slug:
@@ -311,6 +341,8 @@ async def upload_logo_endpoint(
     pool = await get_pool()
     if not await is_admin_of(pool, empresa_id, user_id):
         raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
+    # ADR-005 leva C1: logo própria é white-label (Enterprise / flag).
+    await assert_plano_feature(empresa_id, "white_label", mensagem=_WHITE_LABEL_MSG)
 
     content = await file.read()
     max_mb = _LOGO_MAX_BYTES // 1024 // 1024
