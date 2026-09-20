@@ -47,6 +47,8 @@ def build_graph(
     aceita_imagem: bool = True,
     aceita_audio: bool = True,
     aceita_documento: bool = True,
+    contexto_chars: int | None = None,
+    trim_keep_turns: int | None = None,
 ):
     """Constrói o agente de topologia simples.
 
@@ -67,6 +69,13 @@ def build_graph(
                AsyncPostgresStore em prod.
         chat_model: Override do modelo principal (ex: "openai/gpt-4o-mini").
                     None = usa settings.openrouter_model do .env.
+        contexto_chars: Teto de caracteres do histórico (ADR-004, tier
+                        `agente_ia.contexto_tamanho` traduzido pelo loader).
+                        None = sem teto (legado).
+        trim_keep_turns: `agente_ia.janela_memoria` (mig 043). None = o
+                         TRIM_KEEP_TURNS global. Até 2026-09 este campo era
+                         salvo e ignorado — a UI prometia o que o worker
+                         não fazia.
 
     Returns:
         CompiledStateGraph: Agente compilado pronto para uso.
@@ -81,8 +90,12 @@ def build_graph(
         max_tokens=max_tokens,
     )
 
-    # Middleware de contexto baseado em CONTEXT_STRATEGY
-    middleware = get_context_middleware()
+    # Middleware de contexto baseado em CONTEXT_STRATEGY. Os dois limites do
+    # agente (turnos e caracteres) só valem na estratégia "trim"; o menor
+    # dos dois vence.
+    middleware = get_context_middleware(
+        trim_keep_turns=trim_keep_turns, trim_max_chars=contexto_chars
+    )
 
     # Tools de memória semântica — dependem do store, não da config do agente.
     tools: list = [save_memory, read_memory] if store else []

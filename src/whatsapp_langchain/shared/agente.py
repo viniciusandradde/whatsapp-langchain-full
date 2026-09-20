@@ -25,6 +25,8 @@ from psycopg import errors as pg_errors
 from psycopg.abc import QueryNoTemplate as Query
 from psycopg_pool import AsyncConnectionPool
 
+from whatsapp_langchain.shared.contexto import TIER_PADRAO
+
 logger = structlog.get_logger()
 
 
@@ -72,7 +74,10 @@ _COLS = (
     "timeout_minutos, acao_limite_menu_id, "
     # Triagem omnichannel (mig 061): depto destino fixo quando agente
     # chama transfer_to_human (IA não escolhe — admin configura).
-    "departamento_default_id, retencao_dias"
+    "departamento_default_id, retencao_dias, "
+    # Tier de contexto (mig 187, ADR-004). Fica por último: a linha é
+    # desempacotada por posição em `_row_to_agente`.
+    "contexto_tamanho"
 )
 
 
@@ -122,6 +127,9 @@ class AgenteIA:
     departamento_default_id: int | None = None
     # Retenção de dados (mig 185): dias; NULL = herda a empresa; 0 = ilimitado.
     retencao_dias: int | None = None
+    # Tier de contexto (mig 187, ADR-004): lite|regular|medium|large|extended.
+    # NULL = legado (o worker segue no TRIM_KEEP_TURNS global / janela_memoria).
+    contexto_tamanho: str | None = None
 
     def to_dict(self) -> dict:
         out = {
@@ -169,6 +177,7 @@ class AgenteIA:
             # Triagem omnichannel (mig 061)
             "departamento_default_id": self.departamento_default_id,
             "retencao_dias": self.retencao_dias,
+            "contexto_tamanho": self.contexto_tamanho,
         }
         # Campos derivados (pra UI mostrar valores efetivos)
         temp, top_p = resolve_temperatura_top_p(
@@ -401,8 +410,8 @@ async def create_agente(
                     f"""
                     INSERT INTO agente_ia
                         (empresa_id, slug, nome, descricao, template_catalog,
-                         prompt_override, created_by_user_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                         prompt_override, created_by_user_id, contexto_tamanho)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING {_COLS}
                     """,
                     (
@@ -413,6 +422,9 @@ async def create_agente(
                         template_catalog,
                         prompt,
                         user_id,
+                        # Agente novo já nasce com tier (ADR-004); só o legado
+                        # fica NULL — a coluna não tem DEFAULT de propósito.
+                        TIER_PADRAO,
                     ),
                 )
                 row = await cur.fetchone()
@@ -723,7 +735,13 @@ async def update_agente(
     uma versão em `agente_prompt_versao` na MESMA transação (mig 158).
     `nota` é a "mensagem de commit" opcional dessa versão e não é coluna de
     `agente_ia` — chega por nome e nunca entra no SET.
+
+    `contexto_tamanho` preenchido zera `janela_memoria` no mesmo UPDATE
+    (ADR-004): o worker aplica o menor dos dois limites, e um agente salvo
+    pela tela nova tem que ser governado só pelo tier em caracteres.
     """
+    if fields.get("contexto_tamanho"):
+        fields["janela_memoria"] = None
     READONLY = {
         "id",
         "empresa_id",
@@ -880,6 +898,8 @@ class AgenteRuntime:
     janela_memoria: int | None = None
     timeout_minutos: int | None = None
     acao_limite_menu_id: int | None = None
+    # Tier de contexto (ADR-004) — o loader traduz em `max_chars` do trim.
+    contexto_tamanho: str | None = None
 
     @classmethod
     def from_agente(cls, agente: AgenteIA) -> AgenteRuntime:
@@ -916,6 +936,7 @@ class AgenteRuntime:
             janela_memoria=agente.janela_memoria,
             timeout_minutos=agente.timeout_minutos,
             acao_limite_menu_id=agente.acao_limite_menu_id,
+            contexto_tamanho=agente.contexto_tamanho,
         )
 
 

@@ -50,3 +50,66 @@ class TestLoadGraph:
         """AgentNotFoundError deve conter o agent_id na mensagem."""
         error = AgentNotFoundError("test_agent")
         assert "test_agent" in str(error)
+
+
+class TestContextoTamanhoChegaAoBuildGraph:
+    """ADR-004: o tier do agente vira `contexto_chars` no `build_graph`.
+
+    Até 2026-09 `janela_memoria` era salvo e nunca chegava aqui — a UI
+    prometia o que o worker ignorava. Estes testes são o que impede a
+    regressão: o kwarg TEM que sair do loader.
+    """
+
+    @staticmethod
+    def _runtime(**overrides):
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        base = dict(
+            slug="t",
+            template_catalog="vsa_tech",
+            prompt_override=None,
+            modelo=None,
+            temperatura=0.5,
+            top_p=0.9,
+            max_tokens=None,
+            tools_enabled=[],
+            base_conhecimento_ids=[],
+        )
+        base.update(overrides)
+        return AgenteRuntime(**base)
+
+    @staticmethod
+    def _capturar(monkeypatch):
+        import whatsapp_langchain.agents.catalog.vsa_tech.agent as mod
+
+        chamadas: list[dict] = []
+
+        def fake_build_graph(**kwargs):
+            chamadas.append(kwargs)
+            return object()
+
+        monkeypatch.setattr(mod, "build_graph", fake_build_graph)
+        return chamadas
+
+    async def test_tier_vira_teto_em_caracteres(self, monkeypatch):
+        chamadas = self._capturar(monkeypatch)
+        await load_graph(
+            "vsa_tech", agente_runtime=self._runtime(contexto_tamanho="extended")
+        )
+        assert chamadas[0]["contexto_chars"] == 300_000
+        assert chamadas[0]["trim_keep_turns"] is None
+
+    async def test_legado_sem_tier_fica_sem_teto(self, monkeypatch):
+        chamadas = self._capturar(monkeypatch)
+        await load_graph(
+            "vsa_tech",
+            agente_runtime=self._runtime(contexto_tamanho=None, janela_memoria=7),
+        )
+        assert chamadas[0]["contexto_chars"] is None
+        assert chamadas[0]["trim_keep_turns"] == 7
+
+    async def test_modo_legacy_sem_runtime(self, monkeypatch):
+        chamadas = self._capturar(monkeypatch)
+        await load_graph("vsa_tech")
+        assert chamadas[0]["contexto_chars"] is None
+        assert chamadas[0]["trim_keep_turns"] is None
