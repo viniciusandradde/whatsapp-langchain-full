@@ -43,6 +43,7 @@ from whatsapp_langchain.shared.llm import create_chat_model
 def get_context_middleware(
     strategy: str | None = None,
     trim_keep_turns: int | None = None,
+    trim_max_chars: int | None = None,
     summarize_trigger_tokens: int | None = None,
     summarize_keep_messages: int | None = None,
     summarize_model: str | None = None,
@@ -57,6 +58,9 @@ def get_context_middleware(
                   Default: settings.context_strategy.
         trim_keep_turns: Turnos recentes a manter no trim.
                          Default: settings.trim_keep_turns.
+        trim_max_chars: Teto de caracteres do histórico no trim (ADR-004,
+                        tier `agente_ia.contexto_tamanho`). None = sem teto.
+                        Só afeta a estratégia "trim".
         summarize_trigger_tokens: Tokens antes de acionar sumarização.
                                   Default: settings.summarize_trigger_tokens.
         summarize_keep_messages: Mensagens a manter após sumarização.
@@ -86,7 +90,9 @@ def get_context_middleware(
         resolved_keep = (
             trim_keep_turns if trim_keep_turns is not None else settings.trim_keep_turns
         )
-        middlewares.append(create_trim_middleware(keep_turns=resolved_keep))
+        middlewares.append(
+            create_trim_middleware(keep_turns=resolved_keep, max_chars=trim_max_chars)
+        )
 
     elif resolved_strategy == "summarize":
         resolved_tokens = (

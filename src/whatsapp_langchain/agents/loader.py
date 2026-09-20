@@ -25,6 +25,7 @@ from whatsapp_langchain.shared.agente import AgenteRuntime
 from whatsapp_langchain.shared.agente_ia import resolve_runtime_config
 from whatsapp_langchain.shared.base_conhecimento import has_active_documents
 from whatsapp_langchain.shared.calendar_integration import get_calendar_config
+from whatsapp_langchain.shared.contexto import TIERS
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.variavel import build_render_context, render_template
 
@@ -185,6 +186,14 @@ async def load_graph(
         top_p=top_p,
         max_tokens=max_tokens,
         runtime_source="agente_ia" if agente_runtime else "legacy",
+        contexto_tamanho=agente_runtime.contexto_tamanho if agente_runtime else None,
+    )
+    # Tier de contexto (ADR-004) → teto em caracteres do trim. NULL = legado
+    # (agente nunca salvo pela tela nova): fica no TRIM_KEEP_TURNS global.
+    contexto_chars = (
+        TIERS[agente_runtime.contexto_tamanho]
+        if agente_runtime and agente_runtime.contexto_tamanho in TIERS
+        else None
     )
     return module.build_graph(
         checkpointer=checkpointer,
@@ -206,6 +215,15 @@ async def load_graph(
         aceita_imagem=agente_runtime.aceita_imagem if agente_runtime else True,
         aceita_audio=agente_runtime.aceita_audio if agente_runtime else True,
         aceita_documento=agente_runtime.aceita_documento if agente_runtime else True,
+        contexto_chars=contexto_chars,
+        # `janela_memoria` (mig 043) era salvo e ignorado até aqui. Quem
+        # salva o tier zera este campo (`update_agente`), então os dois só
+        # coexistem em agente legado.
+        trim_keep_turns=(
+            agente_runtime.janela_memoria
+            if agente_runtime and agente_runtime.janela_memoria
+            else None
+        ),
     )
 
 

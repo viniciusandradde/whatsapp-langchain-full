@@ -38,6 +38,7 @@ from whatsapp_langchain.shared.agente import (
     update_agente,
 )
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
+from whatsapp_langchain.shared.contexto import TierContexto
 from whatsapp_langchain.shared.db import get_pool
 
 logger = structlog.get_logger()
@@ -145,6 +146,9 @@ class UpdateAgenteInput(BaseModel):
     # Retenção (mig 185): dias; 0 = ilimitado; NULL = herda a empresa. O
     # endpoint faz passthrough (model_dump exclude_unset) → sem mudança na rota.
     retencao_dias: int | None = Field(default=None, ge=0, le=3650)
+    # Tier de contexto (mig 187, ADR-004). Preenchido, zera `janela_memoria`
+    # em `update_agente` — um só manda. O CHECK do banco espelha o Literal.
+    contexto_tamanho: TierContexto | None = None
     # "Mensagem de commit" da versão do prompt (mig 158). Não é coluna de
     # `agente_ia` — `update_agente` recebe por nome e nunca põe no SET.
     nota: str | None = Field(default=None, max_length=200)

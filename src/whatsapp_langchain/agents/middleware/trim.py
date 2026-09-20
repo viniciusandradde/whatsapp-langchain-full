@@ -18,22 +18,35 @@ Quando usar:
     - Testes e desenvolvimento
     - Quando custo é prioridade sobre contexto
 
+Além dos turnos, aceita um teto em **caracteres** (`max_chars`, ADR-004):
+é o "Tamanho do Contexto" que o painel oferece por agente (Lite 6k …
+Extended 300k). Os dois limites se somam — o menor vence — e o turno mais
+recente entra sempre, mesmo que sozinho passe do teto.
+
 Exemplo:
     from whatsapp_langchain.agents.middleware import create_trim_middleware
 
-    trim = create_trim_middleware(keep_turns=5)
+    trim = create_trim_middleware(keep_turns=5, max_chars=15_000)
     agent = create_agent(model=model, middleware=[trim], ...)
 """
 
 from typing import Any
 
+import structlog
 from langchain.agents import AgentState
 from langchain.agents.middleware import before_model
 from langchain_core.messages import HumanMessage, RemoveMessage
 from langgraph.runtime import Runtime
 
+logger = structlog.get_logger()
 
-def create_trim_middleware(keep_turns: int = 5):
+
+def _tamanho(m: Any) -> int:
+    """Caracteres de uma mensagem — aproximação de tokens (÷4) do ADR-004."""
+    return len(str(m.content))
+
+
+def create_trim_middleware(keep_turns: int = 5, max_chars: int | None = None):
     """Cria middleware que mantém apenas os N turnos mais recentes.
 
     Um turno = 1 HumanMessage + todas as respostas até o próximo HumanMessage.
@@ -45,6 +58,10 @@ def create_trim_middleware(keep_turns: int = 5):
 
     Args:
         keep_turns: Número de turnos recentes a manter. Default: 5.
+        max_chars: Teto de caracteres do histórico (ADR-004). Aplicado DEPOIS
+            do corte por turnos, do turno mais recente ao mais antigo: o
+            primeiro turno que estoura o teto sai, e todos os anteriores com
+            ele. O mais recente nunca sai. None = só o corte por turnos.
 
     Returns:
         Função middleware decorada com @before_model.
@@ -70,15 +87,36 @@ def create_trim_middleware(keep_turns: int = 5):
         # Encontra os índices onde cada turno começa (cada HumanMessage)
         boundaries = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
 
-        # Se temos poucos turnos, não precisa fazer trim
-        if len(boundaries) <= keep_turns:
-            return None
+        # O ponto de corte é o início do turno N contando de trás pra frente.
+        # Com poucos turnos não há corte (cutoff 0).
+        cutoff = boundaries[-keep_turns] if len(boundaries) > keep_turns else 0
 
-        # O ponto de corte é o início do turno N contando de trás pra frente
-        cutoff = boundaries[-keep_turns]
+        # Teto em caracteres (ADR-004): soma turno a turno, do mais recente
+        # ao mais antigo, e para no primeiro que estoura. O turno mais
+        # recente entra sempre — sem ele o agente responderia no vazio.
+        if max_chars is not None:
+            inicios = [b for b in boundaries if b >= cutoff]
+            fins = inicios[1:] + [len(messages)]
+            acumulado = 0
+            for inicio, fim in zip(reversed(inicios), reversed(fins), strict=True):
+                acumulado += sum(_tamanho(m) for m in messages[inicio:fim])
+                if acumulado > max_chars and inicio != inicios[-1]:
+                    cutoff = fim
+                    break
+
+        if cutoff == 0:
+            return None
 
         # Remove tudo antes do ponto de corte
         messages_to_remove = messages[:cutoff]
+        logger.info(
+            "contexto_trim",
+            removidas=len(messages_to_remove),
+            mantidas=len(messages) - cutoff,
+            chars_mantidos=sum(_tamanho(m) for m in messages[cutoff:]),
+            keep_turns=keep_turns,
+            max_chars=max_chars,
+        )
 
         return {
             "messages": [

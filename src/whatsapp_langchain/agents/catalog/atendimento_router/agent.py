@@ -55,6 +55,9 @@ def build_graph(
     aceita_imagem: bool = True,  # noqa: ARG001
     aceita_audio: bool = True,  # noqa: ARG001
     aceita_documento: bool = True,  # noqa: ARG001
+    # ADR-004: o router não tem histórico próprio pra cortar.
+    contexto_chars: int | None = None,  # noqa: ARG001
+    trim_keep_turns: int | None = None,  # noqa: ARG001
 ):
     """Compila o StateGraph multi-agent paralelo.
 
