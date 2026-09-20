@@ -19,7 +19,10 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
-from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
+from whatsapp_langchain.server.dependencies_plano import (
+    assert_plano_feature,
+    assert_plano_limit,
+)
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import (
     add_member,
@@ -693,6 +696,9 @@ async def add_member_endpoint(
         raise HTTPException(status_code=403, detail="Só admin pode adicionar membros.")
     if await get_empresa_by_id(pool, empresa_id) is None:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    # ADR-005 leva A: a empresa vem do PATH, então é o `assert_` (o Depends
+    # gatearia pela empresa ativa do superadmin). Mesmo limite do /api/usuarios.
+    await assert_plano_limit(empresa_id, "usuarios")
     return await add_member(pool, empresa_id, body.user_id, body.role)
 
 

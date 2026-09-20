@@ -40,61 +40,103 @@ logger = structlog.get_logger()
 # Mensagens user-facing em pt-BR pra UI mostrar direto.
 _STATUS_QUOTA_EXCEEDED = 402
 
+# Recursos contáveis aceitos por `require_plano_limit`/`assert_plano_limit`
+# — mesmo nome usado por `count_recurso()` e `PlanoInfo.limite_de()`.
+RECURSOS_CONTAVEIS: tuple[str, ...] = (
+    "conexoes",
+    "usuarios",
+    "atendimentos_mes",
+    "documentos_kb",
+    "agentes",
+)
+
+
+# Como o recurso aparece na mensagem do 402 (a UI mostra `message` direto).
+_ROTULO_RECURSO = {
+    "conexoes": "conexões",
+    "usuarios": "usuários",
+    "atendimentos_mes": "atendimentos no mês",
+    "documentos_kb": "documentos na base de conhecimento",
+    "agentes": "agentes de IA",
+}
+
+
+async def assert_plano_limit(empresa_id: int, recurso: str) -> None:
+    """Levanta 402 se criar mais um `recurso` estoura o limite do plano.
+
+    Versão para endpoints onde a empresa-alvo vem do PATH (ex.: o legado
+    `POST /api/empresas/{id}/membros`), pelo mesmo motivo do
+    `assert_plano_feature`: o `Depends` resolveria a empresa ATIVA do usuário,
+    não a editada. `require_plano_limit` delega aqui.
+
+    Raises:
+        HTTPException 402: body {error: "quota_exceeded", recurso, quota_used,
+            quota_max, plano_atual, upgrade_to, message}.
+        HTTPException 404: empresa não existe (mesma razão do
+            `assert_plano_feature`).
+    """
+    if recurso not in RECURSOS_CONTAVEIS:
+        raise ValueError(f"recurso inválido: {recurso} (válidos: {RECURSOS_CONTAVEIS})")
+    pool = await get_pool()
+    try:
+        plano = await get_plano_info(pool, empresa_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.") from e
+    usado = await count_recurso(pool, empresa_id, recurso)
+
+    if not plano.passou_limite(recurso, usado):
+        return
+
+    limite = plano.limite_de(recurso)
+    upgrade = plano.upgrade_sugerido()
+    logger.warning(
+        "quota_exceeded",
+        empresa_id=empresa_id,
+        recurso=recurso,
+        usado=usado,
+        limite=limite,
+        plano=plano.plano_slug,
+    )
+    detail_pt = (
+        f"Limite do plano {plano.plano_nome} atingido: "
+        f"{usado}/{limite} {_ROTULO_RECURSO.get(recurso, recurso)}. "
+        + (
+            f"Faça upgrade pro plano {upgrade.title()} pra continuar."
+            if upgrade
+            else "Entre em contato pra aumentar o limite."
+        )
+    )
+    raise HTTPException(
+        status_code=_STATUS_QUOTA_EXCEEDED,
+        detail={
+            "error": "quota_exceeded",
+            "recurso": recurso,
+            "quota_used": usado,
+            "quota_max": limite,
+            "plano_atual": plano.plano_slug,
+            "upgrade_to": upgrade,
+            "message": detail_pt,
+        },
+    )
+
 
 def require_plano_limit(recurso: str):
     """Factory de dependency que bloqueia se quota do recurso estourou.
 
     Args:
-        recurso: nome do recurso ('conexoes', 'usuarios', 'atendimentos_mes',
-            'documentos_kb'). Mesmo nome usado por `count_recurso()`.
+        recurso: um de `RECURSOS_CONTAVEIS` ('conexoes', 'usuarios',
+            'atendimentos_mes', 'documentos_kb', 'agentes').
 
     Raises:
-        HTTPException 402: com body {detail, quota_max, quota_used,
-            plano_atual, upgrade_to}.
+        HTTPException 402: ver `assert_plano_limit`.
     """
-    valid = ("conexoes", "usuarios", "atendimentos_mes", "documentos_kb")
-    if recurso not in valid:
-        raise ValueError(f"recurso inválido: {recurso} (válidos: {valid})")
+    if recurso not in RECURSOS_CONTAVEIS:
+        raise ValueError(f"recurso inválido: {recurso} (válidos: {RECURSOS_CONTAVEIS})")
 
     async def _checker(
         empresa_id: int = Depends(get_empresa_context),
     ) -> None:
-        pool = await get_pool()
-        plano = await get_plano_info(pool, empresa_id)
-        usado = await count_recurso(pool, empresa_id, recurso)
-
-        if plano.passou_limite(recurso, usado):
-            limite = plano.limite_de(recurso)
-            upgrade = plano.upgrade_sugerido()
-            logger.warning(
-                "quota_exceeded",
-                empresa_id=empresa_id,
-                recurso=recurso,
-                usado=usado,
-                limite=limite,
-                plano=plano.plano_slug,
-            )
-            detail_pt = (
-                f"Limite do plano {plano.plano_nome} atingido: "
-                f"{usado}/{limite} {recurso}. "
-                + (
-                    f"Faça upgrade pro plano {upgrade.title()} pra continuar."
-                    if upgrade
-                    else "Entre em contato pra aumentar o limite."
-                )
-            )
-            raise HTTPException(
-                status_code=_STATUS_QUOTA_EXCEEDED,
-                detail={
-                    "error": "quota_exceeded",
-                    "recurso": recurso,
-                    "quota_used": usado,
-                    "quota_max": limite,
-                    "plano_atual": plano.plano_slug,
-                    "upgrade_to": upgrade,
-                    "message": detail_pt,
-                },
-            )
+        await assert_plano_limit(empresa_id, recurso)
 
     return _checker
 

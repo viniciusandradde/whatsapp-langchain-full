@@ -24,9 +24,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Final
 
+import structlog
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.rls_context import empresa_scope
+
+logger = structlog.get_logger()
 
 # Cache TTL — 30s suficiente pra absorver pico de checks num request
 # burst, baixo o suficiente pra mudança de plano refletir rápido.
@@ -51,6 +54,9 @@ class PlanoInfo:
     limite_orcamento_ia_usd: float | None
     limite_documentos_kb: int | None
     features: dict[str, bool] = field(default_factory=dict)
+    # ADR-005 leva A (mig 189). Fica depois de `features` (com default) para
+    # não quebrar quem constrói PlanoInfo posicionalmente nos testes.
+    limite_agentes: int | None = None
 
     def limite_de(self, recurso: str) -> int | None:
         """Retorna o limite do recurso (None = ilimitado)."""
@@ -59,6 +65,7 @@ class PlanoInfo:
             "conexoes": self.limite_conexoes,
             "atendimentos_mes": self.limite_atendimentos_mes,
             "documentos_kb": self.limite_documentos_kb,
+            "agentes": self.limite_agentes,
         }
         if recurso not in mapa:
             raise ValueError(f"Recurso desconhecido: {recurso}")
@@ -124,7 +131,7 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
                 SELECT e.plano_id, p.slug, p.nome, p.preco_mensal_brl,
                        p.limite_usuarios, p.limite_conexoes,
                        p.limite_atendimentos_mes, p.limite_orcamento_ia_usd,
-                       p.limite_documentos_kb, p.features
+                       p.limite_documentos_kb, p.features, p.limite_agentes
                   FROM empresa e
                   LEFT JOIN plano p ON p.id = e.plano_id
                  WHERE e.id = %s
@@ -132,6 +139,16 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
                 (empresa_id,),
             )
             row = await cur.fetchone()
+            # Grandfathering (ADR-005 D3): exceção por empresa em
+            # `feature_flag` com chave `plano.<nome>` sobrepõe o plano.
+            cur = await conn.execute(
+                """
+                SELECT key, value FROM feature_flag
+                 WHERE empresa_id = %s AND ativo AND key LIKE 'plano.%%'
+                """,
+                (empresa_id,),
+            )
+            excecoes = {k[len("plano.") :]: v for k, v in await cur.fetchall()}
 
     if row is None:
         raise ValueError(f"Empresa {empresa_id} não existe")
@@ -147,6 +164,7 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
         lim_ia,
         lim_docs,
         features,
+        lim_agentes,
     ) = row
     info = PlanoInfo(
         empresa_id=empresa_id,
@@ -160,9 +178,57 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
         limite_orcamento_ia_usd=float(lim_ia) if lim_ia is not None else None,
         limite_documentos_kb=lim_docs,
         features=features or {},
+        limite_agentes=lim_agentes,
     )
+    aplicar_excecoes(info, excecoes)
     _plano_cache[empresa_id] = (now, info)
     return info
+
+
+# Colunas numéricas de `plano` que uma flag `plano.limite_*` pode sobrepor.
+_LIMITES_SOBREPONIVEIS: Final = frozenset(
+    {
+        "limite_usuarios",
+        "limite_conexoes",
+        "limite_atendimentos_mes",
+        "limite_orcamento_ia_usd",
+        "limite_documentos_kb",
+        "limite_agentes",
+    }
+)
+
+
+def aplicar_excecoes(info: PlanoInfo, excecoes: dict[str, object]) -> None:
+    """Sobrepõe o plano com as flags `plano.<nome>` da empresa (ADR-005 D3).
+
+    `plano.limite_*` mexe na coluna numérica (JSON `null` = ilimitado, como
+    NULL na tabela; texto numérico vale, o resto é ignorado com log — a tela
+    de flags aceita qualquer JSON). Qualquer outra chave vira entrada de
+    `features` com o valor que estiver na flag. Muta `info` no lugar.
+    """
+    for chave, valor in excecoes.items():
+        if chave in _LIMITES_SOBREPONIVEIS:
+            if valor is None:
+                setattr(info, chave, None)
+                continue
+            try:
+                if isinstance(valor, bool):
+                    raise TypeError("bool não é limite")
+                numero = float(valor)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                logger.warning(
+                    "plano_excecao_ignorada",
+                    empresa_id=info.empresa_id,
+                    chave=chave,
+                    valor=valor,
+                )
+                continue
+            if chave == "limite_orcamento_ia_usd":
+                info.limite_orcamento_ia_usd = numero
+            else:
+                setattr(info, chave, int(numero))
+        elif chave:
+            info.features[chave] = valor  # type: ignore[assignment]
 
 
 # =====================================================================
@@ -286,6 +352,7 @@ class QuotaSnapshot:
                 "atendimentos_mes": self.plano.limite_atendimentos_mes,
                 "documentos_kb": self.plano.limite_documentos_kb,
                 "orcamento_ia_usd": self.plano.limite_orcamento_ia_usd,
+                "agentes": self.plano.limite_agentes,
             },
             "usado": self.usado,
             "percentual": self.percentual,
@@ -309,9 +376,15 @@ async def get_quota_snapshot(
     )
     usado = dict(zip(recursos, counts))
 
-    # Calcula percentual (ignora 'agentes' — sem limite ainda na tabela plano)
+    # `agentes` ganhou limite na mig 189 (ADR-005 leva A)
     percentual: dict[str, float | None] = {}
-    for recurso in ("usuarios", "conexoes", "atendimentos_mes", "documentos_kb"):
+    for recurso in (
+        "usuarios",
+        "conexoes",
+        "atendimentos_mes",
+        "documentos_kb",
+        "agentes",
+    ):
         limite = plano.limite_de(recurso)
         if limite is None or limite == 0:
             percentual[recurso] = None

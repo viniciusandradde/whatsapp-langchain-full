@@ -107,10 +107,13 @@ export default async function IaBudgetPage() {
         <CardContent>
           <BudgetForm
             initial={{
-              limite_usd: budget?.limite_usd ?? 100,
+              // Sem linha do mês, o default é o teto do plano (não 100): é o
+              // que o PUT aceitaria e o que o worker herda no 1º débito.
+              limite_usd: budget?.limite_usd ?? budget?.teto_plano_usd ?? 100,
               acao_estouro: (budget?.acao_estouro as "alertar" | "bloquear" | "redirecionar_menu") ?? "alertar",
               alerta_pct: budget?.alerta_pct ?? 80,
             }}
+            tetoPlano={budget?.teto_plano_usd ?? null}
           />
         </CardContent>
       </Card>

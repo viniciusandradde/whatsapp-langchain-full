@@ -2090,6 +2090,15 @@ export interface Aba {
   filtro?: { cliente_tags?: string[] } | null;
 }
 
+/** Uso × limite de atendimentos no mês (ADR-005 D5). `limite` null = ilimitado. */
+export interface UsoAtendimentosMes {
+  usado: number;
+  limite: number | null;
+  percentual: number | null;
+  atingido: boolean;
+  em_alerta: boolean;
+}
+
 export interface ContadoresAtendimento {
   sistema: {
     aguardando: number;
@@ -2099,6 +2108,8 @@ export interface ContadoresAtendimento {
     nao_lidas: number;
   };
   abas: Record<string, number>;
+  /** Ausente nas respostas antigas/degradadas — a tela trata como "sem banner". */
+  plano?: { atendimentos_mes: UsoAtendimentosMes | null };
 }
 
 export async function getMyAbas(): Promise<{ items: Aba[] }> {
@@ -4855,6 +4866,8 @@ export interface IaBudget {
   estourado_em?: string | null;
   alertado_em?: string | null;
   pct_consumo?: number;
+  /** Máximo que o PUT aceita em `limite_usd` (ADR-005 D4). null = o plano não limita. */
+  teto_plano_usd?: number | null;
 }
 
 export interface IaBudgetUpsertInput {

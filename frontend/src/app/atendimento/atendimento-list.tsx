@@ -22,6 +22,7 @@ import {
 import { agruparAtendimentos, type ModoAgrupamento } from "./agrupar";
 import { AlcaColuna } from "./alca-coluna";
 import { AtendimentoDrawer } from "./atendimento-drawer";
+import { BannerPlano } from "./banner-plano";
 import { CardAtendimento } from "./card-atendimento";
 import { GrupoFila } from "./grupo-fila";
 import { ListaToolbar } from "./lista-toolbar";
@@ -267,6 +268,7 @@ export function AtendimentoList({
           algumAberto={algumAberto}
           onAlternarTodos={alternarTodos}
         />
+        <BannerPlano />
         {vazio ?? (
           <ul className="min-h-0 flex-1 overflow-y-auto">
             {grupos.map((g) => (

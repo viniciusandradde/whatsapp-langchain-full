@@ -30,8 +30,13 @@ Chaves em `features` hoje: `calendar`, `mcp`, `rbac`, `menu_moderno`, `disparado
 | Número de conexões | `limite_conexoes` | `routes/conexao.py` (4 rotas de criação, `require_plano_limit("conexoes")`) | 402 |
 | Tamanho do contexto do agente | `contexto_max` | PUT do agente (402) · tela (trava) · loader (rebaixa) — mig 188, PR #164 | 402 + rebaixa |
 | Modelos premium (> US$ 5/Mtok) | `modelos_premium` | PUT do agente (402) · tela (trava) — mig 188, PR #164 | 402 |
+| Usuários | `limite_usuarios` | `POST /api/usuarios` (+ replicar) e legado `/membros` — ADR-005 leva A, mig 189 | 402 |
+| Documentos da base de conhecimento | `limite_documentos_kb` | `POST /api/base-conhecimento` (+ upload) — leva A | 402 |
+| Agentes de IA | `limite_agentes` (novo) | `POST /api/v1/agentes` — leva A | 402 |
+| Atendimentos/mês | `limite_atendimentos_mes` | worker (`shared/plano_gate.py`): IA pausa, humano continua; aviso em 80 % — leva A | suave |
+| Teto de IA do plano | `limite_orcamento_ia_usd` | `PUT /api/v1/ia-budget` (402) + herança do mês (`LEAST`) — leva A | 402 + teto |
 
-Só isso. Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free.
+Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free (o rastreio das próximas levas está na ADR-005 §9).
 
 ## 3. Chaves semeadas que o código IGNORA (gotcha "UI promete o que o backend ignora")
 
@@ -42,10 +47,10 @@ Só isso. Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free.
 | `menu_moderno` | Pro/Enterprise | `menu_chatbot.menu_moderno` (botões nativos) salva em qualquer plano |
 | `disparador` | Free `true`, Pessoal `false`, Pro/Ent `true` | módulo inteiro (campanhas, contatos, grupos, extensão) abre para todos; só o teto/mídia é aplicado |
 | `white_label` | só Enterprise | logo + cores por empresa (`/companies`) salvam em qualquer plano |
-| `limite_usuarios` | 2/2/10/∞ | **contado** no `/billing` (quota snapshot), **não bloqueia** criar usuário |
-| `limite_atendimentos_mes` | 100/500/5.000/∞ | contado, não bloqueia (nem avisa) |
-| `limite_documentos_kb` | 5/20/100/∞ | contado, não bloqueia upload na base de conhecimento |
-| `limite_orcamento_ia_usd` | 5/10/100/500 | **não alimenta o `ia_budget`** — o teto de IA que vale é o que o admin digita em `/governanca/ia-budget`; um Free pode configurar US$ 1.000 |
+| ~~`limite_usuarios`~~ | 2/2/10/∞ | ~~contado, não bloqueia~~ → **aplicado na leva A (mig 189)** |
+| ~~`limite_atendimentos_mes`~~ | 100/500/5.000/∞ | ~~contado, não bloqueia~~ → **bloqueio suave na leva A** |
+| ~~`limite_documentos_kb`~~ | 5/20/100/∞ | ~~contado, não bloqueia~~ → **aplicado na leva A** |
+| ~~`limite_orcamento_ia_usd`~~ | 5/10/100/500 | ~~não alimenta o `ia_budget`~~ → **teto do `ia_budget` na leva A** |
 
 O painel também **não esconde nem marca** nada por plano: o menu é gateado só por permissão (`requires:`), e o `/billing` mostra listas de features de marketing (`billing-page-client.tsx`) que não batem com as chaves acima.
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from whatsapp_langchain.server.dependencies import (
@@ -23,6 +23,7 @@ from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.audit import record_audit
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.governanca_ia import get_budget_atual
+from whatsapp_langchain.shared.plano_limits import get_plano_info
 
 router = APIRouter(
     prefix="/api/v1/dashboard",
@@ -236,9 +237,15 @@ async def get_budget_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
-    """Retorna budget do mês especificado (default = atual). None se não há."""
+    """Retorna budget do mês especificado (default = atual). None se não há.
+
+    `teto_plano_usd` (ADR-005 D4) é o máximo que o PUT aceita em `limite_usd`
+    — None = o plano não limita. Vem junto para o form mostrar o teto antes
+    de o usuário tentar salvar acima dele.
+    """
     pool = await get_pool()
     target = ano_mes or datetime.now().strftime("%Y-%m")
+    teto = (await get_plano_info(pool, empresa_id)).limite_orcamento_ia_usd
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -251,12 +258,18 @@ async def get_budget_endpoint(
         )
         row = await cur.fetchone()
     if not row:
-        return {"empresa_id": empresa_id, "ano_mes": target, "exists": False}
+        return {
+            "empresa_id": empresa_id,
+            "ano_mes": target,
+            "exists": False,
+            "teto_plano_usd": teto,
+        }
     return {
         "exists": True,
         "id": int(row[0]),
         "empresa_id": empresa_id,
         "ano_mes": row[1],
+        "teto_plano_usd": teto,
         "limite_usd": float(row[2]),
         "consumo_usd": float(row[3]),
         "acao_estouro": row[4],
@@ -279,9 +292,38 @@ async def upsert_budget_endpoint(
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
 ) -> dict:
-    """UPSERT do budget do mês. consumo_usd preservado se já existe."""
+    """UPSERT do budget do mês. consumo_usd preservado se já existe.
+
+    ADR-005 D4: o teto de IA do plano (`plano.limite_orcamento_ia_usd`) é o
+    MÁXIMO que se pode digitar aqui. Antes disto um Free podia configurar
+    US$ 1.000 e a plataforma pagava. 402 no mesmo formato dos outros gates de
+    plano (`feature_unavailable`), que a UI já traduz.
+    """
     pool = await get_pool()
     target = body.ano_mes or datetime.now().strftime("%Y-%m")
+    plano = await get_plano_info(pool, empresa_id)
+    teto = plano.limite_orcamento_ia_usd
+    if teto is not None and body.limite_usd > teto:
+        upgrade = plano.upgrade_sugerido()
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "feature_unavailable",
+                "feature": "orcamento_ia",
+                "plano_atual": plano.plano_slug,
+                "upgrade_to": upgrade,
+                "teto_plano_usd": teto,
+                "message": (
+                    f"O plano {plano.plano_nome} permite até US$ {teto:.2f} de "
+                    f"IA por mês. "
+                    + (
+                        f"Faça upgrade pro plano {upgrade.title()} pra ampliar."
+                        if upgrade
+                        else "Entre em contato pra ampliar o teto."
+                    )
+                ),
+            },
+        )
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
