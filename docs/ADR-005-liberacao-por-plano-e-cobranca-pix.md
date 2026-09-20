@@ -195,8 +195,8 @@ Antes de **cada** leva: rodar em produção (`ssh opc@… psql`) a consulta de u
 | 0.2 | Esta ADR | docs-only em master | ✅ escrita | 20/09/2026 | este arquivo |
 | A | Limites existentes + `limite_agentes` + atendimentos/mês suave + teto de IA no `ia_budget` | `feat/plano-leva-a-limites` / **#165** (`d34c59d`) | ✅ em produção | 20/09/2026 | mig 189 em `_migrations` (183); api/worker-1/2/frontend recriados e conferidos por conteúdo (`assert_plano_limit`, `plano_gate.py`, "IA pausada pelo plano" no chunk); 0 erros; painel/API 200; 6 E2E + fumaça do worker no dev |
 | A.0 | Consulta de uso em produção + flags de grandfathering | — | ✅ | 20/09/2026 | ninguém acima de usuários/KB/atendimentos; só a sandbox 999 (8 agentes) → flag `plano.limite_agentes=null` semeada na mig 189; `ia_budget` da 1018 = US$ 10 (consumo US$ 3,49) < teto Pro US$ 100 — sem exceção |
-| B | Custo de LLM por mensagem (transcrição do operador, documentos, imagem, few-shot, catálogo completo) | `feat/plano-leva-b-llm` | ⬜ | | mig 190 |
-| B.0 | Consulta de uso + grandfathering | — | ⬜ | | |
+| B | Custo de LLM por mensagem (transcrição do operador, documentos, imagem, few-shot, catálogo completo) | `feat/plano-leva-b-llm` | 🔍 no dev, aguardando o dono | 20/09/2026 | mig 190; `test_plano_leva_b_endpoints.py` (4 E2E) + 6 unit; fumaça do worker (imagem Free → `plano_bloqueado` sem visão; com flag → descrita); 3 capturas |
+| B.0 | Consulta de uso + grandfathering | — | ✅ | 20/09/2026 | ninguém com `transcrever_audio_sempre`; documentos/imagem/few-shot em uso só na 1 (Ent) e 1018 (Pro); modelo fora do curado só na 1; sandbox 999 → flags `plano.documentos_cliente/imagem_cliente/fewshot` na mig 190 |
 | C1 | Módulos (disparador, mcp, rbac, white_label, menu_moderno, webhooks, waba) + feature-flags superadmin | `feat/plano-leva-c1-modulos` | ⬜ | | mig 191 |
 | C1.0 | Consulta de uso + grandfathering | — | ⬜ | | |
 | C2 | Quantidades e retenção (departamentos, workflows, menus, retenção, auditoria, csat, resumo, bateria, observabilidade, qualidade) | `feat/plano-leva-c2-quantidades` | ⬜ | | mig 192 |

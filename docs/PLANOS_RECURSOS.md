@@ -35,6 +35,10 @@ Chaves em `features` hoje: `calendar`, `mcp`, `rbac`, `menu_moderno`, `disparado
 | Agentes de IA | `limite_agentes` (novo) | `POST /api/v1/agentes` — leva A | 402 |
 | Atendimentos/mês | `limite_atendimentos_mes` | worker (`shared/plano_gate.py`): IA pausa, humano continua; aviso em 80 % — leva A | suave |
 | Teto de IA do plano | `limite_orcamento_ia_usd` | `PUT /api/v1/ia-budget` (402) + herança do mês (`LEAST`) — leva A | 402 + teto |
+| Transcrição de áudio para o operador | `transcricao_operador` | PATCH da conexão (ligar) + botão "Transcrever" (402) · worker pula — leva B, mig 190 | 402 + degrada |
+| Leitura de documentos / imagem do cliente | `documentos_cliente` / `imagem_cliente` | PUT do agente ao ligar `aceita_*` (402) · `preprocess` devolve "[Arquivo recebido … não incluído no plano]" — leva B | 402 + degrada |
+| Few-shot automático | `fewshot` | PUT do agente ao ligar (402) · worker não injeta — leva B | 402 + degrada |
+| Catálogo completo de modelos | `catalogo_completo` | `GET /modelos-llm/catalogo` devolve só curados — leva B | filtra |
 
 Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free (o rastreio das próximas levas está na ADR-005 §9).
 

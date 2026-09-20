@@ -4679,6 +4679,8 @@ export interface PlanoCatalogo {
   nome: string;
   contexto_max: TierContexto;
   modelos_premium: boolean;
+  /** ADR-005 leva B: false = o catálogo veio só com os recomendados. */
+  catalogo_completo: boolean;
   upgrade_sugerido: string | null;
 }
 

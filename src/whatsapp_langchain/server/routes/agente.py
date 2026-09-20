@@ -18,7 +18,10 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
-from whatsapp_langchain.server.dependencies_plano import require_plano_limit
+from whatsapp_langchain.server.dependencies_plano import (
+    assert_plano_feature,
+    require_plano_limit,
+)
 from whatsapp_langchain.server.dependencies_rbac import (
     require_agente_access,
     require_permission,
@@ -264,6 +267,14 @@ async def create_endpoint(
     return out.to_dict()
 
 
+# (campo do PATCH, chave em `plano.features`, rótulo da mensagem do 402)
+_RECURSOS_LLM_DO_AGENTE: tuple[tuple[str, str, str], ...] = (
+    ("fewshot_enabled", "fewshot", "O few-shot automático"),
+    ("aceita_imagem", "imagem_cliente", "A leitura de imagens do cliente"),
+    ("aceita_documento", "documentos_cliente", "A leitura de documentos do cliente"),
+)
+
+
 @router.put("/{slug}")
 async def update_endpoint(
     slug: str,
@@ -299,6 +310,19 @@ async def update_endpoint(
     )
     if bloqueio is not None:
         raise HTTPException(status_code=402, detail=bloqueio.detail())
+
+    # ADR-005 leva B: LIGAR um recurso que custa LLM por mensagem exige a
+    # feature no plano (402 legível). Só a transição off→on é gateada: o
+    # editor reenvia todos os campos, e um agente que já está com o
+    # interruptor ligado (de um plano antigo) não pode ficar impossível de
+    # salvar — quem degrada nesse caso é o worker.
+    for campo, chave, rotulo in _RECURSOS_LLM_DO_AGENTE:
+        if fields.get(campo) is True and not getattr(before, campo, False):
+            await assert_plano_feature(
+                empresa_id,
+                chave,
+                mensagem=f"{rotulo} não está incluído no seu plano. Faça upgrade para ligar.",
+            )
 
     # `nota` viaja dentro de `fields` e casa com o parâmetro nomeado de
     # `update_agente` — não vira coluna no SET.

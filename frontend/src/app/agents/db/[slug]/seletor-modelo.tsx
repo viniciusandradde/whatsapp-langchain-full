@@ -434,10 +434,20 @@ function Catalogo({
       </div>
 
       {/* Contagem + limpar */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">
           {visiveis.length} {visiveis.length === 1 ? "modelo encontrado" : "modelos encontrados"}
         </Badge>
+        {/* ADR-005 leva B: sem `catalogo_completo` a API já manda só os
+            recomendados — aqui só se explica por que a lista é curta. */}
+        {plano.catalogo_completo === false && (
+          <span className="text-xs text-muted-foreground">
+            O plano {plano.nome} mostra os modelos recomendados
+            {plano.upgrade_sugerido
+              ? ` — o catálogo completo vem a partir do plano ${rotuloPlano(plano.upgrade_sugerido)}.`
+              : "."}
+          </span>
+        )}
         {temFiltro && (
           <Button
             type="button"

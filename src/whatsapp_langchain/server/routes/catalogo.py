@@ -104,6 +104,15 @@ async def catalogo_completo_endpoint(
     pool = await get_pool()
     catalogo = await listar_catalogo_modelos(pool)
     plano = await get_plano_info(pool, empresa_id)
+    # ADR-005 leva B: sem `catalogo_completo` a empresa vê só os recomendados
+    # (`modelo_llm`). Filtra a CÓPIA — o cache do catálogo é por processo e
+    # compartilhado entre empresas. O modelo salvo fora do curado continua
+    # aparecendo na tela como card sintético "atual (fora do catálogo)".
+    if not plano.tem_feature("catalogo_completo"):
+        catalogo = {
+            **catalogo,
+            "itens": [i for i in catalogo["itens"] if i.get("curado")],
+        }
     return {**catalogo, "plano": resumo_plano(plano)}
 
 

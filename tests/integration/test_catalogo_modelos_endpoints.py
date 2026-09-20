@@ -237,6 +237,7 @@ class TestE2E:
             "nome": "Pro",
             "contexto_max": "large",
             "modelos_premium": True,
+            "catalogo_completo": True,
             "upgrade_sugerido": "enterprise",
         }
 
