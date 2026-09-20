@@ -558,7 +558,7 @@ export function AtendimentoDrawer({
             const el = e.currentTarget;
             grudadoNoFimRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
           }}
-          className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3 sm:px-4"
+          className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 py-3 sm:px-4"
         >
           {error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

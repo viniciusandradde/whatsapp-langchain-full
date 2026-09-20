@@ -40,7 +40,7 @@ export function MediaPreview({
             className="max-h-64 max-w-full rounded-lg border border-border/40 object-contain"
           />
         </a>
-        {caption && <p className="whitespace-pre-wrap text-sm">{caption}</p>}
+        {caption && <p className="whitespace-pre-wrap wrap-anywhere text-sm">{caption}</p>}
       </div>
     );
   }
@@ -53,7 +53,7 @@ export function MediaPreview({
         <audio controls src={url} className="w-64 max-w-full" preload="metadata">
           Seu navegador não suporta player de áudio.
         </audio>
-        {caption && <p className="whitespace-pre-wrap text-sm">{caption}</p>}
+        {caption && <p className="whitespace-pre-wrap wrap-anywhere text-sm">{caption}</p>}
       </div>
     );
   }
@@ -69,7 +69,7 @@ export function MediaPreview({
         >
           Seu navegador não suporta vídeo.
         </video>
-        {caption && <p className="whitespace-pre-wrap text-sm">{caption}</p>}
+        {caption && <p className="whitespace-pre-wrap wrap-anywhere text-sm">{caption}</p>}
       </div>
     );
   }
@@ -90,7 +90,7 @@ export function MediaPreview({
         <span className="truncate">{rotulo}</span>
         <span className="shrink-0 text-muted-foreground">— abrir</span>
       </a>
-      {caption && <p className="whitespace-pre-wrap text-sm">{caption}</p>}
+      {caption && <p className="whitespace-pre-wrap wrap-anywhere text-sm">{caption}</p>}
     </div>
   );
 }

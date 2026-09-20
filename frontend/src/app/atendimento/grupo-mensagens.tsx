@@ -125,7 +125,7 @@ function BolhaItem({
           )}
         </>
       ) : (
-        <p className={cn("whitespace-pre-wrap", b.apagada && "italic text-muted-foreground")}>
+        <p className={cn("whitespace-pre-wrap wrap-anywhere", b.apagada && "italic text-muted-foreground")}>
           {b.text}
         </p>
       )}
@@ -178,7 +178,7 @@ export function NotaInterna({ nota, agora }: { nota: Nota; agora: Date }) {
           <Lock className="size-3" aria-hidden />
           Nota interna · {m.criado_por_user_id ?? "—"} · {formatarHoraCurta(m.created_at, agora)}
         </p>
-        <p className="whitespace-pre-wrap text-foreground">{m.response}</p>
+        <p className="whitespace-pre-wrap wrap-anywhere text-foreground">{m.response}</p>
       </div>
     </div>
   );

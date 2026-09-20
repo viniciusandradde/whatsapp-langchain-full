@@ -229,6 +229,15 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Foco visível por teclado como fallback. Fica DENTRO da camada base de
+     propósito: vivia sem camada em vsa-design-tokens.css e, sem camada,
+     vencia todo utilitário — inclusive o `outline-none` dos inputs do kit,
+     que já desenham o próprio anel (ring). Resultado: dois retângulos em
+     cada campo focado (visível na busca da fila no celular, 2026-09-19). */
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
