@@ -30,7 +30,11 @@ def _pcm(segundos: float, rate: int) -> bytes:
     )
 
 
-def _gerar(fmt: str, codec: str, rate: int, segundos: float = 0.5) -> bytes:
+def _gerar(
+    fmt: str, codec: str, rate: int, segundos: float = 0.5, inicio_s: float = 0.0
+) -> bytes:
+    """`inicio_s` desloca os timestamps: é o que o MediaRecorder do Chrome faz
+    (relógio do microfone, não zero)."""
     import av
 
     buf = io.BytesIO()
@@ -45,8 +49,11 @@ def _gerar(fmt: str, codec: str, rate: int, segundos: float = 0.5) -> bytes:
     resampler = av.AudioResampler(
         format="fltp" if codec == "aac" else "s16", layout="mono", rate=rate
     )
+    deslocamento = int(inicio_s * rate)
     for frame in entrada.decode(audio=0):
         for f in resampler.resample(frame):
+            if deslocamento and f.pts is not None:
+                f.pts += deslocamento
             saida.mux(stream.encode(f))  # type: ignore[arg-type]
     saida.mux(stream.encode(None))  # type: ignore[arg-type]
     saida.close()
@@ -61,6 +68,18 @@ def _inspecionar(dados: bytes) -> tuple[str, str, int, int]:
     st = c.streams.audio[0]
     canais = st.codec_context.layout.nb_channels
     return c.format.name, st.codec_context.name, st.rate or 0, canais
+
+
+def _inicio_e_duracao(dados: bytes) -> tuple[float, float]:
+    """(início da faixa, duração do contêiner) em segundos — o que o player lê."""
+    import av
+
+    c = av.open(io.BytesIO(dados))
+    st = c.streams.audio[0]
+    inicio = float((st.start_time or 0) * st.time_base)
+    duracao = (c.duration or 0) / 1_000_000
+    c.close()
+    return inicio, duracao
 
 
 @pytest.mark.parametrize(
@@ -97,3 +116,28 @@ def test_lixo_nao_vira_nota_de_voz() -> None:
 def test_vazio_e_recusado() -> None:
     with pytest.raises(AudioInvalidoError):
         converter_para_nota_de_voz(b"")
+
+
+def test_relogio_do_microfone_e_zerado() -> None:
+    """Chrome/Android carimba o WebM desde que o mic abriu: uma nota de 1 s
+    gravada 20 min depois vinha com pts 1200→1201 s e o player dizia "20:01".
+    A saída tem que começar em zero e durar o que a fala durou."""
+    webm = _gerar("webm", "libopus", 48000, segundos=1.0, inicio_s=1200.0)
+    inicio_entrada, _ = _inicio_e_duracao(webm)
+    assert inicio_entrada > 1000  # a fixture reproduz o problema de verdade
+
+    saida, _ = converter_para_nota_de_voz(webm)
+    inicio, duracao = _inicio_e_duracao(saida)
+    assert abs(inicio) < 0.1
+    assert 0.9 <= duracao <= 1.2
+
+
+def test_ogg_opus_deslocado_e_recodificado() -> None:
+    """OGG/Opus passa intacto SÓ quando começa no zero; deslocado, recodifica."""
+    deslocado = _gerar("ogg", "libopus", 48000, segundos=1.0, inicio_s=90.0)
+    saida, mime = converter_para_nota_de_voz(deslocado)
+    assert mime == MIME_NOTA_DE_VOZ
+    assert saida != deslocado
+    inicio, duracao = _inicio_e_duracao(saida)
+    assert abs(inicio) < 0.1
+    assert 0.9 <= duracao <= 1.2
