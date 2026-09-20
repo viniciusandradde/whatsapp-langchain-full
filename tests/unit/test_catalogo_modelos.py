@@ -74,3 +74,12 @@ def test_preco_desconhecido_fica_none() -> None:
     )
     assert item["preco_prompt"] is None
     assert item["promo"] is False
+
+
+def test_alias_latest_com_til_cai_no_mesmo_provedor() -> None:
+    item = montar_item(
+        _row(slug="~anthropic/claude-sonnet-latest"), tendencia=set(), agora=_AGORA
+    )
+    assert item["provedor"] == "anthropic"
+    assert item["provedor_nome"] == "Anthropic"
+    assert item["slug"] == "~anthropic/claude-sonnet-latest"  # o slug fica intacto

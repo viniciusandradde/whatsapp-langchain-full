@@ -1,6 +1,6 @@
 # ADR-004 — Seletor de modelos do agente com catálogo completo, créditos estimados e tamanho de contexto
 
-- **Status:** aceito pelo dono em 20/09/2026 · **implementação: PR A (backend) codada e validada no dev em 20/09; PR B (frontend) não iniciada**
+- **Status:** aceito pelo dono em 20/09/2026 · **implementação: PR A (backend, #162) em produção 20/09; PR B (frontend) codada e validada no dev 20/09**
 - **Plano operacional (ordem, PRs, checklist):** `.planning/design/seletor-modelos-chatvolt/PLANO.md`
 - **Referência visual:** 5 capturas do Chatvolt ("Modelos Disponíveis") em `~/.claude/uploads/15ae8448-1576-44ed-90c9-aa875ea3474b/{245b39a5,1cf206ae,0fc57d99,c452f1c5,b62f40b9}-image.jpg`
 - **Público deste documento:** quem for codar (inclusive um modelo menor). Tudo o que precisa de decisão já está decidido aqui; o que não está escrito aqui **não** deve ser inventado — perguntar.

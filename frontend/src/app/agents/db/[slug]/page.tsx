@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import {
-  isMyAdmin,
   getAgenteTemplates,
   getAgenteIA,
   getDepartamentos,
@@ -39,16 +38,9 @@ export default async function AgenteDbEditPage({ params }: Props) {
     error = e instanceof Error ? e.message : "Erro ao carregar agente.";
   }
 
-  // Modelos LLM (chat) — opcional, fallback pra lista vazia se falhar
-  // Saúde de IA (F2): o picker do catálogo completo é superadmin-only —
-  // decisão do dono (2026-08-28); empresas seguem no curado.
-  let superadmin = false;
-  try {
-    superadmin = (await isMyAdmin()).is_superadmin;
-  } catch {
-    superadmin = false;
-  }
-
+  // Modelos LLM (chat) do curado — é o fallback do seletor quando o catálogo
+  // completo (ADR-004) não responde. Desde a ADR-004 o catálogo completo é
+  // de todo mundo com `agente.config`, não só do superadmin.
   let modelosChat: ModeloLLM[] = [];
   try {
     const r = await getModelosLLM({ tipo: "chat", onlyActive: true });
@@ -114,7 +106,6 @@ export default async function AgenteDbEditPage({ params }: Props) {
       ) : (
         <AgenteEditor
           initialAgente={agente!}
-          superadmin={superadmin}
           modelosChat={modelosChat}
           menusAtivos={menusAtivos}
           templates={templates}
