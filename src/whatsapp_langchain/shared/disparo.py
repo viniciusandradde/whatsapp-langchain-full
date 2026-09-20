@@ -112,7 +112,9 @@ async def checar_limite_plano_disparo(
     cap = plano.features.get("disparador_max_contatos")
     if cap is not None and total_contatos > int(cap):
         upg = plano.upgrade_sugerido()
-        extra = f" Faça upgrade pro plano {upg.title()} pra enviar mais." if upg else ""
+        extra = (
+            f" Faça upgrade para o plano {upg.title()} para enviar mais." if upg else ""
+        )
         return (
             f"Seu plano {plano.plano_nome} permite até {int(cap)} contatos por "
             f"disparo (você tentou {total_contatos})." + extra

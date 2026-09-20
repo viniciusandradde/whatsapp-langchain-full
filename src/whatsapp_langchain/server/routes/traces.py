@@ -21,6 +21,7 @@ from whatsapp_langchain.server.dependencies import (
     get_empresa_context,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import langfuse_client
 from whatsapp_langchain.shared.app_setting import (
@@ -48,7 +49,11 @@ LANGSMITH_MAX_LIMIT = 100
 router = APIRouter(
     prefix="/api/traces",
     tags=["traces"],
-    dependencies=[Depends(verify_service_token)],
+    # ADR-005 leva C2: `observabilidade` é Pro/Enterprise — o router inteiro.
+    dependencies=[
+        Depends(verify_service_token),
+        Depends(require_plano_feature("observabilidade")),
+    ],
 )
 
 

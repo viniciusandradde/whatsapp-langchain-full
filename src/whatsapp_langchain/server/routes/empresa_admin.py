@@ -22,6 +22,7 @@ from whatsapp_langchain.server.dependencies import (
 from whatsapp_langchain.server.dependencies_plano import (
     assert_plano_feature,
     assert_plano_limit,
+    levantar_feature_indisponivel,
 )
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import (
@@ -156,6 +157,25 @@ async def create_empresa_endpoint(
     return empresa
 
 
+async def _exigir_retencao_no_plano(empresa_id: int, dias: int) -> None:
+    from whatsapp_langchain.shared.plano_limits import get_plano_info
+
+    plano = await get_plano_info(await get_pool(), empresa_id)
+    if "retencao_max_dias" not in plano.features:
+        return
+    teto = plano.limite_numerico("retencao_max_dias")
+    if teto is None or (dias != 0 and dias <= teto):
+        return
+    raise levantar_feature_indisponivel(
+        plano,
+        "retencao_max_dias",
+        mensagem=(
+            f"O plano {plano.plano_nome} guarda o histórico por até {teto} dias. "
+            "Faça upgrade para reter por mais tempo."
+        ),
+    )
+
+
 _WHITE_LABEL_MSG = (
     "Marca própria (nome de exibição, logo e cores) não está incluída no seu "
     "plano. Faça upgrade para personalizar."
@@ -213,6 +233,9 @@ async def update_empresa_endpoint(
     # save, e o que já está gravado continua sendo exibido (grandfathering
     # das empresas que já tinham marca: flags `plano.white_label`).
     await _exigir_white_label_se_mudou(pool, empresa_id, body)
+    # ADR-005 leva C2: retenção acima do teto do plano (`retencao_max_dias`).
+    if body.retencao_dias is not None:
+        await _exigir_retencao_no_plano(empresa_id, body.retencao_dias)
 
     # Se slug enviado == slug atual, skipa pra não disparar UNIQUE check.
     if body.slug:
@@ -458,6 +481,13 @@ async def update_resumo_diario_endpoint(
     pool = await get_pool()
     if not await is_admin_of(pool, empresa_id, user_id):
         raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
+    # ADR-005 leva C2: LIGAR o resumo diário é Pessoal+ (`resumo_diario`).
+    if body.resumo_diario_ativo:
+        await assert_plano_feature(
+            empresa_id,
+            "resumo_diario",
+            mensagem="O resumo diário por WhatsApp não está incluído no seu plano. Faça upgrade para ligar.",
+        )
     if body.resumo_diario_ativo and not (body.resumo_diario_telefone or "").strip():
         raise HTTPException(
             status_code=400,
@@ -573,6 +603,13 @@ async def update_empresa_csat_endpoint(
     pool = await get_pool()
     if not await is_admin_of(pool, empresa_id, user_id):
         raise HTTPException(status_code=403, detail="Só admin pode atualizar.")
+    # ADR-005 leva C2: LIGAR a pesquisa de satisfação é Pessoal+ (`csat`).
+    if body.csat_ativo:
+        await assert_plano_feature(
+            empresa_id,
+            "csat",
+            mensagem="A pesquisa de satisfação (NPS) não está incluída no seu plano. Faça upgrade para ligar.",
+        )
     ok = await update_empresa_csat(
         pool,
         empresa_id,

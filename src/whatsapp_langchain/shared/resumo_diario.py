@@ -378,6 +378,13 @@ async def run_resumo_diario_all(pool: AsyncConnectionPool) -> int:
         )
         if not deve_enviar(cfg):
             continue
+        # ADR-005 leva C2: interruptor ligado de um plano antigo — pula (sem
+        # claim, sem tentativa).
+        from whatsapp_langchain.shared.plano_gate import plano_libera
+
+        if not await plano_libera(pool, cfg.empresa_id, "resumo_diario"):
+            logger.info("resumo_diario_pulado_pelo_plano", empresa_id=cfg.empresa_id)
+            continue
         try:
             if await _processar_empresa(pool, cfg):
                 enviados += 1

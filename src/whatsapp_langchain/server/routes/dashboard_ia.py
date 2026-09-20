@@ -317,9 +317,9 @@ async def upsert_budget_endpoint(
                     f"O plano {plano.plano_nome} permite até US$ {teto:.2f} de "
                     f"IA por mês. "
                     + (
-                        f"Faça upgrade pro plano {upgrade.title()} pra ampliar."
+                        f"Faça upgrade para o plano {upgrade.title()} para ampliar."
                         if upgrade
-                        else "Entre em contato pra ampliar o teto."
+                        else "Fale com o suporte para ampliar o seu plano."
                     )
                 ),
             },

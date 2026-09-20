@@ -46,6 +46,11 @@ Chaves em `features` hoje: `calendar`, `mcp`, `rbac`, `menu_moderno`, `disparado
 | Menu moderno | `menu_moderno` | PUT do menu ao LIGAR — leva C1 | 402 |
 | White-label (marca, cores, logo) | `white_label` | PUT da empresa ao MUDAR + POST logo — leva C1 (4 empresas com flag) | 402 |
 | ~~Servidores MCP~~ | `mcp` | **fora por decisão do dono (20/09)** — só dado | — |
+| Departamentos / workflows ativos / menus | `departamentos_max` / `workflows_max` / `menus_max` | POST departamento, toggle-active do workflow, POST menu — leva C2, mig 192 | 402 |
+| Retenção do histórico | `retencao_max_dias` | PUT empresa/agente acima do teto — leva C2 | 402 |
+| Janela de auditoria | `auditoria_dias` | `GET /api/v1/audit` corta no teto — leva C2 | filtra |
+| CSAT · resumo diário · bateria de testes | `csat` · `resumo_diario` · `bateria_testes` | PUT ao ligar (402) + worker pula — leva C2 | 402 + degrada |
+| Fila de mensagens/traces · qualidade da IA | `observabilidade` · `qualidade_ia` | routers `/api/traces`, `/api/admin/rag` — leva C2 | 402 |
 
 Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free (o rastreio das próximas levas está na ADR-005 §9).
 

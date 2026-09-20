@@ -26,7 +26,10 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
-from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
+from whatsapp_langchain.server.dependencies_plano import (
+    assert_plano_feature,
+    require_plano_limit,
+)
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.agente import list_agentes
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
@@ -211,6 +214,8 @@ async def create_menu_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("menu_chatbot.write")),
+    # ADR-005 leva C2: `menus_max` (Free 1; demais ilimitado).
+    _plano: None = Depends(require_plano_limit("menus")),
 ) -> dict:
     pool = await get_pool()
     try:
