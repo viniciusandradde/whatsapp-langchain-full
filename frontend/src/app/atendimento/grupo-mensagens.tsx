@@ -115,7 +115,7 @@ function BolhaItem({
     >
       {b.kind === "media" ? (
         <>
-          <MediaPreview url={b.mediaUrl} type={b.mediaType} caption={b.caption} />
+          <MediaPreview url={b.mediaUrl} type={b.mediaType} caption={b.caption} nome={b.nome} />
           {b.transcrevivel && (
             <TranscricaoAudio
               atendimentoId={atendimentoId}

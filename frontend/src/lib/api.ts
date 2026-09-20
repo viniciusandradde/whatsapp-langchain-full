@@ -708,6 +708,12 @@ export interface AtendimentoMensagem {
   response_media_url?: string | null;
   response_media_type?: string | null;
   /**
+   * Nome real do arquivo — do cliente (mig 164, vem do provedor) e do
+   * operador (mig 186, o nome do upload). NULL = rotular pelo tipo.
+   */
+  media_filename?: string | null;
+  response_media_filename?: string | null;
+  /**
    * Há mídia, mas o conteúdo não veio no payload.
    *
    * A lista é pedida com `incluir_midia=false`; os bytes vêm de

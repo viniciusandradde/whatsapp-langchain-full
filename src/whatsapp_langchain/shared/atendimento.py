@@ -1023,7 +1023,8 @@ async def list_atendimento_mensagens(
                    -- media_url NULL + media_arquivo_uuid preenchido. Sem esta
                    -- coluna, `media_disponivel` (bool(media_url)) dava False e
                    -- o áudio/imagem no bucket SUMIA da timeline.
-                   (mq.media_arquivo_uuid IS NOT NULL)
+                   (mq.media_arquivo_uuid IS NOT NULL),
+                   mq.media_filename, mq.response_media_filename
               FROM message_queue mq
               LEFT JOIN conexao c ON c.id = mq.conexao_id
              WHERE {" AND ".join(where)}
@@ -1060,6 +1061,9 @@ async def list_atendimento_mensagens(
                 # bytes saem por /mensagens/{id}/midia, que resolve o uuid.
                 "media_disponivel": bool(r[3]) or bool(r[22]),
                 "media_type": r[4],
+                # Nome real do arquivo (mig 164 no lado do cliente, 186 no do
+                # operador). NULL = rotular pelo tipo, como sempre foi.
+                "media_filename": r[23],
                 "normalized_input": r[5],
                 "media_processing_status": r[6],
                 "response": r[7],
@@ -1078,6 +1082,7 @@ async def list_atendimento_mensagens(
                 "response_media_url": r[15] if incluir_midia else None,
                 "response_media_disponivel": bool(r[15]),
                 "response_media_type": r[16],
+                "response_media_filename": r[24],
                 # Mig 169 — transcrição da nota de voz PARA O OPERADOR (botão
                 # "Transcrever" ou automática por conexão). Não é o
                 # normalized_input, que é o input montado pro agente.
@@ -1107,7 +1112,7 @@ async def get_mensagem_midia(
     atendimento_id: int,
     empresa_id: int,
     lado: str = "in",
-) -> tuple[bytes, str] | None:
+) -> tuple[bytes, str, str | None] | None:
     """Bytes de UMA mídia, pra servir sob demanda.
 
     Contrapartida do `incluir_midia=False`: a lista devolve só o booleano e o
@@ -1123,11 +1128,15 @@ async def get_mensagem_midia(
     salvaria porque a conexão do pool é da aplicação.
 
     Returns:
-        `(bytes, mime)`, ou None se a mensagem não existe no escopo, não tem
-        mídia naquele lado, ou o conteúdo não está no formato data-URL.
+        `(bytes, mime, nome_do_arquivo)`, ou None se a mensagem não existe no
+        escopo, não tem mídia naquele lado, ou o conteúdo não está no formato
+        data-URL. O nome (migs 164/186) vai no `Content-Disposition` do
+        endpoint — é o que faz "abrir/baixar" salvar `orcamento.pdf` e não
+        `5849`; NULL quando o provedor/operador não informou.
     """
     coluna = "response_media_url" if lado == "out" else "media_url"
     tipo_coluna = "response_media_type" if lado == "out" else "media_type"
+    nome_coluna = "response_media_filename" if lado == "out" else "media_filename"
     # media_arquivo_uuid (mig 184) só existe pro lado inbound; pro out é sempre
     # NULL (a mídia do operador ainda vai em base64 nesta fase).
     col_ref = "media_arquivo_uuid" if lado != "out" else "NULL::uuid"
@@ -1135,7 +1144,7 @@ async def get_mensagem_midia(
     async with pool.connection() as conn:
         cur = await conn.execute(
             f"""
-            SELECT {coluna}, {tipo_coluna}, {col_ref}::text
+            SELECT {coluna}, {tipo_coluna}, {col_ref}::text, {nome_coluna}
               FROM message_queue
              WHERE id = %s AND atendimento_id = %s AND empresa_id = %s
             """,
@@ -1147,6 +1156,7 @@ async def get_mensagem_midia(
         return None
 
     mime: str = row[1] or "application/octet-stream"
+    nome: str | None = row[3] or None
 
     # Object storage (mig 183/184): a mídia vive no bucket e a mensagem só
     # referencia. Baixa os bytes pelo storage e devolve como as demais — o
@@ -1160,7 +1170,7 @@ async def get_mensagem_midia(
         if arq is None:
             return None
         try:
-            return await storage.ler_bytes(arq), (arq.mime_type or mime)
+            return await storage.ler_bytes(arq), (arq.mime_type or mime), nome
         except Exception:  # noqa: BLE001 — objeto sumido/indisponível → rótulo
             logger.warning(
                 "midia_storage_indisponivel",
@@ -1193,7 +1203,7 @@ async def get_mensagem_midia(
             lado=lado,
         )
         return None
-    return dados, mime
+    return dados, mime, nome
 
 
 async def transfer_atendimento(

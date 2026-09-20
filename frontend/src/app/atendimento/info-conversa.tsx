@@ -267,12 +267,20 @@ function ArquivosDoAtendimento({
   atendimentoId: number;
 }) {
   const itens = (mensagens ?? []).flatMap((m) => {
-    const out: { chave: string; url: string; tipo: string | null; legenda?: string; quando: string | null }[] = [];
+    const out: {
+      chave: string;
+      url: string;
+      tipo: string | null;
+      nome: string | null;
+      legenda?: string;
+      quando: string | null;
+    }[] = [];
     if (m.media_url || m.media_disponivel) {
       out.push({
         chave: `${m.id}-in`,
         url: m.media_url ?? `/api/proxy/midia/${atendimentoId}/${m.id}?lado=in`,
         tipo: m.media_type ?? null,
+        nome: m.media_filename ?? null,
         legenda: m.incoming_message || undefined,
         quando: m.created_at,
       });
@@ -282,6 +290,7 @@ function ArquivosDoAtendimento({
         chave: `${m.id}-out`,
         url: m.response_media_url ?? `/api/proxy/midia/${atendimentoId}/${m.id}?lado=out`,
         tipo: m.response_media_type ?? null,
+        nome: m.response_media_filename ?? null,
         legenda: m.response || undefined,
         quando: m.created_at,
       });
@@ -295,9 +304,9 @@ function ArquivosDoAtendimento({
     <div className="grid grid-cols-1 gap-2">
       {itens.map((f) => (
         <div key={f.chave} className="rounded-md border bg-muted/20 p-2">
-          <MediaPreview url={f.url} type={f.tipo} caption={f.legenda} />
-          <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-            {formatarDataHoraCompleta(f.quando)} · {f.tipo ?? "—"}
+          <MediaPreview url={f.url} type={f.tipo} caption={f.legenda} nome={f.nome} />
+          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground" title={f.nome ?? undefined}>
+            {formatarDataHoraCompleta(f.quando)} · {f.nome ?? f.tipo ?? "—"}
           </p>
         </div>
       ))}

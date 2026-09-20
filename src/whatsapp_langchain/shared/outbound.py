@@ -148,13 +148,15 @@ async def _persist_outbound_row(
     provider_message_id: str,
     media_url: str | None = None,
     media_type: str | None = None,
+    media_filename: str | None = None,
 ) -> dict:
     """Insere row outbound-only em message_queue + bump last_message_at.
 
-    `media_url`/`media_type` vão pras colunas `response_media_*` (mig 146), e
-    NÃO pras `media_*`, que são do lado inbound — a timeline decide o lado da
-    bolha pela origem do campo, então mídia do operador gravada em `media_url`
-    apareceria como se o cliente tivesse mandado.
+    `media_url`/`media_type`/`media_filename` vão pras colunas
+    `response_media_*` (migs 146 e 186), e NÃO pras `media_*`, que são do lado
+    inbound — a timeline decide o lado da bolha pela origem do campo, então
+    mídia do operador gravada em `media_url` apareceria como se o cliente
+    tivesse mandado.
     """
     thread_id = f"{phone_number}:{agent_id}"
     async with pool.connection() as conn:
@@ -164,16 +166,17 @@ async def _persist_outbound_row(
                 (empresa_id, conexao_id, atendimento_id, message_id,
                  phone_number, agent_id, thread_id,
                  incoming_message, response, normalized_input,
-                 response_media_url, response_media_type,
+                 response_media_url, response_media_type, response_media_filename,
                  status, process_after, processed_at)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
-                    %s, %s,
+                    %s, %s, %s,
                     'done', NOW(), NOW())
             RETURNING id, agent_id, incoming_message, response, status,
                       created_at, processed_at,
-                      response_media_url, response_media_type
+                      response_media_url, response_media_type,
+                      response_media_filename
             """,
             (
                 empresa_id,
@@ -188,6 +191,7 @@ async def _persist_outbound_row(
                 f"manual:{user_id}",
                 media_url,
                 media_type,
+                media_filename,
             ),
         )
         row = await cur.fetchone()
@@ -211,6 +215,7 @@ async def _persist_outbound_row(
         "processed_at": row[6].isoformat() if row[6] else None,
         "response_media_url": row[7],
         "response_media_type": row[8],
+        "response_media_filename": row[9],
     }
 
 
@@ -531,6 +536,19 @@ def _mediatype_de(mime: str) -> str:
     return "document"
 
 
+def nome_de_arquivo_seguro(nome: str | None) -> str | None:
+    """Só o nome-base, sem caminho nem controle, até 255 chars; vazio → None.
+
+    O multipart traz o que o navegador quiser (às vezes um caminho inteiro no
+    Windows antigo); o que vai pro banco e pra tela é só o nome.
+    """
+    if not nome:
+        return None
+    base = nome.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    base = "".join(ch for ch in base if ch.isprintable() and ch not in '"\r\n')
+    return base[:255] or None
+
+
 async def send_outbound_manual_midia(
     pool: AsyncConnectionPool,
     *,
@@ -636,6 +654,10 @@ async def send_outbound_manual_midia(
         provider_message_id=provider_message_id,
         media_url=f"data:{mime};base64,{base64_puro}",
         media_type=mime,
+        # Nota de voz não tem nome que interesse (o navegador grava
+        # "nota-de-voz.webm" e aqui virou OGG); anexo leva o nome real, que é
+        # o que a timeline mostra no lugar de "application/pdf" (mig 186).
+        media_filename=None if e_audio else nome_de_arquivo_seguro(filename),
     )
 
     logger.info(
