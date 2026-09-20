@@ -65,7 +65,9 @@ class TestE2E:
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO empresa (nome, slug, plano, status) "
-            "VALUES (%s, %s, 'free', 'active') RETURNING id",
+            # Pro: a transcrição para o operador é feature de plano (ADR-005
+            # leva B) — o 402 do Free tem teste em test_plano_leva_b_endpoints.
+            "VALUES (%s, %s, 'pro', 'active') RETURNING id",
             (f"E2E Transcrição {_RUN}", f"e2e-transc-{_RUN}"),
         )
         empresa_id = cur.fetchone()[0]

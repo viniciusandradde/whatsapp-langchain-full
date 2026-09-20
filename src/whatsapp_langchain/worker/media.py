@@ -173,6 +173,8 @@ async def preprocess_incoming_message(
     *,
     pool: AsyncConnectionPool | None = None,
     empresa_id: int | None = None,
+    plano_imagem: bool = True,
+    plano_documento: bool = True,
 ) -> MediaPreprocessResult:
     """Normaliza entrada para texto antes da chamada ao agente.
 
@@ -204,6 +206,13 @@ async def preprocess_incoming_message(
                   no ia_budget (mig 161) — antes esse gasto era invisível ao
                   teto da empresa. Chamador sem empresa (aba Testar) continua
                   funcionando sem registrar.
+        plano_imagem/plano_documento: o plano da empresa libera visão /
+                  leitura de documentos (ADR-005 leva B, `imagem_cliente` /
+                  `documentos_cliente`)? Sem a feature o arquivo vira o mesmo
+                  bloco "[Arquivo recebido …]" — recusa PERMANENTE, sem
+                  retentativa, e quem explica ao cliente é o agente. Áudio
+                  não tem chave de plano de propósito (todo plano transcreve
+                  a nota de voz do cliente).
     """
     if not media_url and not media_type:
         return MediaPreprocessResult(
@@ -238,6 +247,17 @@ async def preprocess_incoming_message(
 
     if kind == "unsupported":
         return _recebido_sem_ler("este tipo de arquivo não é lido", "unsupported")
+
+    # Gate de plano ANTES do gate do agente: o motivo é outro (não é
+    # configuração do agente, é o plano) e o status fica distinto no audit.
+    liberado_no_plano = {"image": plano_imagem, "document": plano_documento}.get(
+        kind, True
+    )
+    if not liberado_no_plano:
+        return _recebido_sem_ler(
+            "a leitura deste tipo de arquivo não está incluída no plano da empresa",
+            "plano_bloqueado",
+        )
 
     if not permitido:
         return _recebido_sem_ler(

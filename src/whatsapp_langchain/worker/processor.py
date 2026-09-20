@@ -95,6 +95,7 @@ from whatsapp_langchain.shared.menu_chatbot import (
 )
 from whatsapp_langchain.shared.models import Conexao, MessageQueue
 from whatsapp_langchain.shared.outbound import OutboundError, build_outbound_client
+from whatsapp_langchain.shared.plano_gate import plano_libera
 from whatsapp_langchain.shared.queue import (
     absorver_pendentes,
     existe_mensagem_mais_nova,
@@ -2475,8 +2476,12 @@ async def process_message(
         # agente, o preprocess reusa o texto via `transcricao_previa` em vez
         # de pagar a mesma transcrição de novo.
         transcricao_previa: str | None = None
-        if conexao.transcrever_audio_sempre and (message.media_type or "").startswith(
-            "audio/"
+        if (
+            conexao.transcrever_audio_sempre
+            and (message.media_type or "").startswith("audio/")
+            # ADR-005 leva B: o interruptor pode ter ficado ligado de um plano
+            # que tinha a feature — o worker degrada (pula), sem tocar na conexão.
+            and await plano_libera(pool, message.empresa_id, "transcricao_operador")
         ):
             try:
                 transcricao_previa = await transcrever_mensagem(pool, message.id)
@@ -2729,6 +2734,19 @@ async def process_message(
             # preprocess registra cada chamada multimodal.
             pool=pool,
             empresa_id=message.empresa_id,
+            # ADR-005 leva B: visão e leitura de documentos dependem do plano
+            # (`imagem_cliente`/`documentos_cliente`); só consulta quando há
+            # mídia — o plano vem do cache de 30 s.
+            plano_imagem=(
+                await plano_libera(pool, message.empresa_id, "imagem_cliente")
+                if message.media_type
+                else True
+            ),
+            plano_documento=(
+                await plano_libera(pool, message.empresa_id, "documentos_cliente")
+                if message.media_type
+                else True
+            ),
         )
 
         # Falha TRANSITÓRIA de mídia volta pra fila em vez de virar desculpa.
@@ -3043,8 +3061,11 @@ async def process_message(
         #
         # Best-effort de propósito: exemplo é melhoria, não requisito. Embedding
         # fora do ar não pode deixar o cliente sem resposta.
-        if agente_runtime is not None and getattr(
-            agente_runtime, "fewshot_enabled", False
+        if (
+            agente_runtime is not None
+            and getattr(agente_runtime, "fewshot_enabled", False)
+            # ADR-005 leva B: few-shot custa embedding + tokens por mensagem.
+            and await plano_libera(pool, message.empresa_id, "fewshot")
         ):
             try:
                 from whatsapp_langchain.shared.fewshot import (

@@ -82,7 +82,8 @@ def empresa_id(db_url: str):
         cur.execute(
             """
             INSERT INTO empresa (nome, slug, plano, status)
-            VALUES (%s, %s, 'free', 'active')
+            -- Pro (10 usuários): o Free para em 2 desde a ADR-005 leva A
+            VALUES (%s, %s, 'pro', 'active')
             RETURNING id
             """,
             (f"test-convite-{_RUN}", f"test-convite-{_RUN}"),

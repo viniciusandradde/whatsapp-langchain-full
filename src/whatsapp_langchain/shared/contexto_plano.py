@@ -123,5 +123,6 @@ def resumo_plano(plano: PlanoInfo) -> dict[str, Any]:
         "nome": plano.plano_nome,
         "contexto_max": plano.contexto_max,
         "modelos_premium": plano.modelos_premium,
+        "catalogo_completo": plano.tem_feature("catalogo_completo"),
         "upgrade_sugerido": plano.upgrade_sugerido(),
     }

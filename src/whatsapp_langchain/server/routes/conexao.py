@@ -24,7 +24,10 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
-from whatsapp_langchain.server.dependencies_plano import require_plano_limit
+from whatsapp_langchain.server.dependencies_plano import (
+    assert_plano_feature,
+    require_plano_limit,
+)
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
@@ -171,6 +174,18 @@ async def patch_conexao_endpoint(
     )
     if erro_agente:
         raise HTTPException(status_code=422, detail=erro_agente)
+    # ADR-005 leva B: LIGAR a transcrição para o operador (uma chamada de LLM
+    # por áudio) exige a feature no plano. Desligar sempre pode; interruptor
+    # que ficou ligado de um plano antigo é o worker que ignora (degrada).
+    if body.transcrever_audio_sempre is True and not existing.transcrever_audio_sempre:
+        await assert_plano_feature(
+            empresa_id,
+            "transcricao_operador",
+            mensagem=(
+                "A transcrição automática de áudio para o operador não está "
+                "incluída no seu plano. Faça upgrade para ligar."
+            ),
+        )
     updated = await patch_conexao(
         pool,
         conexao_id,

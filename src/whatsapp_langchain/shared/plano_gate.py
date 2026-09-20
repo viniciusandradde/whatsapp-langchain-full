@@ -8,6 +8,10 @@ Leva A: limite de atendimentos no mês (D5) — quando a empresa passa do
 `limite_atendimentos_mes`, a IA para e o atendimento humano continua. O
 contador é cacheado por 60 s por empresa: é um COUNT por mensagem em produção
 sem o cache, e o número não precisa ser exato ao segundo.
+
+Leva B: `plano_libera` — uma chave booleana de `plano.features` (transcrição
+do operador, documentos/imagem do cliente, few-shot) lida no ponto de
+decisão do worker, com o mesmo cache de 30 s de `get_plano_info`.
 """
 
 from __future__ import annotations
@@ -32,6 +36,23 @@ ALERTA_PCT: Final = 80
 _CACHE_TTL_SECONDS: Final = 60.0
 # empresa_id → (monotonic, usado)
 _contagem_cache: dict[int, tuple[float, int]] = {}
+
+
+async def plano_libera(pool: AsyncConnectionPool, empresa_id: int, chave: str) -> bool:
+    """True quando o plano da empresa tem a feature `chave` (ADR-005 leva B).
+
+    Best-effort na direção da ADR: plano ILEGÍVEL libera com log — um erro de
+    leitura de plano não pode calar o agente nem engolir a nota de voz do
+    operador. Plano legível SEM a chave é `False` (o seed da mig 190 dá a
+    chave a todo plano; ausente = desligado, como `contexto_max`).
+    """
+    try:
+        return (await get_plano_info(pool, empresa_id)).tem_feature(chave)
+    except Exception as exc:
+        logger.warning(
+            "plano_feature_ilegivel", empresa_id=empresa_id, chave=chave, error=str(exc)
+        )
+        return True
 
 
 def limpar_cache_contagem(empresa_id: int | None = None) -> None:

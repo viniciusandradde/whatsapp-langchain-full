@@ -115,14 +115,18 @@ def db_url() -> str:
 @pytest.fixture
 def empresa_id(db_url: str):
     """Empresa por teste: `ia_budget` é única por (empresa, mês), então
-    compartilhar empresa faria um teste enxergar a linha do anterior."""
+    compartilhar empresa faria um teste enxergar a linha do anterior.
+
+    Enterprise (teto de IA US$ 500): os testes de herança usam limites de
+    10–50, abaixo do teto — o teto do plano (ADR-005 D4) tem testes próprios
+    com uma empresa Free (teto US$ 5)."""
     slug = f"test-budget-{_RUN}-{uuid.uuid4().hex[:6]}"
     with psycopg.connect(db_url, autocommit=True) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO empresa (nome, slug, plano, status)
-                VALUES (%s, %s, 'free', 'active') RETURNING id
+                VALUES (%s, %s, 'enterprise', 'active') RETURNING id
                 """,
                 (slug, slug),
             )
@@ -217,18 +221,55 @@ class TestE2E:
             "o consumo tem que começar do zero no mês novo, não herdar"
         )
 
-    async def test_sem_mes_anterior_usa_o_padrao(
+    async def test_sem_mes_anterior_nasce_com_o_teto_do_plano(
         self, db_url: str, empresa_id: int
     ) -> None:
+        """ADR-005 D4: sem linha anterior o mês nasce com o teto do plano
+        (Enterprise = 500), não mais com 0 = "sem teto"."""
         atual, _ = _meses()
         async with AsyncConnectionPool(db_url, min_size=1, max_size=2) as pool:
             await acrescentar_consumo(pool, empresa_id, 0.0014)
 
         row = _budget(db_url, empresa_id, atual)
         assert row is not None
-        assert row[0] == Decimal("0.00")
+        assert row[0] == Decimal("500.00")
         assert row[2] == "alertar"
         assert row[3] == 80
+
+    async def test_teto_do_plano_limita_a_heranca(self, db_url: str) -> None:
+        """ADR-005 D4: `LEAST(limite anterior, teto do plano)` — a empresa
+        Free (teto US$ 5) que tinha 35 no mês anterior nasce com 5."""
+        atual, anterior = _meses()
+        slug = f"test-budget-free-{_RUN}-{uuid.uuid4().hex[:6]}"
+        with psycopg.connect(db_url, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO empresa (nome, slug, plano, status) "
+                    "VALUES (%s, %s, 'free', 'active') RETURNING id",
+                    (slug, slug),
+                )
+                row = cur.fetchone()
+                assert row is not None
+                eid = int(row[0])
+                cur.execute(
+                    """
+                    INSERT INTO ia_budget
+                        (empresa_id, ano_mes, limite_usd, acao_estouro, alerta_pct)
+                    VALUES (%s, %s, 35.00, 'bloquear', 90)
+                    """,
+                    (eid, anterior),
+                )
+        try:
+            async with AsyncConnectionPool(db_url, min_size=1, max_size=2) as pool:
+                await acrescentar_consumo(pool, eid, 0.0014)
+            row = _budget(db_url, eid, atual)
+            assert row is not None
+            assert row[0] == Decimal("5.00"), "o teto do plano não limitou a herança"
+            assert row[2] == "bloquear" and row[3] == 90  # o resto herda igual
+        finally:
+            with psycopg.connect(db_url, autocommit=True) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM empresa WHERE id = %s", (eid,))
 
     async def test_debito_nao_sobrescreve_limite_ja_configurado(
         self, db_url: str, empresa_id: int

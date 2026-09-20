@@ -31,6 +31,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.aba import (
     count_atendimentos_por_aba,
@@ -648,6 +649,15 @@ async def transcrever_mensagem_audio(
     transcrever); custa uma chamada de LLM por áudio novo.
     """
     await _load_atendimento_in_empresa(atendimento_id, empresa_id)
+    # ADR-005 leva B: custa uma chamada de LLM por áudio — feature de plano.
+    await assert_plano_feature(
+        empresa_id,
+        "transcricao_operador",
+        mensagem=(
+            "A transcrição de áudio para o operador não está incluída no seu "
+            "plano. Faça upgrade para transcrever."
+        ),
+    )
     pool = await get_pool()
     try:
         texto = await transcrever_mensagem(
