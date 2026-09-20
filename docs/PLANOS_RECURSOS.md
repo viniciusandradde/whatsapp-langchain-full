@@ -1,6 +1,6 @@
 # Recursos × Plano — levantamento para planejar a liberação
 
-- **Status:** levantamento pronto para decisão do dono (20/09/2026). Nada aqui está implementado além do que a coluna "Hoje" diz.
+- **Status:** levantamento pronto para decisão do dono (20/09/2026). Nada aqui está implementado além do que a coluna "Hoje" diz — e o gate de contexto/modelos (mig 188, PR #164) já está em produção.
 - **Pedido:** "Faça levantamento de todos os recursos para planejar a liberação de acordo com os planos contratados" — antes de partir para a cobrança (Mercado Pago + InfinitePay, Pix).
 - **Método:** inventário do menu do painel (`frontend/src/components/nav-catalog.ts`, 43 itens), das chaves de `plano.features` semeadas nas migrations (059, 122, 134, 177, 188) e de **onde o código de fato aplica** cada gate (`require_plano_feature`, `assert_plano_feature`, `require_plano_limit`, `tem_feature`, `checar_gate_plano`). O que não aparece em código está marcado como **não aplicado** — mesmo que a migration tenha semeado a chave.
 
