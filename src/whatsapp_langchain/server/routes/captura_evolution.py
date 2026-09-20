@@ -17,6 +17,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared import captura as cap
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
@@ -55,6 +56,8 @@ async def capturar_contatos(
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("disparador.capturar")),
     user_id: str = Depends(get_user_id_from_request),
+    # ADR-005 leva C1: captura faz parte do Disparador (Pro/Enterprise).
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> CapturaResponse:
     """Inicia captura de contatos da instância Evolution (background)."""
     pool, conexao = await _conexao_evolution_ou_404(conexao_id, empresa_id)
@@ -80,6 +83,7 @@ async def capturar_grupos(
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("disparador.capturar")),
     user_id: str = Depends(get_user_id_from_request),
+    _plano: None = Depends(require_plano_feature("disparador")),
 ) -> CapturaResponse:
     """Inicia captura de grupos (e membros) da instância Evolution (background)."""
     pool, conexao = await _conexao_evolution_ou_404(conexao_id, empresa_id)

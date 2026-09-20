@@ -26,6 +26,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.agente import list_agentes
 from whatsapp_langchain.shared.audit import diff_dicts, record_audit
@@ -268,6 +269,17 @@ async def update_menu_endpoint(
 
     # PATCH parcial — ver docs/dev/PATCH_PATTERN.md
     fields = body.model_dump(exclude_unset=True)
+    # ADR-005 leva C1: LIGAR o menu moderno (botões nativos) é Pro/Enterprise.
+    # Só a transição off→on é gateada — a tela reenvia o campo a cada save.
+    if fields.get("menu_moderno") is True and not before.menu_moderno:
+        await assert_plano_feature(
+            empresa_id,
+            "menu_moderno",
+            mensagem=(
+                "O menu moderno (botões nativos do WhatsApp) não está incluído "
+                "no seu plano. Faça upgrade para ligar."
+            ),
+        )
     updated = await update_menu(pool, empresa_id, menu_id, **fields)
     if updated is None:
         raise HTTPException(status_code=404, detail="Menu não encontrado.")

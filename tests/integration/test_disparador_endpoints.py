@@ -78,7 +78,7 @@ class TestE2E:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"disp-a-{_RUN}", f"disp-a-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -92,7 +92,7 @@ class TestE2E:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"disp-b-{_RUN}", f"disp-b-{_RUN}"),
             ).fetchone()
             assert row is not None
@@ -172,7 +172,7 @@ class TestApiKeysCrud:
         db = get_db_url()
         with psycopg.connect(db, autocommit=True) as conn:
             row = conn.execute(
-                "INSERT INTO empresa (nome, slug) VALUES (%s, %s) RETURNING id",
+                "INSERT INTO empresa (nome, slug, plano) VALUES (%s, %s, 'pro') RETURNING id",
                 (f"akcrud-{_RUN}", f"akcrud-{_RUN}"),
             ).fetchone()
             assert row is not None

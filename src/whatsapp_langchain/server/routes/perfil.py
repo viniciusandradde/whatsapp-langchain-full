@@ -26,6 +26,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_feature
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.empresa import is_admin_of
@@ -140,6 +141,9 @@ async def create_perfil_endpoint(
     body: CreatePerfilInput,
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("perfil.write")),
+    # ADR-005 leva C1: perfis customizados são Pro/Enterprise (`rbac`); os
+    # perfis system e a atribuição de usuários a eles continuam em todo plano.
+    _plano: None = Depends(require_plano_feature("rbac")),
 ) -> dict:
     pool = await get_pool()
     # Valida que todas as permissões existem no catálogo
@@ -166,6 +170,7 @@ async def update_perfil_endpoint(
     body: UpdatePerfilInput,
     empresa_id: int = Depends(get_empresa_context),
     _: None = Depends(require_permission("perfil.write")),
+    _plano: None = Depends(require_plano_feature("rbac")),
 ) -> dict:
     pool = await get_pool()
     catalogo_codes = {c[0] for c in CATALOGO}

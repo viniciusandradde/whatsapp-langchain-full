@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from whatsapp_langchain.server.dependencies import require_scope
+from whatsapp_langchain.server.dependencies_plano import assert_plano_feature
 from whatsapp_langchain.shared import captura as cap
 from whatsapp_langchain.shared.api_key import ApiKeyContext
 from whatsapp_langchain.shared.db import get_pool
@@ -24,6 +25,11 @@ from whatsapp_langchain.worker.evolution_client import (
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/captura", tags=["captura"])
+
+_MSG_DISPARADOR = (
+    "A captura de contatos e grupos faz parte do Disparador, que não está "
+    "incluído no seu plano. Faça upgrade para usar."
+)
 
 _MAX_BATCH = 2000
 
@@ -66,6 +72,9 @@ async def ingest_contatos(
     body: ContatosBatch, ctx: ApiKeyContext = Depends(require_scope("capture"))
 ) -> dict:
     """Upsert idempotente de contatos capturados pela extensão."""
+    # ADR-005 leva C1: o Disparador é Pro/Enterprise — a extensão recebe o
+    # 402 legível como qualquer outra rota (a empresa vem da API key).
+    await assert_plano_feature(ctx.empresa_id, "disparador", mensagem=_MSG_DISPARADOR)
     pool = await get_pool()
     lote_id = await cap.criar_lote(
         pool,
@@ -106,6 +115,9 @@ async def ingest_grupos(
     body: GruposBatch, ctx: ApiKeyContext = Depends(require_scope("capture"))
 ) -> dict:
     """Upsert idempotente de grupos capturados pela extensão."""
+    # ADR-005 leva C1: o Disparador é Pro/Enterprise — a extensão recebe o
+    # 402 legível como qualquer outra rota (a empresa vem da API key).
+    await assert_plano_feature(ctx.empresa_id, "disparador", mensagem=_MSG_DISPARADOR)
     pool = await get_pool()
     lote_id = await cap.criar_lote(
         pool,
@@ -143,6 +155,9 @@ async def ingest_membros(
     ctx: ApiKeyContext = Depends(require_scope("capture")),
 ) -> dict:
     """Upsert de membros de um grupo já capturado (pela extensão)."""
+    # ADR-005 leva C1: o Disparador é Pro/Enterprise — a extensão recebe o
+    # 402 legível como qualquer outra rota (a empresa vem da API key).
+    await assert_plano_feature(ctx.empresa_id, "disparador", mensagem=_MSG_DISPARADOR)
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(

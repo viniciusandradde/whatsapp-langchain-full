@@ -39,6 +39,13 @@ Chaves em `features` hoje: `calendar`, `mcp`, `rbac`, `menu_moderno`, `disparado
 | Leitura de documentos / imagem do cliente | `documentos_cliente` / `imagem_cliente` | PUT do agente ao ligar `aceita_*` (402) · `preprocess` devolve "[Arquivo recebido … não incluído no plano]" — leva B | 402 + degrada |
 | Few-shot automático | `fewshot` | PUT do agente ao ligar (402) · worker não injeta — leva B | 402 + degrada |
 | Catálogo completo de modelos | `catalogo_completo` | `GET /modelos-llm/catalogo` devolve só curados — leva B | filtra |
+| Disparador (campanhas, captura, extensão) | `disparador` | escritas de `/api/campanhas`, captura, `/api/disparador/ext/*`, `/api/captura/*` — leva C1, mig 191 | 402 |
+| Webhooks de saída | `webhooks` | POST/PUT `/api/hooks` — leva C1 | 402 |
+| Perfis customizados (RBAC) | `rbac` | POST/PUT `/api/perfis` — leva C1 | 402 |
+| Conexão WABA (API oficial) | `waba` | POST conexão `provider=waba` + `/waba/*` — leva C1 | 402 |
+| Menu moderno | `menu_moderno` | PUT do menu ao LIGAR — leva C1 | 402 |
+| White-label (marca, cores, logo) | `white_label` | PUT da empresa ao MUDAR + POST logo — leva C1 (4 empresas com flag) | 402 |
+| ~~Servidores MCP~~ | `mcp` | **fora por decisão do dono (20/09)** — só dado | — |
 
 Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free (o rastreio das próximas levas está na ADR-005 §9).
 

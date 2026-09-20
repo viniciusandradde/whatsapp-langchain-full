@@ -104,10 +104,10 @@ export function FlagsList({ initialFlags }: Props) {
                 <input
                   name="key"
                   required
-                  pattern="[a-z0-9_-]+"
+                  pattern="[a-z0-9_.-]+"
                   defaultValue={editing === "new" ? "" : editing.key}
                   readOnly={editing !== "new"}
-                  placeholder="mcp_beta"
+                  placeholder="plano.limite_agentes"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm read-only:opacity-60"
                 />
               </div>

@@ -26,6 +26,7 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.server.dependencies_plano import (
     assert_plano_feature,
+    require_plano_feature,
     require_plano_limit,
 )
 from whatsapp_langchain.server.dependencies_rbac import require_permission
@@ -134,6 +135,16 @@ async def create_conexao(
         raise HTTPException(
             status_code=422,
             detail=("Provider inválido: use 'waba' (WhatsApp Oficial) ou 'evolution'."),
+        )
+    # ADR-005 leva C1: cadastro manual de conexão WABA também depende do plano.
+    if body.provider == "waba":
+        await assert_plano_feature(
+            empresa_id,
+            "waba",
+            mensagem=(
+                "A conexão pela API oficial da Meta (WABA) não está incluída no "
+                "seu plano. Faça upgrade para conectar."
+            ),
         )
     pool = await get_pool()
     out = await upsert_conexao(pool, empresa_id, body)
@@ -285,6 +296,9 @@ async def waba_oauth_start(
     body: WabaOAuthStartInput,
     request: Request,
     empresa_id: int = Depends(get_empresa_context),
+    # ADR-005 leva C1: a API oficial da Meta (WABA) é Pro/Enterprise (`waba`);
+    # Evolution continua em todo plano.
+    _plano: None = Depends(require_plano_feature("waba")),
 ) -> WabaOAuthStartResponse:
     """Gera state CSRF + URL do Meta dialog. Front abre popup com redirect_url.
 
@@ -545,6 +559,7 @@ async def waba_finalize(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _quota: None = Depends(require_plano_limit("conexoes")),
+    _plano: None = Depends(require_plano_feature("waba")),
 ) -> Conexao:
     """User escolheu account+phone — cria Conexao + cifra token + subscribe webhook.
 
@@ -666,6 +681,7 @@ async def waba_embedded_signup(
     user_id: str = Depends(get_user_id_from_request),
     _quota: None = Depends(require_plano_limit("conexoes")),
     _perm: None = Depends(require_permission("integracao.manage")),
+    _plano: None = Depends(require_plano_feature("waba")),
 ) -> Conexao:
     """Finaliza o Embedded Signup do FB SDK.
 
