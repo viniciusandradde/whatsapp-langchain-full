@@ -193,7 +193,7 @@ Antes de **cada** leva: rodar em produção (`ssh opc@… psql`) a consulta de u
 | 0 | Gate de contexto e modelos premium (ADR-004) | `feat/contexto-gate-plano` / #164 | ✅ em produção | 20/09/2026 | mig 188 em `_migrations`; api/worker/frontend conferidos por conteúdo |
 | 0.1 | Levantamento recurso × plano | docs `f934ef8` | ✅ aprovado pelo dono | 20/09/2026 | `docs/PLANOS_RECURSOS.md` |
 | 0.2 | Esta ADR | docs-only em master | ✅ escrita | 20/09/2026 | este arquivo |
-| A | Limites existentes + `limite_agentes` + atendimentos/mês suave + teto de IA no `ia_budget` | `feat/plano-leva-a-limites` | 🔍 no dev, aguardando o dono | 20/09/2026 | mig 189; `test_plano_leva_a_endpoints.py` (6 E2E verdes no dev); fumaça do worker (marker, 80 %, aviso WhatsApp mock, reprocesso); 6 capturas |
+| A | Limites existentes + `limite_agentes` + atendimentos/mês suave + teto de IA no `ia_budget` | `feat/plano-leva-a-limites` / **#165** (`d34c59d`) | ✅ em produção | 20/09/2026 | mig 189 em `_migrations` (183); api/worker-1/2/frontend recriados e conferidos por conteúdo (`assert_plano_limit`, `plano_gate.py`, "IA pausada pelo plano" no chunk); 0 erros; painel/API 200; 6 E2E + fumaça do worker no dev |
 | A.0 | Consulta de uso em produção + flags de grandfathering | — | ✅ | 20/09/2026 | ninguém acima de usuários/KB/atendimentos; só a sandbox 999 (8 agentes) → flag `plano.limite_agentes=null` semeada na mig 189; `ia_budget` da 1018 = US$ 10 (consumo US$ 3,49) < teto Pro US$ 100 — sem exceção |
 | B | Custo de LLM por mensagem (transcrição do operador, documentos, imagem, few-shot, catálogo completo) | `feat/plano-leva-b-llm` | ⬜ | | mig 190 |
 | B.0 | Consulta de uso + grandfathering | — | ⬜ | | |
