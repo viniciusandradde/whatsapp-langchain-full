@@ -117,11 +117,6 @@
   --vsa-gradient: var(--vsa-gradient-brand);
 }
 
-*:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
 ::selection {
   background: color-mix(in srgb, var(--brand-primary) 25%, transparent);
 }

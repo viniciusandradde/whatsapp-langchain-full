@@ -330,6 +330,9 @@ export function AtendimentoList({
           <AtendimentoDrawer
             key={ativo.id}
             atendimento={ativo}
+            departamentoNome={
+              ativo.departamento_id != null ? nomeDepartamento.get(ativo.departamento_id) : null
+            }
             onClose={fechar}
             onAcaoConcluida={aoConcluirAcao}
             modo="painel"
@@ -352,6 +355,9 @@ export function AtendimentoList({
           <AtendimentoDrawer
             key={ativo.id}
             atendimento={ativo}
+            departamentoNome={
+              ativo.departamento_id != null ? nomeDepartamento.get(ativo.departamento_id) : null
+            }
             onClose={fechar}
             onAcaoConcluida={aoConcluirAcao}
           />

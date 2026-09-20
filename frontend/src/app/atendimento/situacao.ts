@@ -141,3 +141,32 @@ export function formatarEspera(iso: string, agora: number = Date.now()): string 
   if (h < 24) return `${h}h ${String(min % 60).padStart(2, "0")}min`;
   return `${Math.floor(h / 24)}d`;
 }
+
+/**
+ * Chips de prioridade e sentimento da triagem da IA — usados na faixa de
+ * triagem (topo da conversa) e no painel de informações. Mesma régua do
+ * resto: vermelho só no que exige ação (urgente/frustrado), âmbar pede
+ * atenção, o resto é neutro. Só tokens do tema.
+ */
+export const PRIORIDADE_CHIP: Record<string, string> = {
+  urgente: "bg-destructive/10 text-destructive",
+  alta: "bg-warning/10 text-warning",
+  media: "bg-brand-primary/10 text-brand-primary",
+  baixa: "bg-muted text-muted-foreground",
+};
+
+export const SENTIMENTO_CHIP: Record<string, string> = {
+  frustrado: "bg-destructive/10 text-destructive",
+  negativo: "bg-warning/10 text-warning",
+  neutro: "bg-muted text-muted-foreground",
+  positivo: "bg-success/10 text-success",
+};
+
+/** Primeira linha útil do resumo da IA, sem o marcador de lista. */
+export function primeiraLinhaDoResumo(resumo: string | null | undefined): string | null {
+  const linha = (resumo ?? "")
+    .split("\n")
+    .map((l) => l.trim().replace(/^[-*•]\s*/, ""))
+    .find(Boolean);
+  return linha ?? null;
+}

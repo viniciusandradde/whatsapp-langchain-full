@@ -1,30 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import {
-  Bot,
-  Captions,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Eraser,
-  FileText,
-  Hand,
-  MoreVertical,
-  Pencil,
-  RefreshCw,
-  Send,
-  ShieldOff,
-  TriangleAlert,
-  UserPlus,
-  X,
-  XCircle,
-} from "lucide-react";
+import { useEffect, useReducer, useRef, useState, useTransition } from "react";
+import { FileText, Loader2, Lock, Pencil, Send, ShieldOff, X } from "lucide-react";
 
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,41 +15,36 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type {
-  AtendenteStatus,
-  Atendimento,
-  AtendimentoMensagem,
-  Departamento,
-  ModeloMensagem,
-  WabaTemplate,
-} from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useLarguraElemento } from "@/hooks/use-largura-elemento";
+import { useLocalStorage } from "@/hooks/use-local-storage";
+import { usePermission } from "@/hooks/use-permission";
+import type { Atendimento, AtendimentoMensagem, ModeloMensagem, WabaTemplate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import {
-  apagarMensagemAction,
   claimAction,
   closeAction,
-  devolverParaIaAction,
   criarNotaInternaAction,
+  devolverParaIaAction,
   editarMensagemAction,
-  incluirNumeroSemIaAction,
-  loadAtendentesOnlineAction,
   enviarTemplateAction,
-  loadDepartamentosAction,
+  incluirNumeroSemIaAction,
   loadMensagensAction,
   loadModelosAction,
   loadTemplatesAprovadosAction,
   marcarAtendimentoLidoAction,
-  reprocessarMensagemAction,
   resetThreadAction,
   responderAction,
-  transcreverMensagemAction,
   transferAction,
   transferDepartamentoAction,
 } from "./actions";
-import { usePermission } from "@/hooks/use-permission";
-import { BolhaMenu } from "./bolha-menu";
+import { AvisoIa } from "./aviso-ia";
+import { CabecalhoConversa } from "./cabecalho-conversa";
+import { ComposerMenu } from "./composer-menu";
 import {
+  ACCEPT_ANEXO,
   AnexosPreview,
   ComposerMidiaBotoes,
   criarAnexos,
@@ -77,13 +53,17 @@ import {
   imagemColada,
   type AnexoPendente,
 } from "./composer-midia";
+import { GrupoMensagens, NotaInterna } from "./grupo-mensagens";
+import { FaixaTriagem } from "./faixa-triagem";
+import { PainelInfo, type SecaoInfo } from "./info-conversa";
 import { ModelosPopover } from "./modelos-popover";
-import { PainelCliente } from "./painel-cliente";
-import { SITUACAO_AJUDA, SITUACAO_CLASSE, SITUACAO_LABEL } from "./situacao";
-import { TagPopover } from "./tag-popover";
+import { montarTimeline } from "./timeline";
+import { TransferirDialog } from "./transferir-dialog";
 
 interface Props {
   atendimento: Atendimento;
+  /** Nome do setor (a lista já tem o mapa id→nome; o drawer só exibe). */
+  departamentoNome?: string | null;
   onClose: () => void;
   /**
    * `drawer` = overlay sobre a fila (comportamento antigo, mantido no mobile).
@@ -104,13 +84,29 @@ interface Props {
   onAcaoConcluida?: () => void;
 }
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("pt-BR");
-}
+/** Altura máxima do campo antes de rolar por dentro (~6 linhas). */
+const COMPOSER_MAX_PX = 160;
+/**
+ * Largura mínima da coluna da conversa (em px) pra o painel de informações
+ * abrir como 3ª coluna em vez de sheet: 320 do painel + ~560 de conversa.
+ * Abaixo disso a conversa viraria uma tira — o que se viu a 1440px com os
+ * dois sidebars abertos e a lista em 440.
+ */
+const LARGURA_MIN_COLUNA_INFO = 880;
 
+/**
+ * Conversa (conversa compacta, 2026-09): "menos interface, mais conversa".
+ *
+ * Do topo ao rodapé só o que a interação imediata precisa — cabeçalho de
+ * uma linha e meia, a timeline ocupando o resto, o composer de uma linha.
+ * Tudo o que era permanente (painel do cliente, abas, triagem, coleta, linha
+ * de nota interna/template, barra com 4 ações) continua disponível, mas a
+ * um toque: painel de informações (`info-conversa.tsx`), menu ⋮
+ * (`cabecalho-conversa.tsx`) e menu `+` do composer (`composer-menu.tsx`).
+ */
 export function AtendimentoDrawer({
   atendimento,
+  departamentoNome,
   onClose,
   modo = "drawer",
   onAcaoConcluida,
@@ -125,11 +121,8 @@ export function AtendimentoDrawer({
   const [composerInterna, setComposerInterna] = useState(false);
   // Mig 172 — edição de mensagem enviada reusa o composer. Mutuamente
   // exclusivo com nota interna (espelha o `_editando` do app Android):
-  // entrar em edição desliga a nota, e o checkbox fica desabilitado.
-  const [editando, setEditando] = useState<{
-    id: number;
-    original: string;
-  } | null>(null);
+  // entrar em edição desliga a nota, e o item do menu fica desabilitado.
+  const [editando, setEditando] = useState<{ id: number; original: string } | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [sending, setSending] = useState(false);
   // Anexos pendentes (fotos, documentos) — o "Enviar" de sempre manda todos
@@ -140,6 +133,7 @@ export function AtendimentoDrawer({
   const [enviandoIndice, setEnviandoIndice] = useState<number | null>(null);
   const [arrastando, setArrastando] = useState(false);
   const anexosRef = useRef<AnexoPendente[]>([]);
+  const inputArquivoRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     anexosRef.current = anexos;
   }, [anexos]);
@@ -174,37 +168,45 @@ export function AtendimentoDrawer({
     await reload();
   }
   const [modelos, setModelos] = useState<ModeloMensagem[] | null>(null);
+  // Busca de modelos ancorada ao composer — aberta pelo "/" no campo vazio,
+  // pelo menu `+` e pelo ⋮ do cabeçalho (o painel antigo do kebab, flutuante
+  // no canto, foi unificado aqui).
   const [modelosOpen, setModelosOpen] = useState(false);
-  // Atalho "/" no composer vazio (leva fila) — popover de busca de modelos,
-  // separado do painel do kebab (modelosOpen) que continua existindo.
-  const [slashOpen, setSlashOpen] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const [activeTab, setActiveTab] = useState<"conversa" | "arquivos">("conversa");
   const [isPending, startTransition] = useTransition();
 
-  // Transferência (Sprint V) — popover inline com 2 modos.
+  // Painel de informações (contato, tags, triagem, histórico, arquivos):
+  // coluna lateral no desktop (preferência lembrada) e bottom sheet no
+  // celular (nasce fechado).
+  const [infoDesktop, setInfoDesktop] = useLocalStorage<boolean>("atd-info-aberta", false);
+  const [infoMobile, setInfoMobile] = useState(false);
+  const [infoSecao, setInfoSecao] = useState<SecaoInfo>("contato");
+  const infoAberta = modo === "painel" ? infoDesktop : infoMobile;
+  const [asideRef, larguraAside] = useLarguraElemento<HTMLElement>();
+  const recipienteInfo: "coluna" | "lateral" | "inferior" =
+    modo === "drawer"
+      ? "inferior"
+      : (larguraAside ?? 0) >= LARGURA_MIN_COLUNA_INFO
+        ? "coluna"
+        : "lateral";
+  function definirInfo(v: boolean) {
+    if (modo === "painel") setInfoDesktop(v);
+    else setInfoMobile(v);
+  }
+  function abrirInfo(secao: SecaoInfo = "contato") {
+    setInfoSecao(secao);
+    // Já aberto no contato e tocou de novo no avatar: fecha (toggle).
+    if (infoAberta && secao === "contato" && infoSecao === "contato") {
+      definirInfo(false);
+      return;
+    }
+    definirInfo(true);
+  }
+
+  // Diálogos das ações (no lugar de `confirm()`/`alert()` do navegador).
   const [transferOpen, setTransferOpen] = useState(false);
-  const [transferMode, setTransferMode] = useState<"departamento" | "atendente">(
-    "departamento"
-  );
-  const [transferDepId, setTransferDepId] = useState<number | "">("");
-  const [transferUserId, setTransferUserId] = useState("");
-  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
-  const [loadingDeps, setLoadingDeps] = useState(false);
-  const [atendentesOnline, setAtendentesOnline] = useState<AtendenteStatus[]>(
-    []
-  );
-  const [loadingAtds, setLoadingAtds] = useState(false);
-  // Guarda "já tentei carregar" por fora do resultado — usar `.length === 0`
-  // como sinal de "ainda não carreguei" (abaixo) é indistinguível de "carreguei
-  // e a empresa não tem nenhum" (ex.: nenhum atendente online agora, caso
-  // normal), e a cada resolução da promise o efeito reavaliava a MESMA
-  // condição vazia e disparava a Server Action de novo — sem debounce, na
-  // velocidade da rede. Gerou uma rajada de centenas de req/s de um usuário
-  // só (20/09) até estourar o rate limit admin. `false` mantém retentativa
-  // em falha real; `true` só quando a resposta veio `ok` (mesmo com 0 itens).
-  const deptosCarregados = useRef(false);
-  const atdsCarregados = useRef(false);
+  const [confirmarFechar, setConfirmarFechar] = useState<"resolvido" | "abandonado" | null>(null);
+  const [confirmarReset, setConfirmarReset] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -215,9 +217,8 @@ export function AtendimentoDrawer({
     setLoading(false);
   }
 
-  // Silent reload: usado pelo polling — não toca em `loading` pra evitar
-  // flicker no UI a cada 3s. Erros transitórios são engolidos pra não
-  // poluir o painel com banner vermelho a cada falha de rede.
+  // Silent reload: usado pelo SSE/polling — não toca em `loading` pra evitar
+  // flicker. Erros transitórios são engolidos pra não poluir o painel.
   const reloadingRef = useRef(false);
   async function silentReload() {
     if (reloadingRef.current) return;
@@ -264,7 +265,16 @@ export function AtendimentoDrawer({
         if (grudadoNoFimRef.current) el.scrollTop = el.scrollHeight;
       });
     }
-  }, [mensagens, activeTab]);
+  }, [mensagens]);
+
+  // Relógio da timeline: o cabeçalho de grupo diz só a hora no MESMO dia —
+  // uma conversa aberta à meia-noite precisa virar "18/09 · 23:58". Um tick
+  // por minuto; o render lê `agora` do estado, como o React Compiler exige.
+  const [agoraMs, tick] = useReducer(() => Date.now(), 0, () => Date.now());
+  useEffect(() => {
+    const t = setInterval(tick, 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // E2.E SSE: substitui polling 3s por EventSource. Backend dispara
   // eventos via Postgres LISTEN/NOTIFY (mig 035) — chega <1s do INSERT
@@ -273,8 +283,7 @@ export function AtendimentoDrawer({
   // safety net.
   useEffect(() => {
     const isActive =
-      atendimento.status === "aguardando" ||
-      atendimento.status === "em_andamento";
+      atendimento.status === "aguardando" || atendimento.status === "em_andamento";
     if (!isActive) return;
 
     let es: EventSource | null = null;
@@ -352,90 +361,30 @@ export function AtendimentoDrawer({
     });
   }
 
-  // Lazy: carrega departamentos + atendentes online só quando user abre o
-  // popover, e só uma vez (guard por ref, não por tamanho — ver acima).
-  // Via server actions — api.ts é server-only.
-  useEffect(() => {
-    if (!transferOpen) return;
-    if (!deptosCarregados.current && !loadingDeps) {
-      setLoadingDeps(true);
-      loadDepartamentosAction()
-        .then((r) => {
-          if (r.ok) {
-            setDepartamentos(r.departamentos);
-            deptosCarregados.current = true;
-          }
-        })
-        .finally(() => setLoadingDeps(false));
-    }
-    if (!atdsCarregados.current && !loadingAtds) {
-      setLoadingAtds(true);
-      loadAtendentesOnlineAction()
-        .then((r) => {
-          if (r.ok) {
-            setAtendentesOnline(r.atendentes);
-            atdsCarregados.current = true;
-          }
-        })
-        .finally(() => setLoadingAtds(false));
-    }
-  }, [transferOpen, loadingDeps, loadingAtds]);
-
   const isOpen =
     atendimento.status === "aguardando" || atendimento.status === "em_andamento";
 
-  function handleConfirmTransfer() {
-    if (transferMode === "departamento") {
-      if (!transferDepId) return;
-      runAction(() =>
-        transferDepartamentoAction(atendimento.id, Number(transferDepId))
-      );
+  function transferir(destino: { departamentoId: number } | { userId: string }) {
+    if ("departamentoId" in destino) {
+      runAction(() => transferDepartamentoAction(atendimento.id, destino.departamentoId));
     } else {
-      if (!transferUserId.trim()) return;
-      runAction(() =>
-        transferAction(atendimento.id, transferUserId.trim())
-      );
+      runAction(() => transferAction(atendimento.id, destino.userId));
     }
-    setTransferOpen(false);
   }
 
-  function handleCancelTransfer() {
-    setTransferOpen(false);
-    setTransferDepId("");
-    setTransferUserId("");
-  }
-
-  function handleClose(status: "resolvido" | "abandonado") {
-    if (
-      !confirm(
-        `Fechar atendimento como ${status === "resolvido" ? "resolvido" : "abandonado"}?`
-      )
-    )
-      return;
+  function fecharAtendimento(status: "resolvido" | "abandonado") {
     runAction(() => closeAction(atendimento.id, status), { encerra: true });
   }
 
-  async function handleResetThread() {
-    if (
-      !confirm(
-        "Resetar conversa do agente?\n\n" +
-          "Apaga o histórico LangGraph (checkpoint) deste número.\n" +
-          "Próxima mensagem começa do zero — útil quando o agente está\n" +
-          "replicando padrão errado das últimas respostas.\n\n" +
-          "Não afeta: mensagens da timeline, memórias semânticas, dados do cliente."
-      )
-    )
-      return;
+  async function resetarConversa() {
     setError(null);
     const r = await resetThreadAction(atendimento.id);
     if (!r.ok) {
       setError(r.error);
       return;
     }
-    alert(
-      `Conversa resetada (${r.rowsDeleted} registros removidos).\n` +
-        `Thread: ${r.threadId}\n\n` +
-        "Próxima mensagem do cliente vai começar do zero."
+    toast.success(
+      `Conversa do agente resetada (${r.rowsDeleted} registros). A próxima mensagem do cliente começa do zero.`
     );
   }
 
@@ -443,10 +392,7 @@ export function AtendimentoDrawer({
     const telefone = atendimento.cliente_telefone;
     if (!telefone) return;
     setSemIaPending(true);
-    const r = await incluirNumeroSemIaAction(
-      telefone,
-      atendimento.cliente_nome ?? null
-    );
+    const r = await incluirNumeroSemIaAction(telefone, atendimento.cliente_nome ?? null);
     setSemIaPending(false);
     if (!r.ok) {
       toast.error(r.error);
@@ -458,32 +404,19 @@ export function AtendimentoDrawer({
     );
   }
 
-  async function openModelosDropdown() {
-    if (modelos === null) {
-      const r = await loadModelosAction();
-      if (r.ok) setModelos(r.modelos);
-      else setError(r.error);
-    }
-    setModelosOpen((v) => !v);
-  }
-
-  function insertModelo(m: ModeloMensagem) {
-    setComposer((prev) => (prev ? `${prev}\n${m.conteudo}` : m.conteudo));
-    setModelosOpen(false);
-  }
-
-  function abrirSlashModelos() {
+  function abrirModelos() {
     if (modelos === null) {
       void loadModelosAction().then((r) => {
         if (r.ok) setModelos(r.modelos);
+        else setError(r.error);
       });
     }
-    setSlashOpen(true);
+    setModelosOpen(true);
   }
 
-  function escolherModeloSlash(m: ModeloMensagem) {
-    setComposer(m.conteudo);
-    setSlashOpen(false);
+  function escolherModelo(m: ModeloMensagem) {
+    setComposer((prev) => (prev ? `${prev}\n${m.conteudo}` : m.conteudo));
+    setModelosOpen(false);
     composerRef.current?.focus();
   }
 
@@ -491,6 +424,7 @@ export function AtendimentoDrawer({
     setEditando({ id: m.id, original: m.response ?? "" });
     setComposer(m.response ?? "");
     setComposerInterna(false);
+    composerRef.current?.focus();
   }
 
   function sairEdicao() {
@@ -550,249 +484,130 @@ export function AtendimentoDrawer({
     await reload();
   }
 
-  const conteudo = (
-      <aside
-        className={
-          modo === "painel"
-            ? "flex h-full min-h-0 w-full flex-col bg-card"
-            : "flex h-full w-full max-w-3xl flex-col bg-card shadow-2xl"
-        }
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-card p-3 md:px-5 md:py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h2 className="truncate text-lg font-semibold">
-                {atendimento.cliente_nome ?? atendimento.cliente_telefone ?? "Cliente"}
-              </h2>
-              <Badge
-                variant="outline"
-                className={SITUACAO_CLASSE[atendimento.situacao]}
-                title={SITUACAO_AJUDA[atendimento.situacao]}
-              >
-                {SITUACAO_LABEL[atendimento.situacao]}
-              </Badge>
-              {atendimento.protocolo && (
-                <Badge variant="outline" className="font-mono text-[10px]">
-                  #{atendimento.protocolo}
-                </Badge>
-              )}
-              <span className="font-mono text-[11px] text-muted-foreground">
-                #{atendimento.id}
-              </span>
-              <TagPopover atendimentoId={atendimento.id} />
-              {atendimento.qtde_resposta_invalida > 0 && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px]"
-                  title={`Cliente errou ${atendimento.qtde_resposta_invalida}× no menu/CSAT`}
-                >
-                  <TriangleAlert className="size-3" />
-                  {atendimento.qtde_resposta_invalida}
-                </Badge>
-              )}
-              {!atendimento.iniciado_cliente && (
-                <Badge variant="outline" className="text-[10px]" title="outbound">
-                  outbound
-                </Badge>
-              )}
-              {atendimento.solicitou_encerramento && (
-                <Badge variant="outline" className="text-[10px]">
-                  pediu encerrar
-                </Badge>
-              )}
-            </div>
-            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground truncate">
-              {atendimento.cliente_telefone ?? "—"} · {atendimento.agente_atual}
-              {atendimento.cliente_id && (
-                <>
-                  {" · "}
-                  <Link
-                    href={`/clientes/${atendimento.cliente_id}`}
-                    className="underline hover:text-foreground"
-                  >
-                    ver ficha
-                  </Link>
-                </>
-              )}
-            </p>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <MoreActionsMenu
-              onLoadModelos={() => void openModelosDropdown()}
-              onResetThread={() => void handleResetThread()}
-              onIncluirSemIa={
-                podeGerirSemIa && atendimento.cliente_telefone
-                  ? () => setSemIaOpen(true)
-                  : undefined
-              }
-            />
-            {semIaOpen && (
-              <Dialog open onOpenChange={(v) => !v && setSemIaOpen(false)}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                      <ShieldOff className="size-4" />
-                      Incluir {atendimento.cliente_telefone} nos números sem IA
-                    </DialogTitle>
-                    <DialogDescription>
-                      Nenhuma conexão da empresa vai responder automaticamente a
-                      esse número — sem agente, menu ou mensagens automáticas —
-                      até que ele seja removido na tela Números sem IA.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => setSemIaOpen(false)}
-                      disabled={semIaPending}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      onClick={() => void confirmarIncluirSemIa()}
-                      disabled={semIaPending}
-                    >
-                      {semIaPending ? "Incluindo…" : "Incluir número"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            )}
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar">
-              <X className="size-4" />
-            </Button>
-          </div>
-        </header>
+  // Campo de uma linha que cresce com o texto até um teto; acima disso rola
+  // por dentro. Sincronizado com o VALOR (não só com a digitação): enviar,
+  // inserir modelo e entrar em edição também mudam a altura certa.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_PX)}px`;
+  }, [composer]);
 
-        <TriagemCard atendimento={atendimento} />
-        <ColetaPreviaCard atendimento={atendimento} />
-        <PainelCliente
-          atendimentoId={atendimento.id}
-          clienteId={atendimento.cliente_id}
-          clienteNome={atendimento.cliente_nome ?? null}
-          clienteTelefone={atendimento.cliente_telefone ?? null}
+  const agora = new Date(agoraMs);
+  const itens = mensagens ? montarTimeline(mensagens, atendimento.id) : [];
+  const podeEnviar = !sending && (composer.trim().length > 0 || anexos.length > 0);
+  const rotuloEnviar = sending
+    ? enviandoIndice !== null
+      ? `Enviando ${enviandoIndice + 1}/${anexos.length}…`
+      : "Enviando…"
+    : editando
+      ? "Salvar edição"
+      : anexos.length > 1
+        ? `Enviar ${anexos.length} anexos`
+        : anexos.length === 1
+          ? "Enviar anexo"
+          : composerInterna
+            ? "Salvar nota interna"
+            : "Enviar";
+
+  const conteudo = (
+    <aside
+      ref={asideRef}
+      className={
+        modo === "painel"
+          ? "flex h-full min-h-0 w-full flex-row bg-card"
+          : "flex h-full w-full max-w-3xl flex-row bg-card shadow-2xl"
+      }
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+        <CabecalhoConversa
+          atendimento={atendimento}
+          departamentoNome={departamentoNome}
+          modo={modo}
+          pendente={isPending}
+          infoAberta={infoAberta}
+          onVoltar={onClose}
+          onAbrirInfo={abrirInfo}
+          acoes={{
+            onAtender: () => runAction(() => claimAction(atendimento.id)),
+            // Desfaz o "Atender". Enquanto o atendimento tem dono o worker
+            // cala o agente; nada é enviado ao cliente aqui — a IA só volta
+            // a responder.
+            onDevolverParaIa: () => runAction(() => devolverParaIaAction(atendimento.id)),
+            onTransferir: () => setTransferOpen(true),
+            onResolver: () => setConfirmarFechar("resolvido"),
+            onAbandonar: () => setConfirmarFechar("abandonado"),
+            onInserirModelo: abrirModelos,
+            onAtualizar: () => void reload(),
+            onResetarConversa: () => setConfirmarReset(true),
+            onIncluirSemIa:
+              podeGerirSemIa && atendimento.cliente_telefone
+                ? () => setSemIaOpen(true)
+                : undefined,
+          }}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex items-center justify-between border-b px-5 py-2">
-            <div className="flex items-center gap-3 text-xs uppercase tracking-wide">
-              <button
-                type="button"
-                onClick={() => setActiveTab("conversa")}
-                className={cn(
-                  "border-b-2 px-1 py-1 transition-colors",
-                  activeTab === "conversa"
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Conversa
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("arquivos")}
-                className={cn(
-                  "border-b-2 px-1 py-1 transition-colors",
-                  activeTab === "arquivos"
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Arquivos
-                {(() => {
-                  const count = mensagens?.filter((m) => m.media_url).length ?? 0;
-                  return count > 0 ? ` · ${count}` : "";
-                })()}
-              </button>
+        <FaixaTriagem atendimento={atendimento} onAbrir={() => abrirInfo("triagem")} />
+
+        {/* Timeline — ocupa tudo entre o cabeçalho e o composer. */}
+        <div
+          ref={timelineRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            grudadoNoFimRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+          }}
+          className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-3 py-3 sm:px-4"
+        >
+          {error && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
             </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void reload()}
-                disabled={loading}
-              >
-                <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
-                Atualizar
-              </Button>
-            </div>
-          </div>
+          )}
 
-          <div
-            ref={timelineRef}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              grudadoNoFimRef.current =
-                el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-            }}
-            className="flex-1 space-y-3 overflow-y-auto px-5 py-4"
-          >
-            {error && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                {error}
-              </div>
-            )}
+          {loading && !mensagens && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              Carregando mensagens…
+            </p>
+          )}
 
-            {loading && !mensagens && (
-              <p className="text-sm text-muted-foreground">Carregando mensagens…</p>
-            )}
+          {!loading && mensagens && mensagens.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma mensagem registrada para este atendimento ainda.
+            </p>
+          )}
 
-            {activeTab === "conversa" && (
-              <>
-                {!loading && mensagens && mensagens.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Nenhuma mensagem registrada para este atendimento ainda.
-                  </p>
-                )}
-                {mensagens?.map((m) => (
-                  <MessageBubbles
-                    key={m.id}
-                    m={m}
-                    atendimentoId={atendimento.id}
-                    onReprocessado={reload}
-                    onEditar={iniciarEdicao}
-                  />
-                ))}
-              </>
-            )}
-
-            {activeTab === "arquivos" && <ArquivosTab mensagens={mensagens} />}
-          </div>
-        </div>
-
-        {isOpen && modelosOpen && (
-          <div className="fixed right-6 top-20 z-30 max-h-72 w-80 overflow-y-auto rounded-md border bg-popover shadow-lg">
-            {modelos === null ? (
-              <p className="p-3 text-xs text-muted-foreground">Carregando…</p>
-            ) : modelos.length === 0 ? (
-              <p className="p-3 text-xs text-muted-foreground">
-                Nenhum modelo cadastrado. Crie em <strong>/modelos</strong>.
-              </p>
+          {itens.map((item) =>
+            item.tipo === "grupo" ? (
+              <GrupoMensagens
+                key={item.chave}
+                grupo={item}
+                atendimentoId={atendimento.id}
+                agora={agora}
+                onAlterou={() => void reload()}
+                onEditar={iniciarEdicao}
+              />
+            ) : item.tipo === "nota" ? (
+              <NotaInterna key={item.chave} nota={item} agora={agora} />
             ) : (
-              <ul className="py-1">
-                {modelos.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => insertModelo(m)}
-                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent"
-                    >
-                      <span className="font-medium">{m.titulo}</span>
-                      <span className="line-clamp-2 text-xs text-muted-foreground">
-                        {m.conteudo}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+              <AvisoIa
+                key={item.chave}
+                aviso={item}
+                atendimentoId={atendimento.id}
+                onReprocessado={() => void reload()}
+              />
+            )
+          )}
+        </div>
 
         {isOpen && (
           <div
-            className="relative border-t bg-background/40 p-3"
+            className={cn(
+              "relative shrink-0 border-t px-2 py-1.5 sm:px-3",
+              composerInterna ? "bg-warning/10" : "bg-background/40"
+            )}
             onDragOver={(e) => {
               if (editando || composerInterna) return;
               if (!Array.from(e.dataTransfer.types).includes("Files")) return;
@@ -817,54 +632,51 @@ export function AtendimentoDrawer({
                 Solte para anexar
               </div>
             )}
-            {slashOpen && (
+            {modelosOpen && (
               <ModelosPopover
                 modelos={modelos}
-                onEscolher={escolherModeloSlash}
+                onEscolher={escolherModelo}
                 onFechar={() => {
-                  setSlashOpen(false);
+                  setModelosOpen(false);
                   composerRef.current?.focus();
                 }}
               />
             )}
+            {/* Seletor de arquivos do menu `+` (colar/arrastar também anexam). */}
+            <Input
+              ref={inputArquivoRef}
+              type="file"
+              accept={ACCEPT_ANEXO}
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (files.length) anexar(files);
+              }}
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden
+            />
+
+            {/* Modo do composer: só aparece quando NÃO é o envio normal. */}
             {editando && (
-              <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-brand-primary/40 bg-brand-primary/5 px-2 py-1.5 text-xs">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <Pencil className="size-3 shrink-0" />
-                  Editando mensagem — Enter salva, Esc cancela
-                </span>
-                <button
-                  type="button"
-                  aria-label="Cancelar edição"
-                  onClick={sairEdicao}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
+              <ModoComposer
+                icone={Pencil}
+                texto="Editando mensagem — Enter salva, Esc cancela"
+                onSair={sairEdicao}
+                rotuloSair="Cancelar edição"
+                className="border-brand-primary/40 bg-brand-primary/5"
+              />
             )}
-            <div className="mb-2 flex items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={composerInterna}
-                  disabled={editando !== null || anexos.length > 0}
-                  onChange={(e) => setComposerInterna(e.target.checked)}
-                  className="h-3.5 w-3.5"
-                />
-                <span className={composerInterna ? "font-medium text-amber-600 dark:text-amber-400" : ""}>
-                  Nota interna (não envia pro cliente)
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setTemplateModalOpen(true)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                title="Enviar template HSM aprovado (reabre fora da janela 24h)"
-              >
-                <FileText className="size-3.5" /> Template
-              </button>
-            </div>
+            {composerInterna && !editando && (
+              <ModoComposer
+                icone={Lock}
+                texto="Nota interna — só a equipe vê, não vai para o cliente"
+                onSair={() => setComposerInterna(false)}
+                rotuloSair="Voltar a responder ao cliente"
+                className="border-warning/40 bg-warning/10 text-warning"
+              />
+            )}
             {anexos.length > 0 && (
               <AnexosPreview
                 anexos={anexos}
@@ -873,17 +685,24 @@ export function AtendimentoDrawer({
                 onRemover={removerAnexo}
               />
             )}
-            <div className="flex items-end gap-2">
-              <ComposerMidiaBotoes
-                disabled={sending || editando !== null || composerInterna}
-                onAnexos={(novos) => {
-                  setError(null);
-                  setAnexos((prev) => [...prev, ...novos]);
+
+            <div className="flex items-end gap-1">
+              <ComposerMenu
+                disabled={sending || editando !== null}
+                notaInterna={composerInterna}
+                onAnexar={() => inputArquivoRef.current?.click()}
+                onTemplate={() => setTemplateModalOpen(true)}
+                onNotaInterna={(v) => {
+                  if (anexos.length > 0 && v) {
+                    setError("Remova os anexos para escrever uma nota interna.");
+                    return;
+                  }
+                  setComposerInterna(v);
+                  composerRef.current?.focus();
                 }}
-                onGravacao={(nota) => void enviarNotaDeVoz(nota)}
-                onErro={setError}
+                onModelo={abrirModelos}
               />
-              <textarea
+              <Textarea
                 ref={composerRef}
                 value={composer}
                 onChange={(e) => setComposer(e.target.value)}
@@ -907,42 +726,54 @@ export function AtendimentoDrawer({
                   // já digitado, "/" é só um caractere (URLs, datas).
                   if (e.key === "/" && composer === "") {
                     e.preventDefault();
-                    abrirSlashModelos();
+                    abrirModelos();
                   }
                 }}
                 placeholder={
                   editando
                     ? "Corrija o texto da mensagem…"
                     : composerInterna
-                      ? "Anotação privada da equipe… (não aparece pro cliente)"
+                      ? "Anotação privada da equipe…"
                       : anexos.length > 0
-                        ? "Legenda (opcional)… Enter envia"
-                        : "Digite a resposta para o cliente… (Enter envia, Shift+Enter quebra linha)"
+                        ? "Legenda (opcional)…"
+                        : "Digite uma mensagem…"
                 }
-                rows={2}
+                rows={1}
                 disabled={sending}
-                className={`flex w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60 ${
+                aria-label={composerInterna ? "Nota interna" : "Mensagem para o cliente"}
+                title="Enter envia · Shift+Enter quebra linha · / abre os modelos"
+                className={cn(
+                  "min-h-9 max-h-40 resize-none rounded-2xl px-3 py-1.5 text-sm leading-6",
                   composerInterna
-                    ? "border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/20"
-                    : "border-input bg-background"
-                }`}
+                    ? "border-warning/50 bg-background focus-visible:border-warning"
+                    : "bg-background"
+                )}
+              />
+              <ComposerMidiaBotoes
+                clipe={false}
+                disabled={sending || editando !== null || composerInterna}
+                onAnexos={(novos) => {
+                  setError(null);
+                  setAnexos((prev) => [...prev, ...novos]);
+                }}
+                onGravacao={(nota) => void enviarNotaDeVoz(nota)}
+                onErro={setError}
               />
               <Button
+                size="icon"
                 onClick={() => void handleSend()}
-                disabled={sending || (!composer.trim() && anexos.length === 0)}
+                disabled={!podeEnviar}
+                aria-label={rotuloEnviar}
+                title={rotuloEnviar}
+                className="shrink-0 rounded-full"
               >
-                <Send className="size-3.5" />
-                {sending
-                  ? enviandoIndice !== null
-                    ? `Enviando ${enviandoIndice + 1}/${anexos.length}…`
-                    : "Enviando…"
-                  : editando
-                    ? "Salvar"
-                    : anexos.length > 1
-                      ? `Enviar ${anexos.length} anexos`
-                      : anexos.length === 1
-                        ? "Enviar anexo"
-                        : "Enviar"}
+                {sending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : editando ? (
+                  <Pencil className="size-4" />
+                ) : (
+                  <Send className="size-4" />
+                )}
               </Button>
             </div>
           </div>
@@ -960,174 +791,97 @@ export function AtendimentoDrawer({
             }}
           />
         )}
+      </div>
 
-        {isOpen && (
-          <footer className="flex flex-wrap items-center justify-end gap-1 border-t px-3 py-2">
-            {atendimento.status === "aguardando" && (
+      {/* Espera a 1ª medição do aside: montar como sheet e trocar pra coluna
+          um frame depois faria o painel buscar tags e histórico duas vezes. */}
+      <PainelInfo
+        aberto={infoAberta && (modo === "drawer" || larguraAside !== undefined)}
+        recipiente={recipienteInfo}
+        onAbertoChange={definirInfo}
+        atendimento={atendimento}
+        departamentoNome={departamentoNome}
+        mensagens={mensagens}
+        secao={infoSecao}
+        onFechar={() => definirInfo(false)}
+      />
+
+      <TransferirDialog
+        aberto={transferOpen}
+        onAbertoChange={setTransferOpen}
+        pendente={isPending}
+        onConfirmar={transferir}
+      />
+
+      <ConfirmDestrutivo
+        aberto={confirmarFechar !== null}
+        onAbertoChange={(v) => !v && setConfirmarFechar(null)}
+        titulo={
+          confirmarFechar === "abandonado"
+            ? "Fechar como abandonado?"
+            : "Resolver este atendimento?"
+        }
+        objeto={atendimento.cliente_nome ?? atendimento.cliente_telefone ?? undefined}
+        descricao={
+          confirmarFechar === "abandonado"
+            ? "A conversa sai da caixa como encerrada sem resolução."
+            : "A conversa sai da caixa como resolvida. Se a pesquisa de satisfação estiver ativa, o cliente recebe a pergunta."
+        }
+        rotuloAcao={confirmarFechar === "abandonado" ? "Abandonar" : "Resolver"}
+        tom={confirmarFechar === "abandonado" ? "destrutivo" : "serio"}
+        onConfirmar={() => {
+          if (confirmarFechar) fecharAtendimento(confirmarFechar);
+        }}
+      />
+
+      <ConfirmDestrutivo
+        aberto={confirmarReset}
+        onAbertoChange={setConfirmarReset}
+        titulo="Resetar conversa do agente?"
+        descricao={
+          <>
+            <p>
+              Apaga o histórico LangGraph (checkpoint) deste número. A próxima
+              mensagem começa do zero — útil quando o agente está replicando um
+              padrão errado das últimas respostas.
+            </p>
+            <p>Não afeta: mensagens da timeline, memórias semânticas, dados do cliente.</p>
+          </>
+        }
+        rotuloAcao="Resetar"
+        onConfirmar={() => void resetarConversa()}
+      />
+
+      {semIaOpen && (
+        <Dialog open onOpenChange={(v) => !v && setSemIaOpen(false)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldOff className="size-4" />
+                Incluir {atendimento.cliente_telefone} nos números sem IA
+              </DialogTitle>
+              <DialogDescription>
+                Nenhuma conexão da empresa vai responder automaticamente a esse
+                número — sem agente, menu ou mensagens automáticas — até que ele
+                seja removido na tela Números sem IA.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
               <Button
-                size="sm"
-                onClick={() => runAction(() => claimAction(atendimento.id))}
-                disabled={isPending}
+                variant="outline"
+                onClick={() => setSemIaOpen(false)}
+                disabled={semIaPending}
               >
-                <Hand className="size-3.5" />
-                Atender
+                Cancelar
               </Button>
-            )}
-            {/* Desfaz o "Atender". Enquanto o atendimento tem dono o worker cala
-                o agente, e até existir este botão assumir era irreversível: as
-                saídas eram fechar (dispara a pesquisa de satisfação) ou
-                transferir (avisa o cliente). Nada é enviado ao cliente aqui — a
-                IA só volta a responder. */}
-            {atendimento.status === "em_andamento" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  runAction(() => devolverParaIaAction(atendimento.id))
-                }
-                disabled={isPending}
-                title="A IA volta a responder este cliente. Nada é enviado a ele."
-              >
-                <Bot className="size-3.5" />
-                Devolver para a IA
+              <Button onClick={() => void confirmarIncluirSemIa()} disabled={semIaPending}>
+                {semIaPending ? "Incluindo…" : "Incluir número"}
               </Button>
-            )}
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setTransferOpen((v) => !v)}
-                disabled={isPending}
-              >
-                <UserPlus className="size-3.5" />
-                Transferir
-              </Button>
-              {transferOpen && (
-                <>
-                  {/* backdrop só no mobile pra fechar tocando fora */}
-                  <button
-                    type="button"
-                    aria-label="Fechar transferência"
-                    className="fixed inset-0 z-10 bg-black/40 sm:hidden"
-                    onClick={handleCancelTransfer}
-                  />
-                  <div className="fixed inset-x-2 bottom-2 z-20 rounded-lg border bg-background p-3 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-full sm:right-0 sm:mb-2 sm:w-80 sm:rounded-md">
-                    <div className="mb-2 text-xs font-semibold text-muted-foreground">
-                      Transferir atendimento
-                    </div>
-                  <div className="mb-3 flex gap-3 text-sm">
-                    <label className="inline-flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        checked={transferMode === "departamento"}
-                        onChange={() => setTransferMode("departamento")}
-                      />
-                      Para departamento
-                    </label>
-                    <label className="inline-flex items-center gap-1.5">
-                      <input
-                        type="radio"
-                        checked={transferMode === "atendente"}
-                        onChange={() => setTransferMode("atendente")}
-                      />
-                      Para atendente
-                    </label>
-                  </div>
-                  {transferMode === "departamento" ? (
-                    <select
-                      value={transferDepId}
-                      onChange={(e) =>
-                        setTransferDepId(
-                          e.target.value ? Number(e.target.value) : ""
-                        )
-                      }
-                      className="mb-3 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      aria-label="Departamento de destino"
-                    >
-                      <option value="">
-                        {loadingDeps
-                          ? "Carregando…"
-                          : departamentos.length === 0
-                            ? "Nenhum departamento ativo"
-                            : "Selecione o departamento"}
-                      </option>
-                      {departamentos.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.nome}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <select
-                      value={transferUserId}
-                      onChange={(e) => setTransferUserId(e.target.value)}
-                      className="mb-3 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      aria-label="Atendente online de destino"
-                    >
-                      <option value="">
-                        {loadingAtds
-                          ? "Carregando…"
-                          : atendentesOnline.length === 0
-                            ? "Nenhum atendente online no momento"
-                            : "Selecione o atendente"}
-                      </option>
-                      {atendentesOnline.map((a) => (
-                        <option key={a.user_id} value={a.user_id}>
-                          {a.nome || a.email || a.user_id}
-                          {a.count_atendimentos_abertos > 0
-                            ? ` (${a.count_atendimentos_abertos} abertos)`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCancelTransfer}
-                        disabled={isPending}
-                      >
-                        Cancelar
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={handleConfirmTransfer}
-                        disabled={
-                          isPending ||
-                          (transferMode === "departamento"
-                            ? !transferDepId
-                            : !transferUserId.trim())
-                        }
-                      >
-                        Confirmar
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleClose("resolvido")}
-              disabled={isPending}
-            >
-              <CheckCircle2 className="size-3.5" />
-              Resolver
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleClose("abandonado")}
-              disabled={isPending}
-            >
-              <XCircle className="size-3.5" />
-              Abandonar
-            </Button>
-          </footer>
-        )}
-      </aside>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </aside>
   );
 
   // No desktop a conversa é coluna fixa; no mobile continua sendo overlay,
@@ -1144,775 +898,46 @@ export function AtendimentoDrawer({
   );
 }
 
-// Card "Triagem IA" — renderiza só quando o agente classificou ou
-// gerou resumo. Aparece logo abaixo do header do drawer pra o atendente
-// Menu kebab (⋮) no header com ações secundárias do atendimento.
-// "Inserir modelo" dispara o dropdown de modelos absoluto perto do header.
-// "Resetar conversa" é admin-only — limpa thread do agente (LangGraph checkpointer).
-function MoreActionsMenu({
-  onLoadModelos,
-  onResetThread,
-  onIncluirSemIa,
+/** Faixa fina acima do campo dizendo em que modo o composer está. */
+function ModoComposer({
+  icone: Icone,
+  texto,
+  rotuloSair,
+  onSair,
+  className,
 }: {
-  onLoadModelos: () => void;
-  onResetThread: () => void;
-  /** Ausente quando o usuário não tem `whitelist.manage` ou não há telefone. */
-  onIncluirSemIa?: () => void;
+  icone: React.ComponentType<{ className?: string }>;
+  texto: string;
+  rotuloSair: string;
+  onSair: () => void;
+  className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <div className="relative">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Mais ações"
-        title="Mais ações"
-      >
-        <MoreVertical className="size-4" />
-      </Button>
-      {open && (
-        <>
-          <button
-            type="button"
-            aria-label="Fechar menu"
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] overflow-hidden rounded-md border bg-popover shadow-lg">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onLoadModelos();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-            >
-              <FileText className="size-3.5" />
-              Inserir modelo de mensagem
-            </button>
-            {onIncluirSemIa && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  onIncluirSemIa();
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-              >
-                <ShieldOff className="size-3.5" />
-                Incluir em números sem IA
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onResetThread();
-              }}
-              className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-sm text-amber-600 hover:bg-accent dark:text-amber-400"
-            >
-              <Eraser className="size-3.5" />
-              Resetar conversa do agente
-            </button>
-          </div>
-        </>
+    <div
+      className={cn(
+        "mb-1.5 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs",
+        className
       )}
-    </div>
-  );
-}
-
-// pegar contexto rápido sem ler conversa toda.
-function TriagemCard({ atendimento }: { atendimento: Atendimento }) {
-  const [collapsed, setCollapsed] = useCollapseState(
-    `triagem-${atendimento.id}`,
-    false,
-  );
-  const has =
-    atendimento.resumo_ia ||
-    atendimento.classificacao ||
-    atendimento.prioridade ||
-    atendimento.sentimento;
-  if (!has) return null;
-
-  const prioColor: Record<string, string> = {
-    urgente: "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40",
-    alta: "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/40",
-    media: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/40",
-    baixa: "bg-muted text-muted-foreground border-muted",
-  };
-  const sentColor: Record<string, string> = {
-    frustrado: "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/40",
-    negativo: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40",
-    neutro: "bg-muted text-muted-foreground border-muted",
-    positivo: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40",
-  };
-
-  return (
-    <div className="border-b bg-muted/30 px-5 py-3">
-      <button
-        type="button"
-        onClick={() => setCollapsed(!collapsed)}
-        className="mb-2 flex w-full items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expandir triagem" : "Recolher triagem"}
-      >
-        <span className="flex items-center gap-2">
-          <span>Triagem da IA</span>
-          {atendimento.triagem_completa && (
-            <Badge variant="outline" className="text-[10px]">
-              completa
-            </Badge>
-          )}
-        </span>
-        {collapsed ? (
-          <ChevronDown className="size-3.5" />
-        ) : (
-          <ChevronUp className="size-3.5" />
-        )}
-      </button>
-      {!collapsed && (
-        <>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {atendimento.prioridade && (
-              <span
-                className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${prioColor[atendimento.prioridade] || ""}`}
-              >
-                prioridade: {atendimento.prioridade}
-              </span>
-            )}
-            {atendimento.sentimento && (
-              <span
-                className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium ${sentColor[atendimento.sentimento] || ""}`}
-              >
-                sentimento: {atendimento.sentimento}
-              </span>
-            )}
-            {atendimento.classificacao && (
-              <Badge variant="outline" className="text-[10px] font-mono">
-                {atendimento.classificacao}
-              </Badge>
-            )}
-          </div>
-          {atendimento.resumo_ia && (
-            <div className="mt-2 rounded-md bg-background/60 p-2 text-xs">
-              <div className="mb-1 font-semibold uppercase text-muted-foreground tracking-wide text-[10px]">
-                Resumo do agente
-              </div>
-              <pre className="whitespace-pre-wrap font-sans leading-relaxed">
-                {atendimento.resumo_ia}
-              </pre>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// Card "Coleta prévia" — exibe as respostas do wizard de coleta que
-// rodou antes de chegar no atendente. Inclui label da pergunta e valor
-// pra contexto. Renderiza só quando `coleta_resumo` está populado.
-function ColetaPreviaCard({ atendimento }: { atendimento: Atendimento }) {
-  const [collapsed, setCollapsed] = useCollapseState(
-    `coleta-${atendimento.id}`,
-    false,
-  );
-  const resumo = atendimento.coleta_resumo;
-  if (!resumo || !resumo.respostas) return null;
-  const entries = Object.entries(resumo.respostas);
-  if (entries.length === 0) return null;
-
-  return (
-    <div className="border-b bg-blue-500/5 px-5 py-3">
-      <button
-        type="button"
-        onClick={() => setCollapsed(!collapsed)}
-        className="mb-2 flex w-full items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expandir coleta prévia" : "Recolher coleta prévia"}
-      >
-        <span className="flex items-center gap-2">
-          <span>Coleta prévia</span>
-          {resumo.item_label && (
-            <Badge variant="outline" className="text-[10px]">
-              via &ldquo;{resumo.item_label}&rdquo;
-            </Badge>
-          )}
-          {collapsed && (
-            <span className="normal-case text-[10px] text-muted-foreground/70">
-              ({entries.length} {entries.length === 1 ? "campo" : "campos"})
-            </span>
-          )}
-        </span>
-        {collapsed ? (
-          <ChevronDown className="size-3.5" />
-        ) : (
-          <ChevronUp className="size-3.5" />
-        )}
-      </button>
-      {!collapsed && (
-        <dl className="space-y-1.5 text-xs">
-          {entries.map(([key, val]) => (
-            <div key={key} className="flex flex-col gap-0.5">
-              <dt className="text-[11px] font-medium text-muted-foreground">
-                {val.label}
-              </dt>
-              <dd className="rounded-md bg-background/70 px-2 py-1 font-mono text-foreground">
-                {val.valor || (
-                  <span className="text-muted-foreground italic">
-                    (sem resposta)
-                  </span>
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </div>
-  );
-}
-
-// Hook simples: estado de collapse persistido em localStorage por chave
-// (preferência por atendimento). Default `initialCollapsed` na primeira
-// montagem; depois carrega valor do storage.
-function useCollapseState(
-  key: string,
-  initialCollapsed: boolean,
-): [boolean, (next: boolean) => void] {
-  const storageKey = `atendimento-card-collapsed:${key}`;
-  const [collapsed, setCollapsedState] = useState(initialCollapsed);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved !== null) setCollapsedState(saved === "1");
-    } catch {
-      // localStorage indisponível (privacy mode) — ignora
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey]);
-
-  const setCollapsed = (next: boolean) => {
-    setCollapsedState(next);
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(storageKey, next ? "1" : "0");
-    } catch {
-      // ignora
-    }
-  };
-
-  return [collapsed, setCollapsed];
-}
-
-// Aba "Arquivos" — agrega todas as mídias do atendimento (imagens,
-// áudios, vídeos, PDFs/documentos) num grid. Filter client-side do array
-// `mensagens` que já está carregado — não faz fetch adicional.
-function ArquivosTab({
-  mensagens,
-}: {
-  mensagens: AtendimentoMensagem[] | null;
-}) {
-  const arquivos = (mensagens ?? []).filter((m) => m.media_url);
-  if (arquivos.length === 0) {
-    return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        Nenhum arquivo enviado neste atendimento.
-      </p>
-    );
-  }
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {arquivos.map((m) => (
-        <div
-          key={m.id}
-          className="rounded-md border bg-muted/20 p-2"
-          title={m.created_at ? new Date(m.created_at).toLocaleString() : ""}
-        >
-          <MediaPreview
-            url={m.media_url!}
-            type={m.media_type}
-            caption={m.incoming_message}
-          />
-          <p className="mt-1 text-[10px] text-muted-foreground">
-            {m.created_at && formatTime(m.created_at)} ·{" "}
-            <span className="font-mono">{m.media_type ?? "—"}</span>
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Botão de reprocesso — só aparece em mensagem que ficou SEM resposta pro
- * cliente: `failed`, ou pulada por conexão em modo manual / número na
- * whitelist. Handoff humano fica de fora (atendente assumiu).
- *
- * Confirma antes: manda WhatsApp real e gasta token. O backend revalida os
- * gates e devolve 409 com frase acionável se a condição ainda vale.
- */
-function BotaoReprocessar({
-  atendimentoId,
-  messageId,
-  onReprocessado,
-}: {
-  atendimentoId: number;
-  messageId: number;
-  onReprocessado: () => void;
-}) {
-  const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  async function clicar() {
-    if (enviando) return;
-    if (
-      !window.confirm(
-        "Reprocessar esta mensagem? A IA vai responder e o cliente receberá " +
-          "a mensagem no WhatsApp."
-      )
-    ) {
-      return;
-    }
-    setEnviando(true);
-    setErro(null);
-    const r = await reprocessarMensagemAction(atendimentoId, messageId);
-    setEnviando(false);
-    if (r.ok) onReprocessado();
-    else setErro(r.error);
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <button
-        type="button"
-        onClick={clicar}
-        disabled={enviando}
-        className="inline-flex items-center gap-1 rounded-md border border-foreground/15 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/5 disabled:opacity-50"
-      >
-        {enviando ? "Reprocessando…" : "↻ Reprocessar com IA"}
-      </button>
-      {erro ? <span className="text-[11px] text-destructive">{erro}</span> : null}
-    </div>
-  );
-}
-
-function MessageBubbles({
-  m,
-  atendimentoId,
-  onReprocessado,
-  onEditar,
-}: {
-  m: AtendimentoMensagem;
-  atendimentoId: number;
-  onReprocessado: () => void;
-  /** Mig 172 — pede ao drawer pra entrar em modo edição com esta mensagem. */
-  onEditar?: (m: AtendimentoMensagem) => void;
-}) {
-  // Cada row pode gerar bolhas distintas: media (inbound), texto inbound,
-  // resposta agente. Mídia é renderizada inline como <img>/<audio>/link.
-  type Bubble =
-    | {
-        side: "in" | "out";
-        kind: "text";
-        text: string;
-        meta?: string;
-        /** Apagada para todos (mig 172): renderiza em itálico, apagado. */
-        apagada?: boolean;
-      }
-    | {
-        side: "in" | "out";
-        kind: "media";
-        /** URL do proxy do Next — o conteúdo NÃO vem na lista. */
-        mediaUrl: string;
-        mediaType: string | null;
-        caption?: string;
-        /** Só inbound de áudio (mig 169): habilita transcrição no painel. */
-        mensagemId?: number;
-        transcricao?: string | null;
-      };
-
-  const bubbles: Bubble[] = [];
-
-  if (m.media_disponivel || m.media_url) {
-    bubbles.push({
-      side: "in",
-      kind: "media",
-      mediaUrl:
-        m.media_url ??
-        `/api/proxy/midia/${atendimentoId}/${m.id}?lado=in`,
-      mediaType: m.media_type ?? null,
-      caption: m.incoming_message ?? undefined,
-      mensagemId: m.id,
-      transcricao: m.transcricao,
-    });
-  } else if (m.incoming_message) {
-    bubbles.push({ side: "in", kind: "text", text: m.incoming_message });
-  }
-
-  // Markers de skip do agente — o worker grava no `response` quando pula o
-  // agente IA (handoff humano ou conexão em modo manual/IA desligada). Não
-  // renderiza como bolha (a inbound já fica visível); só exibe um divider
-  // sutil pra deixar claro que o agente foi pulado.
-  const isHandoff =
-    m.response?.startsWith("[handoff humano") ||
-    m.response?.startsWith("[modo manual") ||
-    m.response?.startsWith("[whitelist") ||
-    // Marker novo (mig 143 / gate da fila): a IA já transferiu e o
-    // atendimento aguarda atendente. Sem esta linha o texto interno
-    // vazaria como bolha de resposta na timeline do operador.
-    m.response?.startsWith("[fila do departamento") ||
-    // Mig 144: o cliente escreveu de novo enquanto o modelo pensava, então
-    // esta resposta foi engolida e o turno seguinte respondeu tudo. Nada foi
-    // enviado ao cliente — não pode aparecer como bolha.
-    m.response?.startsWith("[resposta superada");
-
-  // Mensagem que ficou SEM resposta pro cliente. Handoff fica de fora: lá um
-  // atendente assumiu, e a IA responder por cima seria pior que o problema.
-  // O backend revalida tudo — isto só decide se o botão aparece.
-  const podeReprocessar =
-    m.status === "failed" ||
-    m.response?.startsWith("[modo manual") === true ||
-    m.response?.startsWith("[whitelist") === true;
-  // Mídia enviada PELO OPERADOR (mig 146) — o app Android manda foto, documento
-  // e nota de voz. Fica em `response_media_url`, separada da inbound: o lado da
-  // bolha vem da origem do campo, e reusar `media_url` poria o que o operador
-  // mandou do lado do cliente. Quando há mídia, `response` é a LEGENDA dela, e
-  // não uma segunda bolha de texto.
-  if (m.response_media_disponivel || m.response_media_url) {
-    bubbles.push({
-      side: "out",
-      kind: "media",
-      mediaUrl:
-        m.response_media_url ??
-        `/api/proxy/midia/${atendimentoId}/${m.id}?lado=out`,
-      mediaType: m.response_media_type ?? null,
-      caption: !isHandoff && m.response ? m.response : undefined,
-    });
-  } else if (m.response && !isHandoff) {
-    // Apagada para todos (mig 172): o cliente não vê mais nada, então exibir o
-    // texto aqui faria o painel afirmar que a mensagem foi entregue. O texto
-    // continua no banco para auditoria — quem precisa dele consulta lá, não
-    // pela timeline.
-    bubbles.push(
-      m.response_apagada
-        ? { side: "out", kind: "text", text: "Mensagem apagada", apagada: true }
-        : { side: "out", kind: "text", text: m.response }
-    );
-  }
-  if (m.error) {
-    // NUNCA renderizar o detalhe técnico do erro como texto visível.
-    // O backend já manda string sanitizada tipo `processing_failed:Xerror`,
-    // mas como blindagem renderizamos sempre uma frase fixa pro operador;
-    // detalhe vai pra `meta` (linha cinza menor) só pra correlação rápida
-    // com logs do worker. Erro real fica no `docker logs worker`.
-    bubbles.push({
-      side: "out",
-      kind: "text",
-      text: "Falha ao processar essa mensagem. Tente reenviar ou entre em contato com o suporte.",
-      meta: `erro · ${m.error.slice(0, 80)}`,
-    });
-  }
-
-  // Sprint 1.3 — nota interna fica visualmente distinta (fundo amarelo,
-  // ocupa largura cheia centrada, label "🔒 Nota interna · <autor>")
-  if (m.interna && m.response) {
-    return (
-      <div className="flex justify-center">
-        <div className="w-full max-w-[90%] rounded-lg border border-amber-400/40 bg-amber-50/70 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-950/30">
-          <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-            Nota interna · {m.criado_por_user_id ?? "—"}
-          </p>
-          <p className="whitespace-pre-wrap text-foreground">{m.response}</p>
-          <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-            {formatTime(m.created_at)}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  async function apagar() {
-    const r = await apagarMensagemAction(atendimentoId, m.id);
-    if (!r.ok) {
-      // Janela de 48h vencida ou canal sem suporte (WABA) — frase do backend.
-      toast.error(r.error);
-      return;
-    }
-    toast.success("Mensagem apagada para todos");
-    onReprocessado();
-  }
-
-  return (
-    <div className="space-y-2">
-      {bubbles.map((b, i) => {
-        // Guardas do menu (paridade com o app): bolha apagada ou de erro é
-        // inerte; Copiar exige texto; Editar/Apagar só na resposta outbound e
-        // só quando o servidor calculou que a janela ainda vale.
-        const ehErro = b.kind === "text" && b.meta?.startsWith("erro") === true;
-        const inerte = ehErro || (b.kind === "text" && b.apagada === true);
-        const copiavel = inerte
-          ? null
-          : b.kind === "text"
-            ? b.text
-            : [b.caption, b.transcricao].filter(Boolean).join("\n") || null;
-        const podeEditar =
-          !inerte &&
-          b.side === "out" &&
-          b.kind === "text" &&
-          m.pode_editar_resposta === true;
-        const podeApagar =
-          !inerte && b.side === "out" && m.pode_apagar_resposta === true;
-        const bolha = (
-          <div
-            className={cn(
-              "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
-              b.side === "out"
-                ? "bg-primary/15 text-foreground"
-                : "bg-secondary text-foreground"
-            )}
-          >
-            {b.kind === "media" ? (
-              <>
-                <MediaPreview
-                  url={b.mediaUrl}
-                  type={b.mediaType}
-                  caption={b.caption}
-                />
-                {b.side === "in" &&
-                  b.mensagemId !== undefined &&
-                  (b.mediaType ?? "").startsWith("audio/") && (
-                    <TranscricaoAudio
-                      atendimentoId={atendimentoId}
-                      mensagemId={b.mensagemId}
-                      transcricao={b.transcricao ?? null}
-                    />
-                  )}
-              </>
-            ) : (
-              <p
-                className={cn(
-                  "whitespace-pre-wrap",
-                  b.apagada && "italic text-muted-foreground"
-                )}
-              >
-                {b.text}
-              </p>
-            )}
-            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-              {formatTime(m.created_at)} · {b.side === "out" ? "agente" : "cliente"}
-              {b.kind === "text" && b.meta && b.meta !== "erro" && (
-                <>
-                  {" · "}
-                  <a
-                    href={b.meta}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline"
-                  >
-                    abrir
-                  </a>
-                </>
-              )}
-            </p>
-          </div>
-        );
-        return (
-          <div
-            key={i}
-            className={cn(
-              "flex",
-              b.side === "out" ? "justify-end" : "justify-start"
-            )}
-          >
-            <BolhaMenu
-              copiarTexto={copiavel}
-              podeEditar={podeEditar}
-              podeApagar={podeApagar}
-              onEditar={onEditar ? () => onEditar(m) : undefined}
-              onApagar={apagar}
-            >
-              {bolha}
-            </BolhaMenu>
-          </div>
-        );
-      })}
-      {isHandoff && (
-        <p className="px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {/* Antes os 3 markers mostravam "operador respondendo" — verdade só
-              no handoff. Em modo manual/whitelist NINGUÉM respondeu, e essa
-              é exatamente a situação que deixou uma cliente sem resposta. */}
-          {m.response?.startsWith("[handoff humano")
-            ? "agente pausado — operador respondendo"
-            : m.response?.startsWith("[modo manual")
-              ? "IA desligada nesta conexão — ninguém respondeu"
-              : "número na lista de bloqueio da IA — ninguém respondeu"}
-        </p>
-      )}
-      {podeReprocessar && (
-        <BotaoReprocessar
-          atendimentoId={atendimentoId}
-          messageId={m.id}
-          onReprocessado={onReprocessado}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * Transcrição da nota de voz pro operador (mig 169).
- *
- * Se a mensagem já tem transcrição (automática por conexão ou de um clique
- * anterior), mostra o texto direto. Senão, oferece o botão — o servidor é
- * idempotente, então cliques repetidos não pagam LLM de novo.
- */
-function TranscricaoAudio({
-  atendimentoId,
-  mensagemId,
-  transcricao,
-}: {
-  atendimentoId: number;
-  mensagemId: number;
-  transcricao: string | null;
-}) {
-  const [texto, setTexto] = useState<string | null>(transcricao);
-  const [transcrevendo, setTranscrevendo] = useState(false);
-
-  async function transcrever() {
-    setTranscrevendo(true);
-    const r = await transcreverMensagemAction(atendimentoId, mensagemId);
-    setTranscrevendo(false);
-    if (!r.ok) {
-      toast.error(r.error);
-      return;
-    }
-    setTexto(r.transcricao);
-  }
-
-  if (texto !== null) {
-    return (
-      <p className="mt-1 whitespace-pre-wrap border-l-2 border-muted-foreground/30 pl-2 text-xs text-muted-foreground">
-        <span className="font-medium">Transcrição:</span> {texto}
-      </p>
-    );
-  }
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="mt-1 h-7 gap-1 px-2 text-xs text-muted-foreground"
-      onClick={() => void transcrever()}
-      disabled={transcrevendo}
     >
-      <Captions className="size-3.5" />
-      {transcrevendo ? "Transcrevendo…" : "Transcrever"}
-    </Button>
-  );
-}
-
-function MediaPreview({
-  url,
-  type,
-  caption,
-}: {
-  url: string;
-  type: string | null;
-  caption?: string;
-}) {
-  const mime = (type || "").toLowerCase();
-
-  // Suporta data: URLs (worker pré-fetch via Evolution) e URLs HTTP regulares.
-  // Browser renderiza data URL inline em <img>/<audio> sem backend extra.
-  if (mime.startsWith("image/")) {
-    return (
-      <div className="space-y-1">
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={url}
-            alt={caption || "imagem do cliente"}
-            className="max-h-64 max-w-full rounded-lg border border-border/40 object-contain"
-          />
-        </a>
-        {caption && (
-          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {caption}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (mime.startsWith("audio/")) {
-    return (
-      <div className="space-y-1">
-        <audio
-          controls
-          src={url}
-          className="w-full max-w-xs"
-          preload="metadata"
-        >
-          Seu navegador não suporta player de áudio.
-        </audio>
-        {caption && (
-          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {caption}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (mime.startsWith("video/")) {
-    return (
-      <div className="space-y-1">
-        <video
-          controls
-          src={url}
-          className="max-h-64 max-w-full rounded-lg border border-border/40"
-          preload="metadata"
-        >
-          Seu navegador não suporta vídeo.
-        </video>
-        {caption && (
-          <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {caption}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  // Documento (PDF/DOCX) ou tipo desconhecido — link de download
-  return (
-    <div className="space-y-1">
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        download
-        className="inline-flex items-center gap-1.5 rounded-md border border-border/40 bg-background px-2 py-1 text-xs underline hover:bg-muted"
+      <span className="flex min-w-0 items-center gap-1.5 font-medium">
+        <Icone className="size-3 shrink-0" />
+        <span className="truncate">{texto}</span>
+      </span>
+      <button
+        type="button"
+        aria-label={rotuloSair}
+        title={rotuloSair}
+        onClick={onSair}
+        className="shrink-0 rounded p-0.5 hover:bg-foreground/10"
       >
-        📎 {type || "documento"} — abrir
-      </a>
-      {caption && (
-        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-          {caption}
-        </p>
-      )}
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }
 
 function _bodyText(t: WabaTemplate): string {
-  const body = t.componentes_json.find(
-    (c) => (c.type || "").toUpperCase() === "BODY"
-  );
+  const body = t.componentes_json.find((c) => (c.type || "").toUpperCase() === "BODY");
   return body?.text ?? "";
 }
 
@@ -1974,21 +999,21 @@ function TemplateComposerModal({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
             <FileText className="size-4" /> Enviar template
-          </h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="size-4" />
-          </button>
-        </div>
-        <div className="space-y-3 px-4 py-4 text-sm">
+          </DialogTitle>
+          <DialogDescription>
+            Template HSM aprovado — reabre a conversa fora da janela de 24h.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
           {!suporta ? (
             <p className="text-xs text-muted-foreground">
-              Templates disponíveis apenas para conexões WhatsApp Oficial (WABA)
-              . Esta conexão não suporta templates.
+              Templates disponíveis apenas para conexões WhatsApp Oficial (WABA).
+              Esta conexão não suporta templates.
             </p>
           ) : templates === null ? (
             <p className="text-xs text-muted-foreground">Carregando templates aprovados…</p>
@@ -2005,6 +1030,7 @@ function TemplateComposerModal({
                   setVars({});
                 }}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                aria-label="Template"
               >
                 <option value="">Selecione um template…</option>
                 {templates.map((t) => (
@@ -2023,12 +1049,9 @@ function TemplateComposerModal({
                   <label className="mb-0.5 block text-xs text-muted-foreground">
                     Variável {`{{${k}}}`}
                   </label>
-                  <input
+                  <Input
                     value={vars[k] ?? ""}
-                    onChange={(e) =>
-                      setVars((p) => ({ ...p, [k]: e.target.value }))
-                    }
-                    className="w-full rounded-md border bg-background px-2 py-1 text-sm"
+                    onChange={(e) => setVars((p) => ({ ...p, [k]: e.target.value }))}
                     placeholder={k === "1" ? "ex: nome do cliente" : ""}
                   />
                 </div>
@@ -2037,8 +1060,8 @@ function TemplateComposerModal({
           )}
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 border-t px-4 py-3">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={sending}>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={sending}>
             Cancelar
           </Button>
           <Button
@@ -2048,8 +1071,8 @@ function TemplateComposerModal({
           >
             {sending ? "Enviando…" : "Enviar template"}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
