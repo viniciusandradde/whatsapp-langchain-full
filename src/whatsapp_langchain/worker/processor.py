@@ -422,6 +422,13 @@ RESPOSTA_VAZIA_MARKER = "[resposta vazia — agente não gerou texto]"
 # em MARKERS_REPROCESSAVEIS: cadastrar o agente e reenfileirar volta a IA.
 SEM_AGENTE_MARKER = "[IA sem agente cadastrado — resposta automática desligada]"
 
+# Marcador quando a empresa passou do `limite_atendimentos_mes` do plano
+# (ADR-005 D5, mig 189): bloqueio SUAVE — a IA para, o atendimento humano
+# continua (a mensagem fica na fila, como no modo manual). Nada é enviado ao
+# cliente. Entra em MARKERS_REPROCESSAVEIS: upgrade do plano + reenfileirar
+# traz a IA de volta.
+LIMITE_PLANO_MARKER = "[limite de atendimentos do plano — IA pausada]"
+
 # Guarda do gatilho de voz (mig 176): marcador de sistema nunca vira áudio.
 # No caminho normal a resposta que chega ao envio não é marcador (os caminhos
 # de marker retornam antes), mas a guarda custa nada e protege refatoração.
@@ -434,6 +441,7 @@ _MARKERS_SISTEMA = frozenset(
         RESPOSTA_SUPERADA_MARKER,
         RESPOSTA_VAZIA_MARKER,
         SEM_AGENTE_MARKER,
+        LIMITE_PLANO_MARKER,
     }
 )
 
@@ -2622,6 +2630,48 @@ async def process_message(
                 atendimento_id=message.atendimento_id,
             )
             return
+
+        # Gate de plano: atendimentos no mês (ADR-005 D5). Vem depois dos
+        # gates de modo manual/whitelist/sem agente (que já retornaram) e
+        # ANTES da materialização de mídia e do preprocess — sem IA no turno
+        # não vale pagar download nem transcrição. Best-effort: plano
+        # ilegível libera a IA (`ia_pausada_pelo_plano` devolve None).
+        from whatsapp_langchain.shared.plano_gate import (
+            avisar_limite_atendimentos_se_preciso,
+            ia_pausada_pelo_plano,
+            status_atendimentos_mes,
+        )
+
+        pausada = await ia_pausada_pelo_plano(pool, message.empresa_id)
+        if pausada is not None:
+            await mark_done(
+                pool,
+                message.id,
+                LIMITE_PLANO_MARKER,
+                normalized_input=None,
+            )
+            await avisar_limite_atendimentos_se_preciso(
+                pool, message.empresa_id, pausada
+            )
+            logger.warning(
+                "worker_skipped_agent_limite_plano",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+                atendimento_id=message.atendimento_id,
+                usado=pausada.usado,
+                limite=pausada.limite,
+            )
+            return
+        # 80 %: só avisa (uma vez por mês); a IA segue. Reaproveita o cache
+        # de 60 s do contador — não é uma consulta a mais por mensagem.
+        try:
+            st_plano = await status_atendimentos_mes(pool, message.empresa_id)
+        except Exception:  # já logado dentro do gate acima
+            st_plano = None
+        if st_plano is not None and st_plano.em_alerta:
+            await avisar_limite_atendimentos_se_preciso(
+                pool, message.empresa_id, st_plano
+            )
 
         # Object storage (mig 183/184): mídia guardada no bucket chega como
         # referência (`media_arquivo_uuid`), com media_url NULL. Materializa os

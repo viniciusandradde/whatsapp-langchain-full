@@ -33,6 +33,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_limit
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.atendimento import (
     list_atendimentos,
@@ -300,6 +301,8 @@ async def create_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("empresa.member.add")),
+    # ADR-005 leva A: `limite_usuarios` era só contado no /billing.
+    _quota: None = Depends(require_plano_limit("usuarios")),
 ):
     """Cria usuário + membership + perfis + deptos. Senha vem em chamada
     separada (Server Action chama Better Auth.setUserPassword).
@@ -629,6 +632,8 @@ async def replicar_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     actor_user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("empresa.member.add")),
+    # Replicar também cria um usuário — mesmo limite do create.
+    _quota: None = Depends(require_plano_limit("usuarios")),
 ):
     """Clona perfis+deptos+conexões+role+capacidade de um usuário existente
     pra um novo (paridade ZigChat `replicarUsuario`). Senha gerada no fluxo

@@ -18,6 +18,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_limit
 from whatsapp_langchain.server.dependencies_rbac import (
     require_agente_access,
     require_permission,
@@ -233,6 +234,9 @@ async def create_endpoint(
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
     _: None = Depends(require_permission("agente.config")),
+    # ADR-005 leva A: `plano.limite_agentes` (mig 189). Conta só agentes
+    # ATIVOS — desativar um libera a vaga.
+    _quota: None = Depends(require_plano_limit("agentes")),
 ) -> dict:
     pool = await get_pool()
     try:

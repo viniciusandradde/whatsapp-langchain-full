@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Loader2, Save } from "lucide-react";
 
@@ -14,12 +15,17 @@ const helpCls = "text-xs text-muted-foreground";
 
 export function BudgetForm({
   initial,
+  tetoPlano,
+  planoNome,
 }: {
   initial: {
     limite_usd: number;
     acao_estouro: "alertar" | "bloquear" | "redirecionar_menu";
     alerta_pct: number;
   };
+  /** Máximo do plano (ADR-005 D4); null = o plano não limita. */
+  tetoPlano: number | null;
+  planoNome?: string | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -60,11 +66,26 @@ export function BudgetForm({
             name="limite_usd"
             type="number"
             min={0}
+            max={tetoPlano ?? undefined}
             step={0.01}
             required
             defaultValue={initial.limite_usd}
             className={inputCls}
           />
+          {tetoPlano != null && (
+            <p className={helpCls}>
+              Teto do plano{planoNome ? ` ${planoNome}` : ""}: US${" "}
+              {tetoPlano.toFixed(2)}/mês. Para ampliar, faça upgrade em{" "}
+              <Link
+                href="/billing"
+                prefetch={false}
+                className="underline underline-offset-2"
+              >
+                Plano e cobrança
+              </Link>
+              .
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <label className={labelCls}>Alertar em (%)</label>

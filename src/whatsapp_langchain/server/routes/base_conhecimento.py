@@ -17,6 +17,7 @@ from whatsapp_langchain.server.dependencies import (
     get_user_id_from_request,
     verify_service_token,
 )
+from whatsapp_langchain.server.dependencies_plano import require_plano_limit
 from whatsapp_langchain.shared import base_conhecimento
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.file_extractor import (
@@ -101,6 +102,8 @@ async def create_documento(
     body: DocumentoConhecimentoInput,
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    # ADR-005 leva A: `limite_documentos_kb` era só contado no /billing.
+    _quota: None = Depends(require_plano_limit("documentos_kb")),
 ) -> DocumentoConhecimento:
     pool = await get_pool()
     out = await base_conhecimento.upsert_documento(
@@ -207,6 +210,10 @@ async def upload_documento(
     split_md_headers: bool = Form(default=True),
     empresa_id: int = Depends(get_empresa_context),
     user_id: str = Depends(get_user_id_from_request),
+    # ADR-005 leva A. O gate é por REQUEST: um .md dividido por cabeçalhos
+    # pode criar N documentos de uma vez e passar do limite por N−1 — o
+    # próximo upload bloqueia. Contar seção a seção não vale a complexidade.
+    _quota: None = Depends(require_plano_limit("documentos_kb")),
 ) -> dict:
     """Cria documento(s) a partir de upload de PDF/DOCX/MD/TXT.
 

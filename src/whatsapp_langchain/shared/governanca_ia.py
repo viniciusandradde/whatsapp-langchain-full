@@ -194,10 +194,27 @@ async def acrescentar_consumo(
     mais de um mês atrás, se a empresa ficou parada).
 
     O consumo NÃO é herdado: começa do zero no mês novo.
+
+    ADR-005 D4: o teto do plano (`limite_orcamento_ia_usd`, com o
+    grandfathering de `get_plano_info`) entra como MÁXIMO da herança —
+    `LEAST(limite anterior, teto)`. Empresa que nunca configurou nada e tem
+    plano com teto nasce com o teto do plano (antes nascia com 0 = "sem
+    teto"); `acao_estouro` herdada/`alertar` não bloqueia ninguém sozinha.
+    `LEAST` ignora NULL no Postgres: sem teto no plano fica o limite anterior,
+    sem limite anterior fica o teto, sem nenhum dos dois fica 0 como antes.
     """
     if valor_usd <= 0:
         return
     ano_mes = datetime.now().strftime("%Y-%m")
+    teto_plano: float | None = None
+    try:
+        from whatsapp_langchain.shared.plano_limits import get_plano_info
+
+        teto_plano = (await get_plano_info(pool, empresa_id)).limite_orcamento_ia_usd
+    except Exception as exc:  # plano ilegível não pode calar o débito
+        logger.warning(
+            "ia_budget_teto_plano_ilegivel", empresa_id=empresa_id, error=str(exc)
+        )
     try:
         async with pool.connection() as conn:
             await conn.execute(
@@ -206,7 +223,7 @@ async def acrescentar_consumo(
                     (empresa_id, ano_mes, limite_usd, consumo_usd,
                      acao_estouro, alerta_pct)
                 SELECT %s, %s,
-                       COALESCE(p.limite_usd, 0), %s,
+                       COALESCE(LEAST(p.limite_usd, %s::numeric), 0), %s,
                        COALESCE(p.acao_estouro, 'alertar'),
                        COALESCE(p.alerta_pct, 80)
                   FROM (SELECT 1) AS _
@@ -224,6 +241,7 @@ async def acrescentar_consumo(
                 (
                     empresa_id,
                     ano_mes,
+                    Decimal(str(teto_plano)) if teto_plano is not None else None,
                     Decimal(str(valor_usd)),
                     empresa_id,
                     ano_mes,

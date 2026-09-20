@@ -408,6 +408,19 @@ async def list_contadores(
     por_aba = await count_atendimentos_por_aba(
         pool, user_id=user_id, empresa_id=empresa_id
     )
+    # Uso do plano no mês (ADR-005 D5): o banner "IA pausada / 80 %" da fila
+    # vive neste mesmo payload porque a tela já o consulta (SSE + 60 s) — sem
+    # fetch novo. Cache de 60 s no contador; best-effort: plano ilegível não
+    # derruba os badges.
+    plano_status: dict | None = None
+    try:
+        from whatsapp_langchain.shared.plano_gate import status_atendimentos_mes
+
+        plano_status = (await status_atendimentos_mes(pool, empresa_id)).to_dict()
+    except Exception as exc:
+        logger.warning(
+            "contadores_plano_ilegivel", empresa_id=empresa_id, error=str(exc)
+        )
     return {
         "sistema": {
             # Antigas (o APK instalado ainda lê estas):
@@ -421,6 +434,7 @@ async def list_contadores(
         "abas": {str(k): v for k, v in por_aba.items()},
         # `sem_aba` some com a mig 150: conversa não "pertence" mais a uma aba,
         # então "sem aba" seria o total da empresa — número que não informa nada.
+        "plano": {"atendimentos_mes": plano_status},
     }
 
 

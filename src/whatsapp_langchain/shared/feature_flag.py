@@ -43,6 +43,14 @@ def invalidate_cache(empresa_id: int, key: str | None = None) -> None:
             _cache.pop(k, None)
     else:
         _cache.pop(_cache_key(empresa_id, key), None)
+    # Flag `plano.<chave>` sobrepõe o plano (ADR-005 D3): o snapshot de plano
+    # tem cache próprio de 30 s e precisa cair junto, senão a exceção recém-
+    # cadastrada só vale meio minuto depois. Import local: `plano_limits` não
+    # depende deste módulo e a ordem de import não pode virar ciclo.
+    if key is None or key.startswith("plano."):
+        from whatsapp_langchain.shared.plano_limits import clear_plano_cache
+
+        clear_plano_cache(empresa_id)
 
 
 async def get_value(

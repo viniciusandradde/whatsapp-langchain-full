@@ -71,7 +71,8 @@ export type VarianteAviso =
   | "manual"
   | "handoff"
   | "fila"
-  | "sem_agente";
+  | "sem_agente"
+  | "limite_plano";
 
 export interface AvisoIa {
   tipo: "aviso_ia";
@@ -104,6 +105,9 @@ const MARKERS: ReadonlyArray<readonly [string, VarianteAviso | null]> = [
   ["[whitelist", "whitelist"],
   ["[fila do departamento", "fila"],
   ["[IA sem agente cadastrado", "sem_agente"],
+  // ADR-005 D5: a empresa passou dos atendimentos do mês do plano — a IA
+  // para, o humano continua. Upgrade + reprocessar traz a IA de volta.
+  ["[limite de atendimentos do plano", "limite_plano"],
   // O cliente escreveu de novo enquanto o modelo pensava; o turno seguinte
   // respondeu tudo. Não é aviso — a fala do cliente já está visível.
   ["[resposta superada", null],
@@ -154,6 +158,12 @@ export const AVISO_IA_TEXTO: Record<
     titulo: "Conexão sem agente cadastrado",
     motivo:
       "A conexão está em modo IA mas não tem agente configurado. Ninguém respondeu a estas mensagens.",
+  },
+  limite_plano: {
+    chip: "IA pausada pelo plano",
+    titulo: "Limite de atendimentos do plano atingido",
+    motivo:
+      "A empresa passou do número de atendimentos por mês do plano. O agente de IA fica pausado até o próximo mês (ou até um upgrade); os atendentes continuam recebendo as conversas. Ninguém respondeu a estas mensagens.",
   },
 };
 
@@ -355,7 +365,10 @@ export function montarTimeline(
           chave: `a-${m.id}`,
           variante,
           mensagens: [m],
-          podeReprocessar: variante === "manual" || variante === "whitelist",
+          podeReprocessar:
+            variante === "manual" ||
+            variante === "whitelist" ||
+            variante === "limite_plano",
         };
       }
     }
