@@ -193,3 +193,22 @@ export async function analiseModeloAction(slug: string) {
     };
   }
 }
+
+// ---- Seletor de modelos (ADR-004) ----
+
+/**
+ * Catálogo completo pro seletor. Sem `revalidatePath`: é leitura, e o
+ * TanStack Query do componente já cacheia por 10 min (o sync do worker tem o
+ * mesmo passo).
+ */
+export async function carregarCatalogoModelosAction(): Promise<
+  Result<import("@/lib/api").ModeloCatalogo[]>
+> {
+  try {
+    const { getCatalogoModelos } = await import("@/lib/api");
+    const r = await getCatalogoModelos();
+    return { ok: true, data: r.itens };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}

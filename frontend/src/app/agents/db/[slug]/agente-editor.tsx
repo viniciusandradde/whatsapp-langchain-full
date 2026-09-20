@@ -23,9 +23,7 @@ import {
 } from "lucide-react";
 
 import { AjudaCampo } from "@/components/ajuda-campo";
-import { AnaliseModelo } from "@/components/analise-modelo";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -40,16 +38,16 @@ import type {
   AgenteIAUpdateInput,
   EstiloResposta,
   LimiteCustoAcao,
+  TierContexto,
 } from "@/lib/api";
 
 import {
   deleteAgenteAction,
   setDefaultAgenteAction,
   updateAgenteAction,
-  analiseModeloAction,
-  buscarCatalogoCompletoAction,
 } from "./actions";
 import { PromptHistorico } from "./prompt-historico";
+import { SeletorModelo } from "./seletor-modelo";
 
 /** Um tipo de mídia que o agente lê, com o que ele faz com ela. */
 function MidiaAceita({
@@ -93,7 +91,6 @@ interface Props {
   pastas?: Pasta[];
   /** Saúde de IA (F2): habilita o picker do catálogo COMPLETO na aba modelo.
    *  Empresas ficam no curado — decisão do dono, 2026-08-28. */
-  superadmin?: boolean;
 }
 
 type TabId = "identidade" | "modelo" | "prompt" | "tools" | "kb_mcp" | "testar";
@@ -166,7 +163,6 @@ export function AgenteEditor({
   templates = [],
   departamentos = [],
   pastas = [],
-  superadmin = false,
 }: Props) {
   const [a, setA] = useState(initialAgente);
   const [tab, setTab] = useState<TabId>("identidade");
@@ -229,9 +225,12 @@ export function AgenteEditor({
       patch.temperatura_override = getNum("temperatura_override");
       patch.top_p_override = getNum("top_p_override");
       patch.max_tokens = getNum("max_tokens");
-      // Sprint 2 padrão profissional (mig 043) — campos de memória + governança
+      // Sprint 2 padrão profissional (mig 043) — memória + governança.
+      // `janela_memoria` saiu da tela (ADR-004): o tamanho do contexto em
+      // caracteres é o que o worker honra; salvar o tier zera a janela no
+      // backend.
       patch.tipo_memoria = getStr("tipo_memoria") ?? undefined;
-      patch.janela_memoria = getNum("janela_memoria");
+      patch.contexto_tamanho = (getStr("contexto_tamanho") as TierContexto | null) ?? "lite";
       patch.timeout_minutos = getNum("timeout_minutos");
       // Retenção (mig 185): dias; 0 = ilimitado; vazio = herda a empresa.
       patch.retencao_dias = getNum("retencao_dias");
@@ -418,7 +417,6 @@ export function AgenteEditor({
               a={a}
               modelosChat={modelosChat}
               menusAtivos={menusAtivos}
-              superadmin={superadmin}
             />
           )}
           {tab === "prompt" && (
@@ -433,8 +431,11 @@ export function AgenteEditor({
           {tab === "tools" && <TabTools a={a} />}
           {tab === "kb_mcp" && <TabKbMcp a={a} pastas={pastas} />}
 
-          <div className="flex justify-end pt-3">
-            <Button type="submit" disabled={isPending}>
+          {/* Sticky (não fixed): acompanha a rolagem da aba longa do seletor
+              de modelos e some com o form. `pointer-events-none` no trilho
+              para o que está embaixo continuar clicável ao lado do botão. */}
+          <div className="pointer-events-none sticky bottom-4 z-10 flex justify-end pt-3">
+            <Button type="submit" disabled={isPending} className="pointer-events-auto shadow-lg">
               <Save className="size-3.5" />
               {isPending ? "Salvando…" : "Salvar"}
             </Button>
@@ -560,277 +561,23 @@ function TabIdentidade({
   );
 }
 
-// ---- Saúde de IA (F2): picker do catálogo COMPLETO (superadmin) ----------
-//
-// Busca sobre os 388 modelos sincronizados (mig 178) e, ao focar um, carrega
-// a ficha de análise: preço, benchmark, contexto e a tabela de provedores
-// (uptime/latência/throughput/quantização — coletada NA HORA se o modelo
-// ainda não tem snapshot). "Usar este modelo" injeta a escolha no form via
-// hidden inputs. Empresas não veem este bloco — seleção delas é o curado.
-function PickerCatalogoCompleto({
-  onEscolher,
-}: {
-  onEscolher: (slug: string) => void;
-}) {
-  const [busca, setBusca] = useState("");
-  const [resultados, setResultados] = useState<
-    { slug: string; nome: string; promovido: boolean }[]
-  >([]);
-  const [analise, setAnalise] = useState<
-    import("@/components/analise-modelo").AnaliseModeloData | null
-  >(null);
-  const [carregando, setCarregando] = useState<string | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
-
-  async function buscar() {
-    setErro(null);
-    setCarregando("busca");
-    try {
-      const r = await buscarCatalogoCompletoAction(busca.trim());
-      if (!r.ok) {
-        setErro(r.error);
-        return;
-      }
-      setResultados(
-        r.data
-          .slice(0, 12)
-          .map((m) => ({ slug: m.slug, nome: m.nome, promovido: m.promovido }))
-      );
-    } finally {
-      setCarregando(null);
-    }
-  }
-
-  async function analisar(slug: string) {
-    setErro(null);
-    setCarregando(slug);
-    try {
-      const r = await analiseModeloAction(slug);
-      if (!r.ok) {
-        setErro(r.error);
-        return;
-      }
-      setAnalise(r.data);
-    } finally {
-      setCarregando(null);
-    }
-  }
-
-  return (
-    <div className="md:col-span-2 space-y-3 rounded-md border border-foreground/[0.06] p-3">
-      <div className="flex items-center gap-1.5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Catálogo completo (análise) — superadmin
-        </p>
-        <AjudaCampo titulo="Catálogo completo">
-          <p>
-            Todos os modelos do OpenRouter, com preço, benchmark e a saúde de
-            cada provedor (uptime, latência, velocidade) medidas de verdade.
-          </p>
-          <p>
-            <b>Modelo fora do curado não passou pela validação da
-            plataforma:</b> antes de usar em agente que atende cliente, rode o
-            golden (aba Testar compara até 4 modelos com casos reais) — foi
-            esse teste que reprovou modelos mais baratos que respondiam fora
-            do padrão.
-          </p>
-        </AjudaCampo>
-      </div>
-      <div className="flex gap-2">
-        <Input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void buscar();
-            }
-          }}
-          placeholder="Buscar nos 388 modelos… (ex: claude, deepseek, grok)"
-          className="h-9"
-        />
-        <button
-          type="button"
-          onClick={() => void buscar()}
-          disabled={carregando === "busca"}
-          className="rounded-md border border-input px-3 text-sm disabled:opacity-50"
-        >
-          Buscar
-        </button>
-      </div>
-      {erro ? <p className="text-sm text-destructive">{erro}</p> : null}
-      {resultados.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {resultados.map((m) => (
-            <button
-              key={m.slug}
-              type="button"
-              onClick={() => void analisar(m.slug)}
-              disabled={carregando === m.slug}
-              className={`rounded-full border px-2.5 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
-                analise?.modelo === m.slug
-                  ? "border-primary bg-primary/10"
-                  : "border-input hover:bg-foreground/[0.04]"
-              }`}
-            >
-              {m.slug}
-              {m.promovido ? " ✓" : ""}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {carregando && carregando !== "busca" ? (
-        <p className="text-sm text-muted-foreground">
-          Coletando métricas do modelo…
-        </p>
-      ) : null}
-      {analise ? (
-        <>
-          <AnaliseModelo data={analise} />
-          <button
-            type="button"
-            onClick={() => onEscolher(analise.modelo)}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
-          >
-            Usar este modelo no agente
-          </button>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-
 function TabModelo({
   a,
   modelosChat,
   menusAtivos,
-  superadmin = false,
 }: {
   a: AgenteIA;
   modelosChat: ModeloLLM[];
   menusAtivos: MenuChatbot[];
-  superadmin?: boolean;
 }) {
-  // Saúde de IA (F2): escolha vinda do catálogo COMPLETO (superadmin). Quando
-  // setada, os selects do curado saem do form e entram hidden inputs — os
-  // names não podem duplicar, o save lê o primeiro valor do FormData.
-  const [escolhaLivre, setEscolhaLivre] = useState<string | null>(null);
-  // Provedor inicial: prefere modelo_provedor da mig 043; cai pro split do
-  // modelo único legacy.
-  const provedorInicial =
-    a.modelo_provedor ||
-    (a.modelo && a.modelo.includes("/") ? a.modelo.split("/")[0] : "") ||
-    "";
-  const nomeInicial =
-    a.modelo_nome ||
-    (a.modelo && a.modelo.includes("/") ? a.modelo.split("/").slice(1).join("/") : a.modelo || "") ||
-    "";
-
-  const [provedor, setProvedor] = useState(provedorInicial);
-  const [nome, setNome] = useState(nomeInicial);
-
-  // Provedores únicos disponíveis no catálogo
-  const provedoresDisponiveis = Array.from(
-    new Set(modelosChat.map((m) => m.provedor))
-  ).sort();
-
-  // Modelos do provedor selecionado
-  const modelosDoProvedor = modelosChat
-    .filter((m) => m.provedor === provedor)
-    .sort((x, y) => x.nome.localeCompare(y.nome));
-
-  // Modelo selecionado (pra mostrar custos)
-  const modeloSelecionado = modelosChat.find(
-    (m) => m.provedor === provedor && m.nome === nome
-  );
-
-  const semCatalogo = modelosChat.length === 0;
-
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      {semCatalogo ? (
-        // Fallback: catálogo modelo_llm vazio → input livre legacy
-        <Field
-          label="Modelo (slug livre — catálogo vazio)"
-          name="modelo"
-          defaultValue={a.modelo}
-          placeholder="google/gemini-2.5-flash"
-        />
-      ) : escolhaLivre ? (
-        // Escolha do catálogo completo: hidden inputs carregam o slug e um
-        // chip mostra o que vai ser salvo.
-        <div className="md:col-span-2">
-          <Input
-            type="hidden"
-            name="modelo_provedor"
-            value={escolhaLivre.split("/")[0]}
-            readOnly
-          />
-          <Input
-            type="hidden"
-            name="modelo_nome"
-            value={escolhaLivre.split("/").slice(1).join("/")}
-            readOnly
-          />
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              Modelo (catálogo completo)
-            </span>
-            <span className="font-mono text-sm">{escolhaLivre}</span>
-            <Badge variant="warning">fora do curado</Badge>
-            <button
-              type="button"
-              className="text-xs underline"
-              onClick={() => setEscolhaLivre(null)}
-            >
-              voltar ao curado
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <FieldSelect
-            label="Provedor"
-            name="modelo_provedor"
-            ajuda={
-              <>
-                <p>Quem fabrica o modelo de IA (Google, OpenAI, DeepSeek…). Escolha primeiro o provedor; a lista de modelos ao lado é filtrada por ele.</p>
-                <p><b>Como decidir:</b> os modelos curados aqui já foram validados pela plataforma. Trocar de provedor muda preço, velocidade e o jeito de responder — modelo de chat novo passa pelo teste do golden antes de atender cliente (aba Testar).</p>
-              </>
-            }
-            defaultValue={provedor}
-            onChange={(v: string) => {
-              setProvedor(v);
-              setNome("");  // limpa modelo quando muda provedor
-            }}
-            options={[
-              { v: "", l: "— selecione —" },
-              ...provedoresDisponiveis.map((p) => ({ v: p, l: p })),
-            ]}
-          />
-          <FieldSelect
-            label="Modelo"
-            name="modelo_nome"
-            ajuda={
-              <>
-                <p>O cérebro do agente: é este modelo que lê a conversa e escreve as respostas de texto. Mídia (foto, áudio, documento) é processada por um modelo próprio, configurado pela plataforma.</p>
-                <p><b>Custo:</b> cobrado por tokens de entrada e saída — os valores /Mtok aparecem abaixo ao selecionar. <b>Não troque no escuro:</b> valide na aba Testar (compare até 4 modelos com casos reais) antes de salvar em agente que atende cliente.</p>
-              </>
-            }
-            defaultValue={nome}
-            onChange={(v: string) => setNome(v)}
-            options={[
-              { v: "", l: provedor ? "— selecione —" : "(escolha o provedor)" },
-              ...modelosDoProvedor.map((m) => ({
-                v: m.nome,
-                l: m.descricao ? `${m.nome} — ${m.descricao}` : m.nome,
-              })),
-            ]}
-            disabled={!provedor}
-          />
-        </>
-      )}
+      {/* Seletor de modelos (ADR-004): catálogo completo em cards com o
+          custo por tamanho de contexto. Carrega os hidden inputs
+          `modelo_provedor`, `modelo_nome` e `contexto_tamanho`; o curado é
+          o fallback quando o catálogo não responde. */}
+      <SeletorModelo agente={a} curados={modelosChat} />
+
       <FieldSelect
         label="Estilo de respostas"
         name="estilo_resposta"
@@ -891,30 +638,17 @@ function TabModelo({
         name="tipo_memoria"
         ajuda={
           <>
-            <p>O que o agente lembra DENTRO da conversa: <b>Window</b> (default) relê só as últimas N mensagens — barato e suficiente pra atendimento. <b>Buffer</b> relê a conversa inteira — memória perfeita, custo cresce a cada turno. <b>Summary</b> resume o passado e mantém janela curta — conversas muito longas. <b>Sem memória</b> trata cada mensagem isolada — só pra FAQ pura.</p>
+            <p>O que o agente lembra DENTRO da conversa: <b>Window</b> (default) relê o histórico recente até o <b>Tamanho do Contexto</b> escolhido acima — barato e suficiente pra atendimento. <b>Buffer</b> relê a conversa inteira — memória perfeita, custo cresce a cada turno. <b>Summary</b> resume o passado e mantém janela curta — conversas muito longas. <b>Sem memória</b> trata cada mensagem isolada — só pra FAQ pura.</p>
             <p>Cada mensagem relida é cobrada de novo como entrada — memória maior = custo maior por turno.</p>
           </>
         }
         defaultValue={a.tipo_memoria ?? "window"}
         options={[
-          { v: "window", l: "Window — últimas N msgs (default)" },
+          { v: "window", l: "Window — histórico recente, até o Tamanho do Contexto (default)" },
           { v: "buffer", l: "Buffer — todo histórico do thread" },
           { v: "summary", l: "Summary — resumo + janela curta" },
           { v: "none", l: "Sem memória — cada msg é isolada" },
         ]}
-      />
-      <Field
-        label="Janela de memória (msgs)"
-        name="janela_memoria"
-        ajuda={
-          <>
-            <p>Quantas mensagens recentes o agente relê a cada resposta. <b>Só vale com Tipo = Window.</b></p>
-            <p><b>20</b> (≈10 idas e voltas) atende a maioria. Menos que 10: o agente “esquece” o que o cliente disse há pouco e repete perguntas. Mais que 40: custo sobe sem ganho perceptível.</p>
-          </>
-        }
-        defaultValue={a.janela_memoria?.toString() ?? null}
-        type="number"
-        placeholder="ex: 20 (só se tipo=window)"
       />
       <Field
         label="Timeout conversa (min)"
@@ -968,10 +702,6 @@ function TabModelo({
         ]}
       />
 
-      {superadmin ? (
-        <PickerCatalogoCompleto onEscolher={(slug) => setEscolhaLivre(slug)} />
-      ) : null}
-
       <div className="rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-3 text-xs">
         <p className="font-medium">Valores efetivos:</p>
         <p>
@@ -980,27 +710,9 @@ function TabModelo({
         <p>
           Top-p: <code>{a.top_p_efetivo.toFixed(2)}</code>
         </p>
-        {modeloSelecionado && (
-          <>
-            <p className="mt-2 font-medium">Custo {modeloSelecionado.nome}:</p>
-            <p>
-              Input: <code>${modeloSelecionado.custo_input_mtok ?? "?"}/M tok</code>
-            </p>
-            <p>
-              Output: <code>${modeloSelecionado.custo_output_mtok ?? "?"}/M tok</code>
-            </p>
-            {modeloSelecionado.janela_contexto && (
-              <p>
-                Contexto:{" "}
-                <code>
-                  {modeloSelecionado.janela_contexto.toLocaleString("pt-BR")} tok
-                </code>
-              </p>
-            )}
-          </>
-        )}
         <p className="mt-2 text-muted-foreground">
-          Override fino sobrescreve o preset do estilo.
+          Override fino sobrescreve o preset do estilo. O custo do modelo está no
+          card, em créditos por tamanho de contexto (US$ real no tooltip).
         </p>
       </div>
     </div>

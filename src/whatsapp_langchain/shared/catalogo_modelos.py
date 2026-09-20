@@ -98,7 +98,9 @@ def montar_item(
         criado_no_or,
         curado,
     ) = row
-    provedor = slug.split("/")[0]
+    # `~anthropic/claude-sonnet-latest`: o `~` marca os aliases "-latest" do
+    # OpenRouter. O provedor é o mesmo — sem o strip nascia uma aba "~anthropic".
+    provedor = slug.split("/")[0].lstrip("~")
     novo = bool(criado_no_or) and (agora - criado_no_or).days < NOVO_DIAS
     return {
         "slug": slug,

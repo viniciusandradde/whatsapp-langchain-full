@@ -3654,7 +3654,12 @@ export interface AgenteIA {
   acao_limite_menu_id: number | null;
   // Triagem omnichannel (mig 061): depto destino fixo de transfer_to_human
   departamento_default_id: number | null;
+  // Tamanho do contexto (mig 187, ADR-004): quantos caracteres de histórico
+  // o agente relê. NULL = legado (nunca salvo pela tela nova).
+  contexto_tamanho: TierContexto | null;
 }
+
+export type TierContexto = "lite" | "regular" | "medium" | "large" | "extended";
 
 export interface AgenteIACreateInput {
   slug: string;
@@ -4631,6 +4636,37 @@ export async function getModelosLLM(opts?: {
 
 export async function getModeloLLM(id: number): Promise<ModeloLLM> {
   return apiFetch<ModeloLLM>(`/api/v1/modelos-llm/${id}`);
+}
+
+/**
+ * Um modelo do catálogo COMPLETO do OpenRouter (ADR-004) — o que o card do
+ * seletor mostra. `preco_*` em US$ por token (null = desconhecido);
+ * `curado` = está no catálogo curado (`modelo_llm`); `tendencia` = top 20 do
+ * ranking diário; `novo` = publicado há menos de 30 dias.
+ */
+export interface ModeloCatalogo {
+  slug: string;
+  provedor: string;
+  provedor_nome: string;
+  nome: string;
+  descricao: string | null;
+  context_length: number | null;
+  visao: boolean;
+  pensamento: boolean;
+  tools: boolean;
+  preco_prompt: number | null;
+  preco_completion: number | null;
+  novo: boolean;
+  tendencia: boolean;
+  promo: boolean;
+  curado: boolean;
+}
+
+export async function getCatalogoModelos(): Promise<{
+  itens: ModeloCatalogo[];
+  gerado_em: string;
+}> {
+  return apiFetch(`/api/v1/modelos-llm/catalogo`);
 }
 
 export interface ModeloLLMCreateInput {
