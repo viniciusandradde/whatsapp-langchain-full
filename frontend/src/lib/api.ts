@@ -230,9 +230,7 @@ export interface EmpresasResponse {
   empresas: Empresa[];
 }
 
-export type ConexaoProvider =
-  | "waba"
-  | "evolution";
+export type ConexaoProvider = "waba" | "evolution";
 export type ConexaoStatus = "active" | "disabled" | "error";
 
 export type ConnectionState =
@@ -387,12 +385,7 @@ export interface StatusResponse {
 }
 
 export type WabaTemplateStatus =
-  | "draft"
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "disabled"
-  | "paused";
+  "draft" | "pending" | "approved" | "rejected" | "disabled" | "paused";
 
 export type WabaTemplateCategoria = "UTILITY" | "AUTHENTICATION" | "MARKETING";
 
@@ -576,10 +569,7 @@ export interface ClientesResponse {
 }
 
 export type AtendimentoStatus =
-  | "aguardando"
-  | "em_andamento"
-  | "resolvido"
-  | "abandonado";
+  "aguardando" | "em_andamento" | "resolvido" | "abandonado";
 
 /** Abas da lista. As 5 primeiras espelham o Chatvolt. */
 export type TipoVisualizacao =
@@ -1037,7 +1027,7 @@ interface ApiFetchOptions {
 
 export async function apiFetch<T>(
   path: string,
-  options: ApiFetchOptions = {}
+  options: ApiFetchOptions = {},
 ): Promise<T> {
   ensureFrontendRuntimeConfig();
 
@@ -1125,9 +1115,7 @@ export async function apiFetch<T>(
       const waitMsg = retryAfter
         ? ` Tente novamente em ${retryAfter}s.`
         : " Aguarde alguns segundos.";
-      throw new Error(
-        `Muitas ações em pouco tempo.${waitMsg}`
-      );
+      throw new Error(`Muitas ações em pouco tempo.${waitMsg}`);
     }
 
     // Catch-all (400/404/422/5xx/402…): detalhe técnico SÓ no log; o erro
@@ -1138,7 +1126,7 @@ export async function apiFetch<T>(
       response.status,
       response.statusText,
       path,
-      detailRaw ?? ""
+      detailRaw ?? "",
     );
     throw new ApiRequestError(response.status, detailRaw, path);
   }
@@ -1199,7 +1187,7 @@ function normalizeMetricsResponse(data: unknown): MetricsResponse {
     total_today: toNumber(metrics.total_today),
     failures_today: toNumber(metrics.failures_today),
     avg_processing_time_seconds: toNullableNumber(
-      metrics.avg_processing_time_seconds
+      metrics.avg_processing_time_seconds,
     ),
     queue_size: toNumber(metrics.queue_size),
   };
@@ -1213,20 +1201,18 @@ export async function getAgents(): Promise<AgentsResponse> {
 
 export async function getChats(
   limit: number = 20,
-  offset: number = 0
+  offset: number = 0,
 ): Promise<ChatsResponse> {
-  return apiFetch<ChatsResponse>(
-    `/api/chats?limit=${limit}&offset=${offset}`
-  );
+  return apiFetch<ChatsResponse>(`/api/chats?limit=${limit}&offset=${offset}`);
 }
 
 export async function getChatMessages(
   phone: string,
   limit: number = 50,
-  offset: number = 0
+  offset: number = 0,
 ): Promise<ChatMessagesResponse> {
   return apiFetch<ChatMessagesResponse>(
-    `/api/chats/${encodeURIComponent(phone)}?limit=${limit}&offset=${offset}`
+    `/api/chats/${encodeURIComponent(phone)}?limit=${limit}&offset=${offset}`,
   );
 }
 
@@ -1269,8 +1255,12 @@ export async function getPlanosCatalogo(): Promise<{ items: PlanoCatalogo[] }> {
 /** Superadmin cola os links dos planos hospedados (leva F); vazio limpa. */
 export async function setPlanoLinks(
   slug: string,
-  body: { link_infinitepay: string | null; link_mercadopago: string | null }
-): Promise<{ slug: string; link_infinitepay: string | null; link_mercadopago: string | null }> {
+  body: { link_infinitepay: string | null; link_mercadopago: string | null },
+): Promise<{
+  slug: string;
+  link_infinitepay: string | null;
+  link_mercadopago: string | null;
+}> {
   return apiFetch(`/api/billing/planos/${encodeURIComponent(slug)}/links`, {
     method: "PUT",
     body,
@@ -1308,15 +1298,20 @@ export interface PagamentosEmpresa {
 /** Superadmin registra um pagamento conciliado no gateway (leva F). */
 export async function registrarPagamento(
   empresaId: number,
-  body: PagamentoInput
+  body: PagamentoInput,
 ): Promise<PagamentoRegistrado> {
-  return apiFetch<PagamentoRegistrado>(`/api/empresas/${empresaId}/pagamentos`, {
-    method: "POST",
-    body,
-  });
+  return apiFetch<PagamentoRegistrado>(
+    `/api/empresas/${empresaId}/pagamentos`,
+    {
+      method: "POST",
+      body,
+    },
+  );
 }
 
-export async function getPagamentosEmpresa(empresaId: number): Promise<PagamentosEmpresa> {
+export async function getPagamentosEmpresa(
+  empresaId: number,
+): Promise<PagamentosEmpresa> {
   return apiFetch<PagamentosEmpresa>(`/api/empresas/${empresaId}/pagamentos`);
 }
 
@@ -1341,14 +1336,16 @@ export interface PlanoEmpresa {
   carencia_dias: number;
 }
 
-export async function getPlanoEmpresa(empresaId: number): Promise<PlanoEmpresa> {
+export async function getPlanoEmpresa(
+  empresaId: number,
+): Promise<PlanoEmpresa> {
   return apiFetch<PlanoEmpresa>(`/api/empresas/${empresaId}/plano`);
 }
 
 /** Superadmin fixa (ou limpa, com `null`) o último dia do plano pago (leva E). */
 export async function setEmpresaVigencia(
   empresaId: number,
-  planoValidoAte: string | null
+  planoValidoAte: string | null,
 ): Promise<Empresa> {
   return apiFetch<Empresa>(`/api/empresas/${empresaId}/vigencia`, {
     method: "PUT",
@@ -1357,7 +1354,7 @@ export async function setEmpresaVigencia(
 }
 
 export async function getMyEmpresas(
-  includeInactive: boolean = false
+  includeInactive: boolean = false,
 ): Promise<EmpresasResponse> {
   const qs = includeInactive ? "?include_inactive=true" : "";
   return apiFetch<EmpresasResponse>(`/api/empresas${qs}`);
@@ -1369,22 +1366,20 @@ export async function createEmpresa(body: EmpresaInput): Promise<Empresa> {
 
 export async function updateEmpresa(
   id: number,
-  body: EmpresaUpdateInput
+  body: EmpresaUpdateInput,
 ): Promise<Empresa> {
   return apiFetch<Empresa>(`/api/empresas/${id}`, { method: "PUT", body });
 }
 
 export async function getEmpresaMembers(
-  empresaId: number
+  empresaId: number,
 ): Promise<EmpresaMembro[]> {
-  return apiFetch<EmpresaMembro[]>(
-    `/api/empresas/${empresaId}/membros`
-  );
+  return apiFetch<EmpresaMembro[]>(`/api/empresas/${empresaId}/membros`);
 }
 
 export async function addEmpresaMember(
   empresaId: number,
-  body: { user_id: string; role: "admin" | "operator" | "viewer" }
+  body: { user_id: string; role: "admin" | "operator" | "viewer" },
 ): Promise<EmpresaMembro> {
   return apiFetch<EmpresaMembro>(`/api/empresas/${empresaId}/membros`, {
     method: "POST",
@@ -1395,32 +1390,32 @@ export async function addEmpresaMember(
 export async function updateMemberRole(
   empresaId: number,
   userId: string,
-  role: "admin" | "operator" | "viewer"
+  role: "admin" | "operator" | "viewer",
 ): Promise<EmpresaMembro> {
   return apiFetch<EmpresaMembro>(
     `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}`,
-    { method: "PUT", body: { role } }
+    { method: "PUT", body: { role } },
   );
 }
 
 export async function removeEmpresaMember(
   empresaId: number,
-  userId: string
+  userId: string,
 ): Promise<void> {
   await apiFetch<void>(
     `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
 }
 
 export async function setMemberStatus(
   empresaId: number,
   userId: string,
-  status: UserStatus
+  status: UserStatus,
 ): Promise<{ user_id: string; status: UserStatus }> {
   return apiFetch<{ user_id: string; status: UserStatus }>(
     `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/status`,
-    { method: "PUT", body: { status } }
+    { method: "PUT", body: { status } },
   );
 }
 
@@ -1456,45 +1451,45 @@ export interface AuditGovernancaEvent {
 
 export async function getMemberPerfis(
   empresaId: number,
-  userId: string
+  userId: string,
 ): Promise<MemberPerfisResponse> {
   return apiFetch<MemberPerfisResponse>(
-    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/perfis`
+    `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/perfis`,
   );
 }
 
 export async function setMemberPerfis(
   empresaId: number,
   userId: string,
-  perfilIds: number[]
+  perfilIds: number[],
 ): Promise<MemberPerfisResponse> {
   return apiFetch<MemberPerfisResponse>(
     `/api/empresas/${empresaId}/membros/${encodeURIComponent(userId)}/perfis`,
-    { method: "PUT", body: { perfil_ids: perfilIds } }
+    { method: "PUT", body: { perfil_ids: perfilIds } },
   );
 }
 
 export async function getMemberDepartamentos(
   empresaId: number,
-  userId: string
+  userId: string,
 ): Promise<MemberDepartamentosResponse> {
   return apiFetch<MemberDepartamentosResponse>(
     `/api/empresas/${empresaId}/membros/${encodeURIComponent(
-      userId
-    )}/departamentos`
+      userId,
+    )}/departamentos`,
   );
 }
 
 export async function setMemberDepartamentos(
   empresaId: number,
   userId: string,
-  departamentoIds: number[]
+  departamentoIds: number[],
 ): Promise<MemberDepartamentosResponse> {
   return apiFetch<MemberDepartamentosResponse>(
     `/api/empresas/${empresaId}/membros/${encodeURIComponent(
-      userId
+      userId,
     )}/departamentos`,
-    { method: "PUT", body: { departamento_ids: departamentoIds } }
+    { method: "PUT", body: { departamento_ids: departamentoIds } },
   );
 }
 
@@ -1506,7 +1501,7 @@ export async function listAuditGovernanca(
     action?: string;
     limit?: number;
     offset?: number;
-  }
+  },
 ): Promise<{ items: AuditGovernancaEvent[] }> {
   const params = new URLSearchParams();
   if (opts?.actor_user_id) params.set("actor_user_id", opts.actor_user_id);
@@ -1516,17 +1511,17 @@ export async function listAuditGovernanca(
   if (opts?.offset) params.set("offset", String(opts.offset));
   const qs = params.toString() ? "?" + params.toString() : "";
   return apiFetch<{ items: AuditGovernancaEvent[] }>(
-    `/api/empresas/${empresaId}/audit/governanca${qs}`
+    `/api/empresas/${empresaId}/audit/governanca${qs}`,
   );
 }
 
 // ============================================================
 
 export async function getMemberStatus(
-  userId: string
+  userId: string,
 ): Promise<{ user_id: string; status: UserStatus }> {
   return apiFetch<{ user_id: string; status: UserStatus }>(
-    `/api/empresas/users/${encodeURIComponent(userId)}/status`
+    `/api/empresas/users/${encodeURIComponent(userId)}/status`,
   );
 }
 
@@ -1561,7 +1556,7 @@ export async function getLoginEvents(params?: {
   if (params?.limit) qs.set("limit", String(params.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return apiFetch<{ events: LoginEvent[] }>(
-    `/api/security/login-events${suffix}`
+    `/api/security/login-events${suffix}`,
   );
 }
 
@@ -1579,7 +1574,7 @@ export async function createConexao(body: ConexaoInput): Promise<Conexao> {
 
 export async function patchConexao(
   id: number,
-  body: ConexaoPatchInput
+  body: ConexaoPatchInput,
 ): Promise<Conexao> {
   return apiFetch<Conexao>(`/api/conexoes/${id}`, { method: "PATCH", body });
 }
@@ -1591,7 +1586,7 @@ export async function patchConexao(
  */
 export async function updateConexao(
   id: number,
-  body: ConexaoInput
+  body: ConexaoInput,
 ): Promise<Conexao> {
   // Converte ConexaoInput → ConexaoPatchInput (subset)
   return patchConexao(id, {
@@ -1613,7 +1608,7 @@ export async function getConexaoQuota(id: number): Promise<ConexaoQuota> {
 // --- Sprint Conexões WABA OAuth + Evolution auto-provision ---
 
 export async function wabaOAuthStart(
-  displayName?: string
+  displayName?: string,
 ): Promise<WabaOAuthStartResponse> {
   return apiFetch<WabaOAuthStartResponse>("/api/conexoes/waba/oauth/start", {
     method: "POST",
@@ -1623,7 +1618,7 @@ export async function wabaOAuthStart(
 
 export async function wabaOAuthResult(state: string): Promise<WabaOAuthResult> {
   return apiFetch<WabaOAuthResult>(
-    `/api/conexoes/waba/oauth/result?state=${encodeURIComponent(state)}`
+    `/api/conexoes/waba/oauth/result?state=${encodeURIComponent(state)}`,
   );
 }
 
@@ -1653,7 +1648,7 @@ export interface WabaEmbeddedSignupInput {
 }
 
 export async function wabaEmbeddedSignup(
-  body: WabaEmbeddedSignupInput
+  body: WabaEmbeddedSignupInput,
 ): Promise<Conexao> {
   return apiFetch<Conexao>("/api/conexoes/waba/embedded-signup", {
     method: "POST",
@@ -1662,11 +1657,11 @@ export async function wabaEmbeddedSignup(
 }
 
 export async function evolutionProvision(
-  body: EvolutionProvisionInput
+  body: EvolutionProvisionInput,
 ): Promise<EvolutionProvisionResponse> {
   return apiFetch<EvolutionProvisionResponse>(
     "/api/conexoes/evolution/provision",
-    { method: "POST", body }
+    { method: "POST", body },
   );
 }
 
@@ -1676,7 +1671,7 @@ export async function getConexaoQR(id: number): Promise<QRResponse> {
 
 export async function regeneratePairingCode(
   id: number,
-  phone_number: string
+  phone_number: string,
 ): Promise<PairingCodeResponse> {
   return apiFetch<PairingCodeResponse>(`/api/conexoes/${id}/pairing-code`, {
     method: "POST",
@@ -1689,13 +1684,13 @@ export async function getConexaoStatus(id: number): Promise<StatusResponse> {
 }
 
 export async function testConexao(
-  id: number
+  id: number,
 ): Promise<{ ok: boolean; message: string | null }> {
   return apiFetch(`/api/conexoes/${id}/test`, { method: "POST" });
 }
 
 export async function disconnectConexao(
-  id: number
+  id: number,
 ): Promise<{ ok: boolean; state: string }> {
   return apiFetch(`/api/conexoes/${id}/disconnect`, { method: "POST" });
 }
@@ -1703,14 +1698,14 @@ export async function disconnectConexao(
 // --- Templates HSM ---
 
 export async function listTemplates(
-  conexaoId: number
+  conexaoId: number,
 ): Promise<{ templates: WabaTemplate[] }> {
   return apiFetch(`/api/conexoes/${conexaoId}/templates`);
 }
 
 export async function createTemplate(
   conexaoId: number,
-  body: WabaTemplateInput
+  body: WabaTemplateInput,
 ): Promise<WabaTemplate> {
   return apiFetch(`/api/conexoes/${conexaoId}/templates`, {
     method: "POST",
@@ -1720,14 +1715,14 @@ export async function createTemplate(
 
 export async function getTemplate(
   conexaoId: number,
-  templateId: number
+  templateId: number,
 ): Promise<WabaTemplate> {
   return apiFetch(`/api/conexoes/${conexaoId}/templates/${templateId}`);
 }
 
 export async function syncTemplate(
   conexaoId: number,
-  templateId: number
+  templateId: number,
 ): Promise<WabaTemplate> {
   return apiFetch(`/api/conexoes/${conexaoId}/templates/${templateId}/sync`, {
     method: "POST",
@@ -1737,17 +1732,17 @@ export async function syncTemplate(
 export async function testSendTemplate(
   conexaoId: number,
   templateId: number,
-  body: { to_number: string; variables: Record<string, string> }
+  body: { to_number: string; variables: Record<string, string> },
 ): Promise<{ ok: boolean; message_id: string }> {
   return apiFetch(
     `/api/conexoes/${conexaoId}/templates/${templateId}/test-send`,
-    { method: "POST", body }
+    { method: "POST", body },
   );
 }
 
 export async function deleteTemplate(
   conexaoId: number,
-  templateId: number
+  templateId: number,
 ): Promise<void> {
   await apiFetch(`/api/conexoes/${conexaoId}/templates/${templateId}`, {
     method: "DELETE",
@@ -1755,7 +1750,7 @@ export async function deleteTemplate(
 }
 
 export async function importTemplatesFromMeta(
-  conexaoId: number
+  conexaoId: number,
 ): Promise<{ imported: number; skipped: number; total_remote: number }> {
   return apiFetch(`/api/conexoes/${conexaoId}/templates/import`, {
     method: "POST",
@@ -1784,28 +1779,28 @@ export async function getModels(): Promise<ModelsResponse> {
   return apiFetch<ModelsResponse>("/api/models");
 }
 
-export async function getAgentConfig(
-  agentId: string
-): Promise<AgentLLMConfig> {
+export async function getAgentConfig(agentId: string): Promise<AgentLLMConfig> {
   return apiFetch<AgentLLMConfig>(
-    `/api/agents/${encodeURIComponent(agentId)}/config`
+    `/api/agents/${encodeURIComponent(agentId)}/config`,
   );
 }
 
 export async function updateAgentConfig(
   agentId: string,
-  body: { chat_model?: string | null; midia_model?: string | null }
+  body: { chat_model?: string | null; midia_model?: string | null },
 ): Promise<AgentLLMConfig> {
   return apiFetch<AgentLLMConfig>(
     `/api/agents/${encodeURIComponent(agentId)}/config`,
-    { method: "PUT", body }
+    { method: "PUT", body },
   );
 }
 
-export async function getTraces(params: {
-  limit?: number;
-  thread_id?: string;
-} = {}): Promise<TracesResponse> {
+export async function getTraces(
+  params: {
+    limit?: number;
+    thread_id?: string;
+  } = {},
+): Promise<TracesResponse> {
   const q = new URLSearchParams();
   if (params.limit) q.set("limit", String(params.limit));
   if (params.thread_id) q.set("thread_id", params.thread_id);
@@ -1830,7 +1825,7 @@ export async function getTracesConfig(): Promise<TracesConfig> {
 }
 
 export async function setTracesProvider(
-  provider: ObsProvider
+  provider: ObsProvider,
 ): Promise<{ preferido: ObsProvider; provider: string | null }> {
   // `body` vai como OBJETO: o apiFetch serializa internamente. Passar
   // JSON.stringify aqui gera double-encoding e o FastAPI recebe uma string
@@ -1843,11 +1838,13 @@ export async function setTracesProvider(
 
 // --- Clientes ---
 
-export async function getClientes(params: {
-  search?: string;
-  limit?: number;
-  offset?: number;
-} = {}): Promise<ClientesResponse> {
+export async function getClientes(
+  params: {
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<ClientesResponse> {
   const q = new URLSearchParams();
   if (params.search) q.set("search", params.search);
   if (params.limit) q.set("limit", String(params.limit));
@@ -1858,7 +1855,7 @@ export async function getClientes(params: {
 
 export async function updateCliente(
   id: number,
-  body: ClienteUpdateInput
+  body: ClienteUpdateInput,
 ): Promise<Cliente> {
   return apiFetch<Cliente>(`/api/clientes/${id}`, {
     method: "PUT",
@@ -1872,7 +1869,7 @@ export async function getCliente(id: number): Promise<ClienteDetail> {
 
 export async function addClienteAnotacao(
   id: number,
-  conteudo: string
+  conteudo: string,
 ): Promise<ClienteAnotacao> {
   return apiFetch<ClienteAnotacao>(`/api/clientes/${id}/anotacoes`, {
     method: "POST",
@@ -1887,14 +1884,10 @@ export async function addClienteTag(id: number, tag: string): Promise<void> {
   });
 }
 
-export async function removeClienteTag(
-  id: number,
-  tag: string
-): Promise<void> {
-  await apiFetch<void>(
-    `/api/clientes/${id}/tags/${encodeURIComponent(tag)}`,
-    { method: "DELETE" }
-  );
+export async function removeClienteTag(id: number, tag: string): Promise<void> {
+  await apiFetch<void>(`/api/clientes/${id}/tags/${encodeURIComponent(tag)}`, {
+    method: "DELETE",
+  });
 }
 
 // --- Atendimentos ---
@@ -1914,7 +1907,7 @@ export async function getAtendimentos(
     tagIds?: number[];
     // Leva fila 2026-08: filtra pelo responsável (assigned_to_user_id)
     assignedTo?: string;
-  } = {}
+  } = {},
 ): Promise<AtendimentosResponse> {
   const qs = new URLSearchParams();
   if (params.tipo) qs.set("tipo", params.tipo);
@@ -1929,9 +1922,7 @@ export async function getAtendimentos(
     for (const id of params.tagIds) qs.append("tag_id", String(id));
   }
   const s = qs.toString();
-  return apiFetch<AtendimentosResponse>(
-    `/api/atendimentos${s ? `?${s}` : ""}`
-  );
+  return apiFetch<AtendimentosResponse>(`/api/atendimentos${s ? `?${s}` : ""}`);
 }
 
 // === Histórico de Atendimentos (módulo Conversas) ===
@@ -2015,7 +2006,7 @@ export function historicoQuerystring(p: HistoricoFiltrosParams): string {
 }
 
 export async function getHistorico(
-  p: HistoricoFiltrosParams = {}
+  p: HistoricoFiltrosParams = {},
 ): Promise<HistoricoResponse> {
   const s = historicoQuerystring(p);
   return apiFetch<HistoricoResponse>(`/api/historico${s ? `?${s}` : ""}`);
@@ -2059,7 +2050,7 @@ export interface HistoricoDetalhe {
 }
 
 export async function getHistoricoDetalhe(
-  id: number
+  id: number,
 ): Promise<HistoricoDetalhe> {
   return apiFetch<HistoricoDetalhe>(`/api/historico/${id}`);
 }
@@ -2111,24 +2102,24 @@ export interface RelCanal {
 
 export async function getHistoricoResumo(dias = 30): Promise<HistoricoResumo> {
   return apiFetch<HistoricoResumo>(
-    `/api/historico/relatorios/resumo?dias=${dias}`
+    `/api/historico/relatorios/resumo?dias=${dias}`,
   );
 }
 
 export async function getHistoricoPorOperador(
-  dias = 30
+  dias = 30,
 ): Promise<{ items: RelOperador[] }> {
   return apiFetch(`/api/historico/relatorios/por-operador?dias=${dias}`);
 }
 
 export async function getHistoricoPorDepartamento(
-  dias = 30
+  dias = 30,
 ): Promise<{ items: RelDepartamento[] }> {
   return apiFetch(`/api/historico/relatorios/por-departamento?dias=${dias}`);
 }
 
 export async function getHistoricoPorCanal(
-  dias = 30
+  dias = 30,
 ): Promise<{ items: RelCanal[] }> {
   return apiFetch(`/api/historico/relatorios/por-canal?dias=${dias}`);
 }
@@ -2136,7 +2127,7 @@ export async function getHistoricoPorCanal(
 /** Forward bruto do export (CSV/XLSX) — usado pelo route handler de download.
  * `search` já contém `formato` + filtros (querystring do /api/historico-export). */
 export async function proxyHistoricoExport(
-  search: string
+  search: string,
 ): Promise<{ bytes: ArrayBuffer; contentType: string; filename: string }> {
   ensureFrontendRuntimeConfig();
   const qs = search.startsWith("?") ? search.slice(1) : search;
@@ -2237,7 +2228,7 @@ export async function updateAba(
     icone?: string | null;
     /** `undefined` preserva o critério; `[]` limpa (aba fica vazia). */
     cliente_tags?: string[];
-  }
+  },
 ): Promise<Aba> {
   return apiFetch<Aba>(`/api/abas/${abaId}`, {
     method: "PATCH",
@@ -2250,7 +2241,7 @@ export async function deleteAba(abaId: number): Promise<{ ok: boolean }> {
 }
 
 export async function reorderAbas(
-  orderedIds: number[]
+  orderedIds: number[],
 ): Promise<{ updated: number }> {
   return apiFetch<{ updated: number }>("/api/abas/reorder", {
     method: "POST",
@@ -2285,7 +2276,7 @@ export interface AtendimentoTag {
 }
 
 export async function getTags(
-  onlyAtivos: boolean = true
+  onlyAtivos: boolean = true,
 ): Promise<{ items: Tag[] }> {
   const qs = onlyAtivos ? "" : "?only_ativos=false";
   return apiFetch<{ items: Tag[] }>(`/api/tags${qs}`);
@@ -2322,7 +2313,7 @@ export async function updateTag(
     cor?: string | null;
     descricao?: string | null;
     ativo?: boolean;
-  }
+  },
 ): Promise<Tag> {
   return apiFetch<Tag>(`/api/tags/${tagId}`, {
     method: "PATCH",
@@ -2359,7 +2350,7 @@ export async function createWhitelistNumero(payload: {
 
 export async function updateWhitelistNumero(
   id: number,
-  payload: { nome?: string | null }
+  payload: { nome?: string | null },
 ): Promise<WhitelistNumero> {
   return apiFetch<WhitelistNumero>(`/api/whitelist/${id}`, {
     method: "PATCH",
@@ -2368,7 +2359,7 @@ export async function updateWhitelistNumero(
 }
 
 export async function deleteWhitelistNumero(
-  id: number
+  id: number,
 ): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/whitelist/${id}`, {
     method: "DELETE",
@@ -2376,20 +2367,20 @@ export async function deleteWhitelistNumero(
 }
 
 export async function getTagsAtendimento(
-  atendimentoId: number
+  atendimentoId: number,
 ): Promise<{ items: AtendimentoTag[] }> {
   return apiFetch<{ items: AtendimentoTag[] }>(
-    `/api/atendimentos/${atendimentoId}/tags`
+    `/api/atendimentos/${atendimentoId}/tags`,
   );
 }
 
 export async function applyTagsAtendimento(
   atendimentoId: number,
-  delta: { add: number[]; remove: number[] }
+  delta: { add: number[]; remove: number[] },
 ): Promise<{ added: number; removed: number; ok: boolean }> {
   return apiFetch<{ added: number; removed: number; ok: boolean }>(
     `/api/atendimentos/${atendimentoId}/tags`,
-    { method: "POST", body: delta }
+    { method: "POST", body: delta },
   );
 }
 
@@ -2397,7 +2388,7 @@ export async function applyTagsAtendimento(
 
 export async function criarNotaInterna(
   atendimentoId: number,
-  texto: string
+  texto: string,
 ): Promise<{
   id: number;
   interna: boolean;
@@ -2412,7 +2403,7 @@ export async function criarNotaInterna(
 }
 
 export async function marcarAtendimentoLido(
-  atendimentoId: number
+  atendimentoId: number,
 ): Promise<{ ok: boolean }> {
   return apiFetch(`/api/atendimentos/${atendimentoId}/marcar-lido`, {
     method: "POST",
@@ -2421,18 +2412,12 @@ export async function marcarAtendimentoLido(
 
 /** Inverso do marcar-lido — a conversa volta a contar como não lida pra MIM. */
 export async function marcarAtendimentoNaoLido(
-  atendimentoId: number
+  atendimentoId: number,
 ): Promise<{ ok: boolean }> {
   return apiFetch(`/api/atendimentos/${atendimentoId}/marcar-nao-lido`, {
     method: "POST",
   });
 }
-
-
-
-
-
-
 
 // --- Asaas (billing GLOBAL da plataforma — superadmin) ---
 export interface AsaasConfigStatus {
@@ -2458,7 +2443,7 @@ export async function saveAsaasConfig(payload: {
 }): Promise<{ status: string; source: string }> {
   return apiFetch<{ status: string; source: string }>(
     "/api/admin/integracoes/asaas",
-    { method: "PUT", body: payload }
+    { method: "PUT", body: payload },
   );
 }
 
@@ -2469,7 +2454,7 @@ export async function testAsaasConnection(): Promise<{
 }> {
   return apiFetch<{ ok: boolean; conta?: string; erro?: string }>(
     "/api/admin/integracoes/asaas/testar",
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -2518,12 +2503,10 @@ export interface ApiConnection {
 }
 
 export async function getApiConnectionProviders(
-  includeLegacy = true
+  includeLegacy = true,
 ): Promise<{ items: ProviderSpec[] }> {
   const qs = includeLegacy ? "" : "?include_legacy=false";
-  return apiFetch<{ items: ProviderSpec[] }>(
-    `/api/integracoes/providers${qs}`
-  );
+  return apiFetch<{ items: ProviderSpec[] }>(`/api/integracoes/providers${qs}`);
 }
 
 export async function listApiConnections(): Promise<{
@@ -2558,7 +2541,7 @@ export async function updateApiConnection(
     credentials_patch?: Record<string, unknown>;
     extra_config?: Record<string, unknown>;
     ativo?: boolean;
-  }
+  },
 ): Promise<ApiConnection> {
   return apiFetch<ApiConnection>(`/api/integracoes/${id}`, {
     method: "PATCH",
@@ -2567,16 +2550,16 @@ export async function updateApiConnection(
 }
 
 export async function testApiConnection(
-  id: number
+  id: number,
 ): Promise<{ ok: boolean; mensagem: string }> {
   return apiFetch<{ ok: boolean; mensagem: string }>(
     `/api/integracoes/${id}/testar`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
 export async function deleteApiConnection(
-  id: number
+  id: number,
 ): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/integracoes/${id}`, {
     method: "DELETE",
@@ -2587,14 +2570,14 @@ export async function deleteApiConnection(
 
 export async function getClienteAtendimentosAnteriores(
   clienteId: number,
-  options: { excludeId?: number; limit?: number } = {}
+  options: { excludeId?: number; limit?: number } = {},
 ): Promise<{ items: Atendimento[] }> {
   const qs = new URLSearchParams();
   if (options.excludeId) qs.set("exclude_id", String(options.excludeId));
   if (options.limit) qs.set("limit", String(options.limit));
   const s = qs.toString();
   return apiFetch<{ items: Atendimento[] }>(
-    `/api/clientes/${clienteId}/atendimentos-anteriores${s ? `?${s}` : ""}`
+    `/api/clientes/${clienteId}/atendimentos-anteriores${s ? `?${s}` : ""}`,
   );
 }
 
@@ -2604,30 +2587,33 @@ export async function getAtendimento(id: number): Promise<Atendimento> {
 
 export async function getAtendimentoMensagens(
   id: number,
-  limit: number = 200
+  limit: number = 200,
 ): Promise<AtendimentoMensagensResponse> {
   // `incluir_midia=false`: a mídia é data-URL base64 na própria linha, e a lista
   // vinha com tudo embutido — 98,74 MB numa conversa medida em produção. Cada
   // anexo é buscado depois por `/api/proxy/midia/...`, quando de fato aparece.
   return apiFetch<AtendimentoMensagensResponse>(
-    `/api/atendimentos/${id}/mensagens?limit=${limit}&incluir_midia=false`
+    `/api/atendimentos/${id}/mensagens?limit=${limit}&incluir_midia=false`,
   );
 }
 
 export async function responderAtendimento(
   id: number,
-  conteudo: string
+  conteudo: string,
 ): Promise<{ mensagem: AtendimentoMensagem }> {
   return apiFetch<{ mensagem: AtendimentoMensagem }>(
     `/api/atendimentos/${id}/responder`,
-    { method: "POST", body: { conteudo } }
+    { method: "POST", body: { conteudo } },
   );
 }
 
 export async function sendAtendimentoTemplate(
   id: number,
-  body: { template_id: number; variaveis?: Record<string, string> }
-): Promise<{ mensagem: AtendimentoMensagem | null; provider_message_id: string }> {
+  body: { template_id: number; variaveis?: Record<string, string> },
+): Promise<{
+  mensagem: AtendimentoMensagem | null;
+  provider_message_id: string;
+}> {
   return apiFetch(`/api/atendimentos/${id}/send-template`, {
     method: "POST",
     body,
@@ -2637,21 +2623,21 @@ export async function sendAtendimentoTemplate(
 // --- Modelos de mensagem (quick replies) ---
 
 export async function getModelosMensagem(
-  search?: string
+  search?: string,
 ): Promise<ModelosMensagemResponse> {
   const qs = search ? `?search=${encodeURIComponent(search)}` : "";
   return apiFetch<ModelosMensagemResponse>(`/api/modelos${qs}`);
 }
 
 export async function createModeloMensagem(
-  body: ModeloMensagemInput
+  body: ModeloMensagemInput,
 ): Promise<ModeloMensagem> {
   return apiFetch<ModeloMensagem>(`/api/modelos`, { method: "POST", body });
 }
 
 export async function updateModeloMensagem(
   id: number,
-  body: ModeloMensagemInput
+  body: ModeloMensagemInput,
 ): Promise<ModeloMensagem> {
   return apiFetch<ModeloMensagem>(`/api/modelos/${id}`, {
     method: "PUT",
@@ -2688,11 +2674,9 @@ export async function deleteHook(id: number): Promise<void> {
 
 export async function getHookLogs(
   id: number,
-  limit: number = 20
+  limit: number = 20,
 ): Promise<HookLogsResponse> {
-  return apiFetch<HookLogsResponse>(
-    `/api/hooks/${id}/logs?limit=${limit}`
-  );
+  return apiFetch<HookLogsResponse>(`/api/hooks/${id}/logs?limit=${limit}`);
 }
 
 // --- Google Calendar ---
@@ -2701,7 +2685,9 @@ export async function getGoogleCalendarConfig(): Promise<GoogleCalendarConfig | 
   return apiFetch<GoogleCalendarConfig | null>("/api/google-calendar/config");
 }
 
-export async function getGoogleCalendarOAuthUrl(): Promise<{ authorize_url: string }> {
+export async function getGoogleCalendarOAuthUrl(): Promise<{
+  authorize_url: string;
+}> {
   return apiFetch<{ authorize_url: string }>("/api/google-calendar/oauth/init");
 }
 
@@ -2799,23 +2785,23 @@ export interface AgendamentoHistorico {
 }
 
 export async function resetAtendimentoThread(
-  atendimentoId: number
+  atendimentoId: number,
 ): Promise<{ ok: boolean; rows_deleted: number; thread_id: string }> {
   return apiFetch<{ ok: boolean; rows_deleted: number; thread_id: string }>(
     `/api/atendimentos/${atendimentoId}/reset-thread`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
 export async function reprocessarMensagem(
   atendimentoId: number,
-  messageId: number
+  messageId: number,
 ): Promise<{ ok: boolean; message_id: number }> {
   // Sem body: o alvo vai na URL. Se um dia precisar de payload, mande OBJETO —
   // o apiFetch serializa, e JSON.stringify aqui dá 422 (ver PR #54).
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${messageId}/reprocessar`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -2830,7 +2816,7 @@ export interface IniciarConversaPayload {
 
 /** Conversa ativa 1:1 (mig 170) — operador inicia contato com um número. */
 export async function iniciarConversa(
-  payload: IniciarConversaPayload
+  payload: IniciarConversaPayload,
 ): Promise<{ ok: boolean; was_created: boolean; atendimento: Atendimento }> {
   return apiFetch(`/api/atendimentos/iniciar`, {
     method: "POST",
@@ -2840,12 +2826,12 @@ export async function iniciarConversa(
 
 export async function transcreverMensagem(
   atendimentoId: number,
-  mensagemId: number
+  mensagemId: number,
 ): Promise<{ ok: boolean; mensagem_id: number; transcricao: string }> {
   // Sem body: o alvo vai na URL (mesma regra do reprocessar acima).
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/transcrever`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -2853,57 +2839,57 @@ export async function transcreverMensagem(
 export async function editarMensagem(
   atendimentoId: number,
   mensagemId: number,
-  texto: string
+  texto: string,
 ): Promise<{ ok: boolean; mensagem_id: number; texto: string }> {
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/texto`,
-    { method: "PATCH", body: { texto } }
+    { method: "PATCH", body: { texto } },
   );
 }
 
 /** Apaga para todos no WhatsApp (mig 172) — soft delete do nosso lado. */
 export async function apagarMensagem(
   atendimentoId: number,
-  mensagemId: number
+  mensagemId: number,
 ): Promise<{ ok: boolean; mensagem_id: number }> {
   return apiFetch(
     `/api/atendimentos/${atendimentoId}/mensagens/${mensagemId}/texto`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
 }
 
 export async function getAgendamentoHistorico(
-  id: number
+  id: number,
 ): Promise<{ items: AgendamentoHistorico[] }> {
   return apiFetch<{ items: AgendamentoHistorico[] }>(
-    `/api/agendamentos/${id}/historico`
+    `/api/agendamentos/${id}/historico`,
   );
 }
 
 // --- AgenteIA configurável ---
 
 export async function getAgenteIAConfig(
-  agentId: string
+  agentId: string,
 ): Promise<AgenteIAConfigResponse> {
   return apiFetch<AgenteIAConfigResponse>(
-    `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`
+    `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`,
   );
 }
 
 export async function updateAgenteIAConfig(
   agentId: string,
-  body: AgenteIAConfigInput
+  body: AgenteIAConfigInput,
 ): Promise<AgenteIAConfig> {
   return apiFetch<AgenteIAConfig>(
     `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`,
-    { method: "PUT", body }
+    { method: "PUT", body },
   );
 }
 
 export async function resetAgenteIAConfig(agentId: string): Promise<void> {
   await apiFetch<void>(
     `/api/agents/${encodeURIComponent(agentId)}/agente-ia-config`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
 }
 
@@ -2922,7 +2908,7 @@ export async function claimAtendimento(id: number): Promise<Atendimento> {
  * enviado ao cliente**; a IA só volta a responder.
  */
 export async function devolverAtendimentoParaIa(
-  id: number
+  id: number,
 ): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}/devolver-ia`, {
     method: "POST",
@@ -2931,7 +2917,7 @@ export async function devolverAtendimentoParaIa(
 
 export async function closeAtendimento(
   id: number,
-  status: "resolvido" | "abandonado" = "resolvido"
+  status: "resolvido" | "abandonado" = "resolvido",
 ): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}/close`, {
     method: "POST",
@@ -2941,7 +2927,7 @@ export async function closeAtendimento(
 
 export async function transferAtendimento(
   id: number,
-  user_id: string
+  user_id: string,
 ): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}/transfer`, {
     method: "POST",
@@ -2951,7 +2937,7 @@ export async function transferAtendimento(
 
 export async function transferAtendimentoParaDepartamento(
   id: number,
-  departamento_id: number
+  departamento_id: number,
 ): Promise<Atendimento> {
   return apiFetch<Atendimento>(`/api/atendimentos/${id}/transfer`, {
     method: "POST",
@@ -2972,7 +2958,7 @@ export async function getDocumentosConhecimento(opts?: {
   if (opts?.incluirSubpastas) params.set("incluir_subpastas", "true");
   const q = params.toString();
   return apiFetch<DocumentosConhecimentoResponse>(
-    `/api/base-conhecimento${q ? "?" + q : ""}`
+    `/api/base-conhecimento${q ? "?" + q : ""}`,
   );
 }
 
@@ -3058,38 +3044,38 @@ export interface PreviewCrmFiltro {
 }
 
 export async function previewCrmCampanha(
-  filtro: PreviewCrmFiltro
+  filtro: PreviewCrmFiltro,
 ): Promise<{ total: number; telefones: string[] }> {
   return apiFetch<{ total: number; telefones: string[] }>(
     `/api/campanhas/preview-crm`,
-    { method: "POST", body: filtro }
+    { method: "POST", body: filtro },
   );
 }
 
 export async function updateCampanha(
   id: number,
-  body: Partial<CampanhaCreateInput> & { agendar?: boolean }
+  body: Partial<CampanhaCreateInput> & { agendar?: boolean },
 ): Promise<Campanha> {
   return apiFetch<Campanha>(`/api/campanhas/${id}`, { method: "PATCH", body });
 }
 
 export async function addCampanhaDestinatarios(
   id: number,
-  body: { telefones?: string[]; crm?: PreviewCrmFiltro }
+  body: { telefones?: string[]; crm?: PreviewCrmFiltro },
 ): Promise<{ novos: number; total: number }> {
   return apiFetch<{ novos: number; total: number }>(
     `/api/campanhas/${id}/destinatarios`,
-    { method: "POST", body }
+    { method: "POST", body },
   );
 }
 
 export async function removeCampanhaDestinatario(
   id: number,
-  destId: number
+  destId: number,
 ): Promise<{ removido: boolean; total: number }> {
   return apiFetch<{ removido: boolean; total: number }>(
     `/api/campanhas/${id}/destinatarios/${destId}`,
-    { method: "DELETE" }
+    { method: "DELETE" },
   );
 }
 
@@ -3107,15 +3093,15 @@ export async function getCampanha(id: number): Promise<Campanha> {
 
 export async function getCampanhaDestinatarios(
   id: number,
-  limit = 200
+  limit = 200,
 ): Promise<{ items: CampanhaDestinatario[] }> {
   return apiFetch<{ items: CampanhaDestinatario[] }>(
-    `/api/campanhas/${id}/destinatarios?limit=${limit}`
+    `/api/campanhas/${id}/destinatarios?limit=${limit}`,
   );
 }
 
 export async function createCampanha(
-  body: CampanhaCreateInput
+  body: CampanhaCreateInput,
 ): Promise<Campanha> {
   return apiFetch<Campanha>(`/api/campanhas`, { method: "POST", body });
 }
@@ -3127,7 +3113,7 @@ export async function dispatchCampanha(id: number): Promise<{
 }> {
   return apiFetch<{ ok: boolean; campanha_id: number; status: string }>(
     `/api/campanhas/${id}/dispatch`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -3149,7 +3135,10 @@ export async function createPasta(body: PastaInput): Promise<Pasta> {
   return apiFetch<Pasta>(`/api/pastas`, { method: "POST", body });
 }
 
-export async function updatePasta(id: number, body: PastaInput): Promise<Pasta> {
+export async function updatePasta(
+  id: number,
+  body: PastaInput,
+): Promise<Pasta> {
   return apiFetch<Pasta>(`/api/pastas/${id}`, { method: "PUT", body });
 }
 
@@ -3243,9 +3232,11 @@ export async function getContatosCapturados(opts?: {
   if (opts?.offset != null) p.set("offset", String(opts.offset));
   if (opts?.q?.trim()) p.set("q", opts.q.trim());
   const qs = p.toString();
-  return apiFetch<{ items: ContatoCapturado[]; total: number; promoviveis: number }>(
-    `/api/captura/contatos${qs ? "?" + qs : ""}`
-  );
+  return apiFetch<{
+    items: ContatoCapturado[];
+    total: number;
+    promoviveis: number;
+  }>(`/api/captura/contatos${qs ? "?" + qs : ""}`);
 }
 
 export async function promoverTodosContatos(): Promise<{ promovidos: number }> {
@@ -3261,7 +3252,7 @@ export async function getGruposCapturados(): Promise<{
 }
 
 export async function promoverContatos(
-  contatoIds: number[]
+  contatoIds: number[],
 ): Promise<{ promovidos: number }> {
   return apiFetch<{ promovidos: number }>(`/api/captura/promover`, {
     method: "POST",
@@ -3270,21 +3261,21 @@ export async function promoverContatos(
 }
 
 export async function despromoverContatos(
-  contatoIds: number[]
+  contatoIds: number[],
 ): Promise<{ removidos: number; mantidos_com_atendimento: number }> {
   return apiFetch<{ removidos: number; mantidos_com_atendimento: number }>(
     `/api/captura/despromover`,
-    { method: "POST", body: { contato_ids: contatoIds } }
+    { method: "POST", body: { contato_ids: contatoIds } },
   );
 }
 
 export async function capturarViaEvolution(
   conexaoId: number,
-  tipo: "contatos" | "grupos"
+  tipo: "contatos" | "grupos",
 ): Promise<{ lote_id: number; status: string }> {
   return apiFetch<{ lote_id: number; status: string }>(
     `/api/conexoes/${conexaoId}/captura/${tipo}`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -3321,7 +3312,7 @@ export async function previewDisparo(body: {
 
 export async function moveDocumentoToPasta(
   docId: number,
-  pastaId: number | null
+  pastaId: number | null,
 ): Promise<{ ok: boolean; doc_id: number; pasta_id: number | null }> {
   // pasta_id=0 sinaliza "raiz" no endpoint backend
   const target = pastaId == null ? 0 : pastaId;
@@ -3331,7 +3322,7 @@ export async function moveDocumentoToPasta(
 }
 
 export async function createDocumentoConhecimento(
-  body: DocumentoConhecimentoInput
+  body: DocumentoConhecimentoInput,
 ): Promise<DocumentoConhecimento> {
   return apiFetch<DocumentoConhecimento>(`/api/base-conhecimento`, {
     method: "POST",
@@ -3341,7 +3332,7 @@ export async function createDocumentoConhecimento(
 
 export async function updateDocumentoConhecimento(
   id: number,
-  body: DocumentoConhecimentoInput
+  body: DocumentoConhecimentoInput,
 ): Promise<DocumentoConhecimento> {
   return apiFetch<DocumentoConhecimento>(`/api/base-conhecimento/${id}`, {
     method: "PUT",
@@ -3355,7 +3346,7 @@ export async function deleteDocumentoConhecimento(id: number): Promise<void> {
 
 export async function buscarDocumentosConhecimento(
   query: string,
-  k: number = 3
+  k: number = 3,
 ): Promise<BuscarDocumentosResponse> {
   return apiFetch<BuscarDocumentosResponse>(`/api/base-conhecimento/buscar`, {
     method: "POST",
@@ -3365,7 +3356,7 @@ export async function buscarDocumentosConhecimento(
 
 export async function uploadDocumentoConhecimento(
   arquivo: File,
-  options: { titulo?: string; tags?: string[]; pastaId?: number | null } = {}
+  options: { titulo?: string; tags?: string[]; pastaId?: number | null } = {},
 ): Promise<DocumentoConhecimento> {
   ensureFrontendRuntimeConfig();
   const headers: Record<string, string> = {
@@ -3404,7 +3395,12 @@ export async function uploadDocumentoConhecimento(
     } catch {
       /* response não é JSON */
     }
-    console.error("[api] upload", response.status, response.statusText, detail ?? "");
+    console.error(
+      "[api] upload",
+      response.status,
+      response.statusText,
+      detail ?? "",
+    );
     throw new ApiRequestError(response.status, detail, "upload");
   }
   return (await response.json()) as DocumentoConhecimento;
@@ -3417,7 +3413,7 @@ export async function getVariaveis(): Promise<VariaveisResponse> {
 }
 
 export async function createVariavel(
-  body: VariavelAmbienteInput
+  body: VariavelAmbienteInput,
 ): Promise<VariavelAmbiente> {
   return apiFetch<VariavelAmbiente>(`/api/variaveis`, {
     method: "POST",
@@ -3427,7 +3423,7 @@ export async function createVariavel(
 
 export async function updateVariavel(
   id: number,
-  body: VariavelAmbienteInput
+  body: VariavelAmbienteInput,
 ): Promise<VariavelAmbiente> {
   return apiFetch<VariavelAmbiente>(`/api/variaveis/${id}`, {
     method: "PUT",
@@ -3449,26 +3445,26 @@ export async function getDepartamentos(opts?: {
 }
 
 export async function getDepartamentoUsers(
-  depId: number
+  depId: number,
 ): Promise<{ items: DepartamentoUser[] }> {
   return apiFetch<{ items: DepartamentoUser[] }>(
-    `/api/departamentos/${depId}/users`
+    `/api/departamentos/${depId}/users`,
   );
 }
 
 export async function assignDepartamentoUser(
   depId: number,
-  userId: string
+  userId: string,
 ): Promise<{ ok: boolean; inserted: boolean }> {
   return apiFetch<{ ok: boolean; inserted: boolean }>(
     `/api/departamentos/${depId}/users`,
-    { method: "POST", body: { user_id: userId } }
+    { method: "POST", body: { user_id: userId } },
   );
 }
 
 export async function unassignDepartamentoUser(
   depId: number,
-  userId: string
+  userId: string,
 ): Promise<void> {
   await apiFetch<void>(`/api/departamentos/${depId}/users/${userId}`, {
     method: "DELETE",
@@ -3476,7 +3472,7 @@ export async function unassignDepartamentoUser(
 }
 
 export async function createDepartamento(
-  body: DepartamentoInput
+  body: DepartamentoInput,
 ): Promise<Departamento> {
   return apiFetch<Departamento>(`/api/departamentos`, {
     method: "POST",
@@ -3486,7 +3482,7 @@ export async function createDepartamento(
 
 export async function updateDepartamento(
   id: number,
-  body: DepartamentoInput
+  body: DepartamentoInput,
 ): Promise<Departamento> {
   return apiFetch<Departamento>(`/api/departamentos/${id}`, {
     method: "PUT",
@@ -3503,7 +3499,7 @@ export async function getHorarios(): Promise<HorariosResponse> {
 }
 
 export async function createHorario(
-  body: HorarioFuncionamentoInput
+  body: HorarioFuncionamentoInput,
 ): Promise<HorarioFuncionamento> {
   return apiFetch<HorarioFuncionamento>(`/api/horarios`, {
     method: "POST",
@@ -3523,9 +3519,7 @@ export async function getFeriados(): Promise<FeriadosResponse> {
   return apiFetch<FeriadosResponse>(`/api/feriados`);
 }
 
-export async function createFeriado(
-  body: FeriadoInput
-): Promise<Feriado> {
+export async function createFeriado(body: FeriadoInput): Promise<Feriado> {
   return apiFetch<Feriado>(`/api/feriados`, { method: "POST", body });
 }
 
@@ -3588,7 +3582,7 @@ export async function createPerfil(body: {
 
 export async function updatePerfil(
   id: number,
-  body: { permissoes: string[]; descricao?: string | null }
+  body: { permissoes: string[]; descricao?: string | null },
 ): Promise<PerfilAcesso> {
   return apiFetch<PerfilAcesso>(`/api/perfis/${id}`, { method: "PUT", body });
 }
@@ -3603,7 +3597,7 @@ export async function getMyPermissions(): Promise<MyPermissionsResponse> {
 
 export async function assignPerfil(
   perfilId: number,
-  userId: string
+  userId: string,
 ): Promise<void> {
   await apiFetch<void>(`/api/perfis/${perfilId}/users`, {
     method: "POST",
@@ -3613,7 +3607,7 @@ export async function assignPerfil(
 
 export async function unassignPerfil(
   perfilId: number,
-  userId: string
+  userId: string,
 ): Promise<void> {
   await apiFetch<void>(`/api/perfis/${perfilId}/users/${userId}`, {
     method: "DELETE",
@@ -3696,7 +3690,7 @@ export async function upsertFeatureFlag(
     value: unknown;
     descricao?: string | null;
     ativo?: boolean;
-  }
+  },
 ): Promise<FeatureFlag> {
   return apiFetch<FeatureFlag>(`/api/v1/feature-flags/${key}`, {
     method: "PUT",
@@ -3711,16 +3705,10 @@ export async function deleteFeatureFlag(key: string): Promise<void> {
 // ---------------- Sub-fase A: agente_ia cadastrável ----------------
 
 export type EstiloResposta =
-  | "preciso"
-  | "equilibrado"
-  | "criativo"
-  | "muito_criativo";
+  "preciso" | "equilibrado" | "criativo" | "muito_criativo";
 
 export type LimiteCustoAcao =
-  | "solicitar_humano"
-  | "encerrar"
-  | "continuar"
-  | "bloquear";
+  "solicitar_humano" | "encerrar" | "continuar" | "bloquear";
 
 export interface AgenteIA {
   id: number;
@@ -3827,19 +3815,19 @@ export interface PromptVersao {
 }
 
 export async function getPromptVersoes(
-  slug: string
+  slug: string,
 ): Promise<{ items: PromptVersao[] }> {
   return apiFetch<{ items: PromptVersao[] }>(
-    `/api/v1/agentes/${slug}/prompt/versoes`
+    `/api/v1/agentes/${slug}/prompt/versoes`,
   );
 }
 
 export async function getPromptVersao(
   slug: string,
-  versao: number
+  versao: number,
 ): Promise<PromptVersao & { texto: string }> {
   return apiFetch<PromptVersao & { texto: string }>(
-    `/api/v1/agentes/${slug}/prompt/versoes/${versao}`
+    `/api/v1/agentes/${slug}/prompt/versoes/${versao}`,
   );
 }
 
@@ -3852,21 +3840,21 @@ export async function getPromptVersao(
  */
 export async function redigirPromptAgente(
   slug: string,
-  descricao: string
+  descricao: string,
 ): Promise<{ prompt: string; avisos: string[] }> {
   return apiFetch<{ prompt: string; avisos: string[] }>(
     `/api/v1/agentes/${slug}/prompt/redigir`,
-    { method: "POST", body: { descricao } }
+    { method: "POST", body: { descricao } },
   );
 }
 
 export async function restaurarPromptVersao(
   slug: string,
-  versao: number
+  versao: number,
 ): Promise<AgenteIA> {
   return apiFetch<AgenteIA>(
     `/api/v1/agentes/${slug}/prompt/versoes/${versao}/restaurar`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -3876,7 +3864,6 @@ export async function getAgentesIA(opts?: {
   const q = opts?.onlyActive ? "?only_active=true" : "";
   return apiFetch<{ items: AgenteIA[] }>(`/api/v1/agentes${q}`);
 }
-
 
 export interface TestarAgenteResult {
   resposta: string;
@@ -3924,21 +3911,21 @@ export async function testarAgente(
     midia_base64?: string | null;
     midia_tipo?: string | null;
     midia_nome?: string | null;
-  }
+  },
 ): Promise<TestarAgenteResult> {
   return apiFetch<TestarAgenteResult>(
     `/api/v1/agentes/${encodeURIComponent(slug)}/testar`,
-    { method: "POST", body: payload }
+    { method: "POST", body: payload },
   );
 }
 
 export async function testarBateriaAgente(
   slug: string,
-  modelos: string[]
+  modelos: string[],
 ): Promise<TestarBateriaResult> {
   return apiFetch<TestarBateriaResult>(
     `/api/v1/agentes/${encodeURIComponent(slug)}/testar-bateria`,
-    { method: "POST", body: { modelos } }
+    { method: "POST", body: { modelos } },
   );
 }
 
@@ -3947,14 +3934,14 @@ export async function getAgenteIA(slug: string): Promise<AgenteIA> {
 }
 
 export async function createAgenteIA(
-  body: AgenteIACreateInput
+  body: AgenteIACreateInput,
 ): Promise<AgenteIA> {
   return apiFetch<AgenteIA>(`/api/v1/agentes`, { method: "POST", body });
 }
 
 export async function updateAgenteIA(
   slug: string,
-  body: AgenteIAUpdateInput
+  body: AgenteIAUpdateInput,
 ): Promise<AgenteIA> {
   return apiFetch<AgenteIA>(`/api/v1/agentes/${slug}`, {
     method: "PUT",
@@ -3967,11 +3954,11 @@ export async function deleteAgenteIA(slug: string): Promise<void> {
 }
 
 export async function setDefaultAgenteIA(
-  slug: string
+  slug: string,
 ): Promise<{ ok: boolean; slug: string }> {
   return apiFetch<{ ok: boolean; slug: string }>(
     `/api/v1/agentes/${slug}/set-default`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -3983,7 +3970,9 @@ export interface AgenteTemplate {
   descricao: string;
 }
 
-export async function getAgenteTemplates(): Promise<{ items: AgenteTemplate[] }> {
+export async function getAgenteTemplates(): Promise<{
+  items: AgenteTemplate[];
+}> {
   return apiFetch<{ items: AgenteTemplate[] }>(`/api/v1/agentes/templates`);
 }
 
@@ -4150,14 +4139,14 @@ export async function getMenu(id: number): Promise<MenuChatbot> {
 }
 
 export async function createMenu(
-  body: MenuChatbotCreateInput
+  body: MenuChatbotCreateInput,
 ): Promise<MenuChatbot> {
   return apiFetch<MenuChatbot>(`/api/v1/menus`, { method: "POST", body });
 }
 
 export async function updateMenu(
   id: number,
-  body: MenuChatbotUpdateInput
+  body: MenuChatbotUpdateInput,
 ): Promise<MenuChatbot> {
   return apiFetch<MenuChatbot>(`/api/v1/menus/${id}`, {
     method: "PUT",
@@ -4171,7 +4160,7 @@ export async function deleteMenu(id: number): Promise<void> {
 
 export async function getMenuItems(
   menuId: number,
-  opts?: { parentId?: number | null; onlyActive?: boolean }
+  opts?: { parentId?: number | null; onlyActive?: boolean },
 ): Promise<{ items: MenuItem[] }> {
   const params = new URLSearchParams();
   if (opts?.parentId !== undefined && opts.parentId !== null) {
@@ -4186,7 +4175,7 @@ export async function getMenuItems(
 
 export async function createMenuItem(
   menuId: number,
-  body: MenuItemCreateInput
+  body: MenuItemCreateInput,
 ): Promise<MenuItem> {
   return apiFetch<MenuItem>(`/api/v1/menus/${menuId}/itens`, {
     method: "POST",
@@ -4197,7 +4186,7 @@ export async function createMenuItem(
 export async function updateMenuItem(
   menuId: number,
   itemId: number,
-  body: MenuItemUpdateInput
+  body: MenuItemUpdateInput,
 ): Promise<MenuItem> {
   return apiFetch<MenuItem>(`/api/v1/menus/${menuId}/itens/${itemId}`, {
     method: "PUT",
@@ -4207,7 +4196,7 @@ export async function updateMenuItem(
 
 export async function deleteMenuItem(
   menuId: number,
-  itemId: number
+  itemId: number,
 ): Promise<void> {
   await apiFetch<void>(`/api/v1/menus/${menuId}/itens/${itemId}`, {
     method: "DELETE",
@@ -4218,11 +4207,7 @@ export async function deleteMenuItem(
 // Atendentes (Sprint G/H) — status real-time + capacidade
 // =====================================================================
 
-export type AtendenteStatusValor =
-  | "online"
-  | "ausente"
-  | "pausa"
-  | "offline";
+export type AtendenteStatusValor = "online" | "ausente" | "pausa" | "offline";
 
 export interface AtendenteStatus {
   user_id: string;
@@ -4241,12 +4226,12 @@ export async function getEmpresaAtendentes(): Promise<{
   atendentes: AtendenteStatus[];
 }> {
   return apiFetch<{ atendentes: AtendenteStatus[] }>(
-    `/api/atendentes/empresa-status`
+    `/api/atendentes/empresa-status`,
   );
 }
 
 export async function setMyAtendenteStatus(
-  status: AtendenteStatusValor
+  status: AtendenteStatusValor,
 ): Promise<void> {
   await apiFetch<unknown>(`/api/atendentes/me/status`, {
     method: "POST",
@@ -4256,7 +4241,7 @@ export async function setMyAtendenteStatus(
 
 export async function setAtendenteMaxParalelos(
   userId: string,
-  maxParalelos: number
+  maxParalelos: number,
 ): Promise<void> {
   await apiFetch<unknown>(`/api/atendentes/${userId}/max-paralelos`, {
     method: "PUT",
@@ -4276,7 +4261,7 @@ export async function getMyDashboard(): Promise<AtendenteDashboard> {
 }
 
 export async function getUserDashboard(
-  userId: string
+  userId: string,
 ): Promise<AtendenteDashboard> {
   return apiFetch<AtendenteDashboard>(`/api/atendentes/${userId}/dashboard`);
 }
@@ -4290,10 +4275,10 @@ export interface AtendenteRankingItem {
 }
 
 export async function getAtendentesRanking(
-  dias: number = 30
+  dias: number = 30,
 ): Promise<{ items: AtendenteRankingItem[]; dias: number }> {
   return apiFetch<{ items: AtendenteRankingItem[]; dias: number }>(
-    `/api/atendentes/ranking?dias=${dias}`
+    `/api/atendentes/ranking?dias=${dias}`,
   );
 }
 
@@ -4301,7 +4286,8 @@ export async function getAtendentesRanking(
 // Test Runner E2E (Sprint L) — admin only
 // =====================================================================
 
-export type TestRunStatus = "queued" | "running" | "passed" | "failed" | "error";
+export type TestRunStatus =
+  "queued" | "running" | "passed" | "failed" | "error";
 
 export interface TestRun {
   id: number;
@@ -4335,7 +4321,7 @@ export async function getTestRun(id: number): Promise<TestRun> {
 
 export async function startTestRun(
   filtro?: string,
-  modo: TestRunModo = "e2e"
+  modo: TestRunModo = "e2e",
 ): Promise<TestRun> {
   return apiFetch<TestRun>(`/api/admin/tests/run`, {
     method: "POST",
@@ -4344,7 +4330,9 @@ export async function startTestRun(
 }
 
 export async function killTestRun(id: number): Promise<void> {
-  await apiFetch<unknown>(`/api/admin/tests/runs/${id}/kill`, { method: "POST" });
+  await apiFetch<unknown>(`/api/admin/tests/runs/${id}/kill`, {
+    method: "POST",
+  });
 }
 
 export async function isMyAdmin(): Promise<{ is_superadmin: boolean }> {
@@ -4445,7 +4433,7 @@ export async function getClientesUso(): Promise<{ clientes: ClienteUso[] }> {
  */
 export async function proxyRelatorioUsoPdf(
   empresaId: number,
-  competencia: string
+  competencia: string,
 ): Promise<{ bytes: ArrayBuffer; filename: string }> {
   ensureFrontendRuntimeConfig();
   const url = `${API_URL}/api/relatorios/uso/${empresaId}/pdf?competencia=${encodeURIComponent(competencia)}`;
@@ -4479,19 +4467,21 @@ export async function proxyRelatorioUsoPdf(
 
 export async function getRelatorioUso(
   empresaId: number,
-  competencia?: string
+  competencia?: string,
 ): Promise<RelatorioUso> {
-  const q = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+  const q = competencia
+    ? `?competencia=${encodeURIComponent(competencia)}`
+    : "";
   return apiFetch<RelatorioUso>(`/api/relatorios/uso/${empresaId}${q}`);
 }
 
 export async function enviarRelatorioUso(
   empresaId: number,
-  body: { competencia?: string; telefone?: string }
+  body: { competencia?: string; telefone?: string },
 ): Promise<{ ok: boolean; erro?: string; competencia: string }> {
   return apiFetch<{ ok: boolean; erro?: string; competencia: string }>(
     `/api/relatorios/uso/${empresaId}/enviar`,
-    { method: "POST", body }
+    { method: "POST", body },
   );
 }
 
@@ -4501,7 +4491,7 @@ export async function getConfigUso(empresaId: number): Promise<ConfigUso> {
 
 export async function saveConfigUso(
   empresaId: number,
-  body: Partial<ConfigUso>
+  body: Partial<ConfigUso>,
 ): Promise<ConfigUso> {
   return apiFetch<ConfigUso>(`/api/relatorios/uso/${empresaId}/config`, {
     method: "PUT",
@@ -4511,11 +4501,11 @@ export async function saveConfigUso(
 
 export async function reorderMenuItems(
   menuId: number,
-  body: { parent_id: number | null; ordered_ids: number[] }
+  body: { parent_id: number | null; ordered_ids: number[] },
 ): Promise<{ ok: boolean; ordered_ids: number[] }> {
   return apiFetch<{ ok: boolean; ordered_ids: number[] }>(
     `/api/v1/menus/${menuId}/itens/reorder`,
-    { method: "POST", body }
+    { method: "POST", body },
   );
 }
 
@@ -4602,7 +4592,7 @@ export async function getRagRecent(opts?: {
 
 export async function previewRagSearch(
   query: string,
-  pastaIds?: number[]
+  pastaIds?: number[],
 ): Promise<PreviewHit[]> {
   return apiFetch<PreviewHit[]>(`/api/admin/rag/preview`, {
     method: "POST",
@@ -4629,10 +4619,10 @@ export interface SandboxTopProblem {
 }
 
 export async function getSandboxSummary(
-  empresaId = 999
+  empresaId = 999,
 ): Promise<SandboxSummary> {
   return apiFetch<SandboxSummary>(
-    `/api/admin/rag/sandbox/summary?empresa_id=${empresaId}`
+    `/api/admin/rag/sandbox/summary?empresa_id=${empresaId}`,
   );
 }
 
@@ -4646,7 +4636,7 @@ export async function getSandboxTopProblems(opts?: {
   if (opts?.limit) p.set("limit", String(opts.limit));
   if (opts?.setor) p.set("setor", opts.setor);
   return apiFetch<SandboxTopProblem[]>(
-    `/api/admin/rag/sandbox/top-problems?${p.toString()}`
+    `/api/admin/rag/sandbox/top-problems?${p.toString()}`,
   );
 }
 
@@ -4677,7 +4667,7 @@ export async function getRagSuggestions(opts?: {
   if (opts?.empresaId) p.set("empresa_id", String(opts.empresaId));
   if (opts?.limit) p.set("limit", String(opts.limit));
   return apiFetch<RagSuggestion[]>(
-    `/api/admin/rag/suggestions?${p.toString()}`
+    `/api/admin/rag/suggestions?${p.toString()}`,
   );
 }
 
@@ -4687,32 +4677,31 @@ export async function approveRagSuggestion(
     titulo_final?: string;
     conteudo_final?: string;
     pasta_id?: number;
-  }
+  },
 ): Promise<{ ok: boolean; doc_id: number }> {
   return apiFetch<{ ok: boolean; doc_id: number }>(
     `/api/admin/rag/suggestions/${id}/approve`,
     {
       method: "POST",
       body: body ?? {},
-    }
+    },
   );
 }
 
 export async function rejectRagSuggestion(
-  id: number
+  id: number,
 ): Promise<{ ok: boolean }> {
-  return apiFetch<{ ok: boolean }>(
-    `/api/admin/rag/suggestions/${id}/reject`,
-    { method: "POST" }
-  );
+  return apiFetch<{ ok: boolean }>(`/api/admin/rag/suggestions/${id}/reject`, {
+    method: "POST",
+  });
 }
 
 export async function seedMenuFromAgentes(
-  menuId: number
+  menuId: number,
 ): Promise<{ items: MenuItem[]; qtde_criados: number }> {
   return apiFetch<{ items: MenuItem[]; qtde_criados: number }>(
     `/api/v1/menus/${menuId}/itens/seed-from-agentes`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
@@ -4722,7 +4711,7 @@ export async function seedMenuFromAgentes(
 
 export interface ModeloLLM {
   id: number;
-  empresa_id: number | null;  // NULL = global
+  empresa_id: number | null; // NULL = global
   provedor: string;
   nome: string;
   descricao: string | null;
@@ -4806,20 +4795,24 @@ export interface ModeloLLMCreateInput {
 export type ModeloLLMUpdateInput = Partial<
   Pick<
     ModeloLLM,
-    "nome" | "descricao" | "custo_input_mtok" | "custo_output_mtok"
-    | "janela_contexto" | "ativo"
+    | "nome"
+    | "descricao"
+    | "custo_input_mtok"
+    | "custo_output_mtok"
+    | "janela_contexto"
+    | "ativo"
   >
 >;
 
 export async function createModeloLLM(
-  body: ModeloLLMCreateInput
+  body: ModeloLLMCreateInput,
 ): Promise<ModeloLLM> {
   return apiFetch<ModeloLLM>(`/api/v1/modelos-llm`, { method: "POST", body });
 }
 
 export async function updateModeloLLM(
   id: number,
-  body: ModeloLLMUpdateInput
+  body: ModeloLLMUpdateInput,
 ): Promise<ModeloLLM> {
   return apiFetch<ModeloLLM>(`/api/v1/modelos-llm/${id}`, {
     method: "PUT",
@@ -4865,8 +4858,14 @@ export interface McpServerCreateInput {
 export type McpServerUpdateInput = Partial<
   Pick<
     McpServer,
-    "nome" | "descricao" | "tipo_conexao" | "url" | "comando" | "args"
-    | "headers" | "ativo"
+    | "nome"
+    | "descricao"
+    | "tipo_conexao"
+    | "url"
+    | "comando"
+    | "args"
+    | "headers"
+    | "ativo"
   >
 >;
 
@@ -4882,14 +4881,14 @@ export async function getMcpServer(id: number): Promise<McpServer> {
 }
 
 export async function createMcpServer(
-  body: McpServerCreateInput
+  body: McpServerCreateInput,
 ): Promise<McpServer> {
   return apiFetch<McpServer>(`/api/v1/mcp-servers`, { method: "POST", body });
 }
 
 export async function updateMcpServer(
   id: number,
-  body: McpServerUpdateInput
+  body: McpServerUpdateInput,
 ): Promise<McpServer> {
   return apiFetch<McpServer>(`/api/v1/mcp-servers/${id}`, {
     method: "PUT",
@@ -4986,7 +4985,7 @@ export async function getIaBudget(anoMes?: string): Promise<IaBudget> {
 }
 
 export async function upsertIaBudget(
-  body: IaBudgetUpsertInput
+  body: IaBudgetUpsertInput,
 ): Promise<IaBudget> {
   return apiFetch<IaBudget>(`/api/v1/ia-budget`, { method: "PUT", body });
 }
@@ -5052,17 +5051,17 @@ export async function getNPSResumo(periodo = 30): Promise<NPSResumo> {
   return apiFetch<NPSResumo>(`/api/relatorios/nps?periodo=${periodo}`);
 }
 export async function getNPSPorDepartamento(
-  periodo = 30
+  periodo = 30,
 ): Promise<NPSPorDepartamento[]> {
   return apiFetch<NPSPorDepartamento[]>(
-    `/api/relatorios/nps/por-departamento?periodo=${periodo}`
+    `/api/relatorios/nps/por-departamento?periodo=${periodo}`,
   );
 }
 export async function getNPSRankingOperadores(
-  periodo = 30
+  periodo = 30,
 ): Promise<RankingOperadorNPS[]> {
   return apiFetch<RankingOperadorNPS[]>(
-    `/api/relatorios/nps/ranking-operadores?periodo=${periodo}`
+    `/api/relatorios/nps/ranking-operadores?periodo=${periodo}`,
   );
 }
 // --- Sprint Y: Config CSAT/NPS por empresa ---
@@ -5073,7 +5072,6 @@ export interface EmpresaCsatConfig {
   csat_msg_agradecimento: string | null;
   csat_solicita_comentario: boolean;
 }
-
 
 export interface EmpresaResumoDiarioConfig {
   resumo_diario_ativo: boolean;
@@ -5088,35 +5086,35 @@ export interface EmpresaResumoDiarioConfig {
 }
 
 export async function getEmpresaResumoDiario(
-  empresaId: number
+  empresaId: number,
 ): Promise<EmpresaResumoDiarioConfig> {
   return apiFetch<EmpresaResumoDiarioConfig>(
-    `/api/empresas/${empresaId}/resumo-diario`
+    `/api/empresas/${empresaId}/resumo-diario`,
   );
 }
 
 export async function updateEmpresaResumoDiario(
   empresaId: number,
-  body: EmpresaResumoDiarioConfig
+  body: EmpresaResumoDiarioConfig,
 ): Promise<EmpresaResumoDiarioConfig> {
   return apiFetch<EmpresaResumoDiarioConfig>(
     `/api/empresas/${empresaId}/resumo-diario`,
-    { method: "PUT", body }
+    { method: "PUT", body },
   );
 }
 
 /** Dispara o resumo agora, sem consumir o envio agendado do dia. */
 export async function testarEmpresaResumoDiario(
-  empresaId: number
+  empresaId: number,
 ): Promise<{ ok: boolean; erro: string | null }> {
   return apiFetch<{ ok: boolean; erro: string | null }>(
     `/api/empresas/${empresaId}/resumo-diario/testar`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
 export async function getEmpresaCsat(
-  empresaId: number
+  empresaId: number,
 ): Promise<EmpresaCsatConfig> {
   return apiFetch<EmpresaCsatConfig>(`/api/empresas/${empresaId}/csat`);
 }
@@ -5128,16 +5126,18 @@ export async function getEmpresaCsat(
  * ia_execucao/ia_budget da empresa, então é chamada de botão, não de render. */
 export async function previewEmpresaVoz(
   empresaId: number,
-  body: { voz_nome: string; voz_estilo: string }
+  body: { voz_nome: string; voz_estilo: string },
 ): Promise<{ audio_base64: string; mime: string }> {
   return apiFetch<{ audio_base64: string; mime: string }>(
     `/api/empresas/${empresaId}/voz/preview`,
-    { method: "POST", body }
+    { method: "POST", body },
   );
 }
 
 // Sprint Q.4 — quota snapshot do plano
-export async function getEmpresaQuota(empresaId: number): Promise<QuotaSnapshot> {
+export async function getEmpresaQuota(
+  empresaId: number,
+): Promise<QuotaSnapshot> {
   return apiFetch<QuotaSnapshot>(`/api/empresas/${empresaId}/quota`);
 }
 
@@ -5209,14 +5209,16 @@ export interface UsuariosListResult {
   offset: number;
 }
 
-export async function listUsuarios(params: {
-  search?: string;
-  perfil_id?: number;
-  departamento_id?: number;
-  status?: "active" | "disabled";
-  limit?: number;
-  offset?: number;
-} = {}): Promise<UsuariosListResult> {
+export async function listUsuarios(
+  params: {
+    search?: string;
+    perfil_id?: number;
+    departamento_id?: number;
+    status?: "active" | "disabled";
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<UsuariosListResult> {
   const qs = new URLSearchParams();
   if (params.search) qs.set("search", params.search);
   if (params.perfil_id) qs.set("perfil_id", String(params.perfil_id));
@@ -5227,7 +5229,7 @@ export async function listUsuarios(params: {
   if (params.offset != null) qs.set("offset", String(params.offset));
   const query = qs.toString();
   return apiFetch<UsuariosListResult>(
-    `/api/usuarios${query ? "?" + query : ""}`
+    `/api/usuarios${query ? "?" + query : ""}`,
   );
 }
 
@@ -5241,7 +5243,7 @@ export async function criarUsuario(body: UsuarioCreateInput): Promise<Usuario> {
 
 export async function enviarConviteUsuario(
   userId: string,
-  body: { link: string; expira_em: string }
+  body: { link: string; expira_em: string },
 ): Promise<ConviteResult> {
   return apiFetch<ConviteResult>(`/api/usuarios/${userId}/convite`, {
     method: "POST",
@@ -5251,7 +5253,7 @@ export async function enviarConviteUsuario(
 
 export async function atualizarUsuario(
   userId: string,
-  body: UsuarioUpdateInput
+  body: UsuarioUpdateInput,
 ): Promise<Usuario> {
   return apiFetch<Usuario>(`/api/usuarios/${userId}`, { method: "PUT", body });
 }
@@ -5271,17 +5273,17 @@ export interface SetStatusUsuarioBody {
 
 export async function setStatusUsuario(
   userId: string,
-  body: SetStatusUsuarioBody
+  body: SetStatusUsuarioBody,
 ): Promise<{ status: string; transferidos: number }> {
   return apiFetch<{ status: string; transferidos: number }>(
     `/api/usuarios/${userId}/status`,
-    { method: "PATCH", body }
+    { method: "PATCH", body },
   );
 }
 
 export async function replicarUsuario(
   userId: string,
-  body: { nome: string; email?: string | null; telefone?: string | null }
+  body: { nome: string; email?: string | null; telefone?: string | null },
 ): Promise<Usuario> {
   return apiFetch<Usuario>(`/api/usuarios/${userId}/replicar`, {
     method: "POST",
@@ -5304,10 +5306,10 @@ export interface AtividadeEvento {
 }
 
 export async function getUsuarioAtividade(
-  userId: string
+  userId: string,
 ): Promise<{ items: AtividadeEvento[] }> {
   return apiFetch<{ items: AtividadeEvento[] }>(
-    `/api/usuarios/${userId}/atividade`
+    `/api/usuarios/${userId}/atividade`,
   );
 }
 
@@ -5343,7 +5345,7 @@ export async function criarTurno(body: TurnoInput): Promise<Turno> {
 
 export async function atualizarTurno(
   id: number,
-  body: Partial<TurnoInput>
+  body: Partial<TurnoInput>,
 ): Promise<Turno> {
   return apiFetch<Turno>(`/api/turnos/${id}`, { method: "PUT", body });
 }
@@ -5353,14 +5355,16 @@ export async function deletarTurno(id: number): Promise<void> {
 }
 
 export async function getTurnoUsers(
-  id: number
-): Promise<{ users: { id: string; nome: string | null; email: string | null }[] }> {
+  id: number,
+): Promise<{
+  users: { id: string; nome: string | null; email: string | null }[];
+}> {
   return apiFetch(`/api/turnos/${id}/users`);
 }
 
 export async function setTurnoUsers(
   id: number,
-  userIds: string[]
+  userIds: string[],
 ): Promise<void> {
   await apiFetch<void>(`/api/turnos/${id}/users`, {
     method: "PUT",
@@ -5413,7 +5417,9 @@ export async function billingCheckout(plano: string): Promise<CheckoutResult> {
   });
 }
 
-export async function billingHistorico(): Promise<{ items: BillingTransacao[] }> {
+export async function billingHistorico(): Promise<{
+  items: BillingTransacao[];
+}> {
   return apiFetch<{ items: BillingTransacao[] }>("/api/billing/historico");
 }
 
@@ -5422,12 +5428,14 @@ export async function billingStatus(): Promise<BillingStatus> {
 }
 
 export async function billingCancel(): Promise<{ status: string }> {
-  return apiFetch<{ status: string }>("/api/billing/cancel", { method: "POST" });
+  return apiFetch<{ status: string }>("/api/billing/cancel", {
+    method: "POST",
+  });
 }
 
 export async function updateEmpresaCsat(
   empresaId: number,
-  body: EmpresaCsatConfig
+  body: EmpresaCsatConfig,
 ): Promise<EmpresaCsatConfig> {
   return apiFetch<EmpresaCsatConfig>(`/api/empresas/${empresaId}/csat`, {
     method: "PUT",
@@ -5508,7 +5516,7 @@ export async function updateWorkflow(
     nome?: string;
     descricao?: string;
     definicao?: Record<string, unknown>;
-  }
+  },
 ): Promise<WorkflowDetail> {
   return apiFetch<WorkflowDetail>(`/api/admin/workflows/${id}`, {
     method: "PUT",
@@ -5517,19 +5525,19 @@ export async function updateWorkflow(
 }
 
 export async function toggleWorkflowActive(
-  id: number
+  id: number,
 ): Promise<{ workflow_id: number; ativo: boolean }> {
   return apiFetch<{ workflow_id: number; ativo: boolean }>(
     `/api/admin/workflows/${id}/toggle-active`,
-    { method: "POST" }
+    { method: "POST" },
   );
 }
 
 export async function getAtendimentoWorkflowState(
-  atendimentoId: number
+  atendimentoId: number,
 ): Promise<WorkflowState | null> {
   return apiFetch<WorkflowState | null>(
-    `/api/admin/atendimentos/${atendimentoId}/workflow-state`
+    `/api/admin/atendimentos/${atendimentoId}/workflow-state`,
   );
 }
 
@@ -5583,7 +5591,7 @@ export async function getPainelProducao(): Promise<PainelProducao> {
 }
 
 export async function getRelatorioProducao(
-  id: number
+  id: number,
 ): Promise<RelatorioProducao> {
   return apiFetch<RelatorioProducao>(`/api/relatorios/producao/${id}`);
 }
@@ -5601,7 +5609,7 @@ export async function gerarRelatorioProducao(): Promise<{
 }
 
 export async function saveConfigProducao(
-  body: ConfigProducao
+  body: ConfigProducao,
 ): Promise<{ ok: boolean }> {
   return apiFetch("/api/relatorios/producao/config", { method: "PUT", body });
 }
@@ -5679,7 +5687,7 @@ export async function syncOpenRouter(): Promise<{ status: string }> {
 
 export async function promoverModeloOpenRouter(
   slug: string,
-  tipo: string
+  tipo: string,
 ): Promise<ModeloLLM> {
   return apiFetch(`/api/openrouter/modelos/${slug}/promover`, {
     method: "POST",
@@ -5688,7 +5696,7 @@ export async function promoverModeloOpenRouter(
 }
 
 export async function getOpenRouterAnalise(
-  slug: string
+  slug: string,
 ): Promise<import("@/components/analise-modelo").AnaliseModeloData> {
   return apiFetch(`/api/openrouter/modelos/${slug}/analise`);
 }
@@ -5743,6 +5751,80 @@ export async function getOpenRouterAlertas(): Promise<{
   return apiFetch(`/api/openrouter/alertas`);
 }
 
+// --- Saúde das conexões dos clientes (mig 196) ------------------------------
+
+export type TipoConexaoAlerta = "conexao_caida" | "sem_atividade";
+
+export interface ConexaoAlerta {
+  id: number;
+  tipo: TipoConexaoAlerta;
+  detalhe: Record<string, unknown>;
+  criado_em: string | null;
+  notificado_em: string | null;
+  resolvido_em: string | null;
+}
+
+export interface MonitorConexao {
+  conexao_id: number;
+  empresa_id: number;
+  empresa_nome: string;
+  display_name: string | null;
+  from_number: string | null;
+  provider: string;
+  tipo_atendimento: string;
+  connection_state: string;
+  state_message: string | null;
+  monitorada: boolean;
+  ultimo_health_check_at: string | null;
+  ultimo_health_check_ok: boolean | null;
+  sonda_falhas_seguidas: number;
+  ultimo_inbound_em: string | null;
+  recebidas_24h: number;
+  esperadas_24h: number;
+  alertas: ConexaoAlerta[];
+}
+
+export interface MonitorEstado {
+  proximo_tick_em?: string | null;
+  ultimo_tick_em?: string | null;
+  ultimo_tick_ok?: boolean | null;
+  ultimo_erro?: string | null;
+  marca_atividade?: string | null;
+  evolution_indisponivel_desde?: string | null;
+}
+
+export interface MonitorConexoesResposta {
+  estado: MonitorEstado;
+  items: MonitorConexao[];
+  resolvidos_recentes: (ConexaoAlerta & {
+    conexao_id: number;
+    empresa_id: number;
+    empresa_nome: string;
+    display_name: string | null;
+    from_number: string | null;
+  })[];
+}
+
+export interface BannerConexaoResposta {
+  caidas: {
+    conexao_id: number;
+    display_name: string | null;
+    from_number: string | null;
+    motivo: string;
+    desde: string | null;
+  }[];
+}
+
+/** Superadmin: todas as conexões de todos os clientes (recurso de plataforma). */
+export async function getMonitorConexoes(): Promise<MonitorConexoesResposta> {
+  return apiFetch(`/api/monitor/conexoes`);
+}
+
+/** Empresa ativa: conexões caídas que o cliente precisa reconectar. */
+export async function getMonitorBanner(): Promise<BannerConexaoResposta> {
+  return apiFetch(`/api/monitor/banner`);
+}
+
 export interface OpenRouterEvento {
   id: number;
   tipo: string;
@@ -5753,19 +5835,25 @@ export interface OpenRouterEvento {
 export async function getOpenRouterEventos(params?: {
   modelo?: string;
 }): Promise<{ items: OpenRouterEvento[] }> {
-  const qs = params?.modelo ? `?modelo=${encodeURIComponent(params.modelo)}` : "";
+  const qs = params?.modelo
+    ? `?modelo=${encodeURIComponent(params.modelo)}`
+    : "";
   return apiFetch(`/api/openrouter/eventos${qs}`);
 }
 
 export interface HistoricoModelo {
   modelo: string;
-  metricas: { hora: string; uptime: number | null; latencia_p50: number | null }[];
+  metricas: {
+    hora: string;
+    uptime: number | null;
+    latencia_p50: number | null;
+  }[];
   ranking: { data: string; tokens: number; pos: number }[];
   eventos: OpenRouterEvento[];
 }
 export async function getOpenRouterHistorico(
   slug: string,
-  dias = 7
+  dias = 7,
 ): Promise<HistoricoModelo> {
   return apiFetch(`/api/openrouter/modelos/${slug}/historico?dias=${dias}`);
 }

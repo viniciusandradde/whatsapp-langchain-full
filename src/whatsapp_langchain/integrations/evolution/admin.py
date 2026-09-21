@@ -205,6 +205,32 @@ async def get_connection_state(instance_name: str) -> dict[str, Any]:
         return resp.json()
 
 
+EVOLUTION_SONDA_TIMEOUT = 8.0
+
+
+async def fetch_profile_picture(
+    instance_name: str, number: str, *, timeout: float = EVOLUTION_SONDA_TIMEOUT
+) -> dict[str, Any]:
+    """POST /chat/fetchProfilePictureUrl/{name} — consulta REAL ao WhatsApp.
+
+    Sonda de saúde (mig 196): diferente de `/chat/whatsappNumbers` (cache
+    `IsOnWhatsapp` — respondeu 200 em 60 ms pela instância morta do incidente
+    de 16/09), a foto de perfil é uma consulta IQ pelo socket; num socket
+    zumbi ela pendura, e o timeout curto É o sinal. O conteúdo não importa
+    (número sem foto volta 200 com `profilePictureUrl` null) — importa ter
+    respondido no prazo. Levanta `httpx.TimeoutException` no estouro e
+    `EvolutionAdminError` em resposta não-2xx.
+    """
+    url = f"{_base()}/chat/fetchProfilePictureUrl/{instance_name}"
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            url, headers=_headers(), json={"number": _normalize_phone(number)}
+        )
+        if resp.status_code not in (200, 201):
+            raise EvolutionAdminError(resp.status_code, resp.text[:400])
+        return resp.json() if resp.content else {}
+
+
 async def get_instance_owner_number(instance_name: str) -> str | None:
     """Número (E.164) do dono da instância, via `ownerJid` do fetchInstances.
 

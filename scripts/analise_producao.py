@@ -520,6 +520,28 @@ def coletar_para_checagens():
         "FROM ia_alerta WHERE resolvido_em IS NULL;"
     )
 
+    # Saude das conexoes dos clientes (mig 196): episodios vivos por tipo e
+    # ha quanto o worker nao verifica. As tabelas tem RLS; o psql roda como
+    # postgres (superuser bypassa). Antes da migration a query falha e o
+    # num() devolve None — a checagem pula.
+    cx_caidas, _ = sql_stdin(
+        "SELECT count(*) FROM conexao_alerta "
+        "WHERE resolvido_em IS NULL AND tipo = 'conexao_caida';"
+    )
+    cx_silencio, _ = sql_stdin(
+        "SELECT count(*) FROM conexao_alerta "
+        "WHERE resolvido_em IS NULL AND tipo = 'sem_atividade';"
+    )
+    cx_resumo, _ = sql_stdin(
+        "SELECT string_agg(e.nome || ' (' || a.empresa_id || ') ' || a.tipo, '; ') "
+        "FROM conexao_alerta a JOIN empresa e ON e.id = a.empresa_id "
+        "WHERE a.resolvido_em IS NULL;"
+    )
+    monitor_min, _ = sql_stdin(
+        "SELECT (EXTRACT(EPOCH FROM (NOW() - ultimo_tick_em)) / 60)::int "
+        "FROM saude_conexoes_estado WHERE id = 1;"
+    )
+
     # Tamanho (MB) das tabelas que incham calado: checkpoints do LangGraph
     # e message_queue, as duas com a mesma raiz (base64 de mídia). Fase 4 do
     # plano dos checkpoints — o crescimento era invisível até abrir o pg_stat.
@@ -557,6 +579,10 @@ def coletar_para_checagens():
         "hoje": sh("date +%F").strip(),
         "ia_alertas_ativos": num(ia_ativos, None),
         "ia_alertas_resumo": str(ia_resumo).strip() or None,
+        "conexoes_caidas": num(cx_caidas, None),
+        "conexoes_sem_atividade": num(cx_silencio, None),
+        "conexoes_resumo": str(cx_resumo).strip() or None,
+        "monitor_conexoes_min": num(monitor_min, None),
         "migrations_arquivos": [x for x in arquivos.splitlines() if x.endswith(".sql")],
         "migrations_aplicadas": [
             x.strip() for x in aplicadas.splitlines() if x.strip().endswith(".sql")

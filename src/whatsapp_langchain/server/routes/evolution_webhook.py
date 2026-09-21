@@ -13,6 +13,11 @@ A Evolution dispara o webhook quando configurada via:
 
 Validação opcional do header `apikey` quando
 `EVOLUTION_VALIDATE_APIKEY=true` — obrigatório em produção.
+
+Desde a mig 196 o webhook também consome `connection.update` (estado da
+sessão + `statusReason`) e `qrcode.updated` — antes eram descartados, e a
+`conexao` ficava "open" para sempre (incidente 16→21/09/2026: aparelho
+desvinculado, 4,5 dias sem ninguém saber).
 """
 
 import hmac
@@ -28,12 +33,15 @@ from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_evolution_instance,
     is_own_connection_number,
+    registrar_evento_conexao,
+    set_qr_code,
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.midia_processing import download_evolution_media_b64
 from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
+from whatsapp_langchain.shared.saude_conexoes import descrever_desconexao
 
 logger = structlog.get_logger()
 
@@ -149,6 +157,93 @@ def _extract_message_payload(
     return ("", None, None, None)
 
 
+def _codigo_desconexao(data: dict) -> int | None:
+    """`statusReason` do Baileys (401 = loggedOut, 428 = connectionClosed…)."""
+    bruto = data.get("statusReason")
+    if isinstance(bruto, bool):
+        return None
+    if isinstance(bruto, int):
+        return bruto
+    if isinstance(bruto, str) and bruto.strip().isdigit():
+        return int(bruto.strip())
+    return None
+
+
+async def _tratar_connection_update(instance: str, data: dict) -> Response:
+    """Grava o estado passivo da sessão (mig 196). Instância desconhecida ou
+    desativada responde 200 em silêncio, como o resto do webhook."""
+    from whatsapp_langchain.integrations.evolution.admin import normalize_state
+
+    if not instance:
+        return Response(status_code=200)
+    pool = await get_pool()
+    conexao = await get_conexao_by_evolution_instance(pool, instance)
+    if conexao is None or conexao.status != "active":
+        return Response(status_code=200)
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
+    set_request_context(conexao.empresa_id)
+    estado = normalize_state({"state": data.get("state")})
+    codigo = _codigo_desconexao(data)
+    mensagem = descrever_desconexao(codigo, estado)
+    await registrar_evento_conexao(
+        pool, conexao.id, estado=estado, codigo=codigo, mensagem=mensagem
+    )
+    logger.info(
+        "evolution_webhook_connection_update",
+        instance=instance,
+        conexao_id=conexao.id,
+        empresa_id=conexao.empresa_id,
+        estado=estado,
+        status_reason=codigo,
+        state_raw=data.get("state"),
+        wuid=data.get("wuid"),
+    )
+    return Response(status_code=200)
+
+
+async def _tratar_qrcode_updated(instance: str, data: dict) -> Response:
+    """QR (ou código de pareamento) novo → `qr_pending`/`pairing_code_pending`,
+    com o mesmo TTL que a rota `/qr` usa."""
+    from datetime import UTC, datetime, timedelta
+
+    if not instance:
+        return Response(status_code=200)
+    pool = await get_pool()
+    conexao = await get_conexao_by_evolution_instance(pool, instance)
+    if conexao is None or conexao.status != "active":
+        return Response(status_code=200)
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
+    set_request_context(conexao.empresa_id)
+    qr = data.get("qrcode") if isinstance(data.get("qrcode"), dict) else data
+    pairing = qr.get("pairingCode") if isinstance(qr, dict) else None
+    base64 = qr.get("base64") if isinstance(qr, dict) else None
+    if pairing:
+        await set_qr_code(
+            pool,
+            conexao.id,
+            qr_base64=str(pairing),
+            expires_at=datetime.now(UTC) + timedelta(seconds=45),
+            state="pairing_code_pending",
+        )
+    elif base64:
+        await set_qr_code(
+            pool,
+            conexao.id,
+            qr_base64=str(base64),
+            expires_at=datetime.now(UTC) + timedelta(seconds=45),
+            state="qr_pending",
+        )
+    logger.info(
+        "evolution_webhook_qrcode_updated",
+        instance=instance,
+        conexao_id=conexao.id,
+        pairing=bool(pairing),
+    )
+    return Response(status_code=200)
+
+
 @router.post("/webhook/evolution")
 async def webhook_evolution(
     request: Request,
@@ -156,8 +251,9 @@ async def webhook_evolution(
 ) -> Response:
     """Recebe webhook Evolution e enfileira para processamento.
 
-    Filtra apenas `messages.upsert` com `fromMe=false` (mensagens
-    inbound). Outros eventos respondem 200 silently — Evolution
+    Enfileira `messages.upsert` com `fromMe=false` (mensagens inbound);
+    `connection.update` e `qrcode.updated` atualizam o estado da conexão
+    (mig 196). Outros eventos respondem 200 silently — Evolution
     retransmite todos os eventos configurados na rota base.
 
     Quando a instance vinda no payload não bate com nenhuma conexão
@@ -180,6 +276,17 @@ async def webhook_evolution(
     payload = await request.json()
     event = _normalize_event_name(str(payload.get("event") or ""))
     instance = str(payload.get("instance") or "").strip()
+
+    if event == "connection.update":
+        data = payload.get("data")
+        return await _tratar_connection_update(
+            instance, data if isinstance(data, dict) else {}
+        )
+    if event == "qrcode.updated":
+        data = payload.get("data")
+        return await _tratar_qrcode_updated(
+            instance, data if isinstance(data, dict) else {}
+        )
 
     if event != "messages.upsert":
         logger.debug(

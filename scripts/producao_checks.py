@@ -441,6 +441,60 @@ def checar_ia_alertas(alertas_ativos, alertas_resumo=None):
     )
 
 
+LIMITE_MONITOR_CONEXOES_MIN = 20
+
+
+def checar_conexoes_clientes(caidas, sem_atividade, resumo=None):
+    """Episódios de saúde de conexão abertos (mig 196).
+
+    O worker já avisou o canal na hora; aqui o episódio VIVO entra no resumo
+    do dia (mesmo papel de `checar_ia_alertas`). Conexão caída é CRITICO — o
+    cliente está sem WhatsApp e só ele pode reparear; silêncio com a conexão
+    respondendo é ATENCAO — pode ser feriado ou o cliente parado.
+    """
+    caidas = caidas or 0
+    sem_atividade = sem_atividade or 0
+    if caidas <= 0 and sem_atividade <= 0:
+        return None
+    partes = []
+    if caidas:
+        partes.append("{0} conexao(oes) caida(s)".format(caidas))
+    if sem_atividade:
+        partes.append("{0} sem mensagens contra a baseline".format(sem_atividade))
+    return Achado(
+        chave="conexoes_clientes",
+        severidade=CRITICO if caidas else ATENCAO,
+        titulo="Clientes: " + ", ".join(partes),
+        evidencia=resumo or "ver Saude dos clientes no painel",
+        acao=(
+            "Abrir /monitor/conexoes no painel. Caida = o cliente precisa "
+            "reparear o WhatsApp (QR ou codigo em Conexoes); sem mensagens com "
+            "a conexao respondendo = cliente parado ou feriado — confirmar com ele."
+        ),
+    )
+
+
+def checar_monitor_conexoes_parado(minutos_desde_tick):
+    """O monitor de conexões precisa dar sinal de vida: sem tick há mais de
+    `LIMITE_MONITOR_CONEXOES_MIN` min, ninguém está olhando os clientes."""
+    if minutos_desde_tick is None or minutos_desde_tick <= LIMITE_MONITOR_CONEXOES_MIN:
+        return None
+    return Achado(
+        chave="monitor_conexoes_parado",
+        severidade=ATENCAO,
+        titulo="Monitor de conexoes sem verificar ha {0} min".format(
+            int(minutos_desde_tick)
+        ),
+        evidencia="ultimo tick de saude_conexoes_estado ha {0} min (esperado a cada 5)".format(
+            int(minutos_desde_tick)
+        ),
+        acao=(
+            "Conferir o worker (docker logs ... | grep saude_conexoes). Enquanto o "
+            "monitor nao roda, conexao caida ou cliente mudo passam despercebidos."
+        ),
+    )
+
+
 def rodar_checagens(dados):
     """Roda todas as checagens sobre os dados coletados.
 
@@ -471,6 +525,12 @@ def rodar_checagens(dados):
         checar_ia_alertas(
             dados.get("ia_alertas_ativos"), dados.get("ia_alertas_resumo")
         ),
+        checar_conexoes_clientes(
+            dados.get("conexoes_caidas"),
+            dados.get("conexoes_sem_atividade"),
+            dados.get("conexoes_resumo"),
+        ),
+        checar_monitor_conexoes_parado(dados.get("monitor_conexoes_min")),
     ):
         if achado is not None:
             achados.append(achado)

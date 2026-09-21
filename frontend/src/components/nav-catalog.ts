@@ -85,17 +85,67 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/atendimento",
     itens: [
       // O que CHEGA do cliente
-      { secao: "Atendimento", label: "Fila de atendimento", href: "/atendimento", requires: "atendimento.read" },
-      { secao: "Atendimento", label: "Histórico de conversas", href: "/chats", requires: "atendimento.read" },
-      { secao: "Atendimento", label: "Agendamentos", href: "/agendamentos", requires: "agendamento.read", feature: "calendar" },
+      {
+        secao: "Atendimento",
+        label: "Fila de atendimento",
+        href: "/atendimento",
+        requires: "atendimento.read",
+      },
+      {
+        secao: "Atendimento",
+        label: "Histórico de conversas",
+        href: "/chats",
+        requires: "atendimento.read",
+      },
+      {
+        secao: "Atendimento",
+        label: "Agendamentos",
+        href: "/agendamentos",
+        requires: "agendamento.read",
+        feature: "calendar",
+      },
       // O que SAI por iniciativa da empresa
-      { secao: "Prospecção", label: "Campanhas", href: "/campanhas", requires: "disparador.disparar", feature: "disparador" },
-      { secao: "Prospecção", label: "Contatos", href: "/disparador/contatos", requires: "disparador.capturar", feature: "disparador" },
-      { secao: "Prospecção", label: "Grupos", href: "/disparador/grupos", requires: "disparador.capturar", feature: "disparador" },
-      { secao: "Prospecção", label: "Chaves da extensão", href: "/disparador/api-keys", requires: "disparador.api_key.manage", feature: "disparador" },
+      {
+        secao: "Prospecção",
+        label: "Campanhas",
+        href: "/campanhas",
+        requires: "disparador.disparar",
+        feature: "disparador",
+      },
+      {
+        secao: "Prospecção",
+        label: "Contatos",
+        href: "/disparador/contatos",
+        requires: "disparador.capturar",
+        feature: "disparador",
+      },
+      {
+        secao: "Prospecção",
+        label: "Grupos",
+        href: "/disparador/grupos",
+        requires: "disparador.capturar",
+        feature: "disparador",
+      },
+      {
+        secao: "Prospecção",
+        label: "Chaves da extensão",
+        href: "/disparador/api-keys",
+        requires: "disparador.api_key.manage",
+        feature: "disparador",
+      },
       // A base que os dois lados usam
-      { secao: "Cadastros", label: "Clientes", href: "/clientes", requires: "cliente.read" },
-      { secao: "Cadastros", label: "Tags", href: "/tags", requires: "tag.manage" },
+      {
+        secao: "Cadastros",
+        label: "Clientes",
+        href: "/clientes",
+        requires: "cliente.read",
+      },
+      {
+        secao: "Cadastros",
+        label: "Tags",
+        href: "/tags",
+        requires: "tag.manage",
+      },
     ],
   },
   {
@@ -105,22 +155,82 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/agents",
     itens: [
       // Visão do grupo, solta no topo
-      { label: "Painel de IA", href: "/dashboard/ia", requires: "agente.config" },
+      {
+        label: "Painel de IA",
+        href: "/dashboard/ia",
+        requires: "agente.config",
+      },
       // O que responde sozinho — e quando NÃO responde
-      { secao: "Automação", label: "Agentes", href: "/agents", requires: "agente.config" },
-      { secao: "Automação", label: "Menu chatbot", href: "/menus", requires: "menu_chatbot.read" },
+      {
+        secao: "Automação",
+        label: "Agentes",
+        href: "/agents",
+        requires: "agente.config",
+      },
+      {
+        secao: "Automação",
+        label: "Menu chatbot",
+        href: "/menus",
+        requires: "menu_chatbot.read",
+      },
       // `workflows_max` é teto numérico: 0 no Free e no Pessoal = cadeado.
-      { secao: "Automação", label: "Workflows", href: "/workflows", requires: "menu_chatbot.read", feature: "workflows_max" },
-      { secao: "Automação", label: "Números sem IA", href: "/whitelist", requires: "whitelist.manage" },
+      {
+        secao: "Automação",
+        label: "Workflows",
+        href: "/workflows",
+        requires: "menu_chatbot.read",
+        feature: "workflows_max",
+      },
+      {
+        secao: "Automação",
+        label: "Números sem IA",
+        href: "/whitelist",
+        requires: "whitelist.manage",
+      },
       // O que a IA sabe
-      { secao: "Conhecimento", label: "Base de conhecimento", href: "/settings/pastas", requires: "base_conhecimento.read" },
-      { secao: "Conhecimento", label: "Respostas rápidas", href: "/modelos", requires: "modelo_mensagem.read" },
-      { secao: "Conhecimento", label: "Variáveis", href: "/settings/variaveis", requires: "variavel.read" },
+      {
+        secao: "Conhecimento",
+        label: "Base de conhecimento",
+        href: "/settings/pastas",
+        requires: "base_conhecimento.read",
+      },
+      {
+        secao: "Conhecimento",
+        label: "Respostas rápidas",
+        href: "/modelos",
+        requires: "modelo_mensagem.read",
+      },
+      {
+        secao: "Conhecimento",
+        label: "Variáveis",
+        href: "/settings/variaveis",
+        requires: "variavel.read",
+      },
       // Com o que ela roda
-      { secao: "Modelos e ferramentas", label: "Catálogo de modelos", href: "/catalog/models", requires: "agente.config" },
-      { secao: "Modelos e ferramentas", label: "Catálogo OpenRouter", href: "/catalog/openrouter", requiresSuperadmin: true },
-      { secao: "Modelos e ferramentas", label: "Modelo por agente", href: "/models", requires: "agente.config" },
-      { secao: "Modelos e ferramentas", label: "Servidores MCP", href: "/catalog/mcp", requires: "agente.config" },
+      {
+        secao: "Modelos e ferramentas",
+        label: "Catálogo de modelos",
+        href: "/catalog/models",
+        requires: "agente.config",
+      },
+      {
+        secao: "Modelos e ferramentas",
+        label: "Catálogo OpenRouter",
+        href: "/catalog/openrouter",
+        requiresSuperadmin: true,
+      },
+      {
+        secao: "Modelos e ferramentas",
+        label: "Modelo por agente",
+        href: "/models",
+        requires: "agente.config",
+      },
+      {
+        secao: "Modelos e ferramentas",
+        label: "Servidores MCP",
+        href: "/catalog/mcp",
+        requires: "agente.config",
+      },
     ],
   },
   {
@@ -130,8 +240,17 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/connections",
     itens: [
       { label: "Conexões", href: "/connections", requires: "conexao.read" },
-      { label: "Integrações externas", href: "/settings/integracoes", requires: "conexao.write" },
-      { label: "Webhooks", href: "/hooks", requires: "hook.read", feature: "webhooks" },
+      {
+        label: "Integrações externas",
+        href: "/settings/integracoes",
+        requires: "conexao.write",
+      },
+      {
+        label: "Webhooks",
+        href: "/hooks",
+        requires: "hook.read",
+        feature: "webhooks",
+      },
     ],
   },
   {
@@ -141,23 +260,84 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/companies",
     itens: [
       // Quem é a empresa e quanto ela custa
-      { secao: "Empresa", label: "Cadastro", href: "/companies", requires: "empresa.update" },
-      { secao: "Empresa", label: "Plano e cobrança", href: "/billing", requires: "empresa.update" },
-      { secao: "Empresa", label: "Orçamento de IA", href: "/governanca/ia-budget", requires: "empresa.update" },
+      {
+        secao: "Empresa",
+        label: "Cadastro",
+        href: "/companies",
+        requires: "empresa.update",
+      },
+      {
+        secao: "Empresa",
+        label: "Plano e cobrança",
+        href: "/billing",
+        requires: "empresa.update",
+      },
+      {
+        secao: "Empresa",
+        label: "Orçamento de IA",
+        href: "/governanca/ia-budget",
+        requires: "empresa.update",
+      },
       // Quem trabalha nela
-      { secao: "Pessoas", label: "Usuários", href: "/usuarios", requires: "empresa.member.add" },
-      { secao: "Pessoas", label: "Atendentes", href: "/atendentes", requires: "empresa.member.add" },
-      { secao: "Pessoas", label: "Departamentos", href: "/settings/departamentos", requires: "departamento.read" },
+      {
+        secao: "Pessoas",
+        label: "Usuários",
+        href: "/usuarios",
+        requires: "empresa.member.add",
+      },
+      {
+        secao: "Pessoas",
+        label: "Atendentes",
+        href: "/atendentes",
+        requires: "empresa.member.add",
+      },
+      {
+        secao: "Pessoas",
+        label: "Departamentos",
+        href: "/settings/departamentos",
+        requires: "departamento.read",
+      },
       // Quem pode o quê
-      { secao: "Acesso", label: "Perfis de acesso", href: "/settings/perfis", requires: "perfil.read" },
-      { secao: "Acesso", label: "Segurança", href: "/settings", requires: "security.audit.read" },
+      {
+        secao: "Acesso",
+        label: "Perfis de acesso",
+        href: "/settings/perfis",
+        requires: "perfil.read",
+      },
+      {
+        secao: "Acesso",
+        label: "Segurança",
+        href: "/settings",
+        requires: "security.audit.read",
+      },
       // Quando a operação funciona
-      { secao: "Regras", label: "Turnos e jornada", href: "/settings/turnos", requires: "departamento.read" },
-      { secao: "Regras", label: "Horário de atendimento", href: "/settings/horarios", requires: "horario.write" },
-      { secao: "Regras", label: "Regras de agendamento", href: "/settings/calendar-rules", requires: "agendamento.regras.write" },
+      {
+        secao: "Regras",
+        label: "Turnos e jornada",
+        href: "/settings/turnos",
+        requires: "departamento.read",
+      },
+      {
+        secao: "Regras",
+        label: "Horário de atendimento",
+        href: "/settings/horarios",
+        requires: "horario.write",
+      },
+      {
+        secao: "Regras",
+        label: "Regras de agendamento",
+        href: "/settings/calendar-rules",
+        requires: "agendamento.regras.write",
+      },
       // Veio de Observabilidade: ligar/desligar recurso é configuração, não
       // observação. Estava no grupo dos gráficos só por morar em /settings.
-      { secao: "Regras", label: "Recursos ativados", href: "/settings/feature-flags", requires: "empresa.update", requiresSuperadmin: true },
+      {
+        secao: "Regras",
+        label: "Recursos ativados",
+        href: "/settings/feature-flags",
+        requires: "empresa.update",
+        requiresSuperadmin: true,
+      },
     ],
   },
   {
@@ -167,21 +347,87 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/traces",
     itens: [
       // A máquina está de pé?
-      { secao: "Saúde do sistema", label: "Fila de mensagens", href: "/queue", requires: "security.audit.read", feature: "observabilidade" },
-      { secao: "Saúde do sistema", label: "Traces", href: "/traces", requires: "security.audit.read", feature: "observabilidade" },
+      {
+        secao: "Saúde do sistema",
+        label: "Fila de mensagens",
+        href: "/queue",
+        requires: "security.audit.read",
+        feature: "observabilidade",
+      },
+      {
+        secao: "Saúde do sistema",
+        label: "Traces",
+        href: "/traces",
+        requires: "security.audit.read",
+        feature: "observabilidade",
+      },
       // O atendimento está bom?
-      { secao: "Qualidade", label: "Satisfação e NPS", href: "/dashboard/qualidade", requires: "atendimento.read", feature: "csat" },
-      { secao: "Qualidade", label: "Qualidade das respostas", href: "/dashboard/rag", requires: "agente.config", feature: "qualidade_ia" },
-      { secao: "Qualidade", label: "Testar respostas", href: "/dashboard/rag/sandbox", requires: "agente.config", feature: "qualidade_ia" },
-      { secao: "Qualidade", label: "Relatórios de teste", href: "/relatorios/allure", requiresSuperadmin: true },
+      {
+        secao: "Qualidade",
+        label: "Satisfação e NPS",
+        href: "/dashboard/qualidade",
+        requires: "atendimento.read",
+        feature: "csat",
+      },
+      {
+        secao: "Qualidade",
+        label: "Qualidade das respostas",
+        href: "/dashboard/rag",
+        requires: "agente.config",
+        feature: "qualidade_ia",
+      },
+      {
+        secao: "Qualidade",
+        label: "Testar respostas",
+        href: "/dashboard/rag/sandbox",
+        requires: "agente.config",
+        feature: "qualidade_ia",
+      },
+      {
+        secao: "Qualidade",
+        label: "Relatórios de teste",
+        href: "/relatorios/allure",
+        requiresSuperadmin: true,
+      },
       // Ferramenta de plataforma: mostra dados de todos os clientes e
       // envia mensagem em nome deles.
-      { secao: "Plataforma", label: "Uso por cliente", href: "/relatorios/uso", requiresSuperadmin: true },
-      { secao: "Plataforma", label: "Saúde da produção", href: "/relatorios/producao", requiresSuperadmin: true },
+      {
+        secao: "Plataforma",
+        label: "Uso por cliente",
+        href: "/relatorios/uso",
+        requiresSuperadmin: true,
+      },
+      {
+        secao: "Plataforma",
+        label: "Saúde da produção",
+        href: "/relatorios/producao",
+        requiresSuperadmin: true,
+      },
+      {
+        secao: "Plataforma",
+        label: "Saúde dos clientes",
+        href: "/monitor/conexoes",
+        requiresSuperadmin: true,
+      },
       // Quem fez o quê
-      { secao: "Auditoria", label: "Histórico de acesso", href: "/settings/security/login-history", requires: "security.audit.read" },
-      { secao: "Auditoria", label: "Registro de auditoria", href: "/settings/security/audit", requires: "security.audit.read" },
-      { secao: "Auditoria", label: "Governança de dados", href: "/settings/security/governanca", requires: "security.audit.read" },
+      {
+        secao: "Auditoria",
+        label: "Histórico de acesso",
+        href: "/settings/security/login-history",
+        requires: "security.audit.read",
+      },
+      {
+        secao: "Auditoria",
+        label: "Registro de auditoria",
+        href: "/settings/security/audit",
+        requires: "security.audit.read",
+      },
+      {
+        secao: "Auditoria",
+        label: "Governança de dados",
+        href: "/settings/security/governanca",
+        requires: "security.audit.read",
+      },
     ],
   },
 ];
@@ -294,8 +540,8 @@ export function isItemActive(pathname: string, href: string): boolean {
     g.itens.some(
       (i) =>
         i.href.length > href.length &&
-        (pathname === i.href || pathname.startsWith(i.href + "/"))
-    )
+        (pathname === i.href || pathname.startsWith(i.href + "/")),
+    ),
   );
   return !maisEspecifico;
 }

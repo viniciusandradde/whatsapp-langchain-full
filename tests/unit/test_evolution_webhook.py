@@ -264,12 +264,112 @@ def test_skips_self_loop_own_number(mock_db, monkeypatch):
 
 
 def test_ignores_other_events(mock_db):
-    """Eventos como connection.update / chats.upsert respondem 200 silently."""
-    response = client.post(
-        "/webhook/evolution", json=_payload(event="connection.update")
-    )
+    """Eventos sem tratamento (chats.upsert, messages.update…) respondem 200 silently."""
+    response = client.post("/webhook/evolution", json=_payload(event="chats.upsert"))
     assert response.status_code == 200
     mock_db.assert_not_awaited()
+
+
+# --- connection.update / qrcode.updated (mig 196) ---------------------------
+
+
+def _payload_conexao(
+    *, event: str = "connection.update", instance: str = TEST_INSTANCE, **data
+) -> dict:
+    return {"event": event, "instance": instance, "data": data}
+
+
+@pytest.fixture
+def mock_estado(monkeypatch):
+    registrar = AsyncMock(return_value=None)
+    qr = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        "whatsapp_langchain.server.routes.evolution_webhook.registrar_evento_conexao",
+        registrar,
+    )
+    monkeypatch.setattr(
+        "whatsapp_langchain.server.routes.evolution_webhook.set_qr_code", qr
+    )
+    return registrar, qr
+
+
+def test_connection_update_close_401_grava_desvinculado(mock_db, mock_estado):
+    """Aparelho desvinculado: state=close + statusReason=401 → disconnected,
+    código 401 e motivo humano — o que faltou no incidente de 16/09."""
+    registrar, _ = mock_estado
+    response = client.post(
+        "/webhook/evolution",
+        json=_payload_conexao(
+            state="close", statusReason=401, wuid="5567@s.whatsapp.net"
+        ),
+    )
+    assert response.status_code == 200
+    registrar.assert_awaited_once()
+    kwargs = registrar.await_args.kwargs
+    assert kwargs["estado"] == "disconnected"
+    assert kwargs["codigo"] == 401
+    assert "desvinculado" in kwargs["mensagem"]
+    mock_db.assert_not_awaited()  # não enfileira nada
+
+
+def test_connection_update_open_limpa_motivo(mock_db, mock_estado):
+    registrar, _ = mock_estado
+    response = client.post("/webhook/evolution", json=_payload_conexao(state="open"))
+    assert response.status_code == 200
+    kwargs = registrar.await_args.kwargs
+    assert kwargs["estado"] == "open"
+    assert kwargs["codigo"] is None
+    assert kwargs["mensagem"] == "conectada"
+
+
+def test_connection_update_aceita_evento_em_caixa_alta(mock_db, mock_estado):
+    registrar, _ = mock_estado
+    response = client.post(
+        "/webhook/evolution",
+        json=_payload_conexao(event="CONNECTION_UPDATE", state="connecting"),
+    )
+    assert response.status_code == 200
+    assert registrar.await_args.kwargs["estado"] == "connecting"
+
+
+def test_connection_update_instancia_desconhecida_200_sem_gravar(mock_db, mock_estado):
+    registrar, _ = mock_estado
+    response = client.post(
+        "/webhook/evolution",
+        json=_payload_conexao(instance="nao-existe", state="close", statusReason=401),
+    )
+    assert response.status_code == 200
+    registrar.assert_not_awaited()
+
+
+def test_qrcode_updated_grava_qr_pending(mock_db, mock_estado):
+    _, qr = mock_estado
+    response = client.post(
+        "/webhook/evolution",
+        json=_payload_conexao(
+            event="qrcode.updated",
+            qrcode={"base64": "data:image/png;base64,AAA", "code": "x"},
+        ),
+    )
+    assert response.status_code == 200
+    qr.assert_awaited_once()
+    kwargs = qr.await_args.kwargs
+    assert kwargs["qr_base64"] == "data:image/png;base64,AAA"
+    assert kwargs["state"] == "qr_pending"
+
+
+def test_qrcode_updated_com_pairing_code(mock_db, mock_estado):
+    _, qr = mock_estado
+    response = client.post(
+        "/webhook/evolution",
+        json=_payload_conexao(
+            event="qrcode.updated", qrcode={"pairingCode": "ABCD-1234"}
+        ),
+    )
+    assert response.status_code == 200
+    kwargs = qr.await_args.kwargs
+    assert kwargs["qr_base64"] == "ABCD-1234"
+    assert kwargs["state"] == "pairing_code_pending"
 
 
 def test_accepts_uppercase_event_name(mock_db):

@@ -228,6 +228,49 @@ ORDER BY last_message_at DESC
 LIMIT 50;
 ```
 
+### 8) Mensagens recebidas de clientes por conexão (últimas 24 h)
+
+`message_queue` é uma tabela só (inbound + resposta manual + nota interna).
+O predicado abaixo é o canônico de "recebida do cliente" — o mesmo do
+contador de não lidas e do monitor de saúde das conexões (mig 196):
+`incoming_message` preenchido, `interna` falso e sem a sentinela de triagem.
+`starts_with` em vez de `LIKE '%'` porque o código repete a query com
+placeholders do psycopg.
+
+```sql
+SELECT c.id, c.display_name, c.from_number, COUNT(*) AS recebidas
+FROM message_queue m
+JOIN conexao c ON c.id = m.conexao_id
+WHERE m.created_at >= NOW() - interval '24 hours'
+  AND m.incoming_message IS NOT NULL AND m.incoming_message <> ''
+  AND COALESCE(m.interna, FALSE) = FALSE
+  AND NOT starts_with(COALESCE(m.message_id, ''), 'synthetic:')
+GROUP BY c.id, c.display_name, c.from_number
+ORDER BY recebidas DESC;
+```
+
+O tick de saúde mantém o agregado por hora em `conexao_atividade`
+(`conexao_id, hora, recebidas`) e `conexao.ultimo_inbound_em` — para
+baseline e painel, prefira lê-los a varrer a `message_queue`:
+
+```sql
+SELECT conexao_id, date_trunc('day', hora) AS dia, SUM(recebidas)
+FROM conexao_atividade
+WHERE hora >= NOW() - interval '7 days'
+GROUP BY 1, 2 ORDER BY 1, 2;
+```
+
+Episódios abertos do monitor (o que o canal da plataforma recebeu):
+
+```sql
+SELECT a.tipo, e.nome, c.display_name, a.detalhe, a.criado_em, a.notificado_em
+FROM conexao_alerta a
+JOIN empresa e ON e.id = a.empresa_id
+JOIN conexao c ON c.id = a.conexao_id
+WHERE a.resolvido_em IS NULL
+ORDER BY a.criado_em DESC;
+```
+
 ## Observações
 
 - `conversations` mostra apenas resumo; não mostra detalhes de save/recall.
