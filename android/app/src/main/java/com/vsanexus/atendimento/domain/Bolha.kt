@@ -28,6 +28,12 @@ val MARCADORES_INTERNOS =
         "[fila do departamento",
         // Cliente escreveu de novo enquanto o modelo pensava (mig 144).
         "[resposta superada",
+        // Conexão em modo IA sem agente cadastrado.
+        "[IA sem agente cadastrado",
+        // Passou dos atendimentos do mês do plano (ADR-005 D5).
+        "[limite de atendimentos do plano",
+        // Robô × robô: o outro lado é uma URA e a IA parou de responder.
+        "[conversa automática",
     )
 
 /** De quem é a bolha. */

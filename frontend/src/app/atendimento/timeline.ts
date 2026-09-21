@@ -72,7 +72,8 @@ export type VarianteAviso =
   | "handoff"
   | "fila"
   | "sem_agente"
-  | "limite_plano";
+  | "limite_plano"
+  | "conversa_automatica";
 
 export interface AvisoIa {
   tipo: "aviso_ia";
@@ -108,6 +109,10 @@ const MARKERS: ReadonlyArray<readonly [string, VarianteAviso | null]> = [
   // ADR-005 D5: a empresa passou dos atendimentos do mês do plano — a IA
   // para, o humano continua. Upgrade + reprocessar traz a IA de volta.
   ["[limite de atendimentos do plano", "limite_plano"],
+  // Robô × robô (shared/conversa_automatica.py): o outro lado é uma URA ou
+  // assistente virtual respondendo em segundos; a IA parou para não ficar
+  // em loop. Não reprocessável: dentro da janela cairia na mesma guarda.
+  ["[conversa automática", "conversa_automatica"],
   // O cliente escreveu de novo enquanto o modelo pensava; o turno seguinte
   // respondeu tudo. Não é aviso — a fala do cliente já está visível.
   ["[resposta superada", null],
@@ -158,6 +163,12 @@ export const AVISO_IA_TEXTO: Record<
     titulo: "Conexão sem agente cadastrado",
     motivo:
       "A conexão está em modo IA mas não tem agente configurado. Ninguém respondeu a estas mensagens.",
+  },
+  conversa_automatica: {
+    chip: "Robô do outro lado",
+    titulo: "Parece um atendimento automático do outro lado",
+    motivo:
+      "As últimas mensagens deste contato têm cara de menu automático (banco, operadora, assistente virtual) e chegaram segundos depois da resposta da IA. Para não ficar em loop, o agente parou de responder. Volta sozinho quando o contato mandar uma mensagem normal depois de alguns minutos. Se for um número de empresa que o próprio negócio usa, coloque-o na lista de bloqueio da IA.",
   },
   limite_plano: {
     chip: "IA pausada pelo plano",

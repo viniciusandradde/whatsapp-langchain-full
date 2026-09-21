@@ -902,6 +902,68 @@ class TestWhitelist:
             assert mock_done.await_args.args[2] == WHITELIST_BYPASS_MARKER
             mock_failed.assert_not_awaited()
 
+    async def test_conversa_automatica_silencio_total(self, message, mock_waba):
+        """Guarda robô × robô: veredito `suspender` → mesmo contrato da
+        whitelist (nada enviado, agente nem carregado), marcador próprio."""
+        from whatsapp_langchain.shared.conversa_automatica import Veredito
+
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0] as mock_pre,
+            patches[1] as mock_load,
+            patches[2] as mock_done,
+            patches[3] as mock_failed,
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            patch(
+                "whatsapp_langchain.worker.processor.conversa_automatica",
+                new=AsyncMock(return_value=Veredito(True, ("menu", "menu"))),
+            ) as mock_guarda,
+        ):
+            from whatsapp_langchain.worker.processor import (
+                CONVERSA_AUTOMATICA_MARKER,
+                process_message,
+            )
+
+            await process_message(message, _pool_falso(), checkpointer=AsyncMock())
+
+            mock_guarda.assert_awaited_once()
+            assert mock_guarda.await_args.kwargs["phone_number"] == message.phone_number
+            mock_waba.send_message.assert_not_awaited()
+            mock_waba.send_typing.assert_not_awaited()
+            mock_load.assert_not_awaited()
+            mock_pre.assert_not_awaited()
+            mock_done.assert_awaited_once()
+            assert mock_done.await_args.args[2] == CONVERSA_AUTOMATICA_MARKER
+            mock_failed.assert_not_awaited()
+
+    async def test_conversa_automatica_pula_midia(self, message, mock_waba):
+        """Mídia não passa pela guarda (não tem como parecer menu)."""
+        from whatsapp_langchain.shared.conversa_automatica import Veredito
+
+        message.media_type = "audio/ogg"
+        patches = _patch_processor(TEXT_PREPROCESS)
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            patches[7],
+            patch(
+                "whatsapp_langchain.worker.processor.conversa_automatica",
+                new=AsyncMock(return_value=Veredito(True, ("menu", "menu"))),
+            ) as mock_guarda,
+        ):
+            from whatsapp_langchain.worker.processor import process_message
+
+            await process_message(message, _pool_falso(), checkpointer=AsyncMock())
+            mock_guarda.assert_not_awaited()
+
     async def test_whitelist_miss_segue_fluxo_ia(self, message, mock_waba):
         """Fora da whitelist (default da fixture autouse): agente responde."""
         patches = _patch_processor(TEXT_PREPROCESS)

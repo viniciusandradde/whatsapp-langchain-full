@@ -51,7 +51,9 @@ HISTORICO_MAX = 20
 
 # Números não geográficos brasileiros de empresa (URA por trás): 400x/300x com
 # DDD (8 dígitos) e 0800/0300/0500/0900 (E.164 sem o zero: +55 800 …).
-_NUMERO_CORPORATIVO = re.compile(r"^\+55(?:\d{2}(?:400\d|300\d)\d{4}|(?:800|300|500|900)\d{7})$")
+_NUMERO_CORPORATIVO = re.compile(
+    r"^\+55(?:\d{2}(?:400\d|300\d)\d{4}|(?:800|300|500|900)\d{7})$"
+)
 
 # Vocabulário de URA/assistente virtual, comparado SEM acento e em minúsculas.
 PADROES_MENU: tuple[re.Pattern[str], ...] = tuple(

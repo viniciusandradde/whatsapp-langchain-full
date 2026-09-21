@@ -73,6 +73,7 @@ class BolhaTest {
         assertTrue(MARCADORES_INTERNOS.contains("[handoff humano"))
         assertTrue(MARCADORES_INTERNOS.contains("[modo manual"))
         assertTrue(MARCADORES_INTERNOS.contains("[whitelist"))
+        assertTrue(MARCADORES_INTERNOS.contains("[conversa automática"))
         assertTrue(MARCADORES_INTERNOS.contains("[fila do departamento"))
         assertTrue(MARCADORES_INTERNOS.contains("[resposta superada"))
     }

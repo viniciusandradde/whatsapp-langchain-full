@@ -75,6 +75,10 @@ from whatsapp_langchain.shared.coleta import (
 )
 from whatsapp_langchain.shared.conexao import get_conexao_by_id
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.conversa_automatica import (
+    CONVERSA_AUTOMATICA_MARKER,
+    conversa_automatica,
+)
 from whatsapp_langchain.shared.departamento import get_departamento_by_id
 from whatsapp_langchain.shared.empresa import (
     get_empresa_csat_config,
@@ -105,10 +109,6 @@ from whatsapp_langchain.shared.queue import (
 )
 from whatsapp_langchain.shared.transcricao import transcrever_mensagem
 from whatsapp_langchain.shared.voz import VozInfielError, sintetizar
-from whatsapp_langchain.shared.conversa_automatica import (
-    CONVERSA_AUTOMATICA_MARKER,
-    conversa_automatica,
-)
 from whatsapp_langchain.shared.whitelist import is_whitelisted
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
@@ -2548,31 +2548,40 @@ async def process_message(
         # em 15 min na conversa → nada é enviado (sem typing/LLM), a mensagem
         # fica registrada e a conversa volta sozinha quando a janela passa.
         # Só texto: mídia não tem como parecer menu. 1 SELECT indexado.
+        # Best-effort: erro na guarda nunca cala o agente — cai no fluxo normal.
+        veredito = None
         if message.incoming_message and not (message.media_type or message.media_url):
-            veredito = await conversa_automatica(
-                pool,
-                message_id=message.id,
-                phone_number=message.phone_number,
-                agent_id=message.agent_id,
-                texto=message.incoming_message,
-                recebida_em=message.created_at,
-            )
-            if veredito.suspender:
-                await mark_done(
+            try:
+                veredito = await conversa_automatica(
                     pool,
-                    message.id,
-                    CONVERSA_AUTOMATICA_MARKER,
-                    normalized_input=None,
-                )
-                logger.warning(
-                    "worker_skipped_agent_conversa_automatica",
                     message_id=message.id,
-                    empresa_id=message.empresa_id,
-                    atendimento_id=message.atendimento_id,
-                    phone=message.phone_number,
-                    sinais=list(veredito.sinais),
+                    phone_number=message.phone_number,
+                    agent_id=message.agent_id,
+                    texto=message.incoming_message,
+                    recebida_em=message.created_at,
                 )
-                return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "conversa_automatica_guarda_falhou",
+                    message_id=message.id,
+                    error=str(exc),
+                )
+        if veredito is not None and veredito.suspender:
+            await mark_done(
+                pool,
+                message.id,
+                CONVERSA_AUTOMATICA_MARKER,
+                normalized_input=None,
+            )
+            logger.warning(
+                "worker_skipped_agent_conversa_automatica",
+                message_id=message.id,
+                empresa_id=message.empresa_id,
+                atendimento_id=message.atendimento_id,
+                phone=message.phone_number,
+                sinais=list(veredito.sinais),
+            )
+            return
 
         # S4: detecta resposta APROVAR/REJEITAR <token> do gestor ANTES de
         # tudo. Se for, processa a decisão (cria/cancela evento Google),
