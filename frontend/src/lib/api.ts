@@ -1248,11 +1248,37 @@ export interface PlanoCatalogo {
   limite_atendimentos_mes: number | null;
   limite_orcamento_ia_usd: number | null;
   limite_documentos_kb: number | null;
-  features: Record<string, boolean | number>;
+  /** mig 189 (ADR-005 leva A). */
+  limite_agentes: number | null;
+  /** Chaves de `plano.features`: booleana, teto numérico (mig 192, `null` =
+   *  ilimitado) ou texto (`contexto_max`). */
+  features: Record<string, ValorFeaturePlano>;
 }
+
+export type ValorFeaturePlano = boolean | number | string | null;
 
 export async function getPlanosCatalogo(): Promise<{ items: PlanoCatalogo[] }> {
   return apiFetch<{ items: PlanoCatalogo[] }>("/api/billing/planos");
+}
+
+/**
+ * Plano EFETIVO de uma empresa (ADR-005 leva D): limites e recursos já
+ * mesclados com as exceções por empresa (`feature_flag` `plano.<chave>`),
+ * para o cadeado da tela bater com o 402 da rota. `limites` usa `null` =
+ * ilimitado.
+ */
+export interface PlanoEmpresa {
+  empresa_id: number;
+  slug: string;
+  nome: string;
+  preco_mensal_brl: number;
+  features: Record<string, ValorFeaturePlano>;
+  limites: Record<string, number | null>;
+  upgrade_sugerido: string | null;
+}
+
+export async function getPlanoEmpresa(empresaId: number): Promise<PlanoEmpresa> {
+  return apiFetch<PlanoEmpresa>(`/api/empresas/${empresaId}/plano`);
 }
 
 export async function getMyEmpresas(

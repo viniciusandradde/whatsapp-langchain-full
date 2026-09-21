@@ -36,6 +36,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { DicaPlano, usePlanoGate } from "@/components/cadeado-plano";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -167,6 +168,9 @@ export function MenuEditor({
     "arvore"
   );
   const [menu, setMenu] = useState(initialMenu);
+  // Pro/Enterprise (mig 191): LIGAR o menu moderno fora do plano dá 402; o
+  // que já está ligado continua salvável (só a transição é travada).
+  const gateModerno = usePlanoGate("menu_moderno");
   const [items, setItems] = useState(initialItems);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -463,12 +467,15 @@ export function MenuEditor({
                     name="menu_moderno"
                     defaultChecked={menu.menu_moderno}
                     className="mt-0.5 size-4"
+                    onClick={gateModerno.aoClicarNativo}
+                    aria-disabled={(gateModerno.bloqueado && !menu.menu_moderno) || undefined}
                   />
                   <span>
                     <span className="font-medium">Menu moderno</span>
                     <span className={`block ${helpCls}`}>
                       Botões nativos WhatsApp (vs &quot;1, 2, 3&quot;)
                     </span>
+                    <DicaPlano gate={gateModerno} />
                   </span>
                 </label>
                 <label className="flex items-start gap-2 text-sm">

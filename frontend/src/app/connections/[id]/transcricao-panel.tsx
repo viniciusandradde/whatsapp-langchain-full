@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Captions } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { DicaPlano, usePlanoGate } from "@/components/cadeado-plano";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -26,6 +26,9 @@ export function TranscricaoPanel({ conexaoId, initialAtivo }: Props) {
   const [ativo, setAtivo] = useState(initialAtivo);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
+  // Pro/Enterprise (mig 190). Ligar fora do plano daria 402 na rota; o
+  // cadeado explica antes e leva ao /billing. Desligar continua livre.
+  const gate = usePlanoGate("transcricao_operador");
 
   function handleToggle(next: boolean) {
     setMsg(null);
@@ -62,8 +65,13 @@ export function TranscricaoPanel({ conexaoId, initialAtivo }: Props) {
         <Checkbox
           id="transcrever-audio-sempre"
           checked={ativo}
-          onCheckedChange={(v) => handleToggle(v === true)}
+          onCheckedChange={(v, details) => {
+            gate.aoMudarKit(v === true, details);
+            if (details.isCanceled) return;
+            handleToggle(v === true);
+          }}
           disabled={saving}
+          aria-disabled={(gate.bloqueado && !ativo) || undefined}
         />
         <Label
           htmlFor="transcrever-audio-sempre"
@@ -71,6 +79,7 @@ export function TranscricaoPanel({ conexaoId, initialAtivo }: Props) {
         >
           Transcrever automaticamente ao receber áudio
         </Label>
+        <DicaPlano gate={gate} className="ml-2" />
       </div>
 
       {msg && (

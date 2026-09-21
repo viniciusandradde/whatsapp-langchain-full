@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
+  Lock,
   LogOut,
   Moon,
   Plus,
@@ -14,6 +15,7 @@ import {
 
 import { NAV_GROUPS, type NavItem } from "@/components/nav-catalog";
 import { usePermissionsContext } from "@/components/permissions-context";
+import { usePlano } from "@/components/plano-context";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -27,6 +29,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { signOut } from "@/lib/auth-client";
+import { linkBilling } from "@/lib/plano";
 
 /**
  * Paleta de comandos — ⌘K / Ctrl+K.
@@ -88,6 +91,7 @@ export function CommandPalette() {
   const [aberto, setAberto] = useState(false);
   const router = useRouter();
   const { hasPerm, isSuperadmin } = usePermissionsContext();
+  const { liberada } = usePlano();
   const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -129,12 +133,20 @@ export function CommandPalette() {
     router.push(href);
   }
 
+  // Mesma regra da sidebar (ADR-005 leva D): fora do plano o destino fica,
+  // com cadeado, e leva ao `/billing` da chave.
   const grupos = NAV_GROUPS.map((g) => ({
     label: g.label,
-    itens: g.itens.filter(podeVer),
+    itens: g.itens.filter(podeVer).map((i) => {
+      const bloqueado = !!i.feature && !liberada(i.feature);
+      return { ...i, bloqueado, destino: bloqueado ? linkBilling(i.feature) : i.href };
+    }),
   })).filter((g) => g.itens.length > 0);
 
-  const criar = CRIAR.filter(podeVer);
+  const criar = CRIAR.filter(podeVer).filter(
+    // "Nova campanha" sem Disparador no plano só levaria a um 402.
+    (c) => c.href !== "/campanhas" || liberada("disparador")
+  );
   const extras = EXTRAS.filter(podeVer);
   const escuro = resolvedTheme === "dark";
 
@@ -182,9 +194,11 @@ export function CommandPalette() {
                   // A seção entra no `value` pra busca casar por ela também:
                   // digitar "prospecção" acha Campanhas, Contatos e Grupos.
                   value={`${g.label} ${i.secao ?? ""} ${i.label}`}
-                  onSelect={() => ir(i.href)}
+                  onSelect={() => ir(i.destino)}
+                  className={i.bloqueado ? "text-muted-foreground" : undefined}
                 >
                   {i.label}
+                  {i.bloqueado && <Lock className="size-3 opacity-70" aria-label="Não está no seu plano" />}
                   {i.secao && (
                     <CommandShortcut className="tracking-normal">
                       {i.secao}

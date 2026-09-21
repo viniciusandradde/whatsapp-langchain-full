@@ -1,489 +1,426 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
-  AlertCircle,
-  ArrowUpCircle,
   Check,
   CheckCircle2,
   CreditCard,
-  ExternalLink,
   History,
   Loader2,
+  Lock,
+  Minus,
   X,
 } from "lucide-react";
 
-import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
-import { Button } from "@/components/ui/button";
-import { plural } from "@/lib/formato";
-import type { BillingStatus, BillingTransacao } from "@/lib/api";
-
+import { usePlano } from "@/components/plano-context";
+import { ApiError } from "@/components/ui/api-error";
+import { Badge } from "@/components/ui/badge";
+import type { BillingTransacao, PlanoCatalogo, TierContexto } from "@/lib/api";
+import { dataHora } from "@/lib/formato";
 import {
-  cancelSubscriptionAction,
-  checkoutAction,
-  loadPlanosCatalogoAction,
-  loadBillingHistoricoAction,
-  loadBillingStatusAction,
-} from "./actions";
+  ROTULO_FEATURE,
+  featureLiberada,
+  formatarLimite,
+  fraseUpgrade,
+  rotuloFeature,
+} from "@/lib/plano";
+import { cn } from "@/lib/utils";
 
-interface Plano {
-  slug: string;
-  nome: string;
-  preco: string;
-  destaque?: boolean;
-  features: string[];
-  limites: string[];
-}
+import { loadBillingHistoricoAction, loadPlanosCatalogoAction } from "./actions";
 
-const PLANOS_FALLBACK: Plano[] = [
-  {
-    slug: "free",
-    nome: "Free",
-    preco: "R$ 0",
-    features: ["Suporte por email"],
-    limites: ["1 conexão WhatsApp", "2 usuários", "100 atendimentos/mês", "5 documentos na base"],
-  },
-  {
-    slug: "pessoal",
-    nome: "Pessoal",
-    preco: "R$ 97/mês",
-    features: ["IA com consumo controlado", "Suporte por email"],
-    limites: ["1 conexão WhatsApp", "2 usuários", "500 atendimentos/mês", "20 documentos na base"],
-  },
-  {
-    slug: "pro",
-    nome: "Pro",
-    preco: "R$ 299/mês",
-    destaque: true,
-    features: ["Google Calendar", "RBAC granular", "Menu chatbot moderno", "Suporte prioritário"],
-    limites: ["3 conexões WhatsApp", "10 usuários", "5.000 atendimentos/mês", "100 documentos na base"],
-  },
-  {
-    slug: "enterprise",
-    nome: "Enterprise",
-    preco: "R$ 1.499/mês",
-    features: ["Tudo do Pro +", "MCP custom", "White label", "SLA + suporte dedicado"],
-    limites: [
-      "Conexões WhatsApp: ilimitado",
-      "Usuários: ilimitado",
-      "Atendimentos por mês: ilimitado",
-      "Documentos na base: ilimitado",
-    ],
-  },
-];
+/**
+ * Plano e cobrança (ADR-005 leva D).
+ *
+ * A tabela compara os planos pelas CHAVES REAIS de `plano.features` e pelas
+ * colunas de limite — as mesmas que a API usa para devolver 402 e que o
+ * worker usa para degradar. Antes era uma lista de marketing que não batia
+ * com o que o código aplica (`docs/PLANOS_RECURSOS.md`).
+ *
+ * `?feature=<chave>` é o destino dos cadeados do menu e das telas: a página
+ * abre explicando o recurso e destaca a linha dele. A troca de plano em si
+ * chega na leva F (planos hospedados nos gateways, ativação pelo superadmin);
+ * o botão "Assinar" do Asaas saiu porque nunca funcionou em produção (D7).
+ */
 
-const FEATURE_LABELS: Record<string, string> = {
-  calendar: "Google Calendar",
-  rbac: "RBAC granular",
-  menu_moderno: "Menu chatbot moderno",
-  mcp: "MCP custom",
-  white_label: "White label",
-  disparador: "Disparador",
-  disparador_media: "Disparador com mídia",
+const TIER_ROTULO: Record<TierContexto, string> = {
+  lite: "Lite (6 mil caracteres)",
+  regular: "Regular (15 mil)",
+  medium: "Medium (25 mil)",
+  large: "Large (35 mil)",
+  extended: "Extended (300 mil)",
 };
 
-function mapCatalogoToCard(p: import("@/lib/api").PlanoCatalogo): Plano {
-  // "Conexões ∞" invertia a ordem da frase e deixava o símbolo solto no fim.
-  // "Ilimitado" é o que o cliente entende sem decodificar.
-  const inf = (v: number | null, singular: string, plural?: string) => {
-    if (v != null) return `${v} ${v === 1 ? singular : (plural ?? singular)}`;
-    const nome = plural ?? singular;
-    return `${nome.charAt(0).toUpperCase()}${nome.slice(1)}: ilimitado`;
-  };
-  return {
-    slug: p.slug,
-    nome: p.nome,
-    preco: p.preco_mensal_brl ? `R$ ${p.preco_mensal_brl.toFixed(0)}/mês` : "R$ 0",
-    destaque: p.slug === "pro",
-    features: Object.entries(p.features || {})
-      .filter(([, v]) => v === true)
-      .map(([k]) => FEATURE_LABELS[k] ?? k)
-      .concat(
-        p.limite_orcamento_ia_usd
-          ? [`Uso de IA até US$ ${p.limite_orcamento_ia_usd.toFixed(0)}/mês`]
-          : []
-      ),
-    limites: [
-      inf(p.limite_conexoes, "conexão WhatsApp", "conexões WhatsApp"),
-      inf(p.limite_usuarios, "usuário", "usuários"),
-      p.limite_atendimentos_mes == null
-        ? "Atendimentos por mês: ilimitado"
-        : `${p.limite_atendimentos_mes.toLocaleString("pt-BR")} atendimentos/mês`,
-      p.limite_documentos_kb == null
-        ? "Documentos na base: ilimitado"
-        : `${p.limite_documentos_kb} documentos na base`,
-    ],
-  };
+interface LinhaLimite {
+  /** Chave da coluna do plano OU de `features` (tetos numéricos, mig 192). */
+  chave: string;
+  rotulo: string;
+  valor: (p: PlanoCatalogo) => string;
 }
 
+function dias(v: unknown): string {
+  if (v === null || v === undefined) return "Sem limite";
+  return typeof v === "number" ? `${v} dias` : "—";
+}
+
+function teto(v: unknown): string {
+  if (v === null || v === undefined) return "Ilimitado";
+  return typeof v === "number" ? v.toLocaleString("pt-BR") : "—";
+}
+
+const LIMITES: LinhaLimite[] = [
+  { chave: "limite_conexoes", rotulo: "Conexões de WhatsApp", valor: (p) => formatarLimite(p.limite_conexoes) },
+  { chave: "limite_usuarios", rotulo: "Usuários", valor: (p) => formatarLimite(p.limite_usuarios) },
+  { chave: "limite_agentes", rotulo: "Agentes de IA", valor: (p) => formatarLimite(p.limite_agentes) },
+  { chave: "limite_atendimentos_mes", rotulo: "Atendimentos por mês", valor: (p) => formatarLimite(p.limite_atendimentos_mes) },
+  { chave: "limite_documentos_kb", rotulo: "Documentos na base de conhecimento", valor: (p) => formatarLimite(p.limite_documentos_kb) },
+  { chave: "departamentos_max", rotulo: "Departamentos", valor: (p) => teto(p.features.departamentos_max) },
+  { chave: "workflows_max", rotulo: "Workflows ativos", valor: (p) => teto(p.features.workflows_max) },
+  { chave: "menus_max", rotulo: "Menus de chatbot", valor: (p) => teto(p.features.menus_max) },
+  {
+    chave: "orcamento_ia",
+    rotulo: "Orçamento de IA por mês",
+    valor: (p) =>
+      p.limite_orcamento_ia_usd == null ? "Sem teto" : `até US$ ${p.limite_orcamento_ia_usd.toFixed(0)}`,
+  },
+  {
+    chave: "contexto_max",
+    rotulo: ROTULO_FEATURE.contexto_max,
+    valor: (p) => {
+      const t = p.features.contexto_max;
+      return typeof t === "string" && t in TIER_ROTULO ? TIER_ROTULO[t as TierContexto] : "—";
+    },
+  },
+  { chave: "retencao_max_dias", rotulo: ROTULO_FEATURE.retencao_max_dias, valor: (p) => dias(p.features.retencao_max_dias) },
+  { chave: "auditoria_dias", rotulo: ROTULO_FEATURE.auditoria_dias, valor: (p) => dias(p.features.auditoria_dias) },
+];
+
+/** Recursos booleanos, agrupados por onde o cliente os encontra no painel. */
+const RECURSOS: { grupo: string; chaves: string[] }[] = [
+  { grupo: "Atendimento", chaves: ["csat", "resumo_diario", "transcricao_operador", "calendar"] },
+  {
+    grupo: "Agente de IA",
+    chaves: [
+      "fewshot",
+      "imagem_cliente",
+      "documentos_cliente",
+      "voz",
+      "modelos_premium",
+      "catalogo_completo",
+      "bateria_testes",
+      "qualidade_ia",
+    ],
+  },
+  { grupo: "Canais e integrações", chaves: ["waba", "webhooks", "disparador", "disparador_media"] },
+  { grupo: "Painel", chaves: ["menu_moderno", "rbac", "white_label", "observabilidade"] },
+];
+
 export function BillingPageClient() {
-  const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [planos, setPlanos] = useState<Plano[]>(PLANOS_FALLBACK);
-  const [historico, setHistorico] = useState<BillingTransacao[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pending, startTransition] = useTransition();
-  const [confirmandoCancelar, setConfirmandoCancelar] = useState(false);
-  const [feedback, setFeedback] = useState<
-    { kind: "ok" | "err"; message: string } | null
-  >(null);
+  const { plano } = usePlano();
+  const params = useSearchParams();
+  const destaque = params.get("feature");
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    const [s, h, pl] = await Promise.all([
-      loadBillingStatusAction(),
-      loadBillingHistoricoAction(),
-      loadPlanosCatalogoAction(),
-    ]);
-    if (s.ok) setStatus(s.data);
-    if (h.ok) setHistorico(h.data);
-    if (pl.ok && pl.data.length > 0) setPlanos(pl.data.map(mapCatalogoToCard));
-    setLoading(false);
-  }, []);
+  const catalogo = useQuery({
+    queryKey: ["planos-catalogo"],
+    queryFn: async () => {
+      const r = await loadPlanosCatalogoAction();
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
+    },
+    staleTime: 10 * 60_000,
+  });
+  const historico = useQuery({
+    queryKey: ["billing-historico"],
+    queryFn: async () => {
+      const r = await loadBillingHistoricoAction();
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
+    },
+    staleTime: 60_000,
+  });
 
-  useEffect(() => {
-    loadAll();
-  }, [loadAll]);
-
-  function handleUpgrade(plano: string) {
-    setFeedback(null);
-    startTransition(async () => {
-      const r = await checkoutAction(plano);
-      if (r.ok) {
-        if (r.data.payment_url) {
-          // Redireciona pra checkout Asaas
-          window.location.href = r.data.payment_url;
-        } else {
-          setFeedback({
-            kind: "ok",
-            message: `Assinatura ${r.data.plano} criada. Aguardando confirmação.`,
-          });
-          await loadAll();
-        }
-      } else {
-        // Detecta erro 503 ASAAS não configurado e mostra mensagem clara
-        const msg = r.error.toLowerCase();
-        if (msg.includes("503") || msg.includes("asaas_api_key") || msg.includes("não configurad")) {
-          setFeedback({
-            kind: "err",
-            message:
-              "Cobrança via Asaas ainda não foi habilitada neste servidor. " +
-              "Admin precisa configurar ASAAS_API_KEY + ASAAS_WEBHOOK_TOKEN nas env vars do Dokploy.",
-          });
-        } else {
-          setFeedback({ kind: "err", message: r.error });
-        }
-      }
-    });
-  }
-
-  function handleCancel() {
-    setFeedback(null);
-    startTransition(async () => {
-      const r = await cancelSubscriptionAction();
-      if (r.ok) {
-        setFeedback({ kind: "ok", message: "Assinatura cancelada." });
-        await loadAll();
-      } else {
-        setFeedback({ kind: "err", message: r.error });
-      }
-    });
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 p-8 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Carregando billing…
-      </div>
-    );
-  }
+  const planos = catalogo.data ?? [];
+  const bloqueado = !!destaque && !!plano && !featureLiberada(plano.features, destaque);
+  // O plano em que a chave destacada passa a existir — para a frase do banner.
+  const planoQueLibera = destaque
+    ? planos.find((p) => p.slug !== plano?.slug && featureLiberada(p.features, destaque))
+    : undefined;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-semibold">
-          <CreditCard className="h-5 w-5 text-brand-primary" />
-          Plano & Cobrança
+          <CreditCard className="size-5 text-brand-primary" />
+          Plano e cobrança
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Gerencie sua assinatura. Cobrança via Asaas (cartão, PIX ou boleto).
+          O que está incluído no seu plano e o que muda ao subir de plano.
         </p>
       </div>
 
-      {feedback && (
+      {destaque && (
         <div
-          className={
-            "flex items-center gap-2 rounded-lg border p-3 text-sm " +
-            (feedback.kind === "ok"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-              : "border-destructive/40 bg-destructive/10 text-destructive")
-          }
-        >
-          {feedback.kind === "ok" ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
+          role="status"
+          className={cn(
+            "flex items-start gap-2.5 rounded-lg border p-3 text-sm",
+            bloqueado ? "border-warning/40 bg-warning/10" : "border-border bg-muted/40"
           )}
-          {feedback.message}
-        </div>
-      )}
-
-      {/* Status atual */}
-      {status && (
-        <PlanoAtualCard
-          status={status}
-          onCancel={() => setConfirmandoCancelar(true)}
-          pending={pending}
-        />
-      )}
-
-      {/* Comparativo + upgrade */}
-      <div>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-          Planos disponíveis
-        </h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {planos.map((p) => (
-            <PlanoCard
-              key={p.slug}
-              plano={p}
-              atual={status?.plano_atual === p.slug}
-              onUpgrade={
-                p.slug !== "free" ? () => handleUpgrade(p.slug) : undefined
-              }
-              pending={pending}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Histórico */}
-      <HistoricoTable items={historico} />
-
-      <ConfirmDestrutivo
-        aberto={confirmandoCancelar}
-        onAbertoChange={setConfirmandoCancelar}
-        titulo="Cancelar assinatura"
-        objeto="o plano atual da empresa"
-        descricao="A conta volta para o plano Free na hora, com os limites dele — conexões, usuários, atendimentos e documentos."
-        rotuloAcao="Cancelar assinatura"
-        onConfirmar={handleCancel}
-      />
-    </div>
-  );
-}
-
-function PlanoAtualCard({
-  status,
-  onCancel,
-  pending,
-}: {
-  status: BillingStatus;
-  onCancel: () => void;
-  pending: boolean;
-}) {
-  const ativa = !!status.asaas_subscription_id;
-  return (
-    <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Plano atual
-          </p>
-          <p className="mt-1 flex items-center gap-2 text-xl font-semibold">
-            {status.plano_atual.toUpperCase()}
-            {ativa ? (
-              <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300">
-                Assinatura ativa
-              </span>
+        >
+          <Lock className={cn("mt-0.5 size-4 shrink-0", bloqueado ? "text-warning" : "text-muted-foreground")} />
+          <p>
+            <span className="font-medium">{rotuloFeature(destaque)}</span>
+            {bloqueado && plano ? (
+              <>
+                {" "}
+                não está no plano {plano.nome}.{" "}
+                {planoQueLibera
+                  ? `Disponível a partir do plano ${planoQueLibera.nome}.`
+                  : fraseUpgrade(plano.upgrade_sugerido)}
+              </>
             ) : (
-              <span className="rounded-md border border-slate-500/30 bg-slate-500/10 px-2 py-0.5 text-xs text-slate-400">
-                Sem cobrança
-              </span>
+              <> está incluído no seu plano.</>
             )}
           </p>
-          {status.valor_mensal && status.valor_mensal > 0 && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              R$ {status.valor_mensal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês
-              · {plural(status.total_pagamentos, "pagamento")}
-              {status.ultimo_pagamento_em && (
-                <>
-                  {" "}
-                  · último em {new Date(status.ultimo_pagamento_em).toLocaleDateString("pt-BR")}
-                </>
-              )}
-            </p>
-          )}
-        </div>
-        {ativa && (
-          <Button variant="outline" disabled={pending} onClick={onCancel}>
-            {pending ? "Cancelando…" : "Cancelar assinatura"}
-          </Button>
-        )}
-      </div>
-      {status.pendentes > 0 && (
-        <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
-          {status.pendentes} cobrança(s) pendente(s). Verifique seu email ou o
-          histórico abaixo.
         </div>
       )}
+
+      {plano && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Plano atual</p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p className="text-xl font-semibold">{plano.nome}</p>
+            <p className="text-sm text-muted-foreground">
+              {plano.preco_mensal_brl > 0
+                ? `R$ ${plano.preco_mensal_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês`
+                : "Sem mensalidade"}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {plano.upgrade_sugerido
+              ? `Para mudar de plano, fale com quem administra a plataforma — a coluna do plano ${
+                  planos.find((p) => p.slug === plano.upgrade_sugerido)?.nome ?? plano.upgrade_sugerido
+                } mostra o que é liberado.`
+              : "Este é o plano mais completo."}
+          </p>
+        </div>
+      )}
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+          Comparação de planos
+        </h2>
+        {catalogo.isPending ? (
+          <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Carregando planos…
+          </div>
+        ) : catalogo.isError ? (
+          <ApiError error={catalogo.error} onRetry={() => catalogo.refetch()} />
+        ) : (
+          <TabelaPlanos planos={planos} atual={plano?.slug ?? null} destaque={destaque} />
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
+          <History className="size-4" /> Histórico de cobranças
+        </h2>
+        {historico.isPending ? (
+          <p className="py-3 text-sm text-muted-foreground">Carregando…</p>
+        ) : historico.isError ? (
+          <ApiError error={historico.error} onRetry={() => historico.refetch()} />
+        ) : (
+          <HistoricoTable items={historico.data} />
+        )}
+      </section>
     </div>
   );
 }
 
-function PlanoCard({
-  plano,
+function TabelaPlanos({
+  planos,
   atual,
-  onUpgrade,
-  pending,
+  destaque,
 }: {
-  plano: Plano;
-  atual: boolean;
-  onUpgrade?: () => void;
-  pending: boolean;
+  planos: PlanoCatalogo[];
+  atual: string | null;
+  destaque: string | null;
+}) {
+  const colunaAtual = (slug: string) => slug === atual;
+  const linhaDestaque = (chave: string) => chave === destaque;
+
+  const th = "px-2 py-2 text-center text-xs font-medium";
+  const tdRotulo =
+    "sticky left-0 z-10 min-w-[11rem] bg-background px-2 py-1.5 text-left text-xs text-foreground";
+  const td = "min-w-[4.5rem] px-2 py-1.5 text-center text-xs";
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border bg-card">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border">
+            <th className={cn(tdRotulo, "text-xs font-medium text-muted-foreground")}>Recurso</th>
+            {planos.map((p) => (
+              <th
+                key={p.slug}
+                scope="col"
+                className={cn(th, colunaAtual(p.slug) && "bg-brand-primary/10")}
+              >
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-sm font-semibold">{p.nome}</span>
+                  <span className="font-normal text-muted-foreground">
+                    {p.preco_mensal_brl ? `R$ ${p.preco_mensal_brl.toFixed(0)}/mês` : "R$ 0"}
+                  </span>
+                  {colunaAtual(p.slug) && (
+                    <Badge variant="outline" className="border-brand-primary/50 text-brand-primary">
+                      Seu plano
+                    </Badge>
+                  )}
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <LinhaGrupo titulo="Limites" colunas={planos.length} />
+          {LIMITES.map((l) => (
+            <tr
+              key={l.chave}
+              className={cn(
+                "border-b border-border/60",
+                linhaDestaque(l.chave) && "bg-warning/10"
+              )}
+            >
+              <th scope="row" className={cn(tdRotulo, "font-normal", linhaDestaque(l.chave) && "bg-warning/10 font-medium")}>
+                {l.rotulo}
+              </th>
+              {planos.map((p) => (
+                <td
+                  key={p.slug}
+                  className={cn(td, "tabular-nums", colunaAtual(p.slug) && "bg-brand-primary/10")}
+                >
+                  {l.valor(p)}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {RECURSOS.map((g) => (
+            <FragmentoGrupo key={g.grupo} titulo={g.grupo} chaves={g.chaves} planos={planos} colunaAtual={colunaAtual} linhaDestaque={linhaDestaque} tdRotulo={tdRotulo} td={td} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function LinhaGrupo({ titulo, colunas }: { titulo: string; colunas: number }) {
+  return (
+    <tr className="border-b border-border bg-muted/40">
+      <th
+        scope="rowgroup"
+        colSpan={colunas + 1}
+        className="sticky left-0 px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+      >
+        {titulo}
+      </th>
+    </tr>
+  );
+}
+
+function FragmentoGrupo({
+  titulo,
+  chaves,
+  planos,
+  colunaAtual,
+  linhaDestaque,
+  tdRotulo,
+  td,
+}: {
+  titulo: string;
+  chaves: string[];
+  planos: PlanoCatalogo[];
+  colunaAtual: (slug: string) => boolean;
+  linhaDestaque: (chave: string) => boolean;
+  tdRotulo: string;
+  td: string;
 }) {
   return (
-    <div
-      className={
-        "rounded-xl border p-4 space-y-3 " +
-        (plano.destaque
-          ? "border-brand-primary/50 bg-brand-primary/5"
-          : "border-foreground/10 bg-obsidian-900")
-      }
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-lg font-semibold">{plano.nome}</p>
-        {atual && (
-          <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300">
-            Atual
-          </span>
-        )}
-        {plano.destaque && !atual && (
-          <span className="rounded-md border border-brand-primary/40 bg-brand-primary/10 px-2 py-0.5 text-xs text-brand-primary">
-            Mais popular
-          </span>
-        )}
-      </div>
-
-      <p className="text-2xl font-bold">{plano.preco}</p>
-
-      <div className="space-y-1.5">
-        {plano.limites.map((l) => (
-          <p key={l} className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Check className="h-3 w-3 text-emerald-500" /> {l}
-          </p>
-        ))}
-        <div className="my-2 h-px bg-foreground/5" />
-        {plano.features.map((f) => (
-          <p key={f} className="flex items-center gap-2 text-xs text-foreground">
-            <CheckCircle2 className="h-3 w-3 text-emerald-500" /> {f}
-          </p>
-        ))}
-      </div>
-
-      {onUpgrade && !atual && (
-        <Button
-          onClick={onUpgrade}
-          disabled={pending}
-          className="w-full"
+    <>
+      <LinhaGrupo titulo={titulo} colunas={planos.length} />
+      {chaves.map((chave) => (
+        <tr
+          key={chave}
+          className={cn("border-b border-border/60", linhaDestaque(chave) && "bg-warning/10")}
         >
-          {pending ? (
-            "Processando…"
-          ) : (
-            <>
-              <ArrowUpCircle className="mr-1 h-4 w-4" />
-              Assinar {plano.nome}
-            </>
-          )}
-        </Button>
-      )}
-      {atual && (
-        <p className="text-center text-xs text-muted-foreground italic">
-          Você está neste plano
-        </p>
-      )}
-    </div>
+          <th scope="row" className={cn(tdRotulo, "font-normal", linhaDestaque(chave) && "bg-warning/10 font-medium")}>
+            {rotuloFeature(chave)}
+          </th>
+          {planos.map((p) => {
+            const tem = featureLiberada(p.features, chave);
+            return (
+              <td key={p.slug} className={cn(td, colunaAtual(p.slug) && "bg-brand-primary/10")}>
+                {tem ? (
+                  <Check className="mx-auto size-4 text-success" aria-label="Incluído" />
+                ) : (
+                  <Minus className="mx-auto size-4 text-muted-foreground/50" aria-label="Não incluído" />
+                )}
+              </td>
+            );
+          })}
+        </tr>
+      ))}
+    </>
   );
 }
 
 function HistoricoTable({ items }: { items: BillingTransacao[] }) {
+  if (items.length === 0) {
+    return (
+      <p className="py-3 text-sm text-muted-foreground">Nenhum pagamento registrado ainda.</p>
+    );
+  }
   return (
-    <div className="rounded-xl border border-foreground/10 bg-obsidian-900 p-4">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
-        <History className="h-4 w-4" /> Histórico de cobranças
-      </h2>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic py-3">
-          Nenhuma transação registrada ainda.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-foreground/10 text-xs uppercase text-muted-foreground">
-                <th className="text-left py-2">Data</th>
-                <th className="text-left">Descrição</th>
-                <th className="text-left">Plano</th>
-                <th className="text-right">Valor</th>
-                <th className="text-center">Status</th>
-                <th className="text-center">Fatura</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((t) => (
-                <tr key={t.id} className="border-b border-foreground/5">
-                  <td className="py-2 text-xs text-muted-foreground">
-                    {new Date(t.created_at).toLocaleString("pt-BR", {
-                      day: "2-digit", month: "2-digit", year: "numeric",
-                      hour: "2-digit", minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="text-xs">{t.descricao || "—"}</td>
-                  <td className="text-xs">{t.plano_nome || "—"}</td>
-                  <td className="text-right font-mono text-xs">
-                    R$ {t.valor_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="text-center">
-                    <StatusBadge status={t.status} />
-                  </td>
-                  <td className="text-center">
-                    {t.gateway_id ? (
-                      <a
-                        href={`https://www.asaas.com/i/${t.gateway_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-brand-primary hover:underline"
-                      >
-                        <ExternalLink className="inline h-3 w-3" />
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-xs uppercase text-muted-foreground">
+            <th className="py-2 text-left">Data</th>
+            <th className="text-left">Descrição</th>
+            <th className="text-left">Plano</th>
+            <th className="text-right">Valor</th>
+            <th className="text-center">Situação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((t) => (
+            <tr key={t.id} className="border-b border-border/60">
+              <td className="py-2 text-xs text-muted-foreground">{dataHora(t.created_at)}</td>
+              <td className="text-xs">{t.descricao || "—"}</td>
+              <td className="text-xs">{t.plano_nome || "—"}</td>
+              <td className="text-right font-mono text-xs tabular-nums">
+                R$ {t.valor_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              </td>
+              <td className="text-center">
+                <StatusBadge status={t.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg: Record<string, { label: string; color: string; icon?: React.ReactNode }> = {
-    pago: { label: "Pago", color: "text-emerald-300 bg-emerald-500/15", icon: <CheckCircle2 className="h-3 w-3" /> },
-    pendente: { label: "Pendente", color: "text-amber-300 bg-amber-500/15" },
-    falhou: { label: "Falhou", color: "text-destructive bg-destructive/15", icon: <X className="h-3 w-3" /> },
-    estornado: { label: "Estornado", color: "text-slate-300 bg-slate-500/15" },
-    cancelado: { label: "Cancelado", color: "text-slate-400 bg-slate-500/10" },
+function StatusBadge({ status }: { status: BillingTransacao["status"] }) {
+  const cfg: Record<string, { label: string; cor: string; icon?: React.ReactNode }> = {
+    pago: { label: "Pago", cor: "bg-success/15 text-success", icon: <CheckCircle2 className="size-3" /> },
+    pendente: { label: "Pendente", cor: "bg-warning/15 text-warning" },
+    falhou: { label: "Falhou", cor: "bg-destructive/15 text-destructive", icon: <X className="size-3" /> },
+    estornado: { label: "Estornado", cor: "bg-muted text-muted-foreground" },
+    cancelado: { label: "Cancelado", cor: "bg-muted text-muted-foreground" },
   };
-  const c = cfg[status] || { label: status, color: "text-slate-300 bg-slate-500/10" };
+  const c = cfg[status] ?? { label: status, cor: "bg-muted text-muted-foreground" };
   return (
-    <span
-      className={
-        "inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium " + c.color
-      }
-    >
+    <span className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium", c.cor)}>
       {c.icon}
       {c.label}
     </span>

@@ -10,6 +10,7 @@ import {
   Volume2,
 } from "lucide-react";
 
+import { DicaPlano, usePlanoDaEmpresa, usePlanoGate } from "@/components/cadeado-plano";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { Empresa, EmpresaCsatConfig, PlanoCatalogo } from "@/lib/api";
+import { rotuloPlano } from "@/lib/plano";
 import {
   formatCEP,
   formatCPFOrCNPJ,
@@ -126,6 +128,13 @@ export function EmpresaForm({ initial, onDone }: Props) {
   }, []);
 
   // White-label (mig 115)
+  // Plano efetivo da empresa EDITADA (não da ativa: superadmin edita
+  // qualquer uma). Marca própria (Enterprise) e teto de retenção (mig 192)
+  // ganham cadeado aqui; a rota devolve 402 de qualquer jeito.
+  const planoEmpresa = usePlanoDaEmpresa(initial?.id);
+  const gateMarca = usePlanoGate("white_label", planoEmpresa);
+  const retencaoTeto = planoEmpresa?.features.retencao_max_dias;
+  const retencaoMax = typeof retencaoTeto === "number" ? retencaoTeto : null;
   const [nomeExibicao, setNomeExibicao] = useState(initial?.nome_exibicao ?? "");
   const [corPrimaria, setCorPrimaria] = useState(initial?.cor_primaria ?? "");
   const [corSecundaria, setCorSecundaria] = useState(
@@ -374,27 +383,44 @@ export function EmpresaForm({ initial, onDone }: Props) {
                   className={SELECT_CLASS}
                   disabled={isPending}
                 >
-                  <option value="0">Ilimitado (não apagar)</option>
-                  <option value="30">30 dias</option>
-                  <option value="60">60 dias</option>
-                  <option value="90">90 dias</option>
-                  <option value="180">180 dias</option>
-                  <option value="365">365 dias</option>
+                  {/* Acima do teto do plano a rota devolve 402 (mig 192);
+                      a opção fica visível e desabilitada para o cliente ver
+                      o que existe. `0` = não apagar = só sem teto. */}
+                  <option value="0" disabled={retencaoMax !== null}>
+                    Ilimitado (não apagar)
+                  </option>
+                  {[30, 60, 90, 180, 365].map((d) => (
+                    <option key={d} value={String(d)} disabled={retencaoMax !== null && d > retencaoMax}>
+                      {d} dias
+                    </option>
+                  ))}
                 </select>
                 <p className="mt-1 text-xs text-foreground/50">
                   Após o prazo, conversas de atendimentos encerrados e sua mídia
                   são apagadas; o registro do atendimento permanece. Um agente
                   pode manter por mais tempo, nunca menos.
+                  {retencaoMax !== null && planoEmpresa && (
+                    <>
+                      {" "}
+                      O plano {planoEmpresa.nome} guarda até {retencaoMax} dias
+                      {planoEmpresa.upgrade_sugerido
+                        ? ` — prazos maiores a partir do plano ${rotuloPlano(planoEmpresa.upgrade_sugerido)}.`
+                        : "."}
+                    </>
+                  )}
                 </p>
               </Field>
 
               {/* Identidade visual (white-label) */}
               <div className="space-y-3 rounded-lg border border-foreground/10 bg-obsidian-800/40 p-4 md:col-span-2">
-                <p className="text-sm font-medium">
+                <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
                   Identidade visual{" "}
                   <span className="text-xs font-normal text-muted-foreground">
                     — aparece no topo do menu (white-label)
                   </span>
+                  {/* Só Enterprise (mig 191): a rota recusa MUDAR nome, cores
+                      e logo; o que já está gravado continua sendo exibido. */}
+                  <DicaPlano gate={gateMarca} />
                 </p>
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="space-y-2">
@@ -416,7 +442,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                         accept="image/png,image/jpeg,image/webp,image/gif"
                         onChange={handleLogoPick}
                         className="hidden"
-                        disabled={isPending}
+                        disabled={isPending || gateMarca.bloqueado}
                       />
                       Trocar logo
                     </label>
@@ -437,7 +463,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                         maxLength={80}
                         placeholder={nome || "Sua Marca"}
                         className={INPUT_CLASS}
-                        disabled={isPending}
+                        disabled={isPending || gateMarca.bloqueado}
                       />
                     </Field>
                     <div className="grid grid-cols-2 gap-3">
@@ -447,7 +473,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                           value={corPrimaria || "#f97316"}
                           onChange={(e) => setCorPrimaria(e.target.value)}
                           className="h-10 w-full rounded-md border border-foreground/10 bg-obsidian-800"
-                          disabled={isPending}
+                          disabled={isPending || gateMarca.bloqueado}
                         />
                       </Field>
                       <Field label="Cor secundária" htmlFor="cor_secundaria">
@@ -456,7 +482,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
                           value={corSecundaria || "#3b82f6"}
                           onChange={(e) => setCorSecundaria(e.target.value)}
                           className="h-10 w-full rounded-md border border-foreground/10 bg-obsidian-800"
-                          disabled={isPending}
+                          disabled={isPending || gateMarca.bloqueado}
                         />
                       </Field>
                     </div>
@@ -744,6 +770,8 @@ const DEFAULT_PERGUNTA = "Como você avalia o atendimento que acabou de receber?
 const DEFAULT_AGRADECIMENTO = "Obrigado pelo seu feedback! 😊";
 
 export function CsatConfigSection({ empresaId }: { empresaId: number }) {
+  // Pessoal+ (mig 192): ligar fora do plano dá 402; o cadeado avisa antes.
+  const gate = usePlanoGate("csat", usePlanoDaEmpresa(empresaId));
   const [config, setConfig] = useState<EmpresaCsatConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, startSaving] = useTransition();
@@ -802,14 +830,17 @@ export function CsatConfigSection({ empresaId }: { empresaId: number }) {
       </CardHeader>
       <form action={handleSubmit}>
         <CardContent className="space-y-4">
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex flex-wrap items-center gap-2 text-sm">
             <input
               type="checkbox"
               name="csat_ativo"
               defaultChecked={config.csat_ativo}
               disabled={saving}
+              onClick={gate.aoClicarNativo}
+              aria-disabled={(gate.bloqueado && !config.csat_ativo) || undefined}
             />
             <span className="font-medium">Ativar pesquisa NPS</span>
+            <DicaPlano gate={gate} />
           </label>
 
           <Field label="Pergunta enviada ao cliente" htmlFor="csat_pergunta">
@@ -871,6 +902,8 @@ export function CsatConfigSection({ empresaId }: { empresaId: number }) {
 }
 
 export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
+  // Pessoal+ (mig 192), mesmo desenho do CSAT.
+  const gate = usePlanoGate("resumo_diario", usePlanoDaEmpresa(empresaId));
   const [config, setConfig] =
     useState<import("@/lib/api").EmpresaResumoDiarioConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -968,15 +1001,18 @@ export function ResumoDiarioSection({ empresaId }: { empresaId: number }) {
           (novos, resolvidos, pendentes) pro número abaixo — saindo pela
           conexão padrão da empresa.
         </p>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex flex-wrap items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={config.resumo_diario_ativo}
+            onClick={gate.aoClicarNativo}
             onChange={(e) =>
               setConfig({ ...config, resumo_diario_ativo: e.target.checked })
             }
+            aria-disabled={(gate.bloqueado && !config.resumo_diario_ativo) || undefined}
           />
           Ativar resumo diário
+          <DicaPlano gate={gate} />
         </label>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
@@ -1089,6 +1125,8 @@ const VOZ_OPCOES: { id: string; label: string }[] = [
 ];
 
 export function VozDoAgenteSection({ empresa }: { empresa: Empresa }) {
+  // Pro/Enterprise (mig 177): ligar fora do plano dá 402 no PUT.
+  const gate = usePlanoGate("voz", usePlanoDaEmpresa(empresa.id));
   const [vozAtiva, setVozAtiva] = useState(empresa.voz_ativa ?? false);
   const [vozNome, setVozNome] = useState(empresa.voz_nome ?? "alloy");
   const [vozEstilo, setVozEstilo] = useState(empresa.voz_estilo ?? "");
@@ -1145,12 +1183,18 @@ export function VozDoAgenteSection({ empresa }: { empresa: Empresa }) {
           <Checkbox
             id="voz_ativa"
             checked={vozAtiva}
-            onCheckedChange={(v) => setVozAtiva(v === true)}
+            onCheckedChange={(v, details) => {
+              gate.aoMudarKit(v === true, details);
+              if (details.isCanceled) return;
+              setVozAtiva(v === true);
+            }}
             disabled={saving}
+            aria-disabled={(gate.bloqueado && !vozAtiva) || undefined}
             className="mt-0.5"
           />
           <Label htmlFor="voz_ativa" className="block text-sm font-normal">
             <span className="font-medium">Responder áudio com áudio</span>
+            <DicaPlano gate={gate} className="ml-2" />
             <span className="mt-0.5 block text-xs text-muted-foreground">
               Quando o cliente manda áudio, o agente responde em nota de voz;
               mensagem de texto continua respondida em texto. Só funciona em

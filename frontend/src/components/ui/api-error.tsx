@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AlertCircle, ArrowUpCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import {
   messageFromDetail,
   stripTechnical,
 } from "@/lib/api-error-shared";
+import { linkBilling } from "@/lib/plano";
 import { cn } from "@/lib/utils";
 
 /**
@@ -40,8 +42,16 @@ interface ParsedError {
   message: string;
   code?: string;
   upgradeTo?: string | null;
+  /** Chave de plano do 402 (`feature`/`recurso`) — abre o `/billing` nela. */
+  feature?: string | null;
   isQuotaError: boolean;
   raw: unknown;
+}
+
+function _featureDoDetail(d: Record<string, unknown>): string | null {
+  if (typeof d.feature === "string") return d.feature;
+  if (typeof d.recurso === "string") return d.recurso;
+  return null;
 }
 
 function parseError(error: unknown): ParsedError {
@@ -65,6 +75,7 @@ function _parseError(error: unknown): ParsedError {
         message: messageFromDetail(error.status, d),
         code: typeof dd.error === "string" ? dd.error : undefined,
         upgradeTo: typeof dd.upgrade_to === "string" ? dd.upgrade_to : null,
+        feature: _featureDoDetail(dd),
         isQuotaError: isQuota,
         raw: error,
       };
@@ -96,6 +107,7 @@ function _parseError(error: unknown): ParsedError {
           message: msg,
           code: typeof d.error === "string" ? d.error : undefined,
           upgradeTo: typeof d.upgrade_to === "string" ? d.upgrade_to : null,
+          feature: _featureDoDetail(d),
           isQuotaError: isQuota,
           raw: error,
         };
@@ -182,15 +194,19 @@ export function ApiError({
               Código: {requestId}
             </p>
           )}
-          {parsed.isQuotaError && parsed.upgradeTo && (
+          {parsed.isQuotaError && (
             <div className="pt-1.5">
-              <a
-                href="/billing"
+              {/* O `/billing` abre já explicando a chave (ADR-005 leva D). */}
+              <Link
+                href={linkBilling(parsed.feature ?? undefined)}
+                prefetch={false}
                 className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-foreground/15 px-3 text-xs font-medium hover:bg-foreground/5"
               >
                 <ArrowUpCircle className="size-3.5" />
-                Upgrade pra {parsed.upgradeTo.charAt(0).toUpperCase() + parsed.upgradeTo.slice(1)}
-              </a>
+                {parsed.upgradeTo
+                  ? `Ver o plano ${parsed.upgradeTo.charAt(0).toUpperCase() + parsed.upgradeTo.slice(1)}`
+                  : "Ver planos"}
+              </Link>
             </div>
           )}
           {onRetry && (

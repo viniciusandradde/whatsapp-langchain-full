@@ -450,6 +450,35 @@ class ResumoDiarioConfig(BaseModel):
     ultima_tentativa_em: str | None = None
 
 
+@router.get("/{empresa_id}/plano")
+async def get_plano_empresa_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Plano efetivo da empresa para o painel (ADR-005 leva D): limites e
+    recursos JÁ mesclados com as exceções por empresa (`feature_flag`
+    `plano.<chave>`), para o cadeado da tela bater com o 402 da rota.
+    Membro lê; superadmin lê qualquer empresa (é o que o form de
+    `/companies/[id]` precisa para travar os interruptores da empresa
+    EDITADA, não da ativa)."""
+    from whatsapp_langchain.shared.plano_limits import (
+        get_plano_info,
+        resumo_para_painel,
+    )
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    try:
+        plano = await get_plano_info(pool, empresa_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.") from None
+    return resumo_para_painel(plano)
+
+
 @router.get("/{empresa_id}/resumo-diario", response_model=ResumoDiarioConfig)
 async def get_resumo_diario_endpoint(
     empresa_id: int,

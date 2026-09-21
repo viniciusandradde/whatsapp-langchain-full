@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Final, LiteralString
+from typing import Any, Final, LiteralString
 
 import structlog
 from psycopg_pool import AsyncConnectionPool
@@ -126,6 +126,33 @@ class PlanoInfo:
     @property
     def modelos_premium(self) -> bool:
         return self.tem_feature("modelos_premium")
+
+
+def resumo_para_painel(plano: PlanoInfo) -> dict[str, Any]:
+    """O que o painel precisa para mostrar cadeados e o `/billing` (ADR-005
+    leva D): plano JÁ mesclado com as exceções por empresa (`plano.<chave>`),
+    para que a tela trave exatamente o que a rota trava — nem mais, nem menos.
+    `limites` traz None = ilimitado, no mesmo contrato de `limite_de`."""
+    return {
+        "empresa_id": plano.empresa_id,
+        "slug": plano.plano_slug,
+        "nome": plano.plano_nome,
+        "preco_mensal_brl": plano.preco_mensal_brl,
+        "features": dict(plano.features),
+        "limites": {
+            "usuarios": plano.limite_usuarios,
+            "conexoes": plano.limite_conexoes,
+            "atendimentos_mes": plano.limite_atendimentos_mes,
+            "documentos_kb": plano.limite_documentos_kb,
+            "agentes": plano.limite_agentes,
+            "orcamento_ia_usd": plano.limite_orcamento_ia_usd,
+            **{
+                recurso: plano.limite_numerico(chave)
+                for recurso, chave in LIMITES_EM_FEATURES.items()
+            },
+        },
+        "upgrade_sugerido": plano.upgrade_sugerido(),
+    }
 
 
 def clear_plano_cache(empresa_id: int | None = None) -> None:

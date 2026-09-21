@@ -34,6 +34,14 @@ export interface NavItem {
    */
   requiresSuperadmin?: boolean;
   /**
+   * Recurso de plano (`plano.features`) que a tela inteira depende
+   * (ADR-005 leva D). Fora do plano o item NÃO some: aparece com cadeado e
+   * leva ao `/billing?feature=<chave>` — o cliente descobre o que existe.
+   * Tela que só tem UM botão gateado (ex.: "Novo webhook") não entra aqui;
+   * o cadeado fica no botão.
+   */
+  feature?: string;
+  /**
    * Subseção dentro do grupo. Serve pra grupos grandes, onde uma lista
    * corrida de 11 destinos não diz o que faz o quê — Governança junta
    * "quem é a empresa", "quem são as pessoas", "quem pode o quê" e "quando
@@ -79,12 +87,12 @@ export const NAV_GROUPS: NavGroup[] = [
       // O que CHEGA do cliente
       { secao: "Atendimento", label: "Fila de atendimento", href: "/atendimento", requires: "atendimento.read" },
       { secao: "Atendimento", label: "Histórico de conversas", href: "/chats", requires: "atendimento.read" },
-      { secao: "Atendimento", label: "Agendamentos", href: "/agendamentos", requires: "agendamento.read" },
+      { secao: "Atendimento", label: "Agendamentos", href: "/agendamentos", requires: "agendamento.read", feature: "calendar" },
       // O que SAI por iniciativa da empresa
-      { secao: "Prospecção", label: "Campanhas", href: "/campanhas", requires: "disparador.disparar" },
-      { secao: "Prospecção", label: "Contatos", href: "/disparador/contatos", requires: "disparador.capturar" },
-      { secao: "Prospecção", label: "Grupos", href: "/disparador/grupos", requires: "disparador.capturar" },
-      { secao: "Prospecção", label: "Chaves da extensão", href: "/disparador/api-keys", requires: "disparador.api_key.manage" },
+      { secao: "Prospecção", label: "Campanhas", href: "/campanhas", requires: "disparador.disparar", feature: "disparador" },
+      { secao: "Prospecção", label: "Contatos", href: "/disparador/contatos", requires: "disparador.capturar", feature: "disparador" },
+      { secao: "Prospecção", label: "Grupos", href: "/disparador/grupos", requires: "disparador.capturar", feature: "disparador" },
+      { secao: "Prospecção", label: "Chaves da extensão", href: "/disparador/api-keys", requires: "disparador.api_key.manage", feature: "disparador" },
       // A base que os dois lados usam
       { secao: "Cadastros", label: "Clientes", href: "/clientes", requires: "cliente.read" },
       { secao: "Cadastros", label: "Tags", href: "/tags", requires: "tag.manage" },
@@ -101,7 +109,8 @@ export const NAV_GROUPS: NavGroup[] = [
       // O que responde sozinho — e quando NÃO responde
       { secao: "Automação", label: "Agentes", href: "/agents", requires: "agente.config" },
       { secao: "Automação", label: "Menu chatbot", href: "/menus", requires: "menu_chatbot.read" },
-      { secao: "Automação", label: "Workflows", href: "/workflows", requires: "menu_chatbot.read" },
+      // `workflows_max` é teto numérico: 0 no Free e no Pessoal = cadeado.
+      { secao: "Automação", label: "Workflows", href: "/workflows", requires: "menu_chatbot.read", feature: "workflows_max" },
       { secao: "Automação", label: "Números sem IA", href: "/whitelist", requires: "whitelist.manage" },
       // O que a IA sabe
       { secao: "Conhecimento", label: "Base de conhecimento", href: "/settings/pastas", requires: "base_conhecimento.read" },
@@ -122,7 +131,7 @@ export const NAV_GROUPS: NavGroup[] = [
     itens: [
       { label: "Conexões", href: "/connections", requires: "conexao.read" },
       { label: "Integrações externas", href: "/settings/integracoes", requires: "conexao.write" },
-      { label: "Webhooks", href: "/hooks", requires: "hook.read" },
+      { label: "Webhooks", href: "/hooks", requires: "hook.read", feature: "webhooks" },
     ],
   },
   {
@@ -158,12 +167,12 @@ export const NAV_GROUPS: NavGroup[] = [
     href: "/traces",
     itens: [
       // A máquina está de pé?
-      { secao: "Saúde do sistema", label: "Fila de mensagens", href: "/queue", requires: "security.audit.read" },
-      { secao: "Saúde do sistema", label: "Traces", href: "/traces", requires: "security.audit.read" },
+      { secao: "Saúde do sistema", label: "Fila de mensagens", href: "/queue", requires: "security.audit.read", feature: "observabilidade" },
+      { secao: "Saúde do sistema", label: "Traces", href: "/traces", requires: "security.audit.read", feature: "observabilidade" },
       // O atendimento está bom?
-      { secao: "Qualidade", label: "Satisfação e NPS", href: "/dashboard/qualidade", requires: "atendimento.read" },
-      { secao: "Qualidade", label: "Qualidade das respostas", href: "/dashboard/rag", requires: "agente.config" },
-      { secao: "Qualidade", label: "Testar respostas", href: "/dashboard/rag/sandbox", requires: "agente.config" },
+      { secao: "Qualidade", label: "Satisfação e NPS", href: "/dashboard/qualidade", requires: "atendimento.read", feature: "csat" },
+      { secao: "Qualidade", label: "Qualidade das respostas", href: "/dashboard/rag", requires: "agente.config", feature: "qualidade_ia" },
+      { secao: "Qualidade", label: "Testar respostas", href: "/dashboard/rag/sandbox", requires: "agente.config", feature: "qualidade_ia" },
       { secao: "Qualidade", label: "Relatórios de teste", href: "/relatorios/allure", requiresSuperadmin: true },
       // Ferramenta de plataforma: mostra dados de todos os clientes e
       // envia mensagem em nome deles.
