@@ -375,11 +375,17 @@ async def _sincronizar_episodios(
         )
         if cur.rowcount:
             continue
-        await conn.execute(
-            "INSERT INTO ia_alerta (tipo, modelo_slug, detalhe) VALUES (%s, %s, %s::jsonb)",
+        # As 2 réplicas do worker avaliam no mesmo instante: quem perde a
+        # corrida no índice parcial único não abre de novo nem re-notifica.
+        cur = await conn.execute(
+            """
+            INSERT INTO ia_alerta (tipo, modelo_slug, detalhe) VALUES (%s, %s, %s::jsonb)
+            ON CONFLICT (tipo, modelo_slug) WHERE resolvido_em IS NULL DO NOTHING
+            """,
             (a["tipo"], chave, _json(a["detalhe"])),
         )
-        abertos.append((chave, a["tipo"], a["detalhe"]))
+        if cur.rowcount:
+            abertos.append((chave, a["tipo"], a["detalhe"]))
     for tipo in ativos - tipos_agora:
         cur = await conn.execute(
             """
@@ -475,7 +481,11 @@ async def avaliar_alertas(
                 baseline = await _baseline_modelo(conn, slug)
                 operacao = await _operacao_modelo(conn, slug)
                 try:
-                    sonda = await sondar_fn(slug)
+                    # O modelo de voz ("chat que fala") recusa chamada de texto
+                    # puro: sondá-lo deu falso "não existe" em produção (21/09).
+                    sonda = (
+                        None if slug == settings.tts_model else await sondar_fn(slug)
+                    )
                 except Exception as exc:  # noqa: BLE001 — sonda quebrada não cala o resto
                     logger.warning(
                         "ia_sonda_modelo_erro", slug=slug, error=str(exc)[:200]

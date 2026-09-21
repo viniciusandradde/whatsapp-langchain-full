@@ -57,7 +57,13 @@ def test_sonda_sem_provedor_nem_sem_piso_e_inexistente():
 
 def test_sonda_modelo_removido_e_saldo_e_transitorio():
     assert classificar_sonda("x/y", 404, "model not found", None).inexistente
-    assert classificar_sonda("x/y", 400, "invalid model", None).inexistente
+    assert classificar_sonda("x/y", 400, "invalid model id", None).inexistente
+    # 400 por parâmetro (modelo de áudio recusando texto puro) NÃO é indisponível —
+    # deu falso "não existe" com openai/gpt-audio-mini em produção (21/09)
+    audio = classificar_sonda(
+        "openai/gpt-audio-mini", 400, "audio output requires modalities", None
+    )
+    assert audio.ok and not audio.inexistente and not audio.transitorio
     saldo = classificar_sonda("x/y", 402, "insufficient credits", None)
     assert saldo.ok and not saldo.inexistente  # não é culpa do modelo
     assert classificar_sonda("x/y", 429, "rate", None).transitorio
