@@ -1447,6 +1447,10 @@ MARKERS_INTERNOS = (
     "[resposta superada",
     "[IA sem agente cadastrado",
     "[limite de atendimentos do plano",
+    # robô × robô (shared/conversa_automatica.py): o outro lado é uma URA e a
+    # IA parou de responder. NÃO reprocessável: dentro da janela cairia na
+    # mesma guarda; passada a janela, a conversa volta sozinha.
+    "[conversa automática",
 )
 
 

@@ -105,6 +105,10 @@ from whatsapp_langchain.shared.queue import (
 )
 from whatsapp_langchain.shared.transcricao import transcrever_mensagem
 from whatsapp_langchain.shared.voz import VozInfielError, sintetizar
+from whatsapp_langchain.shared.conversa_automatica import (
+    CONVERSA_AUTOMATICA_MARKER,
+    conversa_automatica,
+)
 from whatsapp_langchain.shared.whitelist import is_whitelisted
 from whatsapp_langchain.worker.media import (
     AUTO_RESPONSE_MEDIA_FAILURE,
@@ -443,6 +447,7 @@ _MARKERS_SISTEMA = frozenset(
         RESPOSTA_VAZIA_MARKER,
         SEM_AGENTE_MARKER,
         LIMITE_PLANO_MARKER,
+        CONVERSA_AUTOMATICA_MARKER,
     }
 )
 
@@ -2536,6 +2541,38 @@ async def process_message(
                 phone=message.phone_number,
             )
             return
+
+        # Guarda robô × robô (`shared/conversa_automatica.py`): o outro lado
+        # é uma URA/assistente virtual respondendo em segundos à nossa
+        # resposta (caso Santander × agente do Luis, 14/09/2026). Dois sinais
+        # em 15 min na conversa → nada é enviado (sem typing/LLM), a mensagem
+        # fica registrada e a conversa volta sozinha quando a janela passa.
+        # Só texto: mídia não tem como parecer menu. 1 SELECT indexado.
+        if message.incoming_message and not (message.media_type or message.media_url):
+            veredito = await conversa_automatica(
+                pool,
+                message_id=message.id,
+                phone_number=message.phone_number,
+                agent_id=message.agent_id,
+                texto=message.incoming_message,
+                recebida_em=message.created_at,
+            )
+            if veredito.suspender:
+                await mark_done(
+                    pool,
+                    message.id,
+                    CONVERSA_AUTOMATICA_MARKER,
+                    normalized_input=None,
+                )
+                logger.warning(
+                    "worker_skipped_agent_conversa_automatica",
+                    message_id=message.id,
+                    empresa_id=message.empresa_id,
+                    atendimento_id=message.atendimento_id,
+                    phone=message.phone_number,
+                    sinais=list(veredito.sinais),
+                )
+                return
 
         # S4: detecta resposta APROVAR/REJEITAR <token> do gestor ANTES de
         # tudo. Se for, processa a decisão (cria/cancela evento Google),
