@@ -520,6 +520,106 @@ async def set_vigencia_endpoint(
     return depois
 
 
+class PagamentoInput(BaseModel):
+    """Registro manual de um pagamento conciliado no painel do gateway
+    (ADR-005 leva F): grava em `transacao` e estende a vigência."""
+
+    plano_slug: str = Field(min_length=2, max_length=40, pattern=r"^[a-z][a-z0-9_-]*$")
+    gateway: str = Field(pattern=r"^(infinitepay|mercadopago|manual)$")
+    gateway_id: str | None = Field(default=None, max_length=120)
+    valor_brl: float = Field(ge=0, le=1_000_000)
+    periodo_inicio: date
+    periodo_fim: date
+    observacao: str | None = Field(default=None, max_length=300)
+
+
+@router.get("/{empresa_id}/pagamentos")
+async def list_pagamentos_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Histórico de pagamentos da empresa + sugestão do próximo período
+    (leva F). Membro lê o histórico; a sugestão só faz sentido para o
+    superadmin, mas é só uma conta de datas."""
+    from whatsapp_langchain.shared.plano_pagamento import (
+        hoje_local,
+        listar_pagamentos,
+        proximo_periodo,
+    )
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        from whatsapp_langchain.shared.empresa import get_empresa_membership
+
+        if not await get_empresa_membership(pool, empresa_id, user_id):
+            raise HTTPException(status_code=403, detail="Sem acesso à empresa.")
+    empresa = await get_empresa_by_id(pool, empresa_id)
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    inicio, fim = proximo_periodo(empresa.plano_valido_ate, hoje_local())
+    return {
+        "items": await listar_pagamentos(pool, empresa_id),
+        "plano_atual": empresa.plano,
+        "plano_valido_ate": (
+            empresa.plano_valido_ate.isoformat() if empresa.plano_valido_ate else None
+        ),
+        "sugestao": {
+            "periodo_inicio": inicio.isoformat(),
+            "periodo_fim": fim.isoformat(),
+        },
+    }
+
+
+@router.post("/{empresa_id}/pagamentos", status_code=201)
+async def registrar_pagamento_endpoint(
+    empresa_id: int,
+    body: PagamentoInput,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Superadmin registra um pagamento conciliado no gateway (ADR-005 leva
+    F, D8: nada ativa sozinho). Grava `transacao` `pago`, muda o plano se
+    preciso e põe `plano_valido_ate = periodo_fim`; confirma por WhatsApp
+    (best-effort). `(gateway, gateway_id)` repetido → 409."""
+    from whatsapp_langchain.shared.plano_pagamento import (
+        PagamentoDuplicadoError,
+        PagamentoInvalidoError,
+        confirmar_por_whatsapp,
+        registrar_pagamento,
+    )
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só o superadmin registra pagamentos."
+        )
+    try:
+        p = await registrar_pagamento(
+            pool,
+            empresa_id,
+            plano_slug=body.plano_slug,
+            gateway=body.gateway,
+            gateway_id=body.gateway_id,
+            valor_brl=body.valor_brl,
+            periodo_inicio=body.periodo_inicio,
+            periodo_fim=body.periodo_fim,
+            observacao=body.observacao,
+            user_id=user_id,
+        )
+    except PagamentoDuplicadoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except PagamentoInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    enviado = await confirmar_por_whatsapp(pool, p)
+    return {
+        "transacao_id": p.transacao_id,
+        "plano": p.plano_slug,
+        "plano_nome": p.plano_nome,
+        "plano_valido_ate": p.periodo_fim.isoformat(),
+        "plano_anterior": p.plano_anterior,
+        "whatsapp_enviado": enviado,
+    }
+
+
 @router.get("/{empresa_id}/plano")
 async def get_plano_empresa_endpoint(
     empresa_id: int,

@@ -658,43 +658,12 @@ async def _ativar_plano_pos_pagamento(
 # ---------------------------------------------------------------------
 
 
-async def list_transacoes(
-    pool: AsyncConnectionPool, empresa_id: int, limit: int = 50
-) -> list[dict[str, Any]]:
-    """Lista últimas N transações da empresa pra UI billing/historico."""
-    with empresa_scope(empresa_id=empresa_id):
-        async with pool.connection() as conn:
-            cur = await conn.execute(
-                """
-                SELECT t.id, t.tipo, t.valor_brl, t.status, t.gateway,
-                       t.gateway_id, t.descricao, t.pago_em,
-                       t.created_at, p.slug AS plano_slug, p.nome AS plano_nome
-                  FROM transacao t
-                  LEFT JOIN plano p ON p.id = t.plano_id
-                 WHERE t.empresa_id = %s
-                 ORDER BY t.created_at DESC
-                 LIMIT %s
-                """,
-                (empresa_id, limit),
-            )
-            rows = await cur.fetchall()
-    return [
-        {
-            "id": int(r[0]),
-            "tipo": r[1],
-            "valor_brl": float(r[2]) if r[2] is not None else 0.0,
-            "status": r[3],
-            "gateway": r[4],
-            "gateway_id": r[5],
-            "descricao": r[6],
-            "pago_em": r[7].isoformat() if r[7] else None,
-            "created_at": r[8].isoformat() if r[8] else None,
-            "plano_slug": r[9],
-            "plano_nome": r[10],
-        }
-        for r in rows
-    ]
-
+# A listagem mora em `shared/plano_pagamento.py` desde a leva F (ADR-005):
+# o histórico passou a ter período e não depende mais do Asaas. Re-export
+# para a rota `/billing/historico` até a remoção do Asaas (leva I).
+from whatsapp_langchain.shared.plano_pagamento import (  # noqa: E402
+    listar_pagamentos as list_transacoes,
+)
 
 # ---------------------------------------------------------------------
 # Helpers

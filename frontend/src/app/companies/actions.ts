@@ -7,9 +7,14 @@ import { auth } from "@/lib/auth";
 import {
   createEmpresa,
   getEmpresaCsat,
+  getPagamentosEmpresa,
+  registrarPagamento,
   setEmpresaVigencia,
   updateEmpresa,
   updateEmpresaCsat,
+  type PagamentoInput,
+  type PagamentoRegistrado,
+  type PagamentosEmpresa,
   type EmpresaCsatConfig,
   type EmpresaInput,
   type EmpresaUpdateInput,
@@ -257,6 +262,31 @@ export async function setVigenciaAction(
     await setEmpresaVigencia(empresaId, planoValidoAte);
     revalidatePath("/companies");
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+/** Histórico de pagamentos + sugestão do próximo período (leva F). */
+export async function loadPagamentosAction(
+  empresaId: number
+): Promise<{ ok: true; data: PagamentosEmpresa } | { ok: false; error: string }> {
+  try {
+    return { ok: true, data: await getPagamentosEmpresa(empresaId) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+/** Superadmin registra um pagamento conciliado no gateway (leva F). */
+export async function registrarPagamentoAction(
+  empresaId: number,
+  body: PagamentoInput
+): Promise<{ ok: true; data: PagamentoRegistrado } | { ok: false; error: string }> {
+  try {
+    const data = await registrarPagamento(empresaId, body);
+    revalidatePath("/companies");
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Erro." };
   }

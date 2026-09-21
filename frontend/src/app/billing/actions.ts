@@ -71,3 +71,18 @@ export async function cancelSubscriptionAction(): Promise<Result<{ status: strin
     return { ok: false, error: _err(e) };
   }
 }
+
+/** Superadmin cola os links dos planos hospedados (leva F). */
+export async function setPlanoLinksAction(
+  slug: string,
+  body: { link_infinitepay: string | null; link_mercadopago: string | null }
+): Promise<Result<{ slug: string }>> {
+  try {
+    const { setPlanoLinks } = await import("@/lib/api");
+    const r = await setPlanoLinks(slug, body);
+    revalidatePath("/billing");
+    return { ok: true, data: r };
+  } catch (e) {
+    return { ok: false, error: _err(e) };
+  }
+}
