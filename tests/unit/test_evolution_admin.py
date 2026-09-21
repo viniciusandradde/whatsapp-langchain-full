@@ -138,6 +138,23 @@ def test_classify_admin_error_403_missing_key():
     assert "rejeitada (403)" in msg
 
 
+def test_classify_admin_error_404_instancia_apagada():
+    """Botão Reconectar numa conexão cuja instância sumiu do servidor: texto
+    humano (sem JSON da Evolution), mandando criar outra conexão."""
+    msg = admin.classify_admin_error(
+        admin.EvolutionAdminError(
+            404,
+            '{"status":404,"response":{"message":["The \\"x\\" instance does not exist"]}}',
+        )
+    )
+    assert msg is not None
+    assert "não existe mais" in msg and "nova conexão" in msg
+    assert "{" not in msg and "_" not in msg
+    assert (
+        admin.classify_admin_error(admin.EvolutionAdminError(404, "Not Found")) is None
+    )
+
+
 def test_classify_admin_error_non_auth_returns_none():
     assert admin.classify_admin_error(admin.EvolutionAdminError(409, "in use")) is None
     assert (
