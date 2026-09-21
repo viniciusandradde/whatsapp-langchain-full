@@ -357,12 +357,13 @@ class TestChecarConexoesClientes:
         assert "1018" in achado.evidencia
         assert "/monitor/conexoes" in achado.acao
 
-    def test_so_silencio_e_atencao(self) -> None:
-        achado = checar_conexoes_clientes(0, 2)
-        assert achado is not None
-        assert achado.severidade == ATENCAO
-        assert "2 sem mensagens" in achado.titulo
-        assert "Saude dos clientes" in achado.evidencia
+    def test_silencio_nao_pesa(self) -> None:
+        """mig 198: silêncio não é alerta (38 silêncios ≥ 1 h/mês saudáveis na
+        VSA) — só conexão caída entra no relatório."""
+        assert checar_conexoes_clientes(0, 2) is None
+        achado = checar_conexoes_clientes(1, 2)
+        assert achado is not None and achado.severidade == CRITICO
+        assert "sem mensagens" not in achado.titulo
 
     def test_monitor_parado(self) -> None:
         assert checar_monitor_conexoes_parado(None) is None

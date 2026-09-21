@@ -5784,6 +5784,18 @@ export interface MonitorConexao {
   ultimo_inbound_em: string | null;
   recebidas_24h: number;
   esperadas_24h: number;
+  /** mig 198: horas sem receber e a régua da própria conexão (null = sem histórico). */
+  quieto_ha_h: number | null;
+  limite_normal_h: number | null;
+  hora_ativa: boolean | null;
+  acima_do_normal: boolean;
+  eco: {
+    ativo: boolean;
+    ultimo_em: string | null;
+    pendente_desde: string | null;
+    falhas: number;
+  };
+  ultimo_ack_em: string | null;
   alertas: ConexaoAlerta[];
 }
 

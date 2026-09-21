@@ -540,6 +540,56 @@ async def set_connection_state(
         )
 
 
+async def registrar_eco_voltou(
+    pool: AsyncConnectionPool, conexao_id: int, key_id: str | None
+) -> None:
+    """O eco (mig 198) voltou pelo webhook — `fromMe` ao próprio número com o
+    prefixo. Qualquer eco que volta prova o caminho de entrada: zera as
+    falhas e libera o pendente (o id nem sempre bate — em modo mock o tick
+    guarda um id falso e o eco real é disparado à mão)."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE conexao
+               SET ultimo_eco_em = NOW(),
+                   eco_falhas_seguidas = 0,
+                   eco_pendente_id = NULL,
+                   updated_at = NOW()
+             WHERE id = %(id)s
+            """,
+            {"id": conexao_id},
+        )
+
+
+async def registrar_ack(
+    pool: AsyncConnectionPool, conexao_id: int, key_id: str | None
+) -> bool:
+    """`messages.update` de uma mensagem nossa (mig 198): saída funcionando.
+    Se o id é o do eco pendente, o eco voltou. Devolve True nesse caso."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE conexao
+               SET ultimo_ack_em = NOW(),
+                   ultimo_eco_em = CASE
+                       WHEN %(key)s::text IS NOT NULL AND eco_pendente_id = %(key)s::text THEN NOW()
+                       ELSE ultimo_eco_em END,
+                   eco_falhas_seguidas = CASE
+                       WHEN %(key)s::text IS NOT NULL AND eco_pendente_id = %(key)s::text THEN 0
+                       ELSE eco_falhas_seguidas END,
+                   eco_pendente_id = CASE
+                       WHEN %(key)s::text IS NOT NULL AND eco_pendente_id = %(key)s::text THEN NULL
+                       ELSE eco_pendente_id END,
+                   updated_at = NOW()
+             WHERE id = %(id)s
+            RETURNING ultimo_eco_em IS NOT NULL AND ultimo_eco_em >= NOW() - interval '1 second'
+            """,
+            {"key": key_id, "id": conexao_id},
+        )
+        row = await cur.fetchone()
+    return bool(row and row[0])
+
+
 async def registrar_evento_conexao(
     pool: AsyncConnectionPool,
     conexao_id: int,
@@ -574,6 +624,13 @@ async def registrar_evento_conexao(
                        WHEN %(estado)s IN ('disconnected', 'error')
                        THEN COALESCE(desconexao_em, NOW())
                        ELSE desconexao_em END,
+                   -- mig 198: voltou a abrir depois de fechada/pareando → o tick
+                   -- manda um eco para provar que a ENTRADA voltou, não só o socket
+                   eco_solicitado_em = CASE
+                       WHEN %(estado)s IN ('open', 'ready')
+                        AND connection_state NOT IN ('open', 'ready')
+                       THEN NOW()
+                       ELSE eco_solicitado_em END,
                    updated_at = NOW()
              WHERE id = %(id)s
             """,

@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from whatsapp_langchain.shared.saude_conexoes import (
-    LAMBDA_MIN,
+    ECO_FALHAS_MIN,
+    ECO_INTERVALO_MIN,
+    ECO_TIMEOUT_MIN,
+    HISTORICO_MIN_DIAS,
+    SILENCIO_PISO_H,
+    SILENCIO_TETO_H,
     SONDAS_RUINS_MIN,
     Achado,
     ConexaoMonitorada,
@@ -13,11 +20,14 @@ from whatsapp_langchain.shared.saude_conexoes import (
     Silencio,
     SinaisConexao,
     avaliar_conexao,
+    calcular_limite_silencio,
     calcular_silencio,
+    decidir_eco,
     descrever_desconexao,
     duracao_humana,
     esperadas_na_janela,
     formatar_linha,
+    hora_ativa,
     monitoravel,
     montar_mensagem,
     sonda_devida,
@@ -73,7 +83,7 @@ def _sinais(**kw) -> SinaisConexao:
         sonda_falhas_seguidas=0,
         silencio=None,
         ultimo_inbound_em=_local(2026, 9, 22, 8, 0),
-        sem_atividade_desde=None,
+        eco_falhas_seguidas=0,
     )
     base.update(kw)
     return SinaisConexao(**base)
@@ -111,7 +121,6 @@ def test_silencio_em_horario_comercial_soma_as_horas_locais():
     assert s is not None
     assert s.esperadas == 24.0
     assert s.horas == 6.0
-    assert s.esperadas >= LAMBDA_MIN
 
 
 def test_silencio_de_fim_de_semana_nao_alerta():
@@ -204,58 +213,110 @@ def test_queda_transitoria_nao_abre_sozinha():
     )
 
 
-def test_silencio_abre_no_limiar_e_copia_o_resultado_da_sonda():
+def test_silencio_nunca_abre_episodio_mesmo_acima_do_normal():
+    """mig 198: 38 silêncios ≥ 1 h/mês saudáveis na VSA — silêncio é gatilho
+    do eco, não alerta. Nem com a sonda dizendo que responde."""
     desde = _local(2026, 9, 22, 8)
-    ok = _sonda(True)
-    achados = avaliar_conexao(
-        _sinais(
-            silencio=Silencio(LAMBDA_MIN, 2.0, desde, 20.0),
-            sonda=ok,
-            ultimo_inbound_em=desde,
-        )
+    sil = Silencio(
+        24.0, 6.0, desde, 20.0, limite_normal_h=2.0, hora_ativa=True, horas_ativas=6.0
     )
-    assert [a.tipo for a in achados] == ["sem_atividade"]
-    assert achados[0].detalhe["sonda_ok"] is True
-    assert achados[0].detalhe["esperadas"] == LAMBDA_MIN
+    assert sil.acima_do_normal
+    assert avaliar_conexao(_sinais(silencio=sil, sonda=_sonda(True))) == []
+
+
+def test_regua_empirica_do_silencio():
+    assert calcular_limite_silencio([1.0, 3.7], HISTORICO_MIN_DIAS - 1) is None
+    assert calcular_limite_silencio([], 20.0) is None
+    # VSA: maior silêncio saudável 3,7 h → 5,5 h; 1h26 não é acima do normal
+    assert calcular_limite_silencio([0.2, 1.5, 3.7], 20.0) == pytest.approx(5.55)
+    assert calcular_limite_silencio([0.1, 0.5], 20.0) == SILENCIO_PISO_H
+    assert calcular_limite_silencio([40.0], 20.0) == SILENCIO_TETO_H
+    sil = Silencio(8.5, 1.43, _local(2026, 9, 21, 16, 36), 21.0, 5.55, True, 1.43)
+    assert not sil.acima_do_normal
+    # fora de hora ativa (madrugada) nunca é "acima do normal"
+    assert not Silencio(
+        0.0, 9.0, _utc(2026, 9, 22, 2), 21.0, 5.55, False
+    ).acima_do_normal
+    assert Silencio(
+        0.0, 6.0, _local(2026, 9, 21, 8), 21.0, 5.55, True, 6.0
+    ).acima_do_normal
+    # 9 h de relógio mas só 1 h ativa (atravessou a noite): não é acima
+    assert not Silencio(
+        0.0, 9.0, _local(2026, 9, 21, 8), 21.0, 5.55, True, 1.0
+    ).acima_do_normal
+
+
+def test_horas_ativas_entre_ignora_a_noite():
+    from whatsapp_langchain.shared.saude_conexoes import horas_ativas_entre
+
+    base = {(1, h): 4.0 for h in range(8, 18)} | {(2, h): 4.0 for h in range(8, 18)}
+    # segunda 17:45 → terça 08:30: 15 min + 30 min ativos, a noite vale zero
+    assert horas_ativas_entre(
+        base, _local(2026, 9, 21, 17, 45), _local(2026, 9, 22, 8, 30), TZ
+    ) == pytest.approx(0.75)
     assert (
-        avaliar_conexao(_sinais(silencio=Silencio(LAMBDA_MIN - 0.1, 2.0, desde, 20.0)))
-        == []
+        horas_ativas_entre(base, _local(2026, 9, 21, 9), _local(2026, 9, 21, 12), TZ)
+        == 3.0
     )
-
-
-def test_silencio_ativo_so_fecha_quando_chega_mensagem():
-    ultimo = _local(2026, 9, 16, 9, 27)
-    aberto_em = _utc(2026, 9, 16, 15)
-    # histórico saiu da janela (silencio=None) mas nada chegou → sustenta
-    achados = avaliar_conexao(
-        _sinais(silencio=None, ultimo_inbound_em=ultimo, sem_atividade_desde=aberto_em)
-    )
-    assert [a.tipo for a in achados] == ["sem_atividade"]
-    assert achados[0].detalhe["sustentado"] is True
-    # chegou mensagem depois da abertura → some
     assert (
-        avaliar_conexao(
-            _sinais(
-                silencio=None,
-                ultimo_inbound_em=_utc(2026, 9, 22, 12),
-                sem_atividade_desde=aberto_em,
-            )
-        )
-        == []
+        horas_ativas_entre({}, _local(2026, 9, 21, 9), _local(2026, 9, 21, 12), TZ)
+        == 0.0
     )
 
 
-def test_caida_e_silencio_podem_coexistir():
-    desde = _local(2026, 9, 16, 9, 27)
+def test_hora_ativa_le_a_baseline_local():
+    base = {(2, 9): 4.0, (2, 22): 0.1}
+    assert hora_ativa(base, _local(2026, 9, 22, 9) + timedelta(minutes=30), TZ)
+    assert not hora_ativa(base, _utc(2026, 9, 23, 2, 10), TZ)
+    assert not hora_ativa(base, _local(2026, 9, 26, 9), TZ)  # sábado sem linha
+
+
+def test_decidir_eco():
+    now = _local(2026, 9, 22, 10)
+    acima = Silencio(20.0, 6.0, _local(2026, 9, 22, 4), 20.0, 2.0, True, 6.0)
+    normal = Silencio(2.0, 0.5, _local(2026, 9, 22, 9, 30), 20.0, 2.0, True, 0.5)
+    # só Evolution com eco ligado
+    assert decidir_eco(_conexao(provider="waba"), acima, True, now) == "nada"
+    assert decidir_eco(_conexao(eco_ativo=False), acima, True, now) == "nada"
+    # silêncio acima do normal + sonda OK → enviar; sonda ruim não (a sonda já decide)
+    assert decidir_eco(_conexao(), acima, True, now) == "enviar"
+    assert decidir_eco(_conexao(), acima, False, now) == "nada"
+    assert decidir_eco(_conexao(), normal, True, now) == "nada"
+    # intervalo mínimo entre ecos
+    recente = now - timedelta(minutes=ECO_INTERVALO_MIN - 5)
+    assert decidir_eco(_conexao(ultimo_eco_em=recente), acima, True, now) == "nada"
+    antigo = now - timedelta(minutes=ECO_INTERVALO_MIN + 5)
+    assert decidir_eco(_conexao(ultimo_eco_em=antigo), acima, True, now) == "enviar"
+    # eco em voo: aguarda dentro do prazo, falha depois
+    em_voo = _conexao(eco_pendente_id="ABC", eco_enviado_em=now - timedelta(minutes=1))
+    assert decidir_eco(em_voo, acima, True, now) == "aguardar"
+    vencido = _conexao(
+        eco_pendente_id="ABC",
+        eco_enviado_em=now - timedelta(minutes=ECO_TIMEOUT_MIN + 1),
+    )
+    assert decidir_eco(vencido, acima, True, now) == "falhou"
+    # pedido pós-reconexão força o envio mesmo sem silêncio
+    assert decidir_eco(_conexao(eco_solicitado_em=now), None, None, now) == "enviar"
+
+
+def test_ecos_sem_retorno_abrem_caida_e_sonda_tem_prioridade():
+    ultimo = _local(2026, 9, 22, 4)
+    assert avaliar_conexao(_sinais(eco_falhas_seguidas=ECO_FALHAS_MIN - 1)) == []
+    achados = avaliar_conexao(
+        _sinais(eco_falhas_seguidas=ECO_FALHAS_MIN, ultimo_inbound_em=ultimo)
+    )
+    assert [a.tipo for a in achados] == ["conexao_caida"]
+    assert achados[0].detalhe["origem"] == "eco"
+    assert "não recebe mensagens" in achados[0].detalhe["motivo"]
+    # sonda ruim × 2 vence o eco: um só achado, origem sonda
     achados = avaliar_conexao(
         _sinais(
             sonda=_sonda(False, "Evolution informou conexão fechada"),
             sonda_falhas_seguidas=3,
-            silencio=Silencio(60.0, 30.0, desde, 20.0),
-            ultimo_inbound_em=desde,
+            eco_falhas_seguidas=5,
         )
     )
-    assert [a.tipo for a in achados] == ["conexao_caida", "sem_atividade"]
+    assert len(achados) == 1 and achados[0].detalhe["origem"] == "sonda"
 
 
 # --- textos ------------------------------------------------------------------

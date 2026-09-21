@@ -48,6 +48,13 @@ function quandoCurto(iso: string | null | undefined): string {
   return h < 48 ? `há ${h} h` : `há ${Math.round(h / 24)} dias`;
 }
 
+function horasCurtas(h: number | null | undefined): string {
+  if (h === null || h === undefined) return "—";
+  if (h < 1) return `${Math.round(h * 60)} min`;
+  if (h < 48) return `${Math.round(h * 10) / 10} h`;
+  return `${Math.round(h / 24)} dias`;
+}
+
 const ESTADO_LABEL: Record<string, string> = {
   open: "Conectada",
   ready: "Conectada",
@@ -130,9 +137,8 @@ export function MonitorClient({
   const caidas = items.filter((c) =>
     c.alertas.some((a) => a.tipo === "conexao_caida"),
   ).length;
-  const mudas = items.filter((c) =>
-    c.alertas.some((a) => a.tipo === "sem_atividade"),
-  ).length;
+  // mig 198: silêncio acima da régua da própria conexão é informação, não alerta
+  const quietas = items.filter((c) => c.acima_do_normal).length;
   const comProblema = items.filter(temAlerta).length;
 
   const ultimoTick = estado.ultimo_tick_em ?? null;
@@ -172,7 +178,14 @@ export function MonitorClient({
         <span className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{items.length} conexões</Badge>
           {caidas > 0 && <Badge variant="destructive">{caidas} caída(s)</Badge>}
-          {mudas > 0 && <Badge variant="warning">{mudas} sem mensagens</Badge>}
+          {quietas > 0 && (
+            <Badge
+              variant="outline"
+              title="Sem mensagens há mais tempo que o normal desta conexão; o Nexus envia uma verificação ao próprio número — alerta só se ela não voltar."
+            >
+              {quietas} quieta{quietas > 1 ? "s" : ""} acima do normal
+            </Badge>
+          )}
           {comProblema === 0 && <Badge variant="success">tudo normal</Badge>}
         </span>
         <span className="ml-auto flex items-center gap-2">
@@ -206,6 +219,8 @@ export function MonitorClient({
                   <TableHead>Estado</TableHead>
                   <TableHead>Verificação</TableHead>
                   <TableHead>Última mensagem</TableHead>
+                  <TableHead>Eco</TableHead>
+                  <TableHead>Entrega</TableHead>
                   <TableHead className="text-right">Recebidas 24 h</TableHead>
                   <TableHead>Alerta</TableHead>
                 </TableRow>
@@ -325,13 +340,53 @@ function LinhaConexao({ c }: { c: MonitorConexao }) {
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-normal">
         {c.ultimo_inbound_em ? (
-          <span title={dataHora(c.ultimo_inbound_em)}>
-            {quandoCurto(c.ultimo_inbound_em)}
-          </span>
+          <div className="space-y-0.5">
+            <span
+              title={dataHora(c.ultimo_inbound_em)}
+              className={c.acima_do_normal ? "text-warning" : undefined}
+            >
+              {quandoCurto(c.ultimo_inbound_em)}
+            </span>
+            <div className="text-xs text-muted-foreground">
+              {c.limite_normal_h === null
+                ? "sem histórico para uma régua"
+                : c.hora_ativa === false
+                  ? "fora do horário em que recebe"
+                  : `normal até ${horasCurtas(c.limite_normal_h)}`}
+            </div>
+          </div>
         ) : (
           <span className="text-muted-foreground">nunca</span>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-normal">
+        {!c.eco.ativo ? (
+          <span className="text-muted-foreground">—</span>
+        ) : c.eco.pendente_desde ? (
+          <span className="text-warning" title={dataHora(c.eco.pendente_desde)}>
+            aguardando ({quandoCurto(c.eco.pendente_desde)})
+          </span>
+        ) : c.eco.falhas > 0 ? (
+          <span className="text-destructive">
+            não voltou {c.eco.falhas}×
+          </span>
+        ) : c.eco.ultimo_em ? (
+          <span className="text-success" title={dataHora(c.eco.ultimo_em)}>
+            ✓ {quandoCurto(c.eco.ultimo_em)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">ainda não enviado</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {c.ultimo_ack_em ? (
+          <span className="text-success" title={dataHora(c.ultimo_ack_em)}>
+            ✓ {quandoCurto(c.ultimo_ack_em)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="text-right tabular-nums">

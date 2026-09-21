@@ -444,32 +444,28 @@ def checar_ia_alertas(alertas_ativos, alertas_resumo=None):
 LIMITE_MONITOR_CONEXOES_MIN = 20
 
 
-def checar_conexoes_clientes(caidas, sem_atividade, resumo=None):
-    """Episódios de saúde de conexão abertos (mig 196).
+def checar_conexoes_clientes(caidas, sem_atividade=None, resumo=None):
+    """Episódios de saúde de conexão abertos (mig 196/198).
 
     O worker já avisou o canal na hora; aqui o episódio VIVO entra no resumo
     do dia (mesmo papel de `checar_ia_alertas`). Conexão caída é CRITICO — o
-    cliente está sem WhatsApp e só ele pode reparear; silêncio com a conexão
-    respondendo é ATENCAO — pode ser feriado ou o cliente parado.
+    cliente está sem WhatsApp e só ele pode reparear. Silêncio NÃO pesa
+    (mig 198): não é alerta, é o gatilho do eco; o parâmetro fica só por
+    compatibilidade com quem chama.
     """
     caidas = caidas or 0
-    sem_atividade = sem_atividade or 0
-    if caidas <= 0 and sem_atividade <= 0:
+    if caidas <= 0:
         return None
-    partes = []
-    if caidas:
-        partes.append("{0} conexao(oes) caida(s)".format(caidas))
-    if sem_atividade:
-        partes.append("{0} sem mensagens contra a baseline".format(sem_atividade))
+    partes = ["{0} conexao(oes) caida(s)".format(caidas)]
     return Achado(
         chave="conexoes_clientes",
-        severidade=CRITICO if caidas else ATENCAO,
+        severidade=CRITICO,
         titulo="Clientes: " + ", ".join(partes),
         evidencia=resumo or "ver Saude dos clientes no painel",
         acao=(
             "Abrir /monitor/conexoes no painel. Caida = o cliente precisa "
-            "reparear o WhatsApp (QR ou codigo em Conexoes); sem mensagens com "
-            "a conexao respondendo = cliente parado ou feriado — confirmar com ele."
+            "reparear o WhatsApp (botao Reconectar em Conexoes) ou a entrada "
+            "parou de chegar (o eco ao proprio numero nao voltou)."
         ),
     )
 

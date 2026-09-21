@@ -251,6 +251,74 @@ def test_skips_fromMe_true(mock_db):
     mock_db.assert_not_awaited()
 
 
+def test_eco_from_me_ao_proprio_numero_e_reconhecido(mock_db, monkeypatch):
+    """mig 198: a conexão manda a verificação ao PRÓPRIO número e ela volta
+    pelo webhook como fromMe — registra o eco, nunca enfileira."""
+    from whatsapp_langchain.shared.saude_conexoes import ECO_TEXTO
+
+    voltou = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        "whatsapp_langchain.server.routes.evolution_webhook.registrar_eco_voltou",
+        voltou,
+    )
+    response = client.post(
+        "/webhook/evolution",
+        json=_payload(
+            from_me=True,
+            remote_jid="5567984249725@s.whatsapp.net",
+            conversation=ECO_TEXTO,
+            msg_id="ECO1",
+        ),
+    )
+    assert response.status_code == 200
+    voltou.assert_awaited_once()
+    assert voltou.await_args.args[2] == "ECO1"
+    mock_db.assert_not_awaited()
+    # mesmo texto para OUTRO número (alguém encaminhou) não é eco
+    voltou.reset_mock()
+    client.post(
+        "/webhook/evolution",
+        json=_payload(from_me=True, conversation=ECO_TEXTO),
+    )
+    voltou.assert_not_awaited()
+
+
+def test_messages_update_registra_ack_e_eco(mock_db, monkeypatch):
+    """Ack de entrega das nossas mensagens (mig 198): saída funcionando; o ack
+    do id pendente é o eco voltando. Formatos objeto e lista da Evolution."""
+    ack = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        "whatsapp_langchain.server.routes.evolution_webhook.registrar_ack", ack
+    )
+    r = client.post(
+        "/webhook/evolution",
+        json={
+            "event": "messages.update",
+            "instance": TEST_INSTANCE,
+            "data": {"keyId": "ECO1", "fromMe": True, "status": "DELIVERY_ACK"},
+        },
+    )
+    assert r.status_code == 200
+    ack.assert_awaited_once()
+    assert ack.await_args.args[2] == "ECO1"
+    ack.reset_mock()
+    r = client.post(
+        "/webhook/evolution",
+        json={
+            "event": "MESSAGES_UPDATE",
+            "instance": TEST_INSTANCE,
+            "data": [
+                {"key": {"id": "X1", "fromMe": True}, "update": {"status": "READ"}},
+                {"key": {"id": "X2", "fromMe": False}, "update": {"status": "READ"}},
+                {"key": {"id": "X3", "fromMe": True}, "update": {"status": "PENDING"}},
+            ],
+        },
+    )
+    assert r.status_code == 200
+    assert [c.args[2] for c in ack.await_args_list] == ["X1"]
+    mock_db.assert_not_awaited()
+
+
 def test_skips_self_loop_own_number(mock_db, monkeypatch):
     """Guard anti-loop: inbound de um número que é conexão NOSSA (bot-para-bot)
     é ignorado, não enfileira (regressão prod 2026-05-31)."""

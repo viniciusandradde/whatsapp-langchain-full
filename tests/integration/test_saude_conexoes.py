@@ -276,13 +276,54 @@ async def _sem_sonda(_c):
     return None
 
 
-async def _tick(db_url: str, *, now_utc: datetime, sondar, caixa: _Caixa) -> dict:
+def _eco_falso(*, so_conexao: int, ids: list[str]):
+    """Eco falso SÓ para a conexão do teste (devolve ids em sequência); qualquer
+    outra conexão do banco pedindo eco é erro do teste."""
+
+    async def _f(c):
+        if c.id != so_conexao:
+            raise AssertionError(f"eco pedido para a conexão {c.id} fora do teste")
+        return ids.pop(0)
+
+    return _f
+
+
+async def _eco_automatico(c):
+    return f"ECO-AUTO-{c.id}"
+
+
+async def _tick(
+    db_url: str, *, now_utc: datetime, sondar, caixa: _Caixa, enviar_eco=None
+) -> dict:
     from whatsapp_langchain.shared.saude_conexoes import avaliar_saude
 
     async with AsyncConnectionPool(db_url, min_size=1, max_size=4) as pool:
         return await avaliar_saude(
-            pool, now_utc=now_utc, sondar=sondar, notificar=caixa.notificar, forcar=True
+            pool,
+            now_utc=now_utc,
+            sondar=sondar,
+            notificar=caixa.notificar,
+            # sem eco explícito: quem pedir (ex.: reconexão) ganha um id falso
+            enviar_eco=enviar_eco or _eco_automatico,
+            forcar=True,
         )
+
+
+def _eco_estado(db_url: str, cid: int) -> dict:
+    with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT eco_pendente_id, eco_enviado_em, ultimo_eco_em, eco_falhas_seguidas, "
+            "ultimo_ack_em FROM conexao WHERE id = %s",
+            (cid,),
+        )
+        r = cur.fetchone()
+    return {
+        "pendente": r[0],
+        "enviado": r[1],
+        "voltou": r[2],
+        "falhas": r[3],
+        "ack": r[4],
+    }
 
 
 def _evolution_apikey() -> str | None:
@@ -301,24 +342,26 @@ def _evolution_apikey() -> str | None:
 
 @pytest.mark.docker_demo
 class TestE2E:
-    async def test_01_silencio_contra_baseline_abre_e_avisa_uma_vez(
-        self, db_url: str, empresa_id: int, conexao_id: int
+    async def test_01_silencio_dispara_eco_e_so_eco_sem_retorno_abre_caida(
+        self, db_url: str, empresa_id: int, conexao_id: int, instance_name: str
     ) -> None:
+        """mig 198: 6 h caladas numa terça (recebe a cada 15 min há 3 semanas)
+        → NENHUM alerta; sonda OK → eco. Eco sem retorno 2× → caída (origem
+        eco). O eco voltando pelo webhook resolve."""
         terca_14h = _ultima_terca_14h()
         ultima = _semear_historico(db_url, empresa_id, conexao_id, terca_14h)
+        ok = _sonda(True, "conexão responde", so_conexao=conexao_id)
         caixa = _Caixa()
         c = await _tick(
             db_url,
             now_utc=terca_14h,
-            sondar=_sonda(True, "conexão responde", so_conexao=conexao_id),
+            sondar=ok,
             caixa=caixa,
+            enviar_eco=_eco_falso(so_conexao=conexao_id, ids=["ECO-1"]),
         )
         assert c["erros"] == 0 and c["conexoes"] >= 1, c
-
         est = _conexao_estado(db_url, conexao_id)
-        assert est["ultimo_inbound"] == ultima
-        assert est["hc_ok"] is True and est["falhas"] == 0
-
+        assert est["ultimo_inbound"] == ultima and est["hc_ok"] is True
         with psycopg.connect(db_url) as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT count(*), sum(recebidas) FROM conexao_atividade WHERE conexao_id = %s",
@@ -326,31 +369,111 @@ class TestE2E:
             )
             n, total = cur.fetchone()
         assert n >= 100 and total >= 400, (n, total)
+        # silêncio de 6 h acima da régua (intervalos de 15 min → piso 2 h) NÃO é alerta
+        assert _alertas(db_url, conexao_id) == []
+        assert not [
+            m for m in caixa.msgs if any(f"({empresa_id})" in li for li in m[1])
+        ]
+        eco = _eco_estado(db_url, conexao_id)
+        assert (
+            eco["pendente"] == "ECO-1"
+            and eco["enviado"] is not None
+            and eco["falhas"] == 0
+        )
 
-        meus = [a for a in _alertas(db_url, conexao_id)]
-        assert [a["tipo"] for a in meus] == ["sem_atividade"], meus
-        assert meus[0]["detalhe"]["esperadas"] >= 8  # 6 h × 4/h = 24
-        assert meus[0]["detalhe"]["sonda_ok"] is True
-        assert meus[0]["notificado"] is not None
+        # 4 min depois (prazo 3 min) sem retorno → falha 1, ainda sem alerta, sem novo eco
+        await _tick(
+            db_url, now_utc=terca_14h + timedelta(minutes=4), sondar=ok, caixa=caixa
+        )
+        eco = _eco_estado(db_url, conexao_id)
+        assert eco["pendente"] is None and eco["falhas"] == 1
+        assert _alertas(db_url, conexao_id) == []
 
+        # intervalo mínimo de 2 h entre ecos: às 15:00 nada; às 16:01 manda o 2º
+        await _tick(
+            db_url, now_utc=terca_14h + timedelta(hours=1), sondar=ok, caixa=caixa
+        )
+        assert _eco_estado(db_url, conexao_id)["pendente"] is None
+        await _tick(
+            db_url,
+            now_utc=terca_14h + timedelta(hours=2, minutes=1),
+            sondar=ok,
+            caixa=caixa,
+            enviar_eco=_eco_falso(so_conexao=conexao_id, ids=["ECO-2"]),
+        )
+        assert _eco_estado(db_url, conexao_id)["pendente"] == "ECO-2"
+
+        # 2º eco sem retorno → caída, origem eco, avisada uma vez
+        await _tick(
+            db_url,
+            now_utc=terca_14h + timedelta(hours=2, minutes=5),
+            sondar=ok,
+            caixa=caixa,
+        )
+        ativos = [a for a in _alertas(db_url, conexao_id) if a["resolvido"] is None]
+        assert [a["tipo"] for a in ativos] == ["conexao_caida"], ativos
+        assert (
+            ativos[0]["detalhe"]["origem"] == "eco"
+            and ativos[0]["detalhe"]["falhas"] == 2
+        )
         abertas = [m for m in caixa.msgs if m[0].startswith("🔴")]
         assert len(abertas) == 1, caixa.msgs
         linha = next(li for li in abertas[0][1] if f"({empresa_id})" in li)
-        assert "sem mensagens há 6 h" in linha and "esperadas ≈ 24" in linha
-        assert "conexão responde" in linha
-        assert "_" not in linha
+        assert "não recebe mensagens" in linha and "_" not in linha
 
-        # segundo tick, mesmo instante: episódio já ativo — nenhuma mensagem nova
+        # o eco volta pelo webhook (fromMe ao próprio número com o prefixo) → resolve
+        from whatsapp_langchain.shared.saude_conexoes import ECO_TEXTO
+
+        apikey = _evolution_apikey()
+        assert apikey, "EVOLUTION_API_KEY do .env.local"
+        with psycopg.connect(db_url) as conn, conn.cursor() as cur:
+            cur.execute("SELECT from_number FROM conexao WHERE id = %s", (conexao_id,))
+            numero = "".join(ch for ch in cur.fetchone()[0] if ch.isdigit())
+        r = httpx.post(
+            f"{API_BASE_URL}/webhook/evolution",
+            headers={"apikey": apikey},
+            json={
+                "event": "messages.upsert",
+                "instance": instance_name,
+                "data": {
+                    "key": {
+                        "remoteJid": f"{numero}@s.whatsapp.net",
+                        "fromMe": True,
+                        "id": "ECO-9",
+                    },
+                    "message": {"conversation": ECO_TEXTO},
+                    "messageTimestamp": "1790000000",
+                },
+            },
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        eco = _eco_estado(db_url, conexao_id)
+        assert (
+            eco["voltou"] is not None and eco["falhas"] == 0 and eco["pendente"] is None
+        )
         caixa2 = _Caixa()
         await _tick(
             db_url,
-            now_utc=terca_14h,
-            sondar=_sonda(True, "conexão responde", so_conexao=conexao_id),
+            now_utc=terca_14h + timedelta(hours=2, minutes=10),
+            sondar=ok,
             caixa=caixa2,
         )
-        assert not [
-            m for m in caixa2.msgs if any(f"({empresa_id})" in li for li in m[1])
-        ], caixa2.msgs
+        assert [a for a in _alertas(db_url, conexao_id) if a["resolvido"] is None] == []
+
+        # ack de entrega (messages.update) = saída funcionando
+        r = httpx.post(
+            f"{API_BASE_URL}/webhook/evolution",
+            headers={"apikey": apikey},
+            json={
+                "event": "messages.update",
+                "instance": instance_name,
+                "data": {"keyId": "QUALQUER", "fromMe": True, "status": "DELIVERY_ACK"},
+            },
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        assert _eco_estado(db_url, conexao_id)["ack"] is not None
 
     async def test_02_duas_sondas_ruins_abrem_conexao_caida(
         self, db_url: str, empresa_id: int, conexao_id: int
@@ -365,7 +488,7 @@ class TestE2E:
         assert est["falhas"] == 1 and est["hc_ok"] is False
         assert [
             a["tipo"] for a in _alertas(db_url, conexao_id) if a["resolvido"] is None
-        ] == ["sem_atividade"]
+        ] == []
         assert not [
             m for m in caixa.msgs if any(f"({empresa_id})" in li for li in m[1])
         ]
@@ -378,12 +501,15 @@ class TestE2E:
         ativos = {
             a["tipo"]: a for a in _alertas(db_url, conexao_id) if a["resolvido"] is None
         }
-        assert set(ativos) == {"sem_atividade", "conexao_caida"}, ativos
+        assert set(ativos) == {"conexao_caida"}, ativos
         assert ativos["conexao_caida"]["detalhe"]["origem"] == "sonda"
-        abertas = [m for m in caixa.msgs if m[0].startswith("🔴")]
-        assert len(abertas) == 1
-        linha = next(li for li in abertas[0][1] if f"({empresa_id})" in li)
-        assert "sem resposta do WhatsApp em 8 s" in linha
+        assert (
+            ativos["conexao_caida"]["detalhe"]["motivo"]
+            == "sem resposta do WhatsApp em 8 s"
+        )
+        # a caída do test_01 (eco) resolveu há minutos: cooldown de 6 h reativa
+        # a mesma linha SEM avisar de novo (anti-flap da mig 196)
+        assert not [m for m in caixa.msgs if m[0].startswith("🔴")], caixa.msgs
 
     async def test_03_sonda_boa_resolve_a_queda_sem_aviso_curto(
         self, db_url: str, empresa_id: int, conexao_id: int
@@ -401,7 +527,7 @@ class TestE2E:
         ativos = [
             a["tipo"] for a in _alertas(db_url, conexao_id) if a["resolvido"] is None
         ]
-        assert ativos == ["sem_atividade"]
+        assert ativos == []
         # viveu menos de 30 min: resolve em silêncio (anti-ruído)
         assert not [m for m in caixa.msgs if m[0].startswith("✅")], caixa.msgs
 
@@ -433,9 +559,11 @@ class TestE2E:
         assert item["monitorada"] is True
         assert item["ultimo_inbound_em"] is not None
         assert item["esperadas_24h"] > 0
-        assert [a["tipo"] for a in item["alertas"]] == ["sem_atividade"]
-        # com alerta vem antes de quem não tem
-        assert corpo["items"][0]["alertas"], corpo["items"][0]
+        assert item["alertas"] == []
+        # mig 198: régua da própria conexão, eco e ack no painel
+        assert item["limite_normal_h"] is not None and item["quieto_ha_h"] is not None
+        assert item["eco"]["ativo"] is True and item["eco"]["ultimo_em"] is not None
+        assert item["ultimo_ack_em"] is not None
 
         r = httpx.get(
             f"{API_BASE_URL}/api/monitor/banner",
@@ -551,12 +679,14 @@ class TestE2E:
         assert "aparelho desvinculado no celular — desde" in linha
         assert "_" not in linha
 
-        # (e) volta de novo → resolve; o `sem_atividade` segue (nada chegou)
+        # (e) volta de novo → resolve (mig 198: silêncio não abre nada)
         _webhook("open", 200)
+        # mig 198: voltar a abrir pede um eco de recuperação no tick seguinte
         await _tick(
             db_url, now_utc=t0 + timedelta(minutes=15), sondar=_sem_sonda, caixa=caixa
         )
+        assert _eco_estado(db_url, conexao_id)["pendente"] == f"ECO-AUTO-{conexao_id}"
         ativos = [
             a["tipo"] for a in _alertas(db_url, conexao_id) if a["resolvido"] is None
         ]
-        assert ativos == ["sem_atividade"], ativos
+        assert ativos == [], ativos
