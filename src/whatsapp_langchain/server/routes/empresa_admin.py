@@ -157,7 +157,18 @@ async def create_empresa_endpoint(
     return empresa
 
 
-async def _exigir_retencao_no_plano(empresa_id: int, dias: int) -> None:
+async def _exigir_retencao_no_plano(
+    empresa_id: int, dias: int, *, atual: int | None
+) -> None:
+    """402 `retencao_max_dias` só quando o PATCH MUDA a retenção para um valor
+    acima do teto do plano (0 = "não apaga" conta como o máximo).
+
+    Só a mudança é gateada, como a marca própria: o form reenvia todos os
+    campos, e a empresa com retenção NULL (todas, em 21/09) mandava `0` em
+    qualquer save — trocar o nome fantasia num plano Free dava 402.
+    """
+    if dias == (atual or 0):
+        return
     from whatsapp_langchain.shared.plano_limits import get_plano_info
 
     plano = await get_plano_info(await get_pool(), empresa_id)
@@ -233,14 +244,18 @@ async def update_empresa_endpoint(
     # save, e o que já está gravado continua sendo exibido (grandfathering
     # das empresas que já tinham marca: flags `plano.white_label`).
     await _exigir_white_label_se_mudou(pool, empresa_id, body)
-    # ADR-005 leva C2: retenção acima do teto do plano (`retencao_max_dias`).
+    # ADR-005 leva C2: retenção acima do teto do plano (`retencao_max_dias`),
+    # só quando o valor muda.
     if body.retencao_dias is not None:
-        await _exigir_retencao_no_plano(empresa_id, body.retencao_dias)
+        atual = await get_empresa_by_id(pool, empresa_id)
+        await _exigir_retencao_no_plano(
+            empresa_id,
+            body.retencao_dias,
+            atual=atual.retencao_dias if atual is not None else None,
+        )
 
     # Se slug enviado == slug atual, skipa pra não disparar UNIQUE check.
     if body.slug:
-        from whatsapp_langchain.shared.empresa import get_empresa_by_id
-
         current = await get_empresa_by_id(pool, empresa_id)
         if current and current.slug == body.slug:
             body.slug = None
