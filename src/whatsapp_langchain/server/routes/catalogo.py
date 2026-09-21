@@ -126,7 +126,7 @@ async def catalogo_completo_endpoint(
         for i in catalogo["itens"]:
             marca = indisponiveis.get(i["slug"])
             if marca:
-                tipo, _, motivo = marca.partition(":")
+                tipo, _sep, motivo = marca.partition(":")
                 itens.append(
                     {
                         **i,
