@@ -135,6 +135,7 @@ export function EmpresaForm({ initial, onDone }: Props) {
   const gateMarca = usePlanoGate("white_label", planoEmpresa);
   const retencaoTeto = planoEmpresa?.features.retencao_max_dias;
   const retencaoMax = typeof retencaoTeto === "number" ? retencaoTeto : null;
+  const retencaoAtual = initial?.retencao_dias ?? 0;
   const [nomeExibicao, setNomeExibicao] = useState(initial?.nome_exibicao ?? "");
   const [corPrimaria, setCorPrimaria] = useState(initial?.cor_primaria ?? "");
   const [corSecundaria, setCorSecundaria] = useState(
@@ -383,14 +384,19 @@ export function EmpresaForm({ initial, onDone }: Props) {
                   className={SELECT_CLASS}
                   disabled={isPending}
                 >
-                  {/* Acima do teto do plano a rota devolve 402 (mig 192);
-                      a opção fica visível e desabilitada para o cliente ver
-                      o que existe. `0` = não apagar = só sem teto. */}
-                  <option value="0" disabled={retencaoMax !== null}>
+                  {/* MUDAR para acima do teto do plano dá 402 (mig 192); a
+                      opção fica visível e desabilitada para o cliente ver o
+                      que existe. O valor já gravado continua selecionável —
+                      salvar sem mexer nunca pode travar. `0` = não apagar. */}
+                  <option value="0" disabled={retencaoMax !== null && retencaoAtual !== 0}>
                     Ilimitado (não apagar)
                   </option>
                   {[30, 60, 90, 180, 365].map((d) => (
-                    <option key={d} value={String(d)} disabled={retencaoMax !== null && d > retencaoMax}>
+                    <option
+                      key={d}
+                      value={String(d)}
+                      disabled={retencaoMax !== null && d > retencaoMax && d !== retencaoAtual}
+                    >
                       {d} dias
                     </option>
                   ))}
