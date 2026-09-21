@@ -13,8 +13,12 @@
 import { usePathname } from "next/navigation";
 
 import { AppSidebar } from "@/components/app-sidebar";
-import { CommandPalette, CommandPaletteTrigger } from "@/components/command-palette";
+import {
+  CommandPalette,
+  CommandPaletteTrigger,
+} from "@/components/command-palette";
 import type { SidebarBrand } from "@/components/nav-brand";
+import { BannerConexao } from "@/components/banner-conexao";
 import { BannerVigencia } from "@/components/banner-vigencia";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -60,6 +64,7 @@ export function AppShell({
         {/* Vencimento do plano (leva E): faixa fina logo abaixo do cabeçalho,
             em toda tela — quem paga precisa ver antes de perder os recursos. */}
         <BannerVigencia />
+        <BannerConexao />
         {pathname === "/atendimento" ? (
           // Workspace de colunas (sidebar própria + lista + conversa): o cap
           // centrado de 1536px vira faixa morta dos dois lados quando o menu

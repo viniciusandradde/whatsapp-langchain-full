@@ -540,6 +540,52 @@ async def set_connection_state(
         )
 
 
+async def registrar_evento_conexao(
+    pool: AsyncConnectionPool,
+    conexao_id: int,
+    *,
+    estado: str,
+    codigo: int | None,
+    mensagem: str | None,
+) -> None:
+    """`connection.update` da Evolution (mig 196): estado + motivo + carimbo.
+
+    `disconnected`/`error` gravam `desconexao_codigo` (statusReason, 401 =
+    aparelho desvinculado) e o primeiro `desconexao_em`; `open` limpa os
+    dois. `connecting` durante um pareamento não sobrescreve `qr_pending`/
+    `pairing_code_pending` — o QR rotaciona e o `qrcode.updated` já reafirma.
+    """
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE conexao
+               SET connection_state = CASE
+                       WHEN %(estado)s = 'connecting'
+                        AND connection_state IN ('qr_pending', 'pairing_code_pending')
+                       THEN connection_state
+                       ELSE %(estado)s END,
+                   state_message = %(mensagem)s,
+                   desconexao_codigo = CASE
+                       WHEN %(estado)s IN ('open', 'ready') THEN NULL
+                       WHEN %(estado)s IN ('disconnected', 'error') THEN %(codigo)s
+                       ELSE desconexao_codigo END,
+                   desconexao_em = CASE
+                       WHEN %(estado)s IN ('open', 'ready') THEN NULL
+                       WHEN %(estado)s IN ('disconnected', 'error')
+                       THEN COALESCE(desconexao_em, NOW())
+                       ELSE desconexao_em END,
+                   updated_at = NOW()
+             WHERE id = %(id)s
+            """,
+            {
+                "estado": estado,
+                "mensagem": mensagem,
+                "codigo": codigo,
+                "id": conexao_id,
+            },
+        )
+
+
 async def set_qr_code(
     pool: AsyncConnectionPool,
     conexao_id: int,

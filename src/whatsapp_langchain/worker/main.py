@@ -131,6 +131,10 @@ async def main() -> None:
     # Saúde de IA (mig 178): catálogo OpenRouter + métricas de endpoint
     openrouter_task = asyncio.create_task(_openrouter_sync_loop(pool))
 
+    # Saúde das conexões dos clientes (mig 196): sonda + silêncio contra
+    # baseline, avisa o canal da plataforma
+    saude_task = asyncio.create_task(_saude_conexoes_loop(pool))
+
     # Push FCM (mig 168): LISTEN no mesmo canal do SSE → notifica os
     # dispositivos da empresa em mensagem nova de cliente. No-op sem a
     # credencial no env.
@@ -165,6 +169,7 @@ async def main() -> None:
         vigencia_task.cancel()
         relatorio_task.cancel()
         openrouter_task.cancel()
+        saude_task.cancel()
         push_task.cancel()
         retencao_task.cancel()
         for t in (
@@ -175,6 +180,7 @@ async def main() -> None:
             vigencia_task,
             relatorio_task,
             openrouter_task,
+            saude_task,
             push_task,
             retencao_task,
         ):
@@ -485,6 +491,29 @@ async def _plano_vigencia_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("plano_vigencia_loop_error", error=str(e))
         await asyncio.sleep(30 * 60)
+
+
+# Saúde das conexões (mig 196): o claim em `saude_conexoes_estado` espaça os
+# ticks de verdade (5 min) entre as réplicas; o loop só tenta a cada minuto
+# para uma réplica morta não deixar o monitor parado por mais que isso.
+SAUDE_CONEXOES_LOOP_SECONDS = 60
+
+
+async def _saude_conexoes_loop(pool) -> None:
+    """Sonda as conexões, compara a atividade com a baseline e abre/fecha
+    episódios em `conexao_alerta`, avisando o canal da plataforma. Uma
+    réplica por tick (claim atômico dentro de `avaliar_saude`)."""
+    from whatsapp_langchain.shared.saude_conexoes import avaliar_saude
+
+    await asyncio.sleep(240)
+    while True:
+        try:
+            contagem = await avaliar_saude(pool)
+            if contagem["abertos"] or contagem["resolvidos"] or contagem["erros"]:
+                logger.info("saude_conexoes_tick", **contagem)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("saude_conexoes_loop_error", error=str(e))
+        await asyncio.sleep(SAUDE_CONEXOES_LOOP_SECONDS)
 
 
 async def _relatorio_uso_loop(pool) -> None:

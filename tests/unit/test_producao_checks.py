@@ -24,10 +24,12 @@ from producao_checks import (  # noqa: E402
     OK,
     checar_backup,
     checar_backup_offsite,
+    checar_conexoes_clientes,
     checar_disco,
     checar_graph_api_version,
     checar_ia_alertas,
     checar_migrations,
+    checar_monitor_conexoes_parado,
     checar_saldo_openrouter,
     checar_tamanho_tabela,
     checar_worker_mudo,
@@ -336,6 +338,44 @@ class TestChecarIaAlertas:
     def test_entra_no_rodar_checagens(self) -> None:
         achados = rodar_checagens({"ia_alertas_ativos": 1})
         assert any(a.chave == "ia_alertas" for a in achados)
+
+
+class TestChecarConexoesClientes:
+    """Mig 196 — o que teria aparecido no relatório de 17/09 se existisse."""
+
+    def test_sem_episodio_nao_acha_nada(self) -> None:
+        assert checar_conexoes_clientes(0, 0) is None
+        assert checar_conexoes_clientes(None, None) is None
+
+    def test_conexao_caida_e_critico(self) -> None:
+        achado = checar_conexoes_clientes(
+            1, 0, "Luis Fernando Macorini (1018) conexao_caida"
+        )
+        assert achado is not None
+        assert achado.severidade == CRITICO
+        assert "1 conexao(oes) caida(s)" in achado.titulo
+        assert "1018" in achado.evidencia
+        assert "/monitor/conexoes" in achado.acao
+
+    def test_so_silencio_e_atencao(self) -> None:
+        achado = checar_conexoes_clientes(0, 2)
+        assert achado is not None
+        assert achado.severidade == ATENCAO
+        assert "2 sem mensagens" in achado.titulo
+        assert "Saude dos clientes" in achado.evidencia
+
+    def test_monitor_parado(self) -> None:
+        assert checar_monitor_conexoes_parado(None) is None
+        assert checar_monitor_conexoes_parado(5) is None
+        achado = checar_monitor_conexoes_parado(25)
+        assert achado is not None
+        assert achado.severidade == ATENCAO
+        assert "25 min" in achado.titulo
+
+    def test_entra_no_rodar_checagens(self) -> None:
+        achados = rodar_checagens({"conexoes_caidas": 1, "monitor_conexoes_min": 30})
+        chaves = {a.chave for a in achados}
+        assert {"conexoes_clientes", "monitor_conexoes_parado"} <= chaves
 
 
 class TestSaldoOpenRouter:
