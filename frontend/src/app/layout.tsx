@@ -7,12 +7,19 @@ import { EmpresaSwitcher } from "@/components/empresa-switcher";
 import { InstallPwaPrompt } from "@/components/install-pwa-prompt";
 import { TourPrimeiroAcesso } from "@/components/tour-primeiro-acesso";
 import { PermissionsProvider } from "@/components/permissions-context";
+import { PlanoProvider } from "@/components/plano-context";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryProvider } from "@/components/query-provider";
 import { Toaster } from "@/components/ui/sonner";
-import { getMyEmpresas, getMyPermissions, isMyAdmin } from "@/lib/api";
+import {
+  getMyEmpresas,
+  getMyPermissions,
+  getPlanoEmpresa,
+  isMyAdmin,
+  type PlanoEmpresa,
+} from "@/lib/api";
 import "./globals.css";
 
 const ACTIVE_EMPRESA_COOKIE = "active_empresa_id";
@@ -27,12 +34,16 @@ export interface EmpresaBrand {
 async function resolveEmpresaUI(): Promise<{
   switcher: React.ReactNode;
   brand: EmpresaBrand | null;
+  plano: PlanoEmpresa | null;
 }> {
   // Busca empresas do user UMA vez — deriva o switcher + a marca (white-label)
-  // da empresa ATIVA pra pintar logo/nome/cores no sidebar.
+  // da empresa ATIVA pra pintar logo/nome/cores no sidebar, e o plano efetivo
+  // dela (ADR-005 leva D) pros cadeados do menu e das telas.
   try {
     const { empresas } = await getMyEmpresas();
-    if (!empresas || empresas.length === 0) return { switcher: null, brand: null };
+    if (!empresas || empresas.length === 0) {
+      return { switcher: null, brand: null, plano: null };
+    }
     const cookieStore = await cookies();
     const raw = cookieStore.get(ACTIVE_EMPRESA_COOKIE)?.value;
     const active = raw ? Number(raw) : null;
@@ -44,12 +55,16 @@ async function resolveEmpresaUI(): Promise<{
       cor_primaria: ativa.cor_primaria ?? null,
       cor_secundaria: ativa.cor_secundaria ?? null,
     };
+    // Falha do plano não derruba o layout: sem plano, nada trava (o 402 da
+    // rota continua valendo).
+    const plano = await getPlanoEmpresa(ativa.id).catch(() => null);
     return {
       switcher: <EmpresaSwitcher empresas={empresas} activeEmpresaId={active} />,
       brand,
+      plano,
     };
   } catch {
-    return { switcher: null, brand: null };
+    return { switcher: null, brand: null, plano: null };
   }
 }
 
@@ -161,7 +176,7 @@ export const viewport: Viewport = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const [{ switcher: empresaSwitcher, brand }, initialPerms] = await Promise.all([
+  const [{ switcher: empresaSwitcher, brand, plano }, initialPerms] = await Promise.all([
     resolveEmpresaUI(),
     resolveInitialPermissions(),
   ]);
@@ -195,6 +210,8 @@ export default async function RootLayout({
             initialPerfis={initialPerms.perfis}
             initialIsSuperadmin={initialPerms.isSuperadmin}
           >
+            {/* Plano efetivo da empresa ativa: cadeados do menu e das telas. */}
+            <PlanoProvider plano={plano}>
             <SidebarProvider defaultOpen={sidebarAberta}>
               <AppShell empresaSwitcher={empresaSwitcher} brand={brand}>
                 {children}
@@ -205,6 +222,7 @@ export default async function RootLayout({
                   tem `atendimento.read`. */}
               <TourPrimeiroAcesso />
             </SidebarProvider>
+            </PlanoProvider>
           </PermissionsProvider>
           </QueryProvider>
           <Toaster position="bottom-right" />

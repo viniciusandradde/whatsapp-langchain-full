@@ -95,9 +95,8 @@ export function tierBloqueado(tier: TierContexto, plano: Pick<PlanoCatalogo, "co
   return ORDEM.indexOf(tier) > ORDEM.indexOf(plano.contexto_max);
 }
 
-export function rotuloPlano(slug: string | null): string {
-  return slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : "";
-}
+// Fonte única em `lib/plano.ts` desde a leva D (cadeados e `/billing`).
+export { rotuloPlano } from "@/lib/plano";
 
 export function formatarChars(n: number): string {
   return n.toLocaleString("pt-BR");

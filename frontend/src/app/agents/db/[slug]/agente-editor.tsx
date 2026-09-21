@@ -17,12 +17,14 @@ import {
   Send,
   Loader2,
   FileDown,
+  Lock,
   Plus,
   X,
   Paperclip,
 } from "lucide-react";
 
 import { AjudaCampo } from "@/components/ajuda-campo";
+import { DicaPlano, usePlanoGate } from "@/components/cadeado-plano";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,20 +57,36 @@ function MidiaAceita({
   defaultChecked,
   label,
   ajuda,
+  feature,
 }: {
   name: string;
   defaultChecked: boolean;
   label: string;
   ajuda: string;
+  /** Chave de plano que LIGAR exige (mig 190); sem chave, nada trava. */
+  feature?: string;
 }) {
+  // Áudio não tem chave de propósito (o agente sempre pode ouvir).
+  const gate = usePlanoGate(feature ?? "");
+  const bloqueado = !!feature && gate.bloqueado;
   return (
     <li className="flex items-start gap-2 rounded-md border border-foreground/[0.06] bg-foreground/[0.02] p-2.5">
-      <Checkbox id={name} name={name} defaultChecked={defaultChecked} className="mt-0.5" />
+      <Checkbox
+        id={name}
+        name={name}
+        defaultChecked={defaultChecked}
+        className="mt-0.5"
+        onCheckedChange={(v, details) => {
+          if (bloqueado) gate.aoMudarKit(v === true, details);
+        }}
+        aria-disabled={(bloqueado && !defaultChecked) || undefined}
+      />
       <div className="min-w-0">
         <Label htmlFor={name} className="text-sm font-medium">
           {label}
         </Label>
         <p className="text-[11px] leading-snug text-muted-foreground">{ajuda}</p>
+        {bloqueado && <DicaPlano gate={gate} />}
       </div>
     </li>
   );
@@ -913,6 +931,8 @@ function TabPrompt({
 }
 
 function TabTools({ a }: { a: AgenteIA }) {
+  // Pro/Enterprise (mig 190): LIGAR os exemplos fora do plano dá 402 no PUT.
+  const gateFewshot = usePlanoGate("fewshot");
   const enabledSet = new Set(a.tools_enabled);
   // Conta só o que existe de verdade. O denominador antigo incluía as de
   // backlog, e o numerador podia contar slug de backlog que ficou marcado
@@ -982,6 +1002,7 @@ function TabTools({ a }: { a: AgenteIA }) {
             defaultChecked={a.aceita_imagem}
             label="Imagens"
             ajuda="Descrição da foto por modelo de visão"
+            feature="imagem_cliente"
           />
           <MidiaAceita
             name="aceita_audio"
@@ -994,6 +1015,7 @@ function TabTools({ a }: { a: AgenteIA }) {
             defaultChecked={a.aceita_documento}
             label="Documentos"
             ajuda="Lê PDF, DOCX, XLSX e DOC"
+            feature="documentos_cliente"
           />
         </ul>
       </div>
@@ -1031,9 +1053,12 @@ function TabTools({ a }: { a: AgenteIA }) {
             name="fewshot_enabled"
             defaultChecked={a.fewshot_enabled}
             className="mt-0.5"
+            onCheckedChange={(v, details) => gateFewshot.aoMudarKit(v === true, details)}
+            aria-disabled={(gateFewshot.bloqueado && !a.fewshot_enabled) || undefined}
           />
           <span className="min-w-0 flex-1">
             Usar exemplos bem avaliados nas respostas
+            <DicaPlano gate={gateFewshot} className="ml-2" />
             <span className="mt-0.5 block text-xs text-muted-foreground">
               A cada mensagem, busca os atendimentos parecidos que os clientes
               melhor avaliaram (Dataset &amp; Eval) e os mostra ao agente como
@@ -1518,6 +1543,9 @@ function TabTestar({
     React.useState<TestarBateriaResult["resultados"] | null>(null);
   const [detalheModelo, setDetalheModelo] = React.useState<string | null>(null);
   const [rodandoBateria, setRodandoBateria] = React.useState(false);
+  // Pessoal+ (mig 192): a bateria de 12 cenários × N modelos custa LLM; o
+  // teste simples continua livre. Fora do plano o botão avisa e não roda.
+  const gateBateria = usePlanoGate("bateria_testes");
   const [midia, setMidia] = React.useState<MidiaTeste | null>(null);
   const fimRef = React.useRef<HTMLDivElement | null>(null);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
@@ -1792,12 +1820,27 @@ function TabTestar({
               </Button>
             )}
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={rodarBateria} disabled={rodandoBateria}>
-            {rodandoBateria ? <Loader2 className="size-3.5 animate-spin" /> : <FlaskConical className="size-3.5" />}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={gateBateria.bloqueado ? gateBateria.avisar : rodarBateria}
+            disabled={rodandoBateria}
+            aria-disabled={gateBateria.bloqueado || undefined}
+            className={gateBateria.bloqueado ? "opacity-70" : undefined}
+          >
+            {rodandoBateria ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : gateBateria.bloqueado ? (
+              <Lock className="size-3.5" />
+            ) : (
+              <FlaskConical className="size-3.5" />
+            )}
             {rodandoBateria
               ? "Rodando bateria…"
               : `Rodar bateria (${modelosSel.length} modelos × 12 cenários)`}
           </Button>
+          <DicaPlano gate={gateBateria} />
         </div>
       )}
 

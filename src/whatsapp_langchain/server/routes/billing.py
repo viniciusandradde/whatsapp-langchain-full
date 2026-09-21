@@ -86,7 +86,7 @@ async def list_planos_catalogo(
                 SELECT nome, slug, descricao, preco_mensal_brl,
                        preco_anual_brl, limite_usuarios, limite_conexoes,
                        limite_atendimentos_mes, limite_orcamento_ia_usd,
-                       limite_documentos_kb, features
+                       limite_documentos_kb, features, limite_agentes
                   FROM plano WHERE ativo = TRUE
                  ORDER BY ordem NULLS LAST, preco_mensal_brl
                 """
@@ -104,6 +104,7 @@ async def list_planos_catalogo(
         "limite_orcamento_ia_usd",
         "limite_documentos_kb",
         "features",
+        "limite_agentes",
     ]
     items = []
     for r in rows:

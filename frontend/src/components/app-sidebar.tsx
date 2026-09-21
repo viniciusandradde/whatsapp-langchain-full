@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
-import { ChevronRight, LogOut } from "lucide-react";
+import { ChevronRight, Lock, LogOut } from "lucide-react";
 
 import { MyStatusToggle } from "@/components/my-status-toggle";
 import {
@@ -14,6 +14,7 @@ import {
   type NavItem,
 } from "@/components/nav-catalog";
 import { usePermissionsContext } from "@/components/permissions-context";
+import { usePlano } from "@/components/plano-context";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import {
   Collapsible,
@@ -46,7 +47,16 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { signOut } from "@/lib/auth-client";
+import { linkBilling } from "@/lib/plano";
 import { cn } from "@/lib/utils";
+
+/**
+ * Item já resolvido contra permissão E plano (ADR-005 leva D): fora do
+ * plano ele fica, com cadeado, e o destino vira o `/billing` da chave — o
+ * `href` original continua servindo para acender o item ativo.
+ */
+type NavItemResolvido = NavItem & { bloqueado: boolean; destino: string };
+type NavGroupResolvido = Omit<NavGroup, "itens"> & { itens: NavItemResolvido[] };
 
 /**
  * Navegação do painel — uma camada, não três.
@@ -69,19 +79,24 @@ export function AppSidebar({
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const { hasPerm, isSuperadmin } = usePermissionsContext();
+  const { liberada } = usePlano();
   const [saindo, setSaindo] = useState(false);
 
   const grupoAtivo = resolveGroup(pathname);
   const podeVer = (i: NavItem) =>
     (!i.requires || hasPerm(i.requires)) &&
     (!i.requiresSuperadmin || isSuperadmin);
+  const resolver = (i: NavItem): NavItemResolvido => {
+    const bloqueado = !!i.feature && !liberada(i.feature);
+    return { ...i, bloqueado, destino: bloqueado ? linkBilling(i.feature) : i.href };
+  };
 
   // Grupo aparece se o usuário puder ver QUALQUER item dele. A regra anterior
   // usava uma permissão "representante" por grupo, e quem tinha (por exemplo)
   // `whitelist.manage` sem `agente.config` perdia o grupo de IA inteiro.
-  const grupos = NAV_GROUPS.map((g) => ({
+  const grupos: NavGroupResolvido[] = NAV_GROUPS.map((g) => ({
     ...g,
-    itens: g.itens.filter(podeVer),
+    itens: g.itens.filter(podeVer).map(resolver),
   })).filter((g) => g.itens.length > 0);
 
   async function handleSignOut() {
@@ -167,9 +182,11 @@ export function AppSidebar({
  * Agrupa preservando a ordem de declaração. Itens sem `secao` saem primeiro,
  * num bloco sem rótulo — grupo pequeno não ganha cabeçalho à toa.
  */
-function agruparPorSecao(itens: NavItem[]): [string | undefined, NavItem[]][] {
+function agruparPorSecao(
+  itens: NavItemResolvido[]
+): [string | undefined, NavItemResolvido[]][] {
   const ordem: (string | undefined)[] = [];
-  const mapa = new Map<string | undefined, NavItem[]>();
+  const mapa = new Map<string | undefined, NavItemResolvido[]>();
   for (const item of itens) {
     if (!mapa.has(item.secao)) {
       mapa.set(item.secao, []);
@@ -185,7 +202,7 @@ function GrupoDeNavegacao({
   pathname,
   abertoPorPadrao,
 }: {
-  grupo: NavGroup;
+  grupo: NavGroupResolvido;
   pathname: string;
   abertoPorPadrao: boolean;
 }) {
@@ -256,13 +273,16 @@ function GrupoDeNavegacao({
                   {itens.map((item) => (
                     <DropdownMenuItem
                       key={item.href}
-                      render={<Link href={item.href} prefetch={false} />}
+                      render={<Link href={item.destino} prefetch={false} />}
                       className={cn(
                         isItemActive(pathname, item.href) &&
-                          "bg-accent font-medium text-accent-foreground"
+                          "bg-accent font-medium text-accent-foreground",
+                        item.bloqueado && "text-muted-foreground"
                       )}
+                      title={item.bloqueado ? "Não está no seu plano" : undefined}
                     >
                       {item.label}
+                      {item.bloqueado && <CadeadoMenu />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuGroup>
@@ -309,9 +329,12 @@ function GrupoDeNavegacao({
                     // ela que o tour ilumina "Fila de atendimento".
                     data-tour={item.href}
                     isActive={isItemActive(pathname, item.href)}
-                    render={<Link href={item.href} prefetch={false} />}
+                    render={<Link href={item.destino} prefetch={false} />}
+                    className={cn(item.bloqueado && "text-sidebar-foreground/60")}
+                    title={item.bloqueado ? "Não está no seu plano" : undefined}
                   >
                     <span>{item.label}</span>
+                    {item.bloqueado && <CadeadoMenu />}
                   </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
               ))}
@@ -320,5 +343,15 @@ function GrupoDeNavegacao({
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** Cadeado do item fora do plano — só visual; o `title` do link explica. */
+function CadeadoMenu() {
+  return (
+    <Lock
+      className="ml-auto size-3 shrink-0 opacity-70"
+      aria-label="Não está no seu plano"
+    />
   );
 }
