@@ -52,6 +52,7 @@ jobs:
           filters: |
             backend:
               - 'src/**'
+              - 'db/**'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'Dockerfile.api'
@@ -66,6 +67,7 @@ jobs:
               - 'tests/**'
               - 'Dockerfile.tests'
               - 'src/**'
+              - 'db/**'
               - 'pyproject.toml'
               - 'uv.lock'
 
