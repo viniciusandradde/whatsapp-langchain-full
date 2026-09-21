@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import {
   createEmpresa,
   getEmpresaCsat,
+  setEmpresaVigencia,
   updateEmpresa,
   updateEmpresaCsat,
   type EmpresaCsatConfig,
@@ -236,6 +237,24 @@ export async function saveEmpresaVozAction(
 ): Promise<Result> {
   try {
     await updateEmpresa(empresaId, body);
+    revalidatePath("/companies");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+/**
+ * Superadmin fixa ou limpa (`null` = sem vencimento) o último dia do plano
+ * pago (ADR-005 leva E). A lista de empresas é revalidada porque é dela que
+ * o form lê a data.
+ */
+export async function setVigenciaAction(
+  empresaId: number,
+  planoValidoAte: string | null
+): Promise<Result> {
+  try {
+    await setEmpresaVigencia(empresaId, planoValidoAte);
     revalidatePath("/companies");
     return { ok: true };
   } catch (e) {

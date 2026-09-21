@@ -121,6 +121,10 @@ async def main() -> None:
     # Resumo diário por WhatsApp (mig 135) — envia no horário configurado
     resumo_task = asyncio.create_task(_resumo_diario_loop(pool))
 
+    # Vigência do plano (ADR-005 leva E, mig 193): avisos D-7/D-3/D0 e
+    # rebaixamento após a carência
+    vigencia_task = asyncio.create_task(_plano_vigencia_loop(pool))
+
     # Relatório mensal de uso (mig 165) — PDF para o cliente, no dia marcado
     relatorio_task = asyncio.create_task(_relatorio_uso_loop(pool))
 
@@ -158,6 +162,7 @@ async def main() -> None:
         idle_task.cancel()
         cleanup_task.cancel()
         resumo_task.cancel()
+        vigencia_task.cancel()
         relatorio_task.cancel()
         openrouter_task.cancel()
         push_task.cancel()
@@ -167,6 +172,7 @@ async def main() -> None:
             idle_task,
             cleanup_task,
             resumo_task,
+            vigencia_task,
             relatorio_task,
             openrouter_task,
             push_task,
@@ -461,6 +467,24 @@ async def _resumo_diario_loop(pool) -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("resumo_diario_loop_error", error=str(e))
         await asyncio.sleep(60)
+
+
+async def _plano_vigencia_loop(pool) -> None:
+    """A cada 30 min avisa vencimentos (D-7/D-3/D0) e rebaixa quem passou da
+    carência. Idempotente por claim de etapa e UPDATE condicional — as
+    réplicas podem rodar ao mesmo tempo; o horário comercial local decide
+    quando o aviso sai de verdade."""
+    from whatsapp_langchain.shared.plano_vigencia import processar_vigencias
+
+    await asyncio.sleep(180)
+    while True:
+        try:
+            contagem = await processar_vigencias(pool)
+            if contagem["avisos"] or contagem["rebaixadas"] or contagem["erros"]:
+                logger.info("plano_vigencia_tick", **contagem)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("plano_vigencia_loop_error", error=str(e))
+        await asyncio.sleep(30 * 60)
 
 
 async def _relatorio_uso_loop(pool) -> None:

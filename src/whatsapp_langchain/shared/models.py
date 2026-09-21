@@ -225,6 +225,8 @@ class Empresa(BaseModel):
     # Retenção de dados (mig 185): dias até apagar conversas de atendimentos
     # encerrados. NULL/0 = ilimitado. Piso da empresa; o agente só estende.
     retencao_dias: int | None = None
+    # ADR-005 leva E (mig 193): último dia (inclusive) do plano pago; None = sem vencimento.
+    plano_valido_ate: date | None = None
 
 
 class EmpresaMembro(BaseModel):

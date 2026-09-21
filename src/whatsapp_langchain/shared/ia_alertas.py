@@ -371,6 +371,12 @@ def _json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 
+async def notificar_plataforma(titulo: str, linhas: list[str]) -> bool:
+    """Canal do superadmin (WhatsApp da empresa 1 + Telegram) para outros
+    módulos — a vigência de plano (ADR-005 leva E) avisa por aqui."""
+    return await _notificar(titulo, linhas)
+
+
 async def _notificar(titulo: str, linhas: list[str]) -> bool:
     """WhatsApp da empresa 1 + Telegram, ambos best-effort.
 

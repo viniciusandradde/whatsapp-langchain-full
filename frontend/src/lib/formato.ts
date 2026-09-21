@@ -52,6 +52,18 @@ export function data(v: string | number | Date | null | undefined): string {
 }
 
 /**
+ * Data CIVIL ("2026-09-30", um DATE do banco, sem hora) → "30/09/2026".
+ *
+ * Não passa por `Date`: `new Date("2026-09-30")` é meia-noite UTC e, no
+ * fuso de Campo Grande, `data()` mostraria 29/09.
+ */
+export function dataCivil(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+/**
  * Duração legível a partir de minutos.
  *
  * O dashboard mostrava "264.3m" — que são 4h24m. Minuto serve até uma hora;
