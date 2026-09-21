@@ -114,3 +114,15 @@ Economia recusada: US$0,96/mês. Procedimento reproduzível:
 `scripts/eval_langsmith.py --model <slug> --dataset luis-fernando-gold-prod
 --empresa-id 1018` + bateria da aba Testar. A alavanca de custo que resta é
 o prompt (~5k tokens/mensagem; workload 99,5% input).
+
+## Adendo 21/09/2026 — quando o piso deixa zero provedor
+
+O piso de quantização barrou TODOS os provedores de `deepseek/deepseek-v4.1-flash`
+depois que o OpenRouter re-apontou o apelido para uma versão datada servida só
+por Morph (quantização desconhecida) e Relace (fp4): 404 "No allowed providers"
+e o agente da VSA ficou mudo por 1h40. Decisão do dono: **responder é melhor
+que ficar mudo**. `ChatOpenAIResiliente` repete uma vez sem o bloco `provider`
+nesse 404 específico (e só nele), e a sonda real de disponibilidade
+(`llm.sondar_modelo`, 1 token com o mesmo bloco) abre `sem_provedor_permitido`
+no canal para o dono trocar o modelo. O piso continua valendo para todas as
+outras chamadas — a política não mudou, ganhou uma saída de emergência.
