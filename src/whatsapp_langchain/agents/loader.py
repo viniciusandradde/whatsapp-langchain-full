@@ -113,6 +113,30 @@ async def load_graph(
         if agente_runtime is not None:
             # Multi-agente DB tem precedência (A.6).
             chat_model = agente_runtime.modelo
+            # Modelo fora de circulação (sonda real da Saúde de IA achou o
+            # modelo inexistente / sem provedor): responde pelo padrão até o
+            # dono trocar, em vez de ficar mudo (decisão do dono, 21/09/2026).
+            # Não toca em `agente_ia` — o seletor mostra "indisponível".
+            try:
+                from whatsapp_langchain.shared.config import settings
+                from whatsapp_langchain.shared.ia_alertas import (
+                    modelo_fora_de_circulacao,
+                    modelos_indisponiveis,
+                )
+
+                indisponiveis = await modelos_indisponiveis(pool)
+                if modelo_fora_de_circulacao(chat_model, indisponiveis):
+                    logger.warning(
+                        "modelo_substituido_por_indisponibilidade",
+                        empresa_id=empresa_id,
+                        agente=agente_runtime.slug,
+                        modelo=chat_model,
+                        padrao=settings.openrouter_model,
+                        motivo=indisponiveis.get(chat_model or ""),
+                    )
+                    chat_model = settings.openrouter_model
+            except Exception as exc:  # noqa: BLE001 — a checagem não pode calar o agente
+                logger.warning("modelos_indisponiveis_ilegivel", error=str(exc)[:200])
             system_prompt_override = agente_runtime.prompt_override
             temperatura = agente_runtime.temperatura
             top_p = agente_runtime.top_p

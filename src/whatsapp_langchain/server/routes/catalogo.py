@@ -108,6 +108,36 @@ async def catalogo_completo_endpoint(
     # (`modelo_llm`). Filtra a CÓPIA — o cache do catálogo é por processo e
     # compartilhado entre empresas. O modelo salvo fora do curado continua
     # aparecendo na tela como card sintético "atual (fora do catálogo)".
+    # 21/09/2026: o seletor mostra o que está indisponível AGORA (sonda real
+    # da Saúde de IA) e não deixa escolher — anota uma CÓPIA dos itens, o
+    # cache é compartilhado entre empresas.
+    from whatsapp_langchain.shared.ia_alertas import (
+        TIPOS_INDISPONIVEL,
+        modelos_indisponiveis,
+    )
+
+    indisponiveis: dict[str, str] = {}
+    try:
+        indisponiveis = await modelos_indisponiveis(pool)
+    except Exception:  # noqa: BLE001 — sem a lista o seletor segue normal
+        pass
+    if indisponiveis:
+        itens: list[dict[str, Any]] = []
+        for i in catalogo["itens"]:
+            marca = indisponiveis.get(i["slug"])
+            if marca:
+                tipo, _sep, motivo = marca.partition(":")
+                itens.append(
+                    {
+                        **i,
+                        "disponivel": tipo not in TIPOS_INDISPONIVEL,
+                        "indisponivel_motivo": motivo,
+                        "degradado": tipo == "sem_provedor_permitido",
+                    }
+                )
+            else:
+                itens.append(i)
+        catalogo = {**catalogo, "itens": itens}
     if not plano.tem_feature("catalogo_completo"):
         catalogo = {
             **catalogo,

@@ -20,7 +20,11 @@ import { ApiError } from "@/components/ui/api-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
@@ -88,7 +92,12 @@ interface Filtros {
   tools: boolean;
 }
 
-const FILTROS_VAZIOS: Filtros = { promo: false, visao: false, pensamento: false, tools: false };
+const FILTROS_VAZIOS: Filtros = {
+  promo: false,
+  visao: false,
+  pensamento: false,
+  tools: false,
+};
 
 const ORDEM_ROTULO: Record<Ordem, string> = {
   relevancia: "Relevância",
@@ -121,7 +130,9 @@ const CHIPS: { chave: keyof Filtros; rotulo: string; Icone: typeof Eye }[] = [
 ];
 
 /** "Google: Gemini 2.5 Flash" → "Gemini 2.5 Flash" — o fabricante já está na 2ª linha. */
-export function nomeCurto(m: Pick<ModeloCatalogo, "nome" | "provedor_nome">): string {
+export function nomeCurto(
+  m: Pick<ModeloCatalogo, "nome" | "provedor_nome">,
+): string {
   const i = m.nome.indexOf(":");
   return i > 0 ? m.nome.slice(i + 1).trim() || m.nome : m.nome;
 }
@@ -134,33 +145,37 @@ function normalizar(s: string): string {
 }
 
 function slugAtualDe(a: AgenteIA): string | null {
-  if (a.modelo_provedor && a.modelo_nome) return `${a.modelo_provedor}/${a.modelo_nome}`;
+  if (a.modelo_provedor && a.modelo_nome)
+    return `${a.modelo_provedor}/${a.modelo_nome}`;
   return a.modelo || null;
 }
 
 function comparador(
   ordem: Ordem,
-  slugSelecionado: string | null
+  slugSelecionado: string | null,
 ): (a: ModeloCatalogo, b: ModeloCatalogo) => number {
   const porNome = (a: ModeloCatalogo, b: ModeloCatalogo) =>
     nomeCurto(a).localeCompare(nomeCurto(b), "pt-BR");
   const primeiro = (x: boolean) => (x ? 0 : 1);
   const porPreco = (a: ModeloCatalogo, b: ModeloCatalogo) =>
-    (a.preco_prompt ?? Number.POSITIVE_INFINITY) - (b.preco_prompt ?? Number.POSITIVE_INFINITY);
+    (a.preco_prompt ?? Number.POSITIVE_INFINITY) -
+    (b.preco_prompt ?? Number.POSITIVE_INFINITY);
   switch (ordem) {
     case "nome":
       return porNome;
     case "preco":
       return (a, b) => porPreco(a, b) || porNome(a, b);
     case "contexto":
-      return (a, b) => (b.context_length ?? -1) - (a.context_length ?? -1) || porNome(a, b);
+      return (a, b) =>
+        (b.context_length ?? -1) - (a.context_length ?? -1) || porNome(a, b);
     case "novos":
       return (a, b) => primeiro(a.novo) - primeiro(b.novo) || porNome(a, b);
     default:
       // O modelo atual do agente vem primeiro: é o que o operador quer ver
       // ao abrir a aba, antes de comparar com o resto.
       return (a, b) =>
-        primeiro(a.slug === slugSelecionado) - primeiro(b.slug === slugSelecionado) ||
+        primeiro(a.slug === slugSelecionado) -
+          primeiro(b.slug === slugSelecionado) ||
         primeiro(a.curado) - primeiro(b.curado) ||
         primeiro(a.tendencia) - primeiro(b.tendencia) ||
         primeiro(a.novo) - primeiro(b.novo) ||
@@ -173,9 +188,19 @@ function formatarUsd(v: number): string {
   return `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
-export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: ModeloLLM[] }) {
-  const [slugSelecionado, setSlugSelecionado] = useState<string | null>(slugAtualDe(agente));
-  const [tier, setTier] = useState<TierContexto>(agente.contexto_tamanho ?? TIER_PADRAO);
+export function SeletorModelo({
+  agente,
+  curados,
+}: {
+  agente: AgenteIA;
+  curados: ModeloLLM[];
+}) {
+  const [slugSelecionado, setSlugSelecionado] = useState<string | null>(
+    slugAtualDe(agente),
+  );
+  const [tier, setTier] = useState<TierContexto>(
+    agente.contexto_tamanho ?? TIER_PADRAO,
+  );
 
   const catalogo = useQuery({
     queryKey: ["catalogo-modelos"],
@@ -196,15 +221,30 @@ export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: 
   // Tier acima do plano (agente salvo antes de um downgrade): o que vai no
   // form e o que o resumo mostra é o rebaixado — o mesmo que o worker
   // aplica. Derivação pura, sem efeito.
-  const tierEfetivo: TierContexto = plano && tierBloqueado(tier, plano) ? plano.contexto_max : tier;
-  const modeloAtualBloqueado = !!(plano && selecionado && modeloBloqueado(selecionado, plano));
+  const tierEfetivo: TierContexto =
+    plano && tierBloqueado(tier, plano) ? plano.contexto_max : tier;
+  const modeloAtualBloqueado = !!(
+    plano &&
+    selecionado &&
+    modeloBloqueado(selecionado, plano)
+  );
 
   return (
     <div className="space-y-4 md:col-span-2">
       {/* O que o form salva. `readOnly`: o valor vem do estado, não de digitação. */}
-      <Input type="hidden" name="modelo_provedor" value={provedorSel} readOnly />
+      <Input
+        type="hidden"
+        name="modelo_provedor"
+        value={provedorSel}
+        readOnly
+      />
       <Input type="hidden" name="modelo_nome" value={nomeSel} readOnly />
-      <Input type="hidden" name="contexto_tamanho" value={tierEfetivo} readOnly />
+      <Input
+        type="hidden"
+        name="contexto_tamanho"
+        value={tierEfetivo}
+        readOnly
+      />
 
       {catalogo.isPending ? (
         <SkeletonCatalogo />
@@ -237,8 +277,8 @@ export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: 
           role="alert"
           className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground"
         >
-          O modelo atual do agente é premium e não está no plano {plano.nome}. Escolha outro
-          modelo para salvar
+          O modelo atual do agente é premium e não está no plano {plano.nome}.
+          Escolha outro modelo para salvar
           {plano.upgrade_sugerido
             ? ` — ou faça upgrade para o plano ${rotuloPlano(plano.upgrade_sugerido)}.`
             : "."}
@@ -258,9 +298,10 @@ export function SeletorModelo({ agente, curados }: { agente: AgenteIA; curados: 
           role="alert"
           className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          O prompt do agente ({formatarChars((agente.prompt_override ?? "").length)} caracteres)
-          excede o número de caracteres suportado neste tamanho de contexto. Reduza o prompt
-          ou aumente o Tamanho do Contexto.
+          O prompt do agente (
+          {formatarChars((agente.prompt_override ?? "").length)} caracteres)
+          excede o número de caracteres suportado neste tamanho de contexto.
+          Reduza o prompt ou aumente o Tamanho do Contexto.
         </p>
       )}
     </div>
@@ -290,7 +331,10 @@ function Catalogo({
   // "Mostrar mais" volta ao início quando a lista muda: o limite fica preso
   // à chave dos filtros, sem efeito (o React Compiler reprova setState em
   // efeito e isto é derivação pura).
-  const [levas, setLevas] = useState<{ chave: string; n: number }>({ chave: "", n: 1 });
+  const [levas, setLevas] = useState<{ chave: string; n: number }>({
+    chave: "",
+    n: 1,
+  });
 
   const selecionado = itens.find((m) => m.slug === slugSelecionado) ?? null;
 
@@ -323,10 +367,14 @@ function Catalogo({
       .sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome, "pt-BR"));
   }, [aposBusca]);
 
-  const provedorAtivo = abas.some((a) => a.slug === provedor) ? provedor : "todos";
+  const provedorAtivo = abas.some((a) => a.slug === provedor)
+    ? provedor
+    : "todos";
 
   const visiveis = useMemo(() => {
-    const lista = aposBusca.filter((m) => provedorAtivo === "todos" || m.provedor === provedorAtivo);
+    const lista = aposBusca.filter(
+      (m) => provedorAtivo === "todos" || m.provedor === provedorAtivo,
+    );
     lista.sort(comparador(ordem, slugSelecionado));
     if (desc) lista.reverse();
     return lista;
@@ -338,7 +386,9 @@ function Catalogo({
   const restantes = Math.max(0, visiveis.length - limite);
 
   const temFiltro =
-    busca.trim() !== "" || Object.values(filtros).some(Boolean) || provedorAtivo !== "todos";
+    busca.trim() !== "" ||
+    Object.values(filtros).some(Boolean) ||
+    provedorAtivo !== "todos";
 
   function limpar() {
     setBusca("");
@@ -348,7 +398,11 @@ function Catalogo({
 
   const creditosSel = selecionado
     ? cabeNoModelo(selecionado, tier)
-      ? creditosPorMensagem(selecionado.preco_prompt, selecionado.preco_completion, tier)
+      ? creditosPorMensagem(
+          selecionado.preco_prompt,
+          selecionado.preco_completion,
+          tier,
+        )
       : null
     : null;
 
@@ -357,7 +411,8 @@ function Catalogo({
       <div>
         <h3 className="text-base font-semibold">Modelos Disponíveis</h3>
         <p className="text-sm text-muted-foreground">
-          Compare todos os modelos disponíveis e escolha o ideal para o seu agente.
+          Compare todos os modelos disponíveis e escolha o ideal para o seu
+          agente.
         </p>
       </div>
 
@@ -369,10 +424,18 @@ function Catalogo({
           </p>
           <div className="mt-1 flex min-w-0 items-center gap-2">
             {selecionado ? (
-              <LogoProvedor provedor={selecionado.provedor} className="size-7 text-[10px]" />
+              <LogoProvedor
+                provedor={selecionado.provedor}
+                className="size-7 text-[10px]"
+              />
             ) : null}
-            <span className="truncate text-sm font-semibold" title={slugSelecionado ?? undefined}>
-              {selecionado ? nomeCurto(selecionado) : (slugSelecionado ?? "— nenhum —")}
+            <span
+              className="truncate text-sm font-semibold"
+              title={slugSelecionado ?? undefined}
+            >
+              {selecionado
+                ? nomeCurto(selecionado)
+                : (slugSelecionado ?? "— nenhum —")}
             </span>
           </div>
         </div>
@@ -381,7 +444,10 @@ function Catalogo({
             Tamanho do contexto
           </p>
           <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
-            <span className={cn("size-2 shrink-0 rounded-full", PONTO_TIER[tier])} aria-hidden />
+            <span
+              className={cn("size-2 shrink-0 rounded-full", PONTO_TIER[tier])}
+              aria-hidden
+            />
             {rotuloTier(tier)}
           </div>
         </div>
@@ -390,7 +456,10 @@ function Catalogo({
             Créditos
           </p>
           <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
-            <BadgeDollarSign className="size-4 shrink-0 text-warning" aria-hidden />
+            <BadgeDollarSign
+              className="size-4 shrink-0 text-warning"
+              aria-hidden
+            />
             {creditosSel ?? (selecionado ? "—" : "?")}
           </div>
         </div>
@@ -423,7 +492,8 @@ function Catalogo({
               onClick={() => setFiltros((f) => ({ ...f, [chave]: !f[chave] }))}
               className={cn(
                 "rounded-full",
-                ativo && "border-brand-primary bg-brand-primary/10 text-brand-primary"
+                ativo &&
+                  "border-brand-primary bg-brand-primary/10 text-brand-primary",
               )}
             >
               <Icone className="size-3.5" />
@@ -436,7 +506,8 @@ function Catalogo({
       {/* Contagem + limpar */}
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">
-          {visiveis.length} {visiveis.length === 1 ? "modelo encontrado" : "modelos encontrados"}
+          {visiveis.length}{" "}
+          {visiveis.length === 1 ? "modelo encontrado" : "modelos encontrados"}
         </Badge>
         {/* ADR-005 leva B: sem `catalogo_completo` a API já manda só os
             recomendados — aqui só se explica por que a lista é curta. */}
@@ -464,9 +535,14 @@ function Catalogo({
 
       {/* Ordenação */}
       <div className="flex items-center gap-2">
-        <Select value={ordem} onValueChange={(v: string | null) => v && setOrdem(v as Ordem)}>
+        <Select
+          value={ordem}
+          onValueChange={(v: string | null) => v && setOrdem(v as Ordem)}
+        >
           <SelectTrigger className="w-full" aria-label="Ordenar por">
-            <SelectValue>{(v: string | null) => ORDEM_ROTULO[(v as Ordem) ?? "relevancia"]}</SelectValue>
+            <SelectValue>
+              {(v: string | null) => ORDEM_ROTULO[(v as Ordem) ?? "relevancia"]}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {(Object.keys(ORDEM_ROTULO) as Ordem[]).map((o) => (
@@ -481,18 +557,28 @@ function Catalogo({
           variant="outline"
           size="icon"
           onClick={() => setDesc((d) => !d)}
-          aria-label={desc ? "Ordem decrescente — inverter" : "Ordem crescente — inverter"}
+          aria-label={
+            desc ? "Ordem decrescente — inverter" : "Ordem crescente — inverter"
+          }
           aria-pressed={desc}
           title="Inverter ordem"
           className="shrink-0"
         >
-          {desc ? <ArrowUp className="size-4" /> : <ArrowDown className="size-4" />}
+          {desc ? (
+            <ArrowUp className="size-4" />
+          ) : (
+            <ArrowDown className="size-4" />
+          )}
         </Button>
       </div>
 
       {/* Abas de provedor */}
       <ScrollArea className="w-full">
-        <div className="flex w-max gap-1.5 pb-2" role="tablist" aria-label="Fabricante">
+        <div
+          className="flex w-max gap-1.5 pb-2"
+          role="tablist"
+          aria-label="Fabricante"
+        >
           <AbaProvedor
             ativa={provedorAtivo === "todos"}
             onClick={() => setProvedor("todos")}
@@ -569,13 +655,16 @@ function AbaProvedor({
         "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
         ativa
           ? "bg-brand-primary text-primary-foreground"
-          : "bg-muted text-foreground hover:bg-muted/70"
+          : "bg-muted text-foreground hover:bg-muted/70",
       )}
     >
       {provedor ? (
         <LogoProvedor
           provedor={provedor}
-          className={cn("size-5 rounded-md text-[9px]", ativa && "bg-primary-foreground/20 text-primary-foreground")}
+          className={cn(
+            "size-5 rounded-md text-[9px]",
+            ativa && "bg-primary-foreground/20 text-primary-foreground",
+          )}
         />
       ) : null}
       {rotulo}
@@ -597,13 +686,22 @@ function CardModelo({
   onSelecionar: () => void;
 }) {
   const bloqueado = modeloBloqueado(m, plano);
+  const indisponivel = m.disponivel === false;
   function escolher() {
+    if (indisponivel) {
+      toast.error(
+        `${nomeCurto(m)} está indisponível no OpenRouter agora` +
+          (m.indisponivel_motivo ? ` (${m.indisponivel_motivo})` : "") +
+          ". Escolha outro modelo.",
+      );
+      return;
+    }
     if (bloqueado) {
       toast.info(
         `${nomeCurto(m)} é um modelo premium — não está no plano ${plano.nome}.` +
           (plano.upgrade_sugerido
             ? ` Disponível a partir do plano ${rotuloPlano(plano.upgrade_sugerido)}.`
-            : "")
+            : ""),
       );
       return;
     }
@@ -614,12 +712,12 @@ function CardModelo({
       <button
         type="button"
         aria-pressed={selecionado}
-        aria-disabled={bloqueado || undefined}
+        aria-disabled={bloqueado || indisponivel || undefined}
         onClick={escolher}
         className={cn(
           "w-full rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
           selecionado && "border-l-4 border-l-success bg-success/5",
-          bloqueado && "opacity-70"
+          bloqueado && "opacity-70",
         )}
       >
         <div className="flex items-start gap-2.5">
@@ -646,10 +744,30 @@ function CardModelo({
                   className="inline-flex size-5 items-center justify-center rounded-full bg-success/15 text-success"
                   title="Promoção — gratuito ou preço zero de entrada"
                 >
-                  <BadgeDollarSign className="size-3.5" aria-label="Promoção" role="img" />
+                  <BadgeDollarSign
+                    className="size-3.5"
+                    aria-label="Promoção"
+                    role="img"
+                  />
                 </span>
               )}
               {m.curado && <Badge variant="secondary">Recomendado</Badge>}
+              {indisponivel && (
+                <Badge
+                  variant="destructive"
+                  title={m.indisponivel_motivo ?? undefined}
+                >
+                  Indisponível agora
+                </Badge>
+              )}
+              {!indisponivel && m.degradado && (
+                <Badge
+                  variant="warning"
+                  title={m.indisponivel_motivo ?? undefined}
+                >
+                  Qualidade reduzida
+                </Badge>
+              )}
               {bloqueado && (
                 <span
                   className="inline-flex items-center gap-1 rounded-md bg-brand-primary/10 px-1.5 py-px font-mono text-[10px] font-bold text-brand-primary"
@@ -660,12 +778,26 @@ function CardModelo({
                 </span>
               )}
             </div>
-            <p className="truncate text-sm text-muted-foreground">{m.provedor_nome}</p>
+            <p className="truncate text-sm text-muted-foreground">
+              {m.provedor_nome}
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Capacidade ativa={m.visao} Icone={Eye} rotulo="Visão (lê imagens)" />
-            <Capacidade ativa={m.pensamento} Icone={Brain} rotulo="Pensamento (raciocínio)" />
-            <Capacidade ativa={m.tools} Icone={Code} rotulo="HTTP Tools (chama ferramentas)" />
+            <Capacidade
+              ativa={m.visao}
+              Icone={Eye}
+              rotulo="Visão (lê imagens)"
+            />
+            <Capacidade
+              ativa={m.pensamento}
+              Icone={Brain}
+              rotulo="Pensamento (raciocínio)"
+            />
+            <Capacidade
+              ativa={m.tools}
+              Icone={Code}
+              rotulo="HTTP Tools (chama ferramentas)"
+            />
           </div>
         </div>
 
@@ -675,13 +807,15 @@ function CardModelo({
             const creditos = cabe
               ? creditosPorMensagem(m.preco_prompt, m.preco_completion, t)
               : null;
-            const usd = cabe ? usdPorMensagem(m.preco_prompt, m.preco_completion, t) : null;
+            const usd = cabe
+              ? usdPorMensagem(m.preco_prompt, m.preco_completion, t)
+              : null;
             return (
               <div
                 key={t}
                 className={cn(
                   "rounded-md px-1 py-1.5 text-center",
-                  t === tier && "bg-brand-primary/10"
+                  t === tier && "bg-brand-primary/10",
                 )}
                 title={
                   !cabe
@@ -692,13 +826,16 @@ function CardModelo({
                 }
               >
                 <div className="flex items-center justify-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <span className={cn("size-1.5 rounded-full", PONTO_TIER[t])} aria-hidden />
+                  <span
+                    className={cn("size-1.5 rounded-full", PONTO_TIER[t])}
+                    aria-hidden
+                  />
                   {t}
                 </div>
                 <div
                   className={cn(
                     "mt-0.5 text-lg font-semibold tabular-nums",
-                    t === tier && "text-brand-primary"
+                    t === tier && "text-brand-primary",
                   )}
                 >
                   {!cabe ? "—" : (creditos ?? "?")}
@@ -725,11 +862,15 @@ function Capacidade({
     <span
       className={cn(
         "inline-flex size-7 items-center justify-center rounded-full",
-        ativa ? "bg-muted text-foreground" : "text-muted-foreground/30"
+        ativa ? "bg-muted text-foreground" : "text-muted-foreground/30",
       )}
       title={ativa ? rotulo : `Sem ${rotulo.toLowerCase()}`}
     >
-      <Icone className="size-4" aria-label={ativa ? rotulo : `Sem ${rotulo}`} role="img" />
+      <Icone
+        className="size-4"
+        aria-label={ativa ? rotulo : `Sem ${rotulo}`}
+        role="img"
+      />
     </span>
   );
 }
@@ -746,14 +887,17 @@ function CardForaDoCatalogo({ slug }: { slug: string }) {
           <LogoProvedor provedor={slug.split("/")[0].replace(/^~/, "")} />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span className="truncate font-mono text-sm font-semibold" title={slug}>
+              <span
+                className="truncate font-mono text-sm font-semibold"
+                title={slug}
+              >
                 {slug}
               </span>
               <Badge variant="warning">atual (fora do catálogo)</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Continua salvo assim até você escolher outro modelo abaixo. Sem estimativa de
-              créditos porque o preço não está no catálogo.
+              Continua salvo assim até você escolher outro modelo abaixo. Sem
+              estimativa de créditos porque o preço não está no catálogo.
             </p>
           </div>
         </div>
@@ -784,7 +928,7 @@ function TamanhoDoContexto({
         `${rotuloTier(t)} não está no plano ${plano.nome} — ele libera até ${rotuloTier(plano.contexto_max)}.` +
           (plano.upgrade_sugerido
             ? ` Disponível a partir do plano ${rotuloPlano(plano.upgrade_sugerido)}.`
-            : "")
+            : ""),
       );
       return;
     }
@@ -798,22 +942,30 @@ function TamanhoDoContexto({
           role="alert"
           className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground"
         >
-          O agente estava em {rotuloTier(tierSalvo)}, mas o plano {plano.nome} libera até{" "}
-          {rotuloTier(plano.contexto_max)} — ele já opera como {rotuloTier(tier)} e é assim que
-          vai ficar salvo
+          O agente estava em {rotuloTier(tierSalvo)}, mas o plano {plano.nome}{" "}
+          libera até {rotuloTier(plano.contexto_max)} — ele já opera como{" "}
+          {rotuloTier(tier)} e é assim que vai ficar salvo
           {plano.upgrade_sugerido
             ? `, até o upgrade para o plano ${rotuloPlano(plano.upgrade_sugerido)}.`
             : "."}
         </p>
       )}
-      <div className="space-y-2" role="radiogroup" aria-label="Tamanho do contexto">
+      <div
+        className="space-y-2"
+        role="radiogroup"
+        aria-label="Tamanho do contexto"
+      >
         {ORDEM.map((t) => {
           const ativo = t === tier;
           const bloqueado = !!plano && tierBloqueado(t, plano);
           const cabe = modelo ? cabeNoModelo(modelo, t) : true;
           const creditos =
             modelo && cabe
-              ? creditosPorMensagem(modelo.preco_prompt, modelo.preco_completion, t)
+              ? creditosPorMensagem(
+                  modelo.preco_prompt,
+                  modelo.preco_completion,
+                  t,
+                )
               : null;
           return (
             <button
@@ -825,21 +977,36 @@ function TamanhoDoContexto({
               onClick={() => escolher(t)}
               className={cn(
                 "flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                ativo ? "border-2 border-brand-primary bg-brand-primary/5" : "border-border",
-                bloqueado && "opacity-70"
+                ativo
+                  ? "border-2 border-brand-primary bg-brand-primary/5"
+                  : "border-border",
+                bloqueado && "opacity-70",
               )}
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className={cn("size-2 rounded-full", PONTO_TIER[t])} aria-hidden />
-                  <span className={cn("font-semibold", ativo && "text-brand-primary")}>
+                  <span
+                    className={cn("size-2 rounded-full", PONTO_TIER[t])}
+                    aria-hidden
+                  />
+                  <span
+                    className={cn(
+                      "font-semibold",
+                      ativo && "text-brand-primary",
+                    )}
+                  >
                     {rotuloTier(t)}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">{formatarChars(TIERS[t])} caracteres</p>
+                <p className="text-sm text-muted-foreground">
+                  {formatarChars(TIERS[t])} caracteres
+                </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
-                <Badge variant={ativo ? "warning" : "outline"} className="font-mono tabular-nums">
+                <Badge
+                  variant={ativo ? "warning" : "outline"}
+                  className="font-mono tabular-nums"
+                >
                   {modelo ? (cabe ? `${creditos ?? "?"} C` : "—") : "? C"}
                 </Badge>
                 {bloqueado && plano && (
@@ -861,8 +1028,9 @@ function TamanhoDoContexto({
         })}
       </div>
       <p className="text-sm text-muted-foreground">
-        Define quantos caracteres o agente consegue &quot;lembrar&quot; da conversa atual. Note
-        que o custo em créditos varia conforme o tamanho do contexto selecionado.
+        Define quantos caracteres o agente consegue &quot;lembrar&quot; da
+        conversa atual. Note que o custo em créditos varia conforme o tamanho do
+        contexto selecionado.
       </p>
     </div>
   );
@@ -895,7 +1063,9 @@ function SeletorCurado({
           onValueChange={(v: string | null) => onChange(v ? `${v}/` : null)}
         >
           <SelectTrigger className="w-full" aria-label="Provedor">
-            <SelectValue placeholder="— selecione —">{(v: string | null) => v ?? "— selecione —"}</SelectValue>
+            <SelectValue placeholder="— selecione —">
+              {(v: string | null) => v ?? "— selecione —"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {provedores.map((p) => (
@@ -910,12 +1080,18 @@ function SeletorCurado({
         <Label>Modelo</Label>
         <Select
           value={nome || null}
-          onValueChange={(v: string | null) => onChange(v ? `${provedor}/${v}` : null)}
+          onValueChange={(v: string | null) =>
+            onChange(v ? `${provedor}/${v}` : null)
+          }
           disabled={!provedor}
         >
           <SelectTrigger className="w-full" aria-label="Modelo">
-            <SelectValue placeholder={provedor ? "— selecione —" : "(escolha o provedor)"}>
-              {(v: string | null) => v ?? (provedor ? "— selecione —" : "(escolha o provedor)")}
+            <SelectValue
+              placeholder={provedor ? "— selecione —" : "(escolha o provedor)"}
+            >
+              {(v: string | null) =>
+                v ?? (provedor ? "— selecione —" : "(escolha o provedor)")
+              }
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -933,7 +1109,11 @@ function SeletorCurado({
 
 function SkeletonCatalogo() {
   return (
-    <div className="space-y-3" aria-busy="true" aria-label="Carregando o catálogo de modelos">
+    <div
+      className="space-y-3"
+      aria-busy="true"
+      aria-label="Carregando o catálogo de modelos"
+    >
       <Skeleton className="h-16 w-full rounded-xl" />
       <Skeleton className="h-9 w-full" />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">

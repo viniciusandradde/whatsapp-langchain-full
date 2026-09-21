@@ -337,11 +337,19 @@ async def modelos_em_uso(
     ]
     with empresa_scope(None, bypass=True):
         async with pool.connection() as conn:
+            # Mesma regra do runtime (`AgenteRuntime`): `provedor/nome` quando
+            # os dois existem (é o que o seletor da ADR-004 grava), senão a
+            # coluna legada. Até 21/09/2026 lia só `modelo` — a Saúde de IA
+            # vigiava o modelo ERRADO de todo agente trocado pelo seletor.
             cur = await conn.execute(
-                "SELECT DISTINCT modelo FROM agente_ia "
-                "WHERE ativo AND modelo IS NOT NULL AND modelo <> ''"
+                """
+                SELECT DISTINCT CASE
+                    WHEN COALESCE(modelo_provedor, '') <> '' AND COALESCE(modelo_nome, '') <> ''
+                    THEN modelo_provedor || '/' || modelo_nome ELSE modelo END
+                  FROM agente_ia WHERE ativo
+                """
             )
-            em_uso.extend(str(r[0]) for r in await cur.fetchall())
+            em_uso.extend(str(r[0]) for r in await cur.fetchall() if r[0])
     curados = [str(m["id"]) for m in CURATED_MODELS] if incluir_curados else []
     vistos: set[str] = set()
     out: list[str] = []

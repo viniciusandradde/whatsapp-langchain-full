@@ -4761,6 +4761,11 @@ export interface ModeloCatalogo {
   tendencia: boolean;
   promo: boolean;
   curado: boolean;
+  /** false = fora de circulação agora (sonda real da Saúde de IA); ausente = disponível. */
+  disponivel?: boolean;
+  indisponivel_motivo?: string | null;
+  /** true = responde só por provedores abaixo do piso de quantização (qualidade menor). */
+  degradado?: boolean;
 }
 
 /** O que o plano da empresa libera no seletor (mig 188): tier máximo e modelos premium. */
@@ -5354,9 +5359,7 @@ export async function deletarTurno(id: number): Promise<void> {
   await apiFetch<void>(`/api/turnos/${id}`, { method: "DELETE" });
 }
 
-export async function getTurnoUsers(
-  id: number,
-): Promise<{
+export async function getTurnoUsers(id: number): Promise<{
   users: { id: string; nome: string | null; email: string | null }[];
 }> {
   return apiFetch(`/api/turnos/${id}/users`);

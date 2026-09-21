@@ -12,6 +12,9 @@ Uso:
     model = create_chat_model(temperature=0.0)           # determinístico
 """
 
+from dataclasses import dataclass
+
+import structlog
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_openai import ChatOpenAI
 from psycopg_pool import AsyncConnectionPool
@@ -134,6 +137,167 @@ def _get_rate_limiter(
     return _RATE_LIMITERS[key]
 
 
+_log_llm = structlog.get_logger()
+
+_SEM_PROVEDOR_PERMITIDO = "no allowed providers"
+
+
+def erro_e_sem_provedor_permitido(exc: BaseException) -> bool:
+    """404 do OpenRouter "No allowed providers are available for the selected
+    model": os provedores que servem o modelo hoje não passam no piso de
+    quantização acima. Aconteceu em 21/09/2026 com deepseek-v4.1-flash — o
+    OpenRouter re-apontou o apelido para uma versão datada servida só por
+    Morph/Relace (fp4) e o agente da VSA ficou mudo das 08:20 às 10:00."""
+    return _SEM_PROVEDOR_PERMITIDO in str(exc).lower()
+
+
+class ChatOpenAIResiliente(ChatOpenAI):
+    """ChatOpenAI que, num 404 "sem provedor permitido", repete UMA vez sem o
+    piso de quantização (decisão do dono, 21/09/2026): responder pelo provedor
+    fp4 é melhor que ficar mudo. O relaxamento é por chamada — o bloco
+    `provider` original continua nas seguintes — e fica no log; a sonda de
+    disponibilidade (`sondar_modelo`) abre o alerta no canal em até 10 min."""
+
+    def _sem_piso(self) -> ChatOpenAI:
+        return self.model_copy(update={"extra_body": None})
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]
+        try:
+            return await super()._agenerate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+        except Exception as exc:  # noqa: BLE001 — só o 404 específico é tratado
+            if not (self.extra_body and erro_e_sem_provedor_permitido(exc)):
+                raise
+            _log_llm.warning(
+                "roteamento_relaxado", model=self.model_name, error=str(exc)[:160]
+            )
+            return await self._sem_piso()._agenerate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]
+        try:
+            return super()._generate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+        except Exception as exc:  # noqa: BLE001
+            if not (self.extra_body and erro_e_sem_provedor_permitido(exc)):
+                raise
+            _log_llm.warning(
+                "roteamento_relaxado", model=self.model_name, error=str(exc)[:160]
+            )
+            return self._sem_piso()._generate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+
+@dataclass(frozen=True)
+class SondaModelo:
+    """Resultado da chamada mínima real a um modelo (1 token)."""
+
+    slug: str
+    ok: bool
+    codigo: int | None
+    motivo: str
+    inexistente: bool = False  # 404/400 "modelo não existe": nem sem piso responde
+    sem_provedor_permitido: bool = False  # 404 com piso; responde sem piso
+    transitorio: bool = False  # 429/5xx/timeout: não muda estado nenhum
+
+
+def classificar_sonda(
+    slug: str,
+    codigo_com_piso: int | None,
+    corpo_com_piso: str,
+    codigo_sem_piso: int | None,
+) -> SondaModelo:
+    """Pura: traduz os dois status (com e sem piso) na conclusão da sonda.
+    `codigo_sem_piso=None` = não foi preciso (a primeira respondeu)."""
+    if codigo_com_piso is not None and 200 <= codigo_com_piso < 300:
+        return SondaModelo(slug, True, codigo_com_piso, "responde")
+    corpo = (corpo_com_piso or "").lower()
+    if codigo_com_piso == 404 and _SEM_PROVEDOR_PERMITIDO in corpo:
+        if codigo_sem_piso is not None and 200 <= codigo_sem_piso < 300:
+            return SondaModelo(
+                slug,
+                False,
+                404,
+                "só provedores abaixo do piso de quantização (respondendo sem o piso)",
+                sem_provedor_permitido=True,
+            )
+        return SondaModelo(
+            slug, False, 404, "sem provedor disponível", inexistente=True
+        )
+    if codigo_com_piso in (400, 404):
+        return SondaModelo(
+            slug,
+            False,
+            codigo_com_piso,
+            "modelo não existe mais no OpenRouter",
+            inexistente=True,
+        )
+    if codigo_com_piso == 402:
+        return SondaModelo(
+            slug, True, 402, "saldo do OpenRouter esgotado (não é o modelo)"
+        )
+    if codigo_com_piso is None:
+        return SondaModelo(
+            slug, False, None, "sem resposta do OpenRouter", transitorio=True
+        )
+    return SondaModelo(
+        slug,
+        False,
+        codigo_com_piso,
+        f"OpenRouter respondeu {codigo_com_piso}",
+        transitorio=True,
+    )
+
+
+async def sondar_modelo(slug: str, *, timeout: float = 25.0) -> SondaModelo:
+    """Chamada mínima real (1 token) com o MESMO bloco `provider` do runtime.
+
+    É a única prova confiável de disponibilidade: a lista de endpoints do
+    apelido `deepseek-v4.1-flash` seguia com 22 provedores enquanto a chamada
+    era roteada para a versão datada com 2. Custo ≈ 1 token por modelo em
+    uso a cada 10 min."""
+    import httpx
+
+    api_key = settings.openrouter_api_key
+    if api_key is None:
+        return SondaModelo(
+            slug, False, None, "sem chave do OpenRouter", transitorio=True
+        )
+    headers = {
+        "Authorization": f"Bearer {api_key.get_secret_value()}",
+        "Content-Type": "application/json",
+    }
+    base = settings.openrouter_base_url.rstrip("/")
+
+    async def _chamar(com_piso: bool) -> tuple[int | None, str]:
+        corpo: dict = {
+            "model": slug,
+            "messages": [{"role": "user", "content": "ok"}],
+            "max_tokens": 1,
+        }
+        prefs = provider_preferences(slug) if com_piso else None
+        if prefs is not None:
+            corpo["provider"] = prefs
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(
+                    f"{base}/chat/completions", json=corpo, headers=headers
+                )
+        except (httpx.HTTPError, OSError):
+            return None, ""
+        return resp.status_code, resp.text[:600]
+
+    codigo, texto = await _chamar(com_piso=True)
+    codigo_sem_piso: int | None = None
+    if codigo == 404 and _SEM_PROVEDOR_PERMITIDO in texto.lower():
+        codigo_sem_piso, _ = await _chamar(com_piso=False)
+    return classificar_sonda(slug, codigo, texto, codigo_sem_piso)
+
+
 def create_chat_model(
     model: str | None = None,
     temperature: float | None = None,
@@ -186,7 +350,7 @@ def create_chat_model(
         # ChatOpenAI repassa `extra_body` verbatim no JSON da request.
         kwargs["extra_body"] = {"provider": prefs}
 
-    return ChatOpenAI(**kwargs)
+    return ChatOpenAIResiliente(**kwargs)
 
 
 async def get_agent_llm_config(
