@@ -86,7 +86,8 @@ async def list_planos_catalogo(
                 SELECT nome, slug, descricao, preco_mensal_brl,
                        preco_anual_brl, limite_usuarios, limite_conexoes,
                        limite_atendimentos_mes, limite_orcamento_ia_usd,
-                       limite_documentos_kb, features, limite_agentes
+                       limite_documentos_kb, features, limite_agentes,
+                       link_infinitepay, link_mercadopago
                   FROM plano WHERE ativo = TRUE
                  ORDER BY ordem NULLS LAST, preco_mensal_brl
                 """
@@ -105,6 +106,8 @@ async def list_planos_catalogo(
         "limite_documentos_kb",
         "features",
         "limite_agentes",
+        "link_infinitepay",
+        "link_mercadopago",
     ]
     items = []
     for r in rows:
@@ -113,6 +116,61 @@ async def list_planos_catalogo(
             d[campo] = float(d[campo]) if d[campo] is not None else None
         items.append(d)
     return {"items": items}
+
+
+class LinksPlanoInput(BaseModel):
+    """Links dos planos hospedados (ADR-005 leva F, mig 194). Vazio limpa."""
+
+    link_infinitepay: str | None = Field(default=None, max_length=500)
+    link_mercadopago: str | None = Field(default=None, max_length=500)
+
+
+@router.put("/planos/{slug}/links")
+async def set_links_plano(
+    slug: str,
+    body: LinksPlanoInput,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Superadmin cola os links criados nos painéis dos gateways. É DADO de
+    plataforma: sem API de cobrança, o link é tudo o que o cliente vê."""
+    from whatsapp_langchain.shared.empresa import is_superadmin
+    from whatsapp_langchain.shared.plano_pagamento import (
+        PagamentoInvalidoError,
+        validar_link,
+    )
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só o superadmin edita os links dos planos."
+        )
+    try:
+        infinitepay = validar_link("infinitepay", body.link_infinitepay)
+        mercadopago = validar_link("mercadopago", body.link_mercadopago)
+    except PagamentoInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                UPDATE plano
+                   SET link_infinitepay = %s, link_mercadopago = %s, updated_at = NOW()
+                 WHERE slug = %s AND ativo
+                RETURNING slug
+                """,
+                (infinitepay, mercadopago, slug),
+            )
+            row = await cur.fetchone()
+            await conn.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Plano não encontrado.")
+    logger.info("plano_links_atualizados", plano=slug, user_id=user_id)
+    return {
+        "slug": slug,
+        "link_infinitepay": infinitepay,
+        "link_mercadopago": mercadopago,
+    }
 
 
 @router.post("/checkout")

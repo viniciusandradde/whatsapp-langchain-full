@@ -1252,6 +1252,9 @@ export interface PlanoCatalogo {
   limite_documentos_kb: number | null;
   /** mig 189 (ADR-005 leva A). */
   limite_agentes: number | null;
+  /** mig 194 (ADR-005 leva F): links dos planos hospedados; null = sem venda self-service. */
+  link_infinitepay: string | null;
+  link_mercadopago: string | null;
   /** Chaves de `plano.features`: booleana, teto numérico (mig 192, `null` =
    *  ilimitado) ou texto (`contexto_max`). */
   features: Record<string, ValorFeaturePlano>;
@@ -1261,6 +1264,60 @@ export type ValorFeaturePlano = boolean | number | string | null;
 
 export async function getPlanosCatalogo(): Promise<{ items: PlanoCatalogo[] }> {
   return apiFetch<{ items: PlanoCatalogo[] }>("/api/billing/planos");
+}
+
+/** Superadmin cola os links dos planos hospedados (leva F); vazio limpa. */
+export async function setPlanoLinks(
+  slug: string,
+  body: { link_infinitepay: string | null; link_mercadopago: string | null }
+): Promise<{ slug: string; link_infinitepay: string | null; link_mercadopago: string | null }> {
+  return apiFetch(`/api/billing/planos/${encodeURIComponent(slug)}/links`, {
+    method: "PUT",
+    body,
+  });
+}
+
+export type GatewayPagamento = "infinitepay" | "mercadopago" | "manual";
+
+export interface PagamentoInput {
+  plano_slug: string;
+  gateway: GatewayPagamento;
+  gateway_id?: string | null;
+  valor_brl: number;
+  periodo_inicio: string;
+  periodo_fim: string;
+  observacao?: string | null;
+}
+
+export interface PagamentoRegistrado {
+  transacao_id: number;
+  plano: string;
+  plano_nome: string;
+  plano_valido_ate: string;
+  plano_anterior: string;
+  whatsapp_enviado: boolean;
+}
+
+export interface PagamentosEmpresa {
+  items: BillingTransacao[];
+  plano_atual: string;
+  plano_valido_ate: string | null;
+  sugestao: { periodo_inicio: string; periodo_fim: string };
+}
+
+/** Superadmin registra um pagamento conciliado no gateway (leva F). */
+export async function registrarPagamento(
+  empresaId: number,
+  body: PagamentoInput
+): Promise<PagamentoRegistrado> {
+  return apiFetch<PagamentoRegistrado>(`/api/empresas/${empresaId}/pagamentos`, {
+    method: "POST",
+    body,
+  });
+}
+
+export async function getPagamentosEmpresa(empresaId: number): Promise<PagamentosEmpresa> {
+  return apiFetch<PagamentosEmpresa>(`/api/empresas/${empresaId}/pagamentos`);
 }
 
 /**
@@ -5324,6 +5381,9 @@ export interface BillingTransacao {
   created_at: string;
   plano_slug: string | null;
   plano_nome: string | null;
+  /** mig 193/194: período coberto pelo pagamento. */
+  periodo_inicio?: string | null;
+  periodo_fim?: string | null;
 }
 
 export interface BillingStatus {

@@ -1,21 +1,28 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   CheckCircle2,
   CreditCard,
+  ExternalLink,
   History,
   Loader2,
   Lock,
   Minus,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 
+import { usePermissionsContext } from "@/components/permissions-context";
 import { usePlano } from "@/components/plano-context";
 import { ApiError } from "@/components/ui/api-error";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { BillingTransacao, PlanoCatalogo, TierContexto } from "@/lib/api";
 import { dataCivil, dataHora } from "@/lib/formato";
 import {
@@ -27,7 +34,11 @@ import {
 } from "@/lib/plano";
 import { cn } from "@/lib/utils";
 
-import { loadBillingHistoricoAction, loadPlanosCatalogoAction } from "./actions";
+import {
+  loadBillingHistoricoAction,
+  loadPlanosCatalogoAction,
+  setPlanoLinksAction,
+} from "./actions";
 
 /**
  * Plano e cobrança (ADR-005 leva D).
@@ -38,9 +49,14 @@ import { loadBillingHistoricoAction, loadPlanosCatalogoAction } from "./actions"
  * com o que o código aplica (`docs/PLANOS_RECURSOS.md`).
  *
  * `?feature=<chave>` é o destino dos cadeados do menu e das telas: a página
- * abre explicando o recurso e destaca a linha dele. A troca de plano em si
- * chega na leva F (planos hospedados nos gateways, ativação pelo superadmin);
- * o botão "Assinar" do Asaas saiu porque nunca funcionou em produção (D7).
+ * abre explicando o recurso e destaca a linha dele.
+ *
+ * Assinar (leva F, D7/D12): cada plano pago tem o link do plano hospedado
+ * na InfinitePay ("Recomendado" — Pix sem taxa ou cartão) e no Mercado Pago
+ * (cartão recorrente). O cliente paga lá; a ativação é manual pelo
+ * superadmin (Empresas → Plano e vigência), que confirma por WhatsApp. Só o
+ * Free fica sem link. O botão "Assinar" do Asaas saiu porque nunca
+ * funcionou em produção.
  */
 
 const TIER_ROTULO: Record<TierContexto, string> = {
@@ -117,6 +133,7 @@ const RECURSOS: { grupo: string; chaves: string[] }[] = [
 
 export function BillingPageClient() {
   const { plano } = usePlano();
+  const { isSuperadmin } = usePermissionsContext();
   const params = useSearchParams();
   const destaque = params.get("feature");
 
@@ -211,12 +228,16 @@ export function BillingPageClient() {
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
             {plano.upgrade_sugerido
-              ? `Para mudar de plano, fale com quem administra a plataforma — a coluna do plano ${
+              ? `A coluna do plano ${
                   planos.find((p) => p.slug === plano.upgrade_sugerido)?.nome ?? plano.upgrade_sugerido
-                } mostra o que é liberado.`
+                } mostra o que é liberado ao subir de plano.`
               : "Este é o plano mais completo."}
           </p>
         </div>
+      )}
+
+      {planos.some((p) => p.link_infinitepay || p.link_mercadopago) && (
+        <SecaoAssinar planos={planos} atual={plano?.slug ?? null} />
       )}
 
       <section>
@@ -236,7 +257,7 @@ export function BillingPageClient() {
 
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
-          <History className="size-4" /> Histórico de cobranças
+          <History className="size-4" /> Histórico de pagamentos
         </h2>
         {historico.isPending ? (
           <p className="py-3 text-sm text-muted-foreground">Carregando…</p>
@@ -246,6 +267,164 @@ export function BillingPageClient() {
           <HistoricoTable items={historico.data} />
         )}
       </section>
+
+      {isSuperadmin && catalogo.data && <EditorLinks planos={catalogo.data} />}
+    </div>
+  );
+}
+
+/**
+ * Cards de assinatura: só os planos com link. Quem já está no plano vê
+ * "Renovar"; os demais, "Assinar". InfinitePay em destaque (D12); Mercado
+ * Pago como alternativa. Só o Free não tem venda self-service.
+ */
+function SecaoAssinar({ planos, atual }: { planos: PlanoCatalogo[]; atual: string | null }) {
+  const vendaveis = planos.filter((p) => p.link_infinitepay || p.link_mercadopago);
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+        Assinar ou renovar
+      </h2>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {vendaveis.map((p) => {
+          const ehAtual = p.slug === atual;
+          const verbo = ehAtual ? "Renovar" : "Assinar";
+          return (
+            <div
+              key={p.slug}
+              className={cn(
+                "space-y-3 rounded-xl border p-4",
+                ehAtual ? "border-brand-primary/50 bg-brand-primary/5" : "border-border bg-card"
+              )}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-lg font-semibold">{p.nome}</p>
+                <p className="text-sm text-muted-foreground">
+                  {p.preco_mensal_brl ? `R$ ${p.preco_mensal_brl.toFixed(0)}/mês` : ""}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                {p.link_infinitepay && (
+                  <Button
+                    nativeButton={false}
+                    render={
+                      <a href={p.link_infinitepay} target="_blank" rel="noopener noreferrer" />
+                    }
+                    className="w-full justify-between"
+                  >
+                    <span>
+                      {verbo} pela InfinitePay
+                      <span className="ml-2 rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                        Recomendado
+                      </span>
+                    </span>
+                    <ExternalLink className="size-4" />
+                  </Button>
+                )}
+                {p.link_mercadopago && (
+                  <Button
+                    variant="outline"
+                    nativeButton={false}
+                    render={
+                      <a href={p.link_mercadopago} target="_blank" rel="noopener noreferrer" />
+                    }
+                    className="w-full justify-between"
+                  >
+                    <span>{verbo} pelo Mercado Pago</span>
+                    <ExternalLink className="size-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                InfinitePay: Pix sem taxa (lembrete a cada mês) ou cartão com cobrança automática.
+                Mercado Pago: cartão com cobrança automática.
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Depois do pagamento, a nossa equipe confirma e a vigência aparece aqui — você recebe a
+        confirmação pelo WhatsApp cadastrado no resumo diário.
+      </p>
+    </section>
+  );
+}
+
+/** Só superadmin: cola os links criados nos painéis dos gateways (mig 194). */
+function EditorLinks({ planos }: { planos: PlanoCatalogo[] }) {
+  const queryClient = useQueryClient();
+  const editaveis = planos.filter((p) => p.slug !== "free");
+  return (
+    <section className="rounded-xl border border-dashed border-border p-4">
+      <h2 className="text-sm font-medium">Links dos planos hospedados (superadmin)</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Crie o plano no painel da InfinitePay (Cobrança Recorrente) e do Mercado Pago (Assinaturas)
+        e cole o link aqui. Vazio = plano sem venda pelo painel. Só links https dos próprios
+        gateways são aceitos.
+      </p>
+      <div className="mt-3 space-y-3">
+        {editaveis.map((p) => (
+          <LinhaLinks
+            key={p.slug}
+            plano={p}
+            onSalvo={() => void queryClient.invalidateQueries({ queryKey: ["planos-catalogo"] })}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LinhaLinks({ plano, onSalvo }: { plano: PlanoCatalogo; onSalvo: () => void }) {
+  const [ip, setIp] = useState(plano.link_infinitepay ?? "");
+  const [mp, setMp] = useState(plano.link_mercadopago ?? "");
+  const [saving, startSaving] = useTransition();
+  function salvar() {
+    startSaving(async () => {
+      const r = await setPlanoLinksAction(plano.slug, {
+        link_infinitepay: ip.trim() || null,
+        link_mercadopago: mp.trim() || null,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success(`Links do plano ${plano.nome} salvos.`);
+      onSalvo();
+    });
+  }
+  return (
+    <div className="grid grid-cols-1 items-end gap-2 md:grid-cols-[8rem_1fr_1fr_auto]">
+      <p className="text-sm font-medium">{plano.nome}</p>
+      <div className="space-y-1">
+        <Label htmlFor={`ip-${plano.slug}`} className="text-xs">
+          InfinitePay
+        </Label>
+        <Input
+          id={`ip-${plano.slug}`}
+          value={ip}
+          onChange={(e) => setIp(e.target.value)}
+          placeholder="https://invoice.infinitepay.io/plans/…"
+          disabled={saving}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`mp-${plano.slug}`} className="text-xs">
+          Mercado Pago
+        </Label>
+        <Input
+          id={`mp-${plano.slug}`}
+          value={mp}
+          onChange={(e) => setMp(e.target.value)}
+          placeholder="https://mpago.la/…"
+          disabled={saving}
+        />
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={salvar} disabled={saving}>
+        {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+        Salvar
+      </Button>
     </div>
   );
 }
@@ -398,8 +577,9 @@ function HistoricoTable({ items }: { items: BillingTransacao[] }) {
         <thead>
           <tr className="border-b border-border text-xs uppercase text-muted-foreground">
             <th className="py-2 text-left">Data</th>
-            <th className="text-left">Descrição</th>
             <th className="text-left">Plano</th>
+            <th className="text-left">Período</th>
+            <th className="text-left">Descrição</th>
             <th className="text-right">Valor</th>
             <th className="text-center">Situação</th>
           </tr>
@@ -408,8 +588,13 @@ function HistoricoTable({ items }: { items: BillingTransacao[] }) {
           {items.map((t) => (
             <tr key={t.id} className="border-b border-border/60">
               <td className="py-2 text-xs text-muted-foreground">{dataHora(t.created_at)}</td>
-              <td className="text-xs">{t.descricao || "—"}</td>
               <td className="text-xs">{t.plano_nome || "—"}</td>
+              <td className="text-xs">
+                {t.periodo_inicio
+                  ? `${dataCivil(t.periodo_inicio)} a ${dataCivil(t.periodo_fim)}`
+                  : "—"}
+              </td>
+              <td className="text-xs">{t.descricao || "—"}</td>
               <td className="text-right font-mono text-xs tabular-nums">
                 R$ {t.valor_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
               </td>
