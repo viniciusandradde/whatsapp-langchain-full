@@ -68,7 +68,7 @@ Tudo o mais abaixo é **liberado para todo plano**, inclusive o Free (o rastreio
 | ~~`limite_documentos_kb`~~ | 5/20/100/∞ | ~~contado, não bloqueia~~ → **aplicado na leva A** |
 | ~~`limite_orcamento_ia_usd`~~ | 5/10/100/500 | ~~não alimenta o `ia_budget`~~ → **teto do `ia_budget` na leva A** |
 
-O painel também **não esconde nem marca** nada por plano: o menu é gateado só por permissão (`requires:`), e o `/billing` mostra listas de features de marketing (`billing-page-client.tsx`) que não batem com as chaves acima.
+~~O painel também **não esconde nem marca** nada por plano: o menu é gateado só por permissão (`requires:`), e o `/billing` mostra listas de features de marketing (`billing-page-client.tsx`) que não batem com as chaves acima.~~ **Resolvido na leva D (20/09/2026)**: `nav-catalog.feature` + cadeado no menu e nos interruptores (`usePlanoGate`), e o `/billing` compara os planos pelas chaves reais.
 
 ## 4. Inventário completo — recurso a recurso
 
