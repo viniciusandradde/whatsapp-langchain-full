@@ -16,7 +16,7 @@ Educational, production-ready harness around WhatsApp agents built with LangGrap
 4. Mostrar ao dono no dev **antes** do merge.
 5. Só então PR → CI verde → merge (= produção). Depois do deploy, conferir o container NOVO (deploy verde ≠ código novo servindo).
 
-Exceção: hotfix de incidente em produção, somente com ordem explícita do dono. Mudança docs-only (CLAUDE.md, docs/) fica fora do filtro de build e pode ir direto.
+Exceção: hotfix de incidente em produção, somente com ordem explícita do dono. Mudança docs-only (CLAUDE.md, docs/) fica fora do filtro de build e pode ir direto. Migration é código de imagem: `db/**` está no filtro `backend` do `deploy.yml` (a api aplica as migrations do `db/` da própria imagem ao subir) — até 21/09/2026 não estava, e uma PR só de migration teria passado verde sem chegar ao banco.
 
 ## Common commands
 
