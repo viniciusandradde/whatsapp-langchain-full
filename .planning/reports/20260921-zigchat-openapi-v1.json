@@ -1,0 +1,1289 @@
+{
+ "openapi": "3.0.0",
+ "info": {
+  "title": "ZigChat API",
+  "description": "Descrição da API REST do `ZigChat`. Saiba mais em: [zigchat.com.br](https://zigchat.com.br/).",
+  "version": "1.0.0"
+ },
+ "servers": [
+  {
+   "url": "http://localhost:4002/v1"
+  },
+  {
+   "url": "https://app.zigchat.com.br/api/v1"
+  },
+  {
+   "url": "https://teste.zigchat.com.br/api/v1"
+  }
+ ],
+ "tags": [
+  {
+   "name": "mensagem"
+  }
+ ],
+ "definitions": {},
+ "components": {
+  "securitySchemes": {
+   "bearerAuth": {
+    "type": "http",
+    "scheme": "bearer"
+   }
+  }
+ },
+ "security": [
+  {
+   "bearerAuth": []
+  }
+ ],
+ "paths": {
+  "/mensagem/enviar": {
+   "post": {
+    "tags": [
+     "mensagem"
+    ],
+    "summary": "Envia uma mensagem para um cliente.",
+    "operationId": "enviarMensagem",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "empresa_id",
+         "mensagens",
+         "nome"
+        ],
+        "properties": {
+         "mensagens": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "mensagem": {
+             "type": "string",
+             "example": "Descrição do Arquivo (Caption)."
+            },
+            "arquivo": {
+             "type": "string",
+             "example": "https://intranet-hc.s3.amazonaws.com/intranet/public/07-10-2020/XsMz8EI9NU4vX324lRhJc.pdf"
+            }
+           }
+          }
+         },
+         "telefone": {
+          "type": "string",
+          "example": "556799514221",
+          "description": "Telefone do contato (substitui cliente_id e lid)."
+         },
+         "lid": {
+          "type": "string",
+          "example": "12345678910111",
+          "description": "LID do contato (substitui cliente_id e telefone)."
+         },
+         "cliente_id": {
+          "type": "number",
+          "example": 123,
+          "description": "Código do contato (substitui lid e telefone)."
+         },
+         "conexao": {
+          "type": "string"
+         },
+         "nome": {
+          "type": "string",
+          "example": "Fulano da Silva"
+         },
+         "transferir": {
+          "type": "boolean",
+          "example": false,
+          "description": "Indica que o atendimento ficará na tela de aguardando no modo manual"
+         },
+         "interna": {
+          "type": "boolean",
+          "example": false,
+          "description": "Indica que a mensagem é interna e não sera processada na fila"
+         },
+         "verifica_numero": {
+          "type": "boolean",
+          "example": true,
+          "description": "Indica que o número será verificado antes de enviar a mensagem"
+         },
+         "finalizarAtendimento": {
+          "type": "boolean",
+          "example": true
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mensagem/verificar": {
+   "post": {
+    "tags": [
+     "mensagem"
+    ],
+    "summary": "Verificar se realmente essa mensagem foi enviada para esse número.",
+    "operationId": "verificarMensagem",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "msgVerify",
+         "telefone"
+        ],
+        "properties": {
+         "telefone": {
+          "type": "string",
+          "example": "556799514221"
+         },
+         "msgVerify": {
+          "type": "string",
+          "example": "xxxxx"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mensagem/template": {
+   "post": {
+    "tags": [
+     "mensagem"
+    ],
+    "summary": "Envia um template WABA para um contato.",
+    "operationId": "enviarTemplate",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "contato_telefone",
+         "template_id"
+        ],
+        "properties": {
+         "contato_nome": {
+          "type": "string",
+          "example": "John Doe"
+         },
+         "contato_telefone": {
+          "type": "string",
+          "example": "556799514221"
+         },
+         "conexao_nome": {
+          "type": "string",
+          "example": "Conexao Teste"
+         },
+         "template_id": {
+          "type": "string",
+          "example": "123456789"
+         },
+         "menu_id": {
+          "type": "number",
+          "example": 999
+         },
+         "header_parameters": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "type",
+            "text"
+           ],
+           "description": "Parâmetros com NOMES precisam do atributo parameter_name. Parâmetros com NÚMEROS precisam estar na ordem correta.",
+           "properties": {
+            "type": {
+             "type": "string",
+             "example": "text",
+             "description": "O tipo do valor de substituição."
+            },
+            "text": {
+             "type": "string",
+             "example": "Fulado da Silva",
+             "description": "Valor que irá substituir o parâmetro."
+            },
+            "parameter_name": {
+             "type": "string",
+             "example": "nome_completo",
+             "description": "Nome do parâmetro. Obrigatório para parâmetros com NOMES, como {{nome_completo}}."
+            }
+           }
+          }
+         },
+         "body_parameters": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "required": [
+            "type",
+            "text"
+           ],
+           "description": "Parâmetros com NOMES precisam do atributo parameter_name. Parâmetros com NÚMEROS precisam estar na ordem correta.",
+           "properties": {
+            "type": {
+             "type": "string",
+             "example": "text",
+             "description": "O tipo do valor de substituição."
+            },
+            "text": {
+             "type": "string",
+             "example": "Fulado da Silva",
+             "description": "Valor que irá substituir o parâmetro."
+            },
+            "parameter_name": {
+             "type": "string",
+             "example": "nome_completo",
+             "description": "Nome do parâmetro. Obrigatório para parâmetros com NOMES, como {{nome_completo}}."
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mensagem/menuEnviar": {
+   "post": {
+    "tags": [
+     "mensagem"
+    ],
+    "summary": "Envia um menu para para um cliente.",
+    "operationId": "enviarMenu",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "empresa_id",
+         "mensagens",
+         "nome",
+         "menu_id"
+        ],
+        "properties": {
+         "mensagens": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "mensagem": {
+             "type": "string",
+             "example": "Confirmar agendamento?"
+            }
+           }
+          }
+         },
+         "telefone": {
+          "type": "string",
+          "example": "556799887766",
+          "description": "Telefone do contato (substitui cliente_id e lid)."
+         },
+         "lid": {
+          "type": "string",
+          "example": "12345678910111",
+          "description": "LID do contato (substitui cliente_id e telefone)."
+         },
+         "cliente_id": {
+          "type": "number",
+          "example": 123,
+          "description": "Código do contato (substitui lid e telefone)."
+         },
+         "conexao": {
+          "type": "string"
+         },
+         "nome": {
+          "type": "string",
+          "example": "Fulano da Silva"
+         },
+         "menu_id": {
+          "type": "string",
+          "example": 7,
+          "description": "ID do menu"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mensagem/menuResposta/{atendimentoID}": {
+   "get": {
+    "tags": [
+     "mensagem"
+    ],
+    "summary": "Consulta a última resposta de um atendimento.",
+    "operationId": "menuReposta",
+    "produces": [
+     "application/json"
+    ],
+    "parameters": [
+     {
+      "in": "path",
+      "name": "atendimentoID",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "ID do atendimento."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/atendimento/criarAlteraContext": {
+   "post": {
+    "tags": [
+     "context"
+    ],
+    "summary": "Adiciona/altera contexto ao atendimento.",
+    "operationId": "adicionaAlteraContexto",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "atendimento_id",
+         "value",
+         "context_key"
+        ],
+        "properties": {
+         "atendimento_id": {
+          "type": "number",
+          "example": 1
+         },
+         "context_key": {
+          "type": "string",
+          "example": "XX-XX-XX-XX"
+         },
+         "value": {
+          "type": "string",
+          "example": "{..}"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/atendimento/deletarContext": {
+   "post": {
+    "tags": [
+     "context"
+    ],
+    "summary": "Deletar context.",
+    "operationId": "menuReposta",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "atendimento_id",
+         "value",
+         "context_key"
+        ],
+        "properties": {
+         "atendimento_id": {
+          "type": "number",
+          "example": 1
+         },
+         "context_key": {
+          "type": "string",
+          "example": "XX-XX-XX-XX"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/atendimento/context/{atendimentoID}/{context_key}": {
+   "get": {
+    "tags": [
+     "context"
+    ],
+    "summary": "Consulta um contexto.",
+    "operationId": "getContext",
+    "produces": [
+     "application/json"
+    ],
+    "parameters": [
+     {
+      "in": "path",
+      "name": "atendimentoID",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "ID do atendimento."
+     },
+     {
+      "in": "path",
+      "name": "context_key",
+      "required": true,
+      "schema": {
+       "type": "string"
+      },
+      "description": "Chave do context."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/atendimento/encerrar": {
+   "post": {
+    "tags": [
+     "atendimento"
+    ],
+    "summary": "Adiciona/altera contexto ao atendimento.",
+    "operationId": "encerrarAtendimento",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "atendimento_id",
+         "mensagem"
+        ],
+        "properties": {
+         "atendimento_id": {
+          "type": "number",
+          "example": 1
+         },
+         "mensagem": {
+          "type": "string",
+          "example": "Atendimento encerrado"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/mensagem/listar/{atendimento_id}": {
+   "get": {
+    "tags": [
+     "mensagem"
+    ],
+    "summary": "Lista mensagens de um atendimento com paginação",
+    "operationId": "listarMensagens",
+    "produces": [
+     "application/json"
+    ],
+    "parameters": [
+     {
+      "name": "atendimento_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "example": 1
+      },
+      "description": "ID do atendimento"
+     },
+     {
+      "name": "timestamp",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "example": 1703123456789
+      },
+      "description": "Timestamp para paginação (buscar mensagens baseado na direção escolhida)"
+     },
+     {
+      "name": "excludeNanoids",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "example": "abc123,def456,ghi789"
+      },
+      "description": "Lista compacta de nanoids já retornados (para evitar duplicatas)"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 10,
+       "maximum": 50,
+       "example": 10
+      },
+      "description": "Número máximo de mensagens por página (máximo 50)"
+     },
+     {
+      "name": "direction",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "default": "desc",
+       "example": "desc"
+      },
+      "description": "Direção da ordenação: \"desc\" (mais novas primeiro) ou \"asc\" (mais velhas primeiro)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Mensagens listadas com sucesso",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "mensagens": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "id": {
+              "type": "string",
+              "example": "abc123xyz"
+             },
+             "mensagem": {
+              "type": "string",
+              "example": "Olá, como posso ajudar?"
+             },
+             "timestamp": {
+              "type": "integer",
+              "example": 1703123456789
+             },
+             "status": {
+              "type": "string",
+              "example": "ENVIADA"
+             },
+             "tipo": {
+              "type": "string",
+              "example": "TEXTO"
+             },
+             "automatica": {
+              "type": "boolean",
+              "example": false
+             },
+             "url": {
+              "type": "string",
+              "nullable": true,
+              "example": "https://s3.amazonaws.com/..."
+             },
+             "metadado": {
+              "type": "object",
+              "example": {
+               "aspectRatioHeight": {
+                "type": "number",
+                "nullable": true,
+                "example": 330
+               },
+               "aspectRatioWidth": {
+                "type": "number",
+                "nullable": true,
+                "example": 330
+               },
+               "height": {
+                "type": "number",
+                "nullable": true,
+                "example": 330
+               },
+               "width": {
+                "type": "number",
+                "nullable": true,
+                "example": 330
+               },
+               "orientation": {
+                "type": "integer",
+                "nullable": true,
+                "example": 1
+               }
+              }
+             },
+             "interna": {
+              "type": "boolean",
+              "example": false
+             },
+             "atendente_usuario_id": {
+              "type": "integer",
+              "nullable": true,
+              "example": 1
+             },
+             "cliente": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "example": 1
+               },
+               "nome": {
+                "type": "string",
+                "example": "João Silva"
+               }
+              }
+             },
+             "conexao": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "example": 1
+               },
+               "nome": {
+                "type": "string",
+                "example": "WhatsApp"
+               }
+              }
+             },
+             "usuario": {
+              "type": "object",
+              "properties": {
+               "id": {
+                "type": "integer",
+                "example": 1
+               },
+               "nome": {
+                "type": "string",
+                "example": "Maria Santos"
+               }
+              }
+             }
+            }
+           }
+          },
+          "hasMore": {
+           "type": "boolean",
+           "example": true
+          },
+          "lastTimestamp": {
+           "type": "integer",
+           "example": 1703123456789
+          },
+          "excludeNanoids": {
+           "type": "string",
+           "example": "abc123,def456,ghi789"
+          },
+          "nextUrl": {
+           "type": "string",
+           "example": "/mensagem/listar/1?timestamp=1703123456789&excludeNanoids=abc123%2Cdef456%2Cghi789&limit=10&direction=desc"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Parâmetros inválidos",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "example": "atendimentoId é obrigatório"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Atendimento não encontrado",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "example": "Atendimento não encontrado"
+          }
+         }
+        }
+       }
+      }
+     },
+     "500": {
+      "description": "Erro interno do servidor",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string",
+           "example": "Erro interno do servidor"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/atendimento/transferir": {
+   "post": {
+    "tags": [
+     "atendimento"
+    ],
+    "summary": "Transfere um atendimento para um departamento e/ou atendente.",
+    "operationId": "transferirAtendimento",
+    "produces": [
+     "application/json"
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "atendimento_id"
+        ],
+        "properties": {
+         "atendimento_id": {
+          "type": "number",
+          "example": 1
+         },
+         "departamento_id": {
+          "type": "number",
+          "example": 2
+         },
+         "atendente_usuario_id": {
+          "type": "number",
+          "example": 3
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/atendimento/listar": {
+   "get": {
+    "tags": [
+     "atendimento"
+    ],
+    "summary": "Lista atendimentos de forma paginada.",
+    "operationId": "listarAtendimentos",
+    "produces": [
+     "application/json"
+    ],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Código do atendimento"
+     },
+     {
+      "name": "canal",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "enum": [
+        1,
+        2
+       ],
+       "default": 1,
+       "example": 1
+      },
+      "description": "Canal de atendimento: 1 (WP) ou 2 (Interno)."
+     },
+     {
+      "name": "ativo",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "S",
+        "N"
+       ],
+       "example": "S"
+      },
+      "description": "Status do atendimento: 'S' (Ativo) ou 'N' (Inativo)."
+     },
+     {
+      "name": "data_criacao_inicio",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "example": "2026-01-01"
+      },
+      "description": "Data de criação inicial do atendimento"
+     },
+     {
+      "name": "data_criacao_fim",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "example": "2026-01-30"
+      },
+      "description": "Data de criação final do atendimento"
+     },
+     {
+      "name": "tipo",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "enum": [
+        1,
+        2
+       ],
+       "example": 1
+      },
+      "description": "Tipo do atendimento: 1 (automático) ou 2 (manual)."
+     },
+     {
+      "name": "departamento_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "example": null
+      },
+      "description": "Código do departamento."
+     },
+     {
+      "name": "atendente_usuario_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "example": null
+      },
+      "description": "Código do atendente."
+     },
+     {
+      "name": "cliente_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "example": null
+      },
+      "description": "Código do cliente/contato."
+     },
+     {
+      "name": "protocolo",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "example": null
+      },
+      "description": "Protocolo do atendimento."
+     },
+     {
+      "name": "conexao_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "example": null
+      },
+      "description": "Código da conexão."
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 10,
+       "maximum": 50,
+       "example": 10
+      },
+      "description": "Número máximo de registros por página (máx. 50)."
+     },
+     {
+      "name": "order",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ],
+       "default": "desc",
+       "example": "desc"
+      },
+      "description": "Tipo de ordenação: \"desc\" (mais recentes primeiro) ou \"asc\" (mais antigos primeiro)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "codigo": {
+           "type": "integer",
+           "description": "Código de retorno da requisição (1 = Sucesso ou 2 = Erro).",
+           "example": 1
+          },
+          "erro": {
+           "type": "string",
+           "description": "Descrição de erro",
+           "example": "Erro interno"
+          },
+          "dados": {
+           "type": "object",
+           "description": "Dados de retorno.",
+           "example": {}
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}
