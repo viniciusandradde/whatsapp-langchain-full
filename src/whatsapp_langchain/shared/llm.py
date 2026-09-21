@@ -228,13 +228,25 @@ def classificar_sonda(
         return SondaModelo(
             slug, False, 404, "sem provedor disponível", inexistente=True
         )
-    if codigo_com_piso in (400, 404):
+    if codigo_com_piso == 404 or (
+        codigo_com_piso == 400
+        and any(
+            t in corpo
+            for t in ("not found", "does not exist", "invalid model", "no endpoints")
+        )
+    ):
         return SondaModelo(
             slug,
             False,
             codigo_com_piso,
             "modelo não existe mais no OpenRouter",
             inexistente=True,
+        )
+    if codigo_com_piso == 400:
+        # 400 por parâmetro (ex.: modelo de áudio recusando texto puro) não é
+        # indisponibilidade — a sonda mínima é que não serve para ele.
+        return SondaModelo(
+            slug, True, 400, "responde (recusou a chamada mínima por parâmetro)"
         )
     if codigo_com_piso == 402:
         return SondaModelo(
