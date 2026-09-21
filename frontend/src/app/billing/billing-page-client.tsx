@@ -17,7 +17,7 @@ import { usePlano } from "@/components/plano-context";
 import { ApiError } from "@/components/ui/api-error";
 import { Badge } from "@/components/ui/badge";
 import type { BillingTransacao, PlanoCatalogo, TierContexto } from "@/lib/api";
-import { dataHora } from "@/lib/formato";
+import { dataCivil, dataHora } from "@/lib/formato";
 import {
   ROTULO_FEATURE,
   featureLiberada,
@@ -194,6 +194,20 @@ export function BillingPageClient() {
                 ? `R$ ${plano.preco_mensal_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês`
                 : "Sem mensalidade"}
             </p>
+            {plano.valido_ate && (
+              <p
+                className={cn(
+                  "text-sm",
+                  plano.dias_para_vencer !== null && plano.dias_para_vencer < 0
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                )}
+              >
+                {plano.dias_para_vencer !== null && plano.dias_para_vencer < 0
+                  ? `Venceu em ${dataCivil(plano.valido_ate)}`
+                  : `Válido até ${dataCivil(plano.valido_ate)}`}
+              </p>
+            )}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
             {plano.upgrade_sugerido

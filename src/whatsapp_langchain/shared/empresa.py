@@ -54,7 +54,8 @@ async def list_empresas_of_user(
                        e.config, e.created_at, e.updated_at,
                        e.logo_path, e.nome_exibicao, e.cor_primaria,
                        e.cor_secundaria, m.role, e.onboarding_dispensado_at,
-                       e.voz_ativa, e.voz_nome, e.voz_estilo, e.retencao_dias
+                       e.voz_ativa, e.voz_nome, e.voz_estilo, e.retencao_dias,
+                       e.plano_valido_ate
                   FROM empresa e
                   JOIN empresa_membro m ON m.empresa_id = e.id
                  WHERE m.user_id = %s
@@ -90,6 +91,8 @@ async def list_empresas_of_user(
             voz_nome=r[16],
             voz_estilo=r[17],
             retencao_dias=r[18],
+            # A lista é o que /companies usa (gotcha lista × detalhe).
+            plano_valido_ate=r[19],
         )
         for r in rows
     ]
@@ -171,7 +174,7 @@ _EMPRESA_COLS = (
     "id, nome, slug, doc, plano, status, config, created_at, updated_at, "
     "logo_path, nome_exibicao, cor_primaria, cor_secundaria, "
     "anuncia_atendente_assumiu, onboarding_dispensado_at, "
-    "voz_ativa, voz_nome, voz_estilo, retencao_dias"
+    "voz_ativa, voz_nome, voz_estilo, retencao_dias, plano_valido_ate"
 )
 
 
@@ -196,6 +199,7 @@ def _row_to_empresa(row) -> Empresa:
         voz_nome=row[16] or "alloy",
         voz_estilo=row[17] or "",
         retencao_dias=row[18],
+        plano_valido_ate=row[19],
     )
 
 

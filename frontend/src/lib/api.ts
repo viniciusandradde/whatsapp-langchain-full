@@ -127,6 +127,8 @@ export interface Empresa {
   voz_nome?: string;
   voz_estilo?: string;
   retencao_dias?: number | null;
+  /** ADR-005 leva E (mig 193): último dia (inclusive) do plano pago; null = sem vencimento. */
+  plano_valido_ate?: string | null;
 }
 
 export interface EmpresaInput {
@@ -1275,10 +1277,26 @@ export interface PlanoEmpresa {
   features: Record<string, ValorFeaturePlano>;
   limites: Record<string, number | null>;
   upgrade_sugerido: string | null;
+  /** Vigência (leva E): `null` = sem vencimento. */
+  valido_ate: string | null;
+  /** Positivo = ainda vale; 0 = vence hoje; negativo = já venceu; `null` = sem vencimento. */
+  dias_para_vencer: number | null;
+  carencia_dias: number;
 }
 
 export async function getPlanoEmpresa(empresaId: number): Promise<PlanoEmpresa> {
   return apiFetch<PlanoEmpresa>(`/api/empresas/${empresaId}/plano`);
+}
+
+/** Superadmin fixa (ou limpa, com `null`) o último dia do plano pago (leva E). */
+export async function setEmpresaVigencia(
+  empresaId: number,
+  planoValidoAte: string | null
+): Promise<Empresa> {
+  return apiFetch<Empresa>(`/api/empresas/${empresaId}/vigencia`, {
+    method: "PUT",
+    body: { plano_valido_ate: planoValidoAte },
+  });
 }
 
 export async function getMyEmpresas(

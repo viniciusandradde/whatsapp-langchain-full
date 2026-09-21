@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from typing import Any, Final, LiteralString
 
 import structlog
@@ -65,6 +66,9 @@ class PlanoInfo:
     # ADR-005 leva A (mig 189). Fica depois de `features` (com default) para
     # não quebrar quem constrói PlanoInfo posicionalmente nos testes.
     limite_agentes: int | None = None
+    # ADR-005 leva E (mig 193): último dia (inclusive) do plano pago; None =
+    # sem vencimento.
+    plano_valido_ate: date | None = None
 
     def limite_de(self, recurso: str) -> int | None:
         """Retorna o limite do recurso (None = ilimitado)."""
@@ -152,7 +156,21 @@ def resumo_para_painel(plano: PlanoInfo) -> dict[str, Any]:
             },
         },
         "upgrade_sugerido": plano.upgrade_sugerido(),
+        # Vigência (leva E): o banner do painel lê daqui, sem fetch novo.
+        "valido_ate": plano.plano_valido_ate.isoformat()
+        if plano.plano_valido_ate
+        else None,
+        "dias_para_vencer": _dias_para_vencer(plano.plano_valido_ate),
+        "carencia_dias": 5,
     }
+
+
+def _dias_para_vencer(valido_ate: date | None) -> int | None:
+    if valido_ate is None:
+        return None
+    from whatsapp_langchain.shared.plano_vigencia import TZ_PADRAO, hoje_local
+
+    return (valido_ate - hoje_local(TZ_PADRAO, datetime.now(UTC))).days
 
 
 def clear_plano_cache(empresa_id: int | None = None) -> None:
@@ -182,7 +200,8 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
                 SELECT e.plano_id, p.slug, p.nome, p.preco_mensal_brl,
                        p.limite_usuarios, p.limite_conexoes,
                        p.limite_atendimentos_mes, p.limite_orcamento_ia_usd,
-                       p.limite_documentos_kb, p.features, p.limite_agentes
+                       p.limite_documentos_kb, p.features, p.limite_agentes,
+                       e.plano_valido_ate
                   FROM empresa e
                   LEFT JOIN plano p ON p.id = e.plano_id
                  WHERE e.id = %s
@@ -216,6 +235,7 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
         lim_docs,
         features,
         lim_agentes,
+        valido_ate,
     ) = row
     info = PlanoInfo(
         empresa_id=empresa_id,
@@ -230,6 +250,7 @@ async def get_plano_info(pool: AsyncConnectionPool, empresa_id: int) -> PlanoInf
         limite_documentos_kb=lim_docs,
         features=features or {},
         limite_agentes=lim_agentes,
+        plano_valido_ate=valido_ate,
     )
     aplicar_excecoes(info, excecoes)
     _plano_cache[empresa_id] = (now, info)

@@ -9,6 +9,7 @@ lugar onde a operação acontece.
 import base64
 import io
 import os
+from datetime import date
 from pathlib import Path
 
 import structlog
@@ -448,6 +449,75 @@ class ResumoDiarioConfig(BaseModel):
     ultimo_status: str | None = None
     ultimo_erro: str | None = None
     ultima_tentativa_em: str | None = None
+
+
+class VigenciaInput(BaseModel):
+    """`null` = sem vencimento (cortesia/legado)."""
+
+    plano_valido_ate: date | None = None
+
+
+@router.put("/{empresa_id}/vigencia", response_model=Empresa)
+async def set_vigencia_endpoint(
+    empresa_id: int,
+    body: VigenciaInput,
+    request: Request,
+    user_id: str = Depends(get_user_id_from_request),
+):
+    """Fixa ou limpa `plano_valido_ate` (ADR-005 leva E). Só superadmin: é a
+    decisão de cobrança da plataforma, não da empresa. Zera os avisos de
+    vencimento (a etapa gravada se refere à data antiga) e limpa o cache do
+    plano para o banner do painel refletir na hora."""
+    from whatsapp_langchain.shared.audit import record_audit
+    from whatsapp_langchain.shared.plano_limits import clear_plano_cache
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só o superadmin define a vigência."
+        )
+    antes = await get_empresa_by_id(pool, empresa_id)
+    if antes is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            await conn.execute(
+                """
+                UPDATE empresa
+                   SET plano_valido_ate = %s,
+                       plano_aviso_vencimento_etapa = NULL,
+                       plano_aviso_vencimento_ref = NULL,
+                       plano_aviso_vencimento_em = NULL,
+                       updated_at = NOW()
+                 WHERE id = %s
+                """,
+                (body.plano_valido_ate, empresa_id),
+            )
+            await conn.commit()
+    clear_plano_cache(empresa_id)
+    await record_audit(
+        pool,
+        empresa_id=empresa_id,
+        user_id=user_id,
+        action="plano.vigencia_definida",
+        entity_type="empresa",
+        entity_id=str(empresa_id),
+        payload_diff={
+            "plano_valido_ate": {
+                "before": antes.plano_valido_ate.isoformat()
+                if antes.plano_valido_ate
+                else None,
+                "after": body.plano_valido_ate.isoformat()
+                if body.plano_valido_ate
+                else None,
+            }
+        },
+        request=request,
+    )
+    depois = await get_empresa_by_id(pool, empresa_id)
+    assert depois is not None
+    return depois
 
 
 @router.get("/{empresa_id}/plano")

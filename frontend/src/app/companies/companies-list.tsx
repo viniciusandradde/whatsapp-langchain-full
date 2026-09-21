@@ -32,6 +32,8 @@ import {
   ResumoDiarioSection,
   VozDoAgenteSection,
 } from "./empresa-form";
+import { VigenciaSection } from "./vigencia-section";
+import { usePermissionsContext } from "@/components/permissions-context";
 
 interface Props {
   empresas: Empresa[];
@@ -39,6 +41,7 @@ interface Props {
 
 export function CompaniesList({ empresas }: Props) {
   const [editing, setEditing] = useState<Empresa | "new" | null>(null);
+  const { isSuperadmin } = usePermissionsContext();
 
   return (
     <div className="space-y-6">
@@ -58,6 +61,8 @@ export function CompaniesList({ empresas }: Props) {
       {editing && editing !== "new" && (
         <>
           <EmpresaForm initial={editing} onDone={() => setEditing(null)} />
+          {/* Vigência do plano (leva E): decisão de cobrança, só superadmin. */}
+          {isSuperadmin && <VigenciaSection key={`vig-${editing.id}`} empresa={editing} />}
           <CsatConfigSection empresaId={editing.id} />
           <ResumoDiarioSection empresaId={editing.id} />
           {/* key: o estado inicial vem das props — trocar de empresa sem
