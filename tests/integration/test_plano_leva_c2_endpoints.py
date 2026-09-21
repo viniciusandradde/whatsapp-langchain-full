@@ -208,6 +208,15 @@ class TestE2E:
         self, empresa_free_id: int, empresa_id: int, admin_user_id: str
     ) -> None:
         hf = _headers(admin_user_id, empresa_free_id)
+        # Retenção NULL (= não apaga) e o form manda `0` em todo save: sem
+        # mudança NÃO é 402 — só a mudança para fora do teto é gateada.
+        r = httpx.put(
+            f"{API_BASE_URL}/api/empresas/{empresa_free_id}",
+            headers=hf,
+            json={"nome": "Nome novo sem mexer na retenção", "retencao_dias": 0},
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
         d = _402(
             httpx.put(
                 f"{API_BASE_URL}/api/empresas/{empresa_free_id}",
@@ -224,6 +233,15 @@ class TestE2E:
             timeout=15,
         )
         assert r.status_code == 200, r.text
+        # Agora 30 está gravado: voltar para "não apaga" (0) é mudança → 402.
+        _402(
+            httpx.put(
+                f"{API_BASE_URL}/api/empresas/{empresa_free_id}",
+                headers=hf,
+                json={"retencao_dias": 0},
+                timeout=15,
+            )
+        )
         csat = {
             "csat_ativo": True,
             "csat_pergunta": "De 0 a 10?",

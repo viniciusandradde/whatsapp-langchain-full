@@ -277,7 +277,13 @@ _RECURSOS_LLM_DO_AGENTE: tuple[tuple[str, str, str], ...] = (
 )
 
 
-async def _exigir_retencao_no_plano(pool, empresa_id: int, dias: int) -> None:
+async def _exigir_retencao_no_plano(
+    pool, empresa_id: int, dias: int, *, atual: int | None
+) -> None:
+    """402 só quando a retenção do agente MUDA para um valor fora do teto —
+    o editor reenvia todos os campos (mesma regra do PUT da empresa)."""
+    if dias == atual:
+        return
     from whatsapp_langchain.shared.plano_limits import get_plano_info
 
     plano = await get_plano_info(pool, empresa_id)
@@ -346,10 +352,12 @@ async def update_endpoint(
                 mensagem=f"{rotulo} não está incluído no seu plano. Faça upgrade para ligar.",
             )
 
-    # ADR-005 leva C2: `retencao_max_dias` — retenção acima do teto do plano
-    # é 402 (0 = "não apaga" conta como o máximo possível).
+    # ADR-005 leva C2: `retencao_max_dias` — MUDAR a retenção para acima do
+    # teto do plano é 402 (0 = "não apaga" conta como o máximo possível).
     if fields.get("retencao_dias") is not None:
-        await _exigir_retencao_no_plano(pool, empresa_id, int(fields["retencao_dias"]))
+        await _exigir_retencao_no_plano(
+            pool, empresa_id, int(fields["retencao_dias"]), atual=before.retencao_dias
+        )
 
     # `nota` viaja dentro de `fields` e casa com o parâmetro nomeado de
     # `update_agente` — não vira coluna no SET.
