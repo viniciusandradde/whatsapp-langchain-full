@@ -231,6 +231,27 @@ async def fetch_profile_picture(
         return resp.json() if resp.content else {}
 
 
+async def send_text(
+    instance_name: str, number: str, text: str, *, timeout: float = 15.0
+) -> str:
+    """POST /message/sendText/{name} com a chave admin — usado pelo ECO de saúde
+    (mig 198): a conexão manda uma mensagem ao próprio número e ela tem de
+    voltar pelo webhook. Devolve o `key.id` da mensagem (vazio se a Evolution
+    não informou). Levanta `EvolutionAdminError` em resposta não-2xx."""
+    url = f"{_base()}/message/sendText/{instance_name}"
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            url,
+            headers=_headers(),
+            json={"number": _normalize_phone(number), "text": text},
+        )
+        if resp.status_code not in (200, 201):
+            raise EvolutionAdminError(resp.status_code, resp.text[:400])
+        data = resp.json() if resp.content else {}
+        key = data.get("key") or (data.get("data") or {}).get("key") or {}
+        return str(key.get("id") or "") if isinstance(key, dict) else ""
+
+
 async def get_instance_owner_number(instance_name: str) -> str | None:
     """Número (E.164) do dono da instância, via `ownerJid` do fetchInstances.
 

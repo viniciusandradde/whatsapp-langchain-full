@@ -21,6 +21,7 @@ desvinculado, 4,5 dias sem ninguém saber).
 """
 
 import hmac
+import re
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -33,6 +34,8 @@ from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_evolution_instance,
     is_own_connection_number,
+    registrar_ack,
+    registrar_eco_voltou,
     registrar_evento_conexao,
     set_qr_code,
 )
@@ -41,7 +44,7 @@ from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.midia_processing import download_evolution_media_b64
 from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
-from whatsapp_langchain.shared.saude_conexoes import descrever_desconexao
+from whatsapp_langchain.shared.saude_conexoes import ECO_PREFIXO, descrever_desconexao
 
 logger = structlog.get_logger()
 
@@ -169,6 +172,75 @@ def _codigo_desconexao(data: dict) -> int | None:
     return None
 
 
+def _texto_eco(data: dict) -> bool:
+    """A mensagem é o eco de saúde (mig 198)? Só o texto simples conta."""
+    msg = data.get("message") if isinstance(data, dict) else None
+    if not isinstance(msg, dict):
+        return False
+    texto = msg.get("conversation") or (msg.get("extendedTextMessage") or {}).get(
+        "text"
+    )
+    return isinstance(texto, str) and texto.startswith(ECO_PREFIXO)
+
+
+def _mesmo_numero(a: str | None, b: str | None) -> bool:
+    da = re.sub(r"\D", "", a or "")
+    db = re.sub(r"\D", "", b or "")
+    return bool(da) and da == db
+
+
+def _ids_ack(data) -> list[str]:
+    """Ids das mensagens NOSSAS com ack de entrega/leitura num `messages.update`.
+
+    Evolution v2 manda `data` como objeto (`keyId`/`messageId`, `fromMe`,
+    `status`) ou lista de `{key:{id, fromMe}, update:{status}}`. Só
+    `fromMe` conta (ack de mensagem que enviamos)."""
+    itens = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
+    ids: list[str] = []
+    for item in itens:
+        if not isinstance(item, dict):
+            continue
+        key_raw = item.get("key")
+        key: dict = key_raw if isinstance(key_raw, dict) else {}
+        from_me = item.get("fromMe", key.get("fromMe"))
+        if not from_me:
+            continue
+        update_raw = item.get("update")
+        update: dict = update_raw if isinstance(update_raw, dict) else {}
+        status = item.get("status") or update.get("status")
+        if status is not None and str(status).upper() in ("PENDING", "ERROR", "0", "1"):
+            continue
+        key_id = item.get("keyId") or item.get("messageId") or key.get("id")
+        if key_id:
+            ids.append(str(key_id))
+    return ids
+
+
+async def _tratar_messages_update(instance: str, data) -> Response:
+    """Ack de entrega das nossas mensagens (mig 198): `ultimo_ack_em` = saída
+    funcionando; ack do eco pendente = eco voltou. Nunca enfileira."""
+    ids = _ids_ack(data)
+    if not instance or not ids:
+        return Response(status_code=200)
+    pool = await get_pool()
+    conexao = await get_conexao_by_evolution_instance(pool, instance)
+    if conexao is None or conexao.status != "active":
+        return Response(status_code=200)
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
+    set_request_context(conexao.empresa_id)
+    for key_id in ids:
+        eco = await registrar_ack(pool, conexao.id, key_id)
+        if eco:
+            logger.info(
+                "evolution_webhook_eco_ack",
+                instance=instance,
+                conexao_id=conexao.id,
+                message_id=key_id,
+            )
+    return Response(status_code=200)
+
+
 async def _tratar_connection_update(instance: str, data: dict) -> Response:
     """Grava o estado passivo da sessão (mig 196). Instância desconhecida ou
     desativada responde 200 em silêncio, como o resto do webhook."""
@@ -288,6 +360,9 @@ async def webhook_evolution(
             instance, data if isinstance(data, dict) else {}
         )
 
+    if event == "messages.update":
+        return await _tratar_messages_update(instance, payload.get("data"))
+
     if event != "messages.upsert":
         logger.debug(
             "evolution_webhook_event_ignored",
@@ -302,6 +377,26 @@ async def webhook_evolution(
         return Response(status_code=200)
 
     if key.get("fromMe"):
+        # Eco de saúde (mig 198): a conexão mandou uma mensagem ao PRÓPRIO
+        # número e ela voltou pelo webhook — prova o caminho de entrada
+        # inteiro. Reconhecido pelo destinatário (= número da conexão) e
+        # pelo prefixo; nunca enfileira. Qualquer outro fromMe segue ignorado.
+        if instance and _texto_eco(data):
+            pool = await get_pool()
+            conexao = await get_conexao_by_evolution_instance(pool, instance)
+            if (
+                conexao is not None
+                and conexao.status == "active"
+                and _mesmo_numero(_resolve_sender_phone(key), conexao.from_number)
+            ):
+                await registrar_eco_voltou(pool, conexao.id, key.get("id"))
+                logger.info(
+                    "evolution_webhook_eco_voltou",
+                    instance=instance,
+                    conexao_id=conexao.id,
+                    message_id=key.get("id"),
+                )
+                return Response(status_code=200)
         logger.debug(
             "evolution_webhook_skipped_fromMe",
             instance=instance,

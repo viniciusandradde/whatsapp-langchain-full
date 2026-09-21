@@ -34,6 +34,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -52,10 +53,27 @@ INTERVALO_TICK_SEGUNDOS: Final = 300  # um tick real a cada 5 min entre réplica
 SONDA_TIMEOUT_S: Final = 8.0
 SONDAS_RUINS_MIN: Final = 2
 SONDA_WABA_INTERVALO: Final = timedelta(hours=1)
-LAMBDA_MIN: Final = 8.0  # P(0 recebidas | Poisson λ=8) ≈ 0,03 %
 BASELINE_DIAS: Final = 28
-HISTORICO_MIN_DIAS: Final = 7.0
+HISTORICO_MIN_DIAS: Final = 14.0
 JANELA_SILENCIO_MAX_H: Final = 24 * 7
+# Régua empírica do silêncio (mig 198): o maior intervalo entre recebidas em
+# horas ativas da PRÓPRIA conexão nos últimos 28 dias, × fator, com piso e
+# teto. Substitui o Poisson da mig 196: mensagens chegam em rajadas, e a VSA
+# teve 38 silêncios ≥ 1 h em horário comercial num mês, todos saudáveis.
+SILENCIO_FATOR: Final = 1.5
+SILENCIO_PISO_H: Final = 2.0
+SILENCIO_TETO_H: Final = 24.0
+HORA_ATIVA_MIN: Final = 0.5  # média de recebidas por hora para a hora contar como ativa
+# Eco: mensagem ao próprio número cujo ACK de entrega (`messages.update`) tem de
+# voltar pelo webhook — a Evolution v2 não reemite `messages.upsert` do que ela
+# mesma enviou (conferido no dev, 21/09), então o ack é o retorno decisivo; ele
+# prova o servidor do WhatsApp E o caminho Evolution → webhook → Nexus. Silêncio
+# acima do normal não é alerta — é o gatilho do eco; alerta só se o eco não volta.
+ECO_TIMEOUT_MIN: Final = 3
+ECO_INTERVALO_MIN: Final = 120
+ECO_FALHAS_MIN: Final = 2
+ECO_PREFIXO: Final = "Verificação automática do Nexus"
+ECO_TEXTO: Final = ECO_PREFIXO + " — pode ignorar esta mensagem."
 ATIVIDADE_RETENCAO_DIAS: Final = 60
 COOLDOWN_HORAS: Final = 6
 RESOLVE_NOTIFICA_MIN: Final = 30
@@ -114,6 +132,13 @@ class ConexaoMonitorada:
     desconexao_codigo: int | None
     desconexao_em: datetime | None
     ultimo_inbound_em: datetime | None
+    eco_ativo: bool = True
+    eco_pendente_id: str | None = None
+    eco_enviado_em: datetime | None = None
+    ultimo_eco_em: datetime | None = None
+    eco_falhas_seguidas: int = 0
+    eco_solicitado_em: datetime | None = None
+    ultimo_ack_em: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -129,10 +154,21 @@ class ResultadoSonda:
 
 @dataclass(frozen=True)
 class Silencio:
-    esperadas: float  # λ na janela [última recebida, agora]
+    esperadas: float  # λ na janela [última recebida, agora] — só para o texto
     horas: float
     desde: datetime
     dias_historico: float
+    limite_normal_h: float | None = None  # régua empírica (em horas ATIVAS)
+    hora_ativa: bool = False  # a hora atual é uma em que esta conexão recebe
+    horas_ativas: float = 0.0  # do silêncio, só as horas em que costuma receber
+
+    @property
+    def acima_do_normal(self) -> bool:
+        return (
+            self.limite_normal_h is not None
+            and self.hora_ativa
+            and self.horas_ativas >= self.limite_normal_h
+        )
 
 
 @dataclass(frozen=True)
@@ -144,7 +180,7 @@ class SinaisConexao:
     sonda_falhas_seguidas: int  # já contando a sonda deste tick
     silencio: Silencio | None  # None = histórico curto ou nunca recebeu
     ultimo_inbound_em: datetime | None
-    sem_atividade_desde: datetime | None  # criado_em do episódio ativo, se houver
+    eco_falhas_seguidas: int = 0  # já contando a decisão deste tick
 
 
 @dataclass(frozen=True)
@@ -155,6 +191,8 @@ class Achado:
 
 Sondar = Callable[[ConexaoMonitorada], Awaitable[ResultadoSonda | None]]
 Notificar = Callable[[str, list[str]], Awaitable[bool]]
+# Manda o eco ao próprio número e devolve o id da mensagem (None = não enviou).
+EnviarEco = Callable[[ConexaoMonitorada], Awaitable[str | None]]
 
 
 # --- Regras puras -----------------------------------------------------------
@@ -205,27 +243,124 @@ def esperadas_na_janela(
     return total
 
 
+def calcular_limite_silencio(
+    gaps_h: list[float], dias_historico: float
+) -> float | None:
+    """Régua empírica: o maior intervalo saudável entre recebidas (em horas
+    ativas) × `SILENCIO_FATOR`, entre piso e teto. None sem histórico
+    suficiente ou sem intervalos — sem régua não se julga silêncio."""
+    if dias_historico < HISTORICO_MIN_DIAS or not gaps_h:
+        return None
+    return min(SILENCIO_TETO_H, max(SILENCIO_PISO_H, max(gaps_h) * SILENCIO_FATOR))
+
+
+def hora_ativa(
+    baseline: dict[tuple[int, int], float], quando_utc: datetime, tz: str
+) -> bool:
+    """A (dia ISO, hora local) de `quando` é uma em que esta conexão costuma
+    receber (média ≥ `HORA_ATIVA_MIN`). Noite e fim de semana não contam."""
+    local = quando_utc.astimezone(_zona(tz))
+    return baseline.get((local.isoweekday(), local.hour), 0.0) >= HORA_ATIVA_MIN
+
+
+def horas_ativas_entre(
+    baseline: dict[tuple[int, int], float],
+    inicio_utc: datetime,
+    fim_utc: datetime,
+    tz: str,
+) -> float:
+    """Quantas horas de [inicio, fim) caem em horas ativas da conexão. É a
+    unidade da régua: a noite e o fim de semana contam zero, então o
+    intervalo 17:45 → 08:00 vale 15 min, não 14 h."""
+    if fim_utc <= inicio_utc or not baseline:
+        return 0.0
+    zona = _zona(tz)
+    total = 0.0
+    t = inicio_utc
+    while t < fim_utc:
+        proxima_hora = t.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        fim_fatia = min(fim_utc, proxima_hora)
+        local = t.astimezone(zona)
+        if baseline.get((local.isoweekday(), local.hour), 0.0) >= HORA_ATIVA_MIN:
+            total += (fim_fatia - t).total_seconds() / 3600.0
+        t = fim_fatia
+    return total
+
+
 def calcular_silencio(
     baseline: dict[tuple[int, int], float],
     dias_historico: float,
     ultimo_inbound_em: datetime | None,
     now_utc: datetime,
     tz: str,
+    limite_normal_h: float | None = None,
 ) -> Silencio | None:
-    """Quantas mensagens a baseline previa desde a última recebida.
+    """Há quanto tempo a conexão não recebe, contra a régua da própria conexão.
 
     None quando não dá para julgar: nunca recebeu ou histórico menor que
-    `HISTORICO_MIN_DIAS` (alertar sem régua é ruído — mesma regra dos
-    alertas de IA). A janela é limitada a 7 dias para o λ não crescer para
-    sempre num silêncio longo."""
+    `HISTORICO_MIN_DIAS`. O λ (`esperadas`) continua calculado só para o
+    texto do painel — quem decide é `limite_normal_h` (mig 198). A janela é
+    limitada a 7 dias para nada crescer para sempre num silêncio longo."""
     if ultimo_inbound_em is None or dias_historico < HISTORICO_MIN_DIAS:
         return None
     inicio = max(ultimo_inbound_em, now_utc - timedelta(hours=JANELA_SILENCIO_MAX_H))
+    ativa = hora_ativa(baseline, now_utc, tz)
     if inicio >= now_utc:
-        return Silencio(0.0, 0.0, ultimo_inbound_em, dias_historico)
+        return Silencio(
+            0.0, 0.0, ultimo_inbound_em, dias_historico, limite_normal_h, ativa
+        )
     esperadas = esperadas_na_janela(baseline, inicio, now_utc, tz)
     horas = (now_utc - inicio).total_seconds() / 3600.0
-    return Silencio(esperadas, horas, ultimo_inbound_em, dias_historico)
+    return Silencio(
+        esperadas,
+        horas,
+        ultimo_inbound_em,
+        dias_historico,
+        limite_normal_h,
+        ativa,
+        horas_ativas_entre(baseline, inicio, now_utc, tz),
+    )
+
+
+def decidir_eco(
+    c: ConexaoMonitorada,
+    silencio: Silencio | None,
+    sonda_ok: bool | None,
+    now_utc: datetime,
+) -> str:
+    """O que fazer com o eco neste tick: `enviar`, `aguardar` (há eco em voo
+    dentro do prazo), `falhou` (o eco em voo venceu sem voltar) ou `nada`.
+
+    Só Evolution com `eco_ativo`. Envia quando foi pedido fora do ciclo
+    (`eco_solicitado_em`, ex.: logo após reconectar) ou quando o silêncio
+    passou da régua em hora ativa com a sonda dizendo que o socket responde —
+    é exatamente o caso ambíguo que o eco resolve. Respeita o intervalo
+    mínimo entre ecos para não encher a conversa "Você" do cliente."""
+    if c.provider != "evolution" or not c.eco_ativo:
+        return "nada"
+    if c.eco_pendente_id and c.eco_enviado_em is not None:
+        voltou = c.ultimo_eco_em is not None and c.ultimo_eco_em >= c.eco_enviado_em
+        if voltou:
+            return "nada"
+        if now_utc - c.eco_enviado_em >= timedelta(minutes=ECO_TIMEOUT_MIN):
+            return "falhou"
+        return "aguardar"
+    ultimo = max(
+        (t for t in (c.eco_enviado_em, c.ultimo_eco_em) if t is not None),
+        default=None,
+    )
+    if c.eco_solicitado_em is not None and (
+        c.eco_enviado_em is None or c.eco_enviado_em < c.eco_solicitado_em
+    ):
+        return "enviar"
+    if (
+        silencio is not None
+        and silencio.acima_do_normal
+        and sonda_ok is True
+        and (ultimo is None or now_utc - ultimo >= timedelta(minutes=ECO_INTERVALO_MIN))
+    ):
+        return "enviar"
+    return "nada"
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -233,14 +368,14 @@ def _iso(dt: datetime | None) -> str | None:
 
 
 def avaliar_conexao(s: SinaisConexao) -> list[Achado]:
-    """Decide os episódios a partir dos três sinais. Pura."""
-    achados: list[Achado] = []
-
+    """Decide o episódio a partir dos sinais. Pura. No máximo UM achado por
+    conexão, sempre `conexao_caida`: evento definitivo > sondas ruins > ecos
+    sem retorno. Silêncio nunca abre episódio (mig 198)."""
     if (
         s.connection_state in ("disconnected", "error")
         and s.desconexao_codigo in DESCONEXAO_DEFINITIVA
     ):
-        achados.append(
+        return [
             Achado(
                 "conexao_caida",
                 {
@@ -252,9 +387,9 @@ def avaliar_conexao(s: SinaisConexao) -> list[Achado]:
                     "desde": _iso(s.desconexao_em),
                 },
             )
-        )
-    elif s.sonda_falhas_seguidas >= SONDAS_RUINS_MIN:
-        achados.append(
+        ]
+    if s.sonda_falhas_seguidas >= SONDAS_RUINS_MIN:
+        return [
             Achado(
                 "conexao_caida",
                 {
@@ -264,41 +399,23 @@ def avaliar_conexao(s: SinaisConexao) -> list[Achado]:
                     "desde": _iso(s.desconexao_em),
                 },
             )
-        )
-
-    sonda_ok = s.sonda.ok if s.sonda else None
-    sonda_motivo = s.sonda.motivo if s.sonda else None
-    if s.silencio is not None and s.silencio.esperadas >= LAMBDA_MIN:
-        achados.append(
+        ]
+    if s.eco_falhas_seguidas >= ECO_FALHAS_MIN:
+        return [
             Achado(
-                "sem_atividade",
+                "conexao_caida",
                 {
-                    "esperadas": round(s.silencio.esperadas, 1),
-                    "horas": round(s.silencio.horas, 1),
-                    "desde": _iso(s.silencio.desde),
-                    "sonda_ok": sonda_ok,
-                    "sonda_motivo": sonda_motivo,
-                },
-            )
-        )
-    elif s.sem_atividade_desde is not None and (
-        s.ultimo_inbound_em is None or s.ultimo_inbound_em <= s.sem_atividade_desde
-    ):
-        # Silêncio só termina quando chega mensagem: sem isto o episódio se
-        # auto-resolveria quando a baseline sai da janela num silêncio longo.
-        achados.append(
-            Achado(
-                "sem_atividade",
-                {
-                    "sustentado": True,
-                    "esperadas": round(s.silencio.esperadas, 1) if s.silencio else None,
+                    "motivo": (
+                        "não recebe mensagens: a verificação enviada ao próprio "
+                        "número não voltou"
+                    ),
+                    "origem": "eco",
+                    "falhas": s.eco_falhas_seguidas,
                     "desde": _iso(s.ultimo_inbound_em),
-                    "sonda_ok": sonda_ok,
-                    "sonda_motivo": sonda_motivo,
                 },
             )
-        )
-    return achados
+        ]
+    return []
 
 
 def sonda_devida(c: ConexaoMonitorada, now_utc: datetime) -> bool:
@@ -513,7 +630,9 @@ _COLS_MONITORADA = """
     c.id, c.empresa_id, e.nome, e.timezone, c.provider, c.display_name, c.from_number,
     c.payload_json->>'instance_name', c.credentials_encrypted, c.tipo_atendimento,
     c.connection_state, c.state_message, c.ultimo_health_check_at, c.ultimo_health_check_ok,
-    c.sonda_falhas_seguidas, c.desconexao_codigo, c.desconexao_em, c.ultimo_inbound_em
+    c.sonda_falhas_seguidas, c.desconexao_codigo, c.desconexao_em, c.ultimo_inbound_em,
+    c.eco_ativo, c.eco_pendente_id, c.eco_enviado_em, c.ultimo_eco_em,
+    c.eco_falhas_seguidas, c.eco_solicitado_em, c.ultimo_ack_em
 """
 
 
@@ -549,6 +668,13 @@ def _row_monitorada(r) -> ConexaoMonitorada:
         desconexao_codigo=r[15],
         desconexao_em=r[16],
         ultimo_inbound_em=r[17],
+        eco_ativo=bool(r[18]) if r[18] is not None else True,
+        eco_pendente_id=r[19],
+        eco_enviado_em=r[20],
+        ultimo_eco_em=r[21],
+        eco_falhas_seguidas=int(r[22] or 0),
+        eco_solicitado_em=r[23],
+        ultimo_ack_em=r[24],
     )
 
 
@@ -603,6 +729,86 @@ async def carregar_baseline(
     baseline = {(int(r[0]), int(r[1])): float(r[2]) for r in rows}
     dias = float(rows[0][3]) if rows and rows[0][3] is not None else 0.0
     return baseline, max(dias, 0.0)
+
+
+async def carregar_gaps_ativos(
+    conn,
+    conexao_id: int,
+    tz: str,
+    baseline: dict[tuple[int, int], float],
+    inicio: datetime,
+    fim: datetime,
+) -> list[float]:
+    """Intervalos entre recebidas consecutivas em [inicio, fim), medidos em
+    HORAS ATIVAS da própria conexão (a noite conta zero). É a matéria-prima
+    da régua empírica: o maior deles é o silêncio saudável já observado."""
+    cur = await conn.execute(
+        f"""
+        WITH r AS (
+            SELECT created_at AS t,
+                   lag(created_at) OVER (ORDER BY created_at) AS t_ant
+              FROM message_queue
+             WHERE conexao_id = %(cid)s
+               AND created_at >= %(inicio)s AND created_at < %(fim)s
+               AND {PREDICADO_INBOUND}
+        )
+        SELECT t_ant, t FROM r WHERE t_ant IS NOT NULL
+        """,
+        {"cid": conexao_id, "inicio": inicio, "fim": fim},
+    )
+    gaps: list[float] = []
+    for t_ant, t in await cur.fetchall():
+        h = horas_ativas_entre(baseline, t_ant, t, tz)
+        if h > 0:
+            gaps.append(h)
+    return gaps
+
+
+async def _registrar_eco_enviado(
+    conn, c: ConexaoMonitorada, key_id: str, now_utc: datetime
+) -> None:
+    # `now_utc` é o relógio do tick (o E2E roda ticks no passado) — o prazo do
+    # eco é medido contra ele, não contra NOW().
+    await conn.execute(
+        """
+        UPDATE conexao
+           SET eco_pendente_id = %s, eco_enviado_em = %s, eco_solicitado_em = NULL,
+               updated_at = NOW()
+         WHERE id = %s
+        """,
+        (key_id, now_utc, c.id),
+    )
+
+
+async def _registrar_eco_falhou(conn, c: ConexaoMonitorada) -> int:
+    cur = await conn.execute(
+        """
+        UPDATE conexao
+           SET eco_pendente_id = NULL, eco_falhas_seguidas = eco_falhas_seguidas + 1,
+               updated_at = NOW()
+         WHERE id = %s
+        RETURNING eco_falhas_seguidas
+        """,
+        (c.id,),
+    )
+    row = await cur.fetchone()
+    return int(row[0]) if row else c.eco_falhas_seguidas + 1
+
+
+async def _sondar_padrao_eco(c: ConexaoMonitorada) -> str | None:
+    """Manda o eco ao próprio número pela instância da conexão (chave admin da
+    Evolution, mesma da sonda). Em modo mock (dev) não chama a Evolution: o
+    E2E injeta o retorno pelo webhook."""
+    from whatsapp_langchain.integrations.evolution import admin as evo_admin
+    from whatsapp_langchain.shared.config import settings
+
+    if not settings.evolution_admin_enabled or not c.instance_name or not c.from_number:
+        return None
+    if (c.from_number or "").startswith("evolution:"):
+        return None  # ainda sem número real
+    if (settings.evolution_outbound_mode or "mock") != "real":
+        return f"mock-eco-{uuid.uuid4().hex[:12]}"
+    return await evo_admin.send_text(c.instance_name, c.from_number, ECO_TEXTO)
 
 
 async def _registrar_sonda(conn, c: ConexaoMonitorada, r: ResultadoSonda | None) -> int:
@@ -923,8 +1129,9 @@ async def _avaliar_uma(
     c: ConexaoMonitorada,
     now_utc: datetime,
     sondar: Sondar,
+    enviar_eco: EnviarEco,
 ) -> tuple[list[tuple[str, dict[str, Any]]], list[tuple[str, dict[str, Any]]], bool]:
-    """Sonda + baseline + decisão + episódios de UMA conexão.
+    """Sonda + régua de silêncio + eco + decisão + episódios de UMA conexão.
     Devolve (abertos, resolvidos notificáveis, evolution fora)."""
     sonda: ResultadoSonda | None = None
     plataforma_fora = False
@@ -951,16 +1158,60 @@ async def _avaliar_uma(
 
         silencio: Silencio | None = None
         if monitoravel(c) and c.ultimo_inbound_em is not None:
+            inicio = c.ultimo_inbound_em - timedelta(days=BASELINE_DIAS)
             baseline, dias = await carregar_baseline(
-                conn,
-                c.id,
-                c.tz,
-                c.ultimo_inbound_em - timedelta(days=BASELINE_DIAS),
-                c.ultimo_inbound_em,
+                conn, c.id, c.tz, inicio, c.ultimo_inbound_em
+            )
+            gaps = await carregar_gaps_ativos(
+                conn, c.id, c.tz, baseline, inicio, c.ultimo_inbound_em
             )
             silencio = calcular_silencio(
-                baseline, dias, c.ultimo_inbound_em, now_utc, c.tz
+                baseline,
+                dias,
+                c.ultimo_inbound_em,
+                now_utc,
+                c.tz,
+                calcular_limite_silencio(gaps, dias),
             )
+
+        # Eco (mig 198): silêncio acima do normal não é alerta, é a pergunta.
+        eco_falhas = c.eco_falhas_seguidas
+        if c.eco_pendente_id and c.ultimo_eco_em and c.eco_enviado_em:
+            if c.ultimo_eco_em >= c.eco_enviado_em:
+                eco_falhas = 0
+        acao = (
+            decidir_eco(c, silencio, sonda.ok if sonda else None, now_utc)
+            if monitoravel(c)
+            else "nada"
+        )
+        if acao == "falhou":
+            eco_falhas = await _registrar_eco_falhou(conn, c)
+            logger.warning(
+                "saude_eco_sem_retorno",
+                conexao_id=c.id,
+                empresa_id=c.empresa_id,
+                falhas=eco_falhas,
+            )
+        elif acao == "enviar":
+            try:
+                key_id = await enviar_eco(c)
+            except Exception as exc:  # noqa: BLE001 — eco que não sai conta como falha
+                logger.warning(
+                    "saude_eco_envio_falhou", conexao_id=c.id, error=str(exc)
+                )
+                key_id = None
+            if key_id:
+                await _registrar_eco_enviado(conn, c, key_id, now_utc)
+                logger.info(
+                    "saude_eco_enviado",
+                    conexao_id=c.id,
+                    empresa_id=c.empresa_id,
+                    motivo="reconexao" if c.eco_solicitado_em else "silencio",
+                    quieto_h=round(silencio.horas, 1) if silencio else None,
+                    limite_h=silencio.limite_normal_h if silencio else None,
+                )
+            else:
+                eco_falhas = await _registrar_eco_falhou(conn, c)
 
         ativos = await _episodios_ativos(conn, c.id)
         sinais = SinaisConexao(
@@ -971,7 +1222,7 @@ async def _avaliar_uma(
             sonda_falhas_seguidas=falhas,
             silencio=silencio,
             ultimo_inbound_em=c.ultimo_inbound_em,
-            sem_atividade_desde=ativos.get("sem_atividade"),
+            eco_falhas_seguidas=eco_falhas,
         )
         achados = avaliar_conexao(sinais) if monitoravel(c) else []
         abertos, resolvidos = await _sincronizar_episodios(conn, c, achados, ativos)
@@ -984,6 +1235,7 @@ async def avaliar_saude(
     now_utc: datetime | None = None,
     sondar: Sondar | None = None,
     notificar: Notificar | None = None,
+    enviar_eco: EnviarEco | None = None,
     forcar: bool = False,
 ) -> dict[str, int]:
     """Um tick completo. `forcar=True` pula o claim (testes). Retorna contagens."""
@@ -992,6 +1244,7 @@ async def avaliar_saude(
     now = now_utc or datetime.now(UTC)
     sondar = sondar or _sondar_padrao
     notificar = notificar or _notificar_padrao
+    enviar_eco = enviar_eco or _sondar_padrao_eco
     contagem = {"conexoes": 0, "abertos": 0, "resolvidos": 0, "erros": 0, "pulado": 0}
 
     with empresa_scope(None, bypass=True):
@@ -1011,7 +1264,7 @@ async def avaliar_saude(
             async def _uma(c: ConexaoMonitorada):
                 async with sem:
                     return await asyncio.wait_for(
-                        _avaliar_uma(pool, c, now, sondar),
+                        _avaliar_uma(pool, c, now, sondar, enviar_eco),
                         timeout=SONDA_TIMEOUT_S * 2 + 10,
                     )
 
@@ -1142,6 +1395,7 @@ async def montar_painel(
         items: list[dict[str, Any]] = []
         for c in conexoes:
             esperadas = 0.0
+            silencio: Silencio | None = None
             if c.ultimo_inbound_em is not None:
                 baseline, _dias = await carregar_baseline(
                     conn, c.id, c.tz, now - timedelta(days=BASELINE_DIAS), now
@@ -1149,6 +1403,26 @@ async def montar_painel(
                 esperadas = esperadas_na_janela(
                     baseline, now - timedelta(hours=24), now, c.tz
                 )
+                inicio = c.ultimo_inbound_em - timedelta(days=BASELINE_DIAS)
+                base_regua, dias = await carregar_baseline(
+                    conn, c.id, c.tz, inicio, c.ultimo_inbound_em
+                )
+                gaps = await carregar_gaps_ativos(
+                    conn, c.id, c.tz, base_regua, inicio, c.ultimo_inbound_em
+                )
+                silencio = calcular_silencio(
+                    base_regua,
+                    dias,
+                    c.ultimo_inbound_em,
+                    now,
+                    c.tz,
+                    calcular_limite_silencio(gaps, dias),
+                )
+            eco_pendente = bool(c.eco_pendente_id) and not (
+                c.ultimo_eco_em
+                and c.eco_enviado_em
+                and c.ultimo_eco_em >= c.eco_enviado_em
+            )
             items.append(
                 {
                     "conexao_id": c.id,
@@ -1167,6 +1441,19 @@ async def montar_painel(
                     "ultimo_inbound_em": _iso(c.ultimo_inbound_em),
                     "recebidas_24h": recebidas.get(c.id, 0),
                     "esperadas_24h": round(esperadas, 1),
+                    "quieto_ha_h": round(silencio.horas, 2) if silencio else None,
+                    "limite_normal_h": silencio.limite_normal_h if silencio else None,
+                    "hora_ativa": silencio.hora_ativa if silencio else None,
+                    "acima_do_normal": bool(silencio and silencio.acima_do_normal),
+                    "eco": {
+                        "ativo": c.eco_ativo and c.provider == "evolution",
+                        "ultimo_em": _iso(c.ultimo_eco_em),
+                        "pendente_desde": _iso(c.eco_enviado_em)
+                        if eco_pendente
+                        else None,
+                        "falhas": c.eco_falhas_seguidas,
+                    },
+                    "ultimo_ack_em": _iso(c.ultimo_ack_em),
                     "alertas": ativos.get(c.id, []),
                 }
             )
