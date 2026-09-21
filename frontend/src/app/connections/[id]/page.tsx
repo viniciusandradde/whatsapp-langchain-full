@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { getConexao } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
+import { ReconectarButton } from "../reconectar-button";
 import { AntiBanPanel } from "./anti-ban-panel";
 import { RespostaPanel } from "./resposta-panel";
 import { TranscricaoPanel } from "./transcricao-panel";
@@ -83,6 +84,16 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
         <h1 className="text-2xl font-semibold">
           {conexao.display_name || conexao.from_number || `Conexão #${conexao.id}`}
         </h1>
+        <div className="ml-auto">
+          <ReconectarButton
+            conexao={{
+              conexaoId: conexao.id,
+              displayName: conexao.display_name,
+              provider: conexao.provider,
+              connectionState: conexao.connection_state,
+            }}
+          />
+        </div>
       </div>
 
       <div className="rounded-lg border border-border/40 p-4 space-y-3">

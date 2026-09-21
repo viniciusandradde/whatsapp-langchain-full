@@ -49,12 +49,19 @@ def describe_key_source() -> str:
 
 
 def classify_admin_error(exc: EvolutionAdminError) -> str | None:
-    """Traduz um erro de auth do Evolution numa mensagem acionável.
+    """Traduz um erro do Evolution numa mensagem acionável.
 
-    Retorna None quando o erro NÃO é de autenticação (caller usa o genérico).
+    Retorna None quando o erro não tem tradução (caller usa o genérico).
     401 = key errada; 403 "Missing global api key" = key vazia. Em ambos a
     causa é o header `apikey` enviado ≠ AUTHENTICATION_API_KEY do servidor.
+    404 "instance does not exist" = a instância foi apagada no servidor
+    (o botão Reconectar cai aqui): não há o que reparear, é criar outra.
     """
+    if exc.status_code == 404 and "does not exist" in (exc.detail or "").lower():
+        return (
+            "A instância desta conexão não existe mais no servidor do WhatsApp. "
+            "Não dá para reconectar: crie uma nova conexão."
+        )
     if exc.status_code == 401 or (
         exc.status_code == 403
         and any(

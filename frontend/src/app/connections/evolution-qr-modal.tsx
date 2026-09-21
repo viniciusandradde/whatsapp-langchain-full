@@ -17,8 +17,18 @@ import {
   testEvolutionAction,
 } from "./actions";
 
+/** Reparear uma conexão que já existe (aparelho desvinculado, sessão
+ *  perdida): o modal abre direto no QR da instância dela, sem provisionar
+ *  nada. Só QR: a Evolution v2.3.7 só gera código de pareamento quando o
+ *  socket nasce com o número — numa instância já em modo QR ele nunca vem. */
+export interface Reconectar {
+  conexaoId: number;
+  displayName?: string | null;
+}
+
 interface Props {
   onClose: (refresh: boolean) => void;
+  reconectar?: Reconectar;
 }
 
 type Phase =
@@ -30,14 +40,16 @@ type Phase =
   | "connected"
   | "error";
 
-export function EvolutionQRModal({ onClose }: Props) {
-  const [phase, setPhase] = useState<Phase>("mode");
-  const [displayName, setDisplayName] = useState("");
+export function EvolutionQRModal({ onClose, reconectar }: Props) {
+  const [phase, setPhase] = useState<Phase>(reconectar ? "qr" : "mode");
+  const [displayName, setDisplayName] = useState(reconectar?.displayName ?? "");
   const [instanceName, setInstanceName] = useState("");
   const [apiUrl, setApiUrl] = useState("https://evolutionapi.vsatecnologia.com.br");
   const [apiKey, setApiKey] = useState("");
   const [fromNumber, setFromNumber] = useState("");
-  const [conexaoId, setConexaoId] = useState<number | null>(null);
+  const [conexaoId, setConexaoId] = useState<number | null>(
+    reconectar?.conexaoId ?? null
+  );
   const [qr, setQr] = useState<string | null>(null);
   const [expiresIn, setExpiresIn] = useState(45);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +64,25 @@ export function EvolutionQRModal({ onClose }: Props) {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  // Reparear: o QR vem da instância que já existe (`GET /qr` regenera na
+  // Evolution quando o anterior venceu) e o polling de status é o mesmo do
+  // provisionamento. Tudo assíncrono — nenhum setState direto no efeito.
+  const reconectarId = reconectar?.conexaoId;
+  useEffect(() => {
+    if (!reconectarId) return;
+    refreshQRAction(reconectarId).then((r) => {
+      if (r.ok) {
+        setQr(r.data.qr_base64);
+        setExpiresIn(r.data.expires_in);
+      } else {
+        setPhase("error");
+        setError(r.error);
+      }
+    });
+    startPolling(reconectarId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconectarId]);
 
   async function handleProvision() {
     if (!displayName.trim()) {
@@ -85,9 +116,8 @@ export function EvolutionQRModal({ onClose }: Props) {
     startPolling(r.data.conexao_id);
   }
 
-  function startPolling(id: number) {
+  function startPolling(id: number, pairing = connectMode === "pairing") {
     if (pollRef.current) clearInterval(pollRef.current);
-    const pairing = connectMode === "pairing";
     pollRef.current = setInterval(async () => {
       // Conta countdown — ao expirar, regenera QR ou código conforme o modo.
       setExpiresIn((s) => {
@@ -193,7 +223,7 @@ export function EvolutionQRModal({ onClose }: Props) {
             {phase === "mode" && "Conectar Evolution"}
             {phase === "form" && "Provisionar nova instance"}
             {phase === "manual" && "Importar instance existente"}
-            {phase === "qr" && "Escanear QR Code"}
+            {phase === "qr" && (reconectar ? "Reconectar WhatsApp" : "Escanear QR Code")}
             {phase === "pairing" && "Conectar com código"}
             {phase === "connected" && "Conectado!"}
             {phase === "error" && "Erro na conexão"}
@@ -536,7 +566,19 @@ export function EvolutionQRModal({ onClose }: Props) {
                 <Button variant="outline" onClick={() => onClose(false)}>
                   Fechar
                 </Button>
-                <Button onClick={() => setPhase("form")}>Tentar de novo</Button>
+                {reconectar ? (
+                  <Button
+                    onClick={() => {
+                      setError(null);
+                      setPhase("qr");
+                      handleManualRefresh();
+                    }}
+                  >
+                    Tentar de novo
+                  </Button>
+                ) : (
+                  <Button onClick={() => setPhase("form")}>Tentar de novo</Button>
+                )}
               </div>
             </>
           )}

@@ -36,6 +36,7 @@ import {
   testConexaoAction,
 } from "./actions";
 import { NewConnectionModal } from "./new-connection-modal";
+import { ReconectarButton } from "./reconectar-button";
 
 interface Props {
   initialConexoes: Conexao[];
@@ -370,6 +371,15 @@ export function ConnectionsList({ initialConexoes }: Props) {
                       >
                         <CircleCheck className="h-3.5 w-3.5" />
                       </Button>
+                      <ReconectarButton
+                        variante="icon"
+                        conexao={{
+                          conexaoId: c.id,
+                          displayName: c.display_name,
+                          provider: c.provider,
+                          connectionState: c.connection_state,
+                        }}
+                      />
                       {(c.provider === "evolution" ||
                         c.provider === "waba") && (
                         <Button
