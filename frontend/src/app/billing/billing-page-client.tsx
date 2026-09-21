@@ -54,8 +54,9 @@ import {
  * Assinar (leva F, D7/D12): cada plano pago tem o link do plano hospedado
  * na InfinitePay ("Recomendado" — Pix sem taxa ou cartão) e no Mercado Pago
  * (cartão recorrente). O cliente paga lá; a ativação é manual pelo
- * superadmin (Empresas → Plano e vigência), que confirma por WhatsApp. O
- * botão "Assinar" do Asaas saiu porque nunca funcionou em produção.
+ * superadmin (Empresas → Plano e vigência), que confirma por WhatsApp. Só o
+ * Free fica sem link. O botão "Assinar" do Asaas saiu porque nunca
+ * funcionou em produção.
  */
 
 const TIER_ROTULO: Record<TierContexto, string> = {
@@ -275,7 +276,7 @@ export function BillingPageClient() {
 /**
  * Cards de assinatura: só os planos com link. Quem já está no plano vê
  * "Renovar"; os demais, "Assinar". InfinitePay em destaque (D12); Mercado
- * Pago como alternativa. Free e Enterprise não têm venda self-service.
+ * Pago como alternativa. Só o Free não tem venda self-service.
  */
 function SecaoAssinar({ planos, atual }: { planos: PlanoCatalogo[]; atual: string | null }) {
   const vendaveis = planos.filter((p) => p.link_infinitepay || p.link_mercadopago);
@@ -284,7 +285,7 @@ function SecaoAssinar({ planos, atual }: { planos: PlanoCatalogo[]; atual: strin
       <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted-foreground">
         Assinar ou renovar
       </h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {vendaveis.map((p) => {
           const ehAtual = p.slug === atual;
           const verbo = ehAtual ? "Renovar" : "Assinar";

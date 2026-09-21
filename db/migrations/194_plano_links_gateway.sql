@@ -3,7 +3,7 @@
 -- O dono cria cada plano no painel da InfinitePay (Cobrança Recorrente —
 -- padrão, "Recomendado" no /billing) e do Mercado Pago (Assinaturas —
 -- alternativa) e cola o LINK aqui; o Nexus só mostra os links ao cliente.
--- NULL = plano sem venda self-service (Free e Enterprise). Não há API de
+-- NULL = plano sem venda self-service (só o Free). Não há API de
 -- cobrança: a ativação é o superadmin registrando o pagamento
 -- (`POST /api/empresas/{id}/pagamentos`), que grava em `transacao` e
 -- estende `empresa.plano_valido_ate` (leva E).
@@ -20,7 +20,8 @@ COMMENT ON COLUMN plano.link_mercadopago IS
 COMMENT ON COLUMN plano.link_infinitepay IS
     'ADR-005 leva F: link da cobrança recorrente hospedada na InfinitePay (Pix ou cartão) — padrão/Recomendado; NULL = sem venda self-service';
 
--- Links criados pelo dono em 21/09/2026 (F.0). Idempotente; o superadmin
+-- Links criados pelo dono em 21/09/2026 (F.0): Pessoal R$97, Pro R$299 e
+-- Enterprise R$1.499. Idempotente; o superadmin
 -- pode trocar depois em /billing sem migration.
 UPDATE plano SET
     link_infinitepay = 'https://invoice.infinitepay.io/plans/vinicius-souza-z92/D5zAMaUxnL',
@@ -33,3 +34,9 @@ UPDATE plano SET
     link_mercadopago = 'https://mpago.la/2B1hHVW',
     updated_at = NOW()
  WHERE slug = 'pro';
+
+UPDATE plano SET
+    link_infinitepay = 'https://invoice.infinitepay.io/plans/vinicius-souza-z92/oPYQeXNaNw',
+    link_mercadopago = 'https://mpago.la/2yyU7Zb',
+    updated_at = NOW()
+ WHERE slug = 'enterprise';
