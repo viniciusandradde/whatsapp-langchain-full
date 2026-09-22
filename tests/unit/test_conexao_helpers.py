@@ -61,6 +61,8 @@ def _row(
         None,  # daily_send_cap
         None,  # warmup_started_at
         8,  # resposta_agrupamento_segundos (mig 144)
+        False,  # transcrever_audio_sempre (mig 169)
+        "cloud_api",  # waba_mode (mig 200)
     )
 
 

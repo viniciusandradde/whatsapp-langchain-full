@@ -38,14 +38,17 @@ async def _dados_da_mensagem(
     Filtros que o NOTIFY não carrega:
     - `incoming_message` vazia = outbound do operador (INSERT também dispara
       o trigger) — ninguém precisa de push da própria resposta;
-    - `interna` = nota da equipe, não mensagem de cliente.
+    - `interna` = nota da equipe, não mensagem de cliente;
+    - histórico importado do WhatsApp Business (Coexistence, mig 200) — são
+      conversas antigas, e o lote inteiro viraria uma notificação por mensagem.
     """
     with empresa_scope(empresa_id):
         async with pool.connection() as conn:
             cur = await conn.execute(
                 """
                 SELECT q.incoming_message, q.interna, q.atendimento_id,
-                       COALESCE(c.nome, c.telefone, 'Cliente') AS quem
+                       COALESCE(c.nome, c.telefone, 'Cliente') AS quem,
+                       q.normalized_input
                   FROM message_queue q
                   JOIN atendimento a ON a.id = q.atendimento_id
                   LEFT JOIN cliente c ON c.id = a.cliente_id
@@ -56,8 +59,10 @@ async def _dados_da_mensagem(
             row = await cur.fetchone()
     if row is None:
         return None
-    texto, interna, atendimento_id, quem = row
+    texto, interna, atendimento_id, quem, normalized_input = row
     if interna or not (texto or "").strip():
+        return None
+    if str(normalized_input or "").startswith("historico:"):
         return None
     preview = " ".join(str(texto).split())[:96]
     return {

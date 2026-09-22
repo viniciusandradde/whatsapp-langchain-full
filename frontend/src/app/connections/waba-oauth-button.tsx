@@ -4,11 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { WabaModo } from "@/lib/api";
 
 import { getWabaConfigAction, wabaEmbeddedSignupAction } from "./actions";
 
 interface Props {
   displayName?: string;
+  /** `coexistence` abre o subfluxo do WhatsApp Business app na Meta. */
+  modo?: WabaModo;
   onSuccess?: () => void;
   onError?: (error: string) => void;
 }
@@ -41,8 +44,19 @@ const FB_SDK_SRC = "https://connect.facebook.net/en_US/sdk.js";
  * 3. Click → FB.login(config_id) abre popup oficial Meta
  * 4. Callback do FB.login → authResponse.code
  * 5. code + waba_id + phone_number_id → POST /waba/embedded-signup → conexão
+ *
+ * Coexistence (mig 200): `featureType: "whatsapp_business_app_onboarding"`
+ * abre o subfluxo do WhatsApp Business app, que termina com o evento
+ * `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING` trazendo só o `waba_id` — o
+ * backend descobre o número. Nesse modo o número NÃO é registrado (a Meta
+ * manda pular o `/register`).
  */
-export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
+export function WabaOAuthButton({
+  displayName,
+  modo = "cloud_api",
+  onSuccess,
+  onError,
+}: Props) {
   const [busy, setBusy] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
   const configRef = useRef<{ app_id: string; config_id: string; graph_version: string } | null>(
@@ -59,10 +73,12 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
   const onErrorRef = useRef(onError);
   const onSuccessRef = useRef(onSuccess);
   const displayNameRef = useRef(displayName);
+  const modoRef = useRef(modo);
   useEffect(() => {
     onErrorRef.current = onError;
     onSuccessRef.current = onSuccess;
     displayNameRef.current = displayName;
+    modoRef.current = modo;
   });
 
   // 1) Carrega FB SDK + config — SÓ no mount (deps vazias)
@@ -123,8 +139,14 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
         const data =
           typeof event.data === "string" ? JSON.parse(event.data) : event.data;
         if (data?.type !== "WA_EMBEDDED_SIGNUP") return;
-        // data.event: 'FINISH' | 'CANCEL' | 'ERROR'
-        if (data.event === "FINISH" && data.data) {
+        // data.event: 'FINISH' | 'FINISH_ONLY_WABA' |
+        // 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' (Coexistence, só waba_id) |
+        // 'CANCEL' | 'ERROR'
+        if (
+          (data.event === "FINISH" ||
+            data.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING") &&
+          data.data
+        ) {
           sessionRef.current = {
             waba_id: data.data.waba_id,
             phone_number_id: data.data.phone_number_id,
@@ -160,10 +182,11 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
           onErrorRef.current?.("Conexão cancelada ou sem autorização.");
           return;
         }
-        if (!session.waba_id || !session.phone_number_id) {
+        const coexistence = modoRef.current === "coexistence";
+        if (!session.waba_id || (!coexistence && !session.phone_number_id)) {
           setBusy(false);
           onErrorRef.current?.(
-            "Não recebemos os dados da conta WhatsApp (waba_id/phone). Tente de novo."
+            "Não recebemos os dados da conta do WhatsApp. Tente de novo."
           );
           return;
         }
@@ -171,9 +194,10 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
           const r = await wabaEmbeddedSignupAction({
             code,
             waba_account_id: session.waba_id!,
-            phone_number_id: session.phone_number_id!,
+            phone_number_id: session.phone_number_id ?? null,
             display_name: displayNameRef.current || null,
-            register_phone: true,
+            register_phone: !coexistence,
+            waba_mode: modoRef.current,
           });
           setBusy(false);
           if (r.ok) onSuccessRef.current?.();
@@ -184,11 +208,14 @@ export function WabaOAuthButton({ displayName, onSuccess, onError }: Props) {
         config_id: cfg.config_id,
         response_type: "code",
         override_default_response_type: true,
-        extras: {
-          setup: {},
-          featureType: "whatsapp_business_app_onboarding",
-          sessionInfoVersion: "3",
-        },
+        extras:
+          modoRef.current === "coexistence"
+            ? {
+                setup: {},
+                featureType: "whatsapp_business_app_onboarding",
+                sessionInfoVersion: "3",
+              }
+            : { setup: {}, sessionInfoVersion: "3" },
       }
     );
   }, []);

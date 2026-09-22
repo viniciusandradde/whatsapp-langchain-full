@@ -297,12 +297,18 @@ class Conexao(BaseModel):
     resposta_agrupamento_segundos: int = 8
     # Mig 169 — transcreve todo áudio recebido, mesmo sem agente responder.
     transcrever_audio_sempre: bool = False
+    # Mig 200 — modo da conexão WABA. `coexistence` = o cliente segue usando o
+    # WhatsApp Business no celular; Evolution é sempre `cloud_api` (CHECK).
+    waba_mode: str = "cloud_api"  # cloud_api | coexistence
 
 
 #: Providers de saída aceitos. É a mesma lista do CHECK
 #: `conexao_provider_check` no banco (mig 153) — mantidos juntos pra a API
 #: recusar com 422 legível em vez de estourar CheckViolation no INSERT.
 PROVIDERS_SUPORTADOS = ("waba", "evolution")
+
+#: Modos da conexão WABA — espelho do CHECK `conexao_waba_mode_check` (mig 200).
+WABA_MODOS = ("cloud_api", "coexistence")
 
 
 class ConexaoInput(BaseModel):

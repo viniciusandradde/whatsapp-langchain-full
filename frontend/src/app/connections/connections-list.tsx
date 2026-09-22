@@ -26,6 +26,7 @@ const inputCls =
 import type {
   Conexao,
   ConexaoProvider,
+  WabaModo,
   ConnectionState,
 } from "@/lib/api";
 
@@ -109,10 +110,17 @@ function StateBadge({ state }: { state: ConnectionState }) {
   );
 }
 
-function ProviderBadge({ provider }: { provider: ConexaoProvider }) {
+function ProviderBadge({
+  provider,
+  modo,
+}: {
+  provider: ConexaoProvider;
+  modo?: WabaModo;
+}) {
   return (
     <Badge variant="outline" className="font-normal text-xs">
       {PROVIDER_LABELS[provider]}
+      {provider === "waba" && modo === "coexistence" && " · Coexistência"}
     </Badge>
   );
 }
@@ -301,7 +309,7 @@ export function ConnectionsList({ initialConexoes }: Props) {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <ProviderBadge provider={c.provider} />
+                    <ProviderBadge provider={c.provider} modo={c.waba_mode} />
                   </td>
                   <td className="px-3 py-2">
                     <StateBadge

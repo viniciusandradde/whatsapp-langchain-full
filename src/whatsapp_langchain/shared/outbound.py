@@ -149,8 +149,12 @@ async def _persist_outbound_row(
     media_url: str | None = None,
     media_type: str | None = None,
     media_filename: str | None = None,
+    origem_resposta: str | None = None,
 ) -> dict:
     """Insere row outbound-only em message_queue + bump last_message_at.
+
+    `origem_resposta` (mig 144) fica NULL no envio do painel; o eco do
+    WhatsApp Business (Coexistence, mig 200) grava `whatsapp_business_app`.
 
     `media_url`/`media_type`/`media_filename` vão pras colunas
     `response_media_*` (migs 146 e 186), e NÃO pras `media_*`, que são do lado
@@ -167,12 +171,12 @@ async def _persist_outbound_row(
                  phone_number, agent_id, thread_id,
                  incoming_message, response, normalized_input,
                  response_media_url, response_media_type, response_media_filename,
-                 status, process_after, processed_at)
+                 origem_resposta, status, process_after, processed_at)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
-                    'done', NOW(), NOW())
+                    %s, 'done', NOW(), NOW())
             RETURNING id, agent_id, incoming_message, response, status,
                       created_at, processed_at,
                       response_media_url, response_media_type,
@@ -192,6 +196,7 @@ async def _persist_outbound_row(
                 media_url,
                 media_type,
                 media_filename,
+                origem_resposta,
             ),
         )
         row = await cur.fetchone()

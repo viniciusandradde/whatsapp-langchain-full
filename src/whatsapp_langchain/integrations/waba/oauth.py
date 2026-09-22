@@ -258,3 +258,88 @@ async def subscribe_webhook(access_token: str, waba_account_id: str) -> bool:
             )
             return False
         return True
+
+
+async def list_phone_numbers(
+    access_token: str, waba_account_id: str
+) -> list[WabaPhoneNumber]:
+    """GET /{waba_id}/phone_numbers → números da WABA.
+
+    O Embedded Signup do Coexistence termina com
+    `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`, cujo `data` traz só o `waba_id`
+    — o `phone_number_id` sai daqui.
+    """
+    version = settings.waba_graph_api_version
+    url = f"{META_GRAPH_URL.format(version=version)}/{waba_account_id}/phone_numbers"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"fields": "id,display_phone_number,verified_name,quality_rating"},
+        )
+        if resp.status_code != 200:
+            logger.warning(
+                "waba_list_phone_numbers_failed",
+                waba_id=waba_account_id,
+                status=resp.status_code,
+                body=resp.text[:300],
+            )
+            raise WabaOAuthError(
+                f"Falha ao listar os números da WABA: {resp.status_code}"
+            )
+        return [WabaPhoneNumber.model_validate(p) for p in resp.json().get("data", [])]
+
+
+#: Ordem da Meta: contatos primeiro, depois o histórico. As duas chamadas têm
+#: de acontecer em até 24 h do onboarding, senão o número precisa ser
+#: desconectado e conectado de novo.
+SMB_SYNC_TYPES = ("smb_app_state_sync", "history")
+
+
+async def sincronizar_smb(access_token: str, phone_id: str) -> dict[str, str | None]:
+    """POST /{phone_id}/smb_app_data para cada `sync_type` (Coexistence).
+
+    Devolve `{sync_type: request_id | None}` — `None` = aquela chamada falhou.
+    Não levanta: quem chama decide o que fazer com a falha parcial (a conexão
+    continua criada e a sincronização pode ser repetida pela rota
+    `/waba/sincronizar` dentro das 24 h). O token nunca vai para o log.
+    """
+    version = settings.waba_graph_api_version
+    url = f"{META_GRAPH_URL.format(version=version)}/{phone_id}/smb_app_data"
+    resultado: dict[str, str | None] = {}
+    async with httpx.AsyncClient(timeout=20) as client:
+        for sync_type in SMB_SYNC_TYPES:
+            try:
+                resp = await client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json={"messaging_product": "whatsapp", "sync_type": sync_type},
+                )
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "waba_coexistence_sync_failed",
+                    phone_id=phone_id,
+                    sync_type=sync_type,
+                    error=type(exc).__name__,
+                )
+                resultado[sync_type] = None
+                continue
+            if resp.status_code != 200:
+                logger.warning(
+                    "waba_coexistence_sync_failed",
+                    phone_id=phone_id,
+                    sync_type=sync_type,
+                    status=resp.status_code,
+                    body=resp.text[:300],
+                )
+                resultado[sync_type] = None
+                continue
+            request_id = resp.json().get("request_id")
+            logger.info(
+                "waba_coexistence_sync_requested",
+                phone_id=phone_id,
+                sync_type=sync_type,
+                request_id=request_id,
+            )
+            resultado[sync_type] = request_id or ""
+    return resultado

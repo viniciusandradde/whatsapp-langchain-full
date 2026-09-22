@@ -55,6 +55,9 @@ oficial da Meta retorna `waba_id` + `phone_number_id` e o backend cria a conexã
      (`config_id`). É um número longo (ex: `1356011062653699`).
    - Permissões da config: `whatsapp_business_management` +
      `whatsapp_business_messaging`.
+   - **Coexistence** (WhatsApp Business no celular + ChatNexus, mig 200):
+     habilitar na configuração o onboarding de números do WhatsApp Business
+     app. Detalhes em `docs/WHATSAPP_COEXISTENCE.md`.
 
 ---
 
@@ -94,6 +97,8 @@ causa #1 de "clico em Conectar e nada acontece / tela em branco".
    - Clicar **Verify and Save** (a Meta faz um GET de challenge no endpoint —
      o backend já responde isso em `webhook_waba.py`).
 2. **Subscrever campos**: marcar `messages` + `message_template_status_update`.
+   Para Coexistence, também `smb_message_echoes`, `history`,
+   `smb_app_state_sync` e `account_update` (`docs/WHATSAPP_COEXISTENCE.md`).
 
 > O webhook fica em `api.vsanexus.com` (backend FastAPI), **NÃO** em
 > `chat.vsanexus.com` (frontend Next.js) — esse último redireciona pra /login.
@@ -129,6 +134,9 @@ Os 3 devem aparecer preenchidos. Se algum vier `[]`/`VAZIO`, o env não pegou.
 ## Parte 7 — Conectar pela UI
 
 1. `chat.vsanexus.com` → **Conexões** → **Nova conexão** → **WhatsApp Oficial**.
+   Escolher o modo: **WhatsApp Cloud API** (número dedicado à API) ou
+   **WhatsApp Business + ChatNexus** (Coexistence: o número continua no app do
+   celular; não é registrado e os contatos e o histórico são sincronizados).
 2. Botão **"Conectar com Meta"** (espera o SDK carregar — fica "Carregando
    SDK..." por ~1s).
 3. Popup oficial da Meta abre → logar / selecionar o **Business** + **número**
@@ -225,8 +233,9 @@ por redirect. Continuam registrados, mas o caminho oficial é o Embedded Signup
 | Endpoint | Função |
 |---|---|
 | `GET /api/conexoes/waba/config` | Frontend pega `app_id`+`config_id` pro FB.init (sem secret) |
-| `POST /api/conexoes/waba/embedded-signup` | Recebe `{code, waba_account_id, phone_number_id}` → cria conexão |
-| `GET/POST /webhook/waba` | Handshake (verify token) + recebimento de mensagens |
+| `POST /api/conexoes/waba/embedded-signup` | Recebe `{code, waba_account_id, phone_number_id?, waba_mode}` → cria conexão (`phone_number_id` é opcional só em Coexistence) |
+| `POST /api/conexoes/{id}/waba/sincronizar` | Coexistence: repete o pedido de contatos + histórico (`smb_app_data`) em até 24 h |
+| `GET/POST /webhook/waba` | Handshake (verify token) + mensagens, status de templates e, em Coexistence, eco do celular, histórico, contatos e desconexão |
 | `/api/conexoes/{id}/templates` | Templates HSM (após conexão criada). Desde a mig `113`, templates HSM aprovados são **enviáveis** via campanha (selector no form) e via composer do `/atendimento` |
 
 Código: `integrations/waba/oauth.py` (exchange/phone/register/subscribe),

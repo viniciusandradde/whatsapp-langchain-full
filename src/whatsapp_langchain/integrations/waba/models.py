@@ -62,6 +62,8 @@ class WabaInboundMessage(BaseModel):
     # Só documento traz nome (`document.filename`). É o que escolhe o parser e
     # o que a resposta cita quando o conteúdo não pôde ser lido (mig 164).
     media_filename: str | None = None
+    # Nome do perfil (`value.contacts[].profile.name`) — vai pro upsert_cliente.
+    profile_name: str | None = None
     raw: dict[str, Any]  # payload completo pra fallback
 
 
@@ -107,3 +109,66 @@ class WabaTemplateRecord(BaseModel):
     #: Coluna órfã desde a mig 153 — nada escreve mais aqui. Mantida porque
     #: as rotas leem a tupla por posição; DROP fica pra migration própria.
     content_sid: str | None = None
+
+
+class WabaEcho(BaseModel):
+    """Mensagem que a empresa enviou pelo WhatsApp Business do CELULAR.
+
+    Campo `smb_message_echoes` (Coexistence). `from` = número da empresa,
+    `to` = cliente. Só dispara para o que saiu do app/dispositivo companheiro,
+    nunca para o que a Cloud API enviou.
+    """
+
+    waba_phone_id: str
+    to_number: str  # E.164 do cliente
+    message_id: str
+    timestamp: datetime
+    type: str  # text | image | video | document | audio | sticker | revoke | edit | …
+    text: str | None = None  # corpo do texto ou legenda da mídia
+
+
+class WabaHistoricoMensagem(BaseModel):
+    """Uma mensagem de uma conversa do histórico (campo `history`)."""
+
+    message_id: str
+    timestamp: datetime
+    type: str
+    text: str | None = None
+    da_empresa: bool  # `from` == número da empresa → enviada pela empresa
+
+
+class WabaHistoricoConversa(BaseModel):
+    waba_phone_id: str
+    cliente_number: str  # E.164 (`threads[].id`)
+    mensagens: list[WabaHistoricoMensagem] = Field(default_factory=list)
+
+
+class WabaHistoricoLote(BaseModel):
+    """Um item de `history[]` — um pedaço (chunk) da sincronização."""
+
+    waba_phone_id: str
+    phase: int | None = None
+    chunk_order: int | None = None
+    progress: int | None = None
+    conversas: list[WabaHistoricoConversa] = Field(default_factory=list)
+    #: Códigos de erro do item (ex.: 2593109 = histórico recusado no app).
+    erros: list[int] = Field(default_factory=list)
+
+
+class WabaContato(BaseModel):
+    """Contato do WhatsApp Business (campo `smb_app_state_sync`)."""
+
+    waba_phone_id: str
+    phone_number: str  # E.164
+    nome: str | None = None
+    action: str  # add | remove | …
+
+
+class WabaAccountUpdate(BaseModel):
+    """Evento `account_update` (ex.: PARTNER_REMOVED)."""
+
+    waba_account_id: str  # `entry.id`
+    event: str
+    phone_number: str | None = None
+    reason: str | None = None
+    initiated_by: str | None = None

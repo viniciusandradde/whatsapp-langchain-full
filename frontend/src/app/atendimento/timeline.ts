@@ -23,7 +23,21 @@ import type { AtendimentoMensagem } from "@/lib/api";
 
 export type Lado = "in" | "out";
 
-export type Remetente = "Cliente" | "IA" | "Operador" | "Sistema";
+export type Remetente =
+  | "Cliente"
+  | "IA"
+  | "Operador"
+  | "Sistema"
+  | "WhatsApp Business (celular)";
+
+/**
+ * Coexistence (mig 200): a empresa respondeu pelo WhatsApp Business do
+ * celular. É o dono sentinela do atendimento (IA pausada até "Devolver à IA")
+ * e o prefixo `manual:app:` das mensagens que vieram de lá — espelho de
+ * `shared/waba_coexistence.py::HUMANO_APP`.
+ */
+export const DONO_CELULAR = "whatsapp_business_app";
+export const ROTULO_CELULAR = "WhatsApp Business (celular)" as const;
 
 export interface BolhaTexto {
   tipo: "bolha";
@@ -172,6 +186,7 @@ export const AVISO_IA_TEXTO: Record<
 export function remetenteDaResposta(m: AtendimentoMensagem): Remetente {
   const n = m.normalized_input ?? "";
   if (n.startsWith("manual:system:")) return "Sistema";
+  if (n.startsWith("manual:app:")) return ROTULO_CELULAR;
   if (n.startsWith("manual:")) return "Operador";
   return "IA";
 }

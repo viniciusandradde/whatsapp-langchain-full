@@ -20,6 +20,7 @@ import {
   wabaFinalize,
   wabaOAuthResult,
   wabaOAuthStart,
+  wabaSincronizar,
   type ConexaoInput,
   type ConexaoPatchInput,
   type ConexaoQuota,
@@ -207,6 +208,16 @@ export async function disconnectConexaoAction(conexaoId: number) {
   try {
     const data = await disconnectConexao(conexaoId);
     revalidatePath("/connections");
+    return { ok: true as const, data };
+  } catch (e) {
+    return { ok: false as const, error: safeError(e) };
+  }
+}
+
+export async function wabaSincronizarAction(conexaoId: number) {
+  try {
+    const data = await wabaSincronizar(conexaoId);
+    revalidatePath(`/connections/${conexaoId}`);
     return { ok: true as const, data };
   } catch (e) {
     return { ok: false as const, error: safeError(e) };

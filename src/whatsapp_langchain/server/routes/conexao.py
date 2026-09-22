@@ -9,7 +9,7 @@ admin credentials), 404 quando conexão inexistente, 403 cross-empresa.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import structlog
@@ -460,12 +460,18 @@ async def _create_waba_conexao(
     from_number: str,
     register_phone: bool = False,
     pin: str | None = None,
+    waba_mode: str = "cloud_api",
 ) -> Conexao:
     """Cria/atualiza conexão WABA + cifra token + registra phone + webhook.
 
     Núcleo compartilhado entre /waba/finalize (fluxo redirect legado) e
     /waba/embedded-signup (FB SDK). Idempotente via upsert por
     (empresa_id, from_number).
+
+    `waba_mode="coexistence"` (mig 200): o número segue no WhatsApp Business
+    do celular, então NÃO se chama `/register` (a Meta manda pular) e, depois
+    de assinar o webhook, pede-se a sincronização de contatos e histórico
+    (`smb_app_data`) — obrigatória em até 24 h do onboarding.
     """
     import secrets as _secrets
 
@@ -510,7 +516,9 @@ async def _create_waba_conexao(
         waba_account_description=account_description,
         webhook_verify_token=verify_token,
         from_number=from_number,
+        waba_mode=waba_mode,
     )
+    coexistence = waba_mode == "coexistence"
     # O estado só é decidido DEPOIS de registrar o número e assinar o webhook.
     #
     # Antes, `state="open"` era gravado aqui em cima e os retornos das duas
@@ -519,12 +527,20 @@ async def _create_waba_conexao(
     # ou seja, sem receber uma única mensagem. Tela que promete o que o backend
     # não cumpre é pior do que erro visível.
     problemas: list[str] = []
-    if register_phone and not await waba_oauth.register_phone(
-        access_token, phone_id, pin=pin
+    if (
+        register_phone
+        and not coexistence
+        and not await waba_oauth.register_phone(access_token, phone_id, pin=pin)
     ):
         problemas.append("o número não foi registrado na Meta")
     if not await waba_oauth.subscribe_webhook(access_token, waba_account_id):
         problemas.append("o app não ficou inscrito nos webhooks (não recebe mensagem)")
+
+    sincronizacao_pendente = False
+    if coexistence and not problemas:
+        sincronizacao_pendente = not await _sincronizar_coexistence(
+            access_token, phone_id, conexao_id=conexao.id, empresa_id=empresa_id
+        )
 
     if problemas:
         logger.warning(
@@ -533,15 +549,50 @@ async def _create_waba_conexao(
             empresa_id=empresa_id,
             problemas=problemas,
         )
+        # "error", não "close": o CHECK de `connection_state` (mig 128) não
+        # aceita "close" — o caminho de falha dava 500 justamente quando o
+        # registro ou a inscrição falhavam.
         await set_connection_state(
             pool,
             conexao.id,
-            state="close",
+            state="error",
             message="Conexão criada, mas " + " e ".join(problemas) + ".",
+        )
+    elif sincronizacao_pendente:
+        # A conexão funciona (recebe e envia); só falta trazer contatos e
+        # histórico do celular — dá para repetir por /waba/sincronizar.
+        await set_connection_state(
+            pool, conexao.id, state="open", message=MSG_SINCRONIZACAO_PENDENTE
         )
     else:
         await set_connection_state(pool, conexao.id, state="open", message=None)
     return conexao
+
+
+MSG_SINCRONIZACAO_PENDENTE = (
+    "Sincronização de contatos e histórico pendente. Tente de novo em até 24 horas."
+)
+
+
+async def _sincronizar_coexistence(
+    access_token: str, phone_id: str, *, conexao_id: int, empresa_id: int
+) -> bool:
+    """Pede à Meta contatos + histórico do WhatsApp Business (Coexistence).
+
+    True quando as duas chamadas foram aceitas. Nunca levanta — a conexão já
+    existe e funciona; a falha vira aviso na tela e a rota /waba/sincronizar.
+    """
+    resultado = await waba_oauth.sincronizar_smb(access_token, phone_id)
+    ok = all(v is not None for v in resultado.values())
+    logger.info(
+        "waba_coexistence_onboarding",
+        conexao_id=conexao_id,
+        empresa_id=empresa_id,
+        phone_id=phone_id,
+        sync_ok=ok,
+        request_ids=resultado,
+    )
+    return ok
 
 
 class WabaFinalizeInput(BaseModel):
@@ -669,9 +720,12 @@ async def waba_config() -> WabaConfigResponse:
 class WabaEmbeddedSignupInput(BaseModel):
     code: str = Field(min_length=10)
     waba_account_id: str = Field(min_length=1)
-    phone_number_id: str = Field(min_length=1)
+    # Opcional só em Coexistence: o evento FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING
+    # traz só o `waba_id`, e o número sai de GET /{waba}/phone_numbers.
+    phone_number_id: str | None = Field(default=None, min_length=1)
     display_name: str | None = Field(default=None, max_length=80)
     register_phone: bool = True
+    waba_mode: Literal["cloud_api", "coexistence"] = "cloud_api"
 
 
 @router.post("/waba/embedded-signup")
@@ -708,9 +762,31 @@ async def waba_embedded_signup(
     if not access_token:
         raise HTTPException(status_code=502, detail="Meta não retornou access_token.")
 
+    phone_number_id = body.phone_number_id
+    if not phone_number_id:
+        if body.waba_mode != "coexistence":
+            raise HTTPException(
+                status_code=422, detail="phone_number_id é obrigatório."
+            )
+        try:
+            numeros = await waba_oauth.list_phone_numbers(
+                access_token, body.waba_account_id
+            )
+        except waba_oauth.WabaOAuthError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        if len(numeros) != 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Não foi possível identificar o número desta conta do "
+                    "WhatsApp Business. Conecte de novo escolhendo um único número."
+                ),
+            )
+        phone_number_id = numeros[0].id
+
     # 2) detalhes do phone (display_phone_number + verified_name)
     try:
-        phone = await waba_oauth.fetch_phone_details(access_token, body.phone_number_id)
+        phone = await waba_oauth.fetch_phone_details(access_token, phone_number_id)
     except waba_oauth.WabaOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -730,11 +806,12 @@ async def waba_embedded_signup(
         empresa_id=empresa_id,
         access_token=access_token,
         waba_account_id=body.waba_account_id,
-        phone_id=body.phone_number_id,
+        phone_id=phone_number_id,
         display_name=display,
         account_description=phone.get("verified_name"),
         from_number=from_number,
         register_phone=body.register_phone,
+        waba_mode=body.waba_mode,
     )
 
     logger.info(
@@ -743,8 +820,61 @@ async def waba_embedded_signup(
         user_id=user_id,
         conexao_id=conexao.id,
         waba_account_id=body.waba_account_id,
-        phone_number_id=body.phone_number_id,
+        phone_number_id=phone_number_id,
+        waba_mode=body.waba_mode,
     )
+    return mask_sensitive(await get_conexao_by_id(pool, conexao.id) or conexao)
+
+
+@router.post("/{conexao_id}/waba/sincronizar")
+async def waba_sincronizar(
+    conexao_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("integracao.manage")),
+    _plano: None = Depends(require_plano_feature("waba")),
+) -> Conexao:
+    """Repete a sincronização de contatos e histórico (Coexistence).
+
+    A Meta exige as duas chamadas `smb_app_data` em até 24 h do onboarding;
+    quando a do cadastro falhou, o operador repete por aqui.
+    """
+    pool = await get_pool()
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    if conexao.provider != "waba" or conexao.waba_mode != "coexistence":
+        raise HTTPException(
+            status_code=409,
+            detail="Só conexões do WhatsApp Business com o ChatNexus sincronizam.",
+        )
+    creds = await get_credentials_decrypted(pool, conexao.id) or {}
+    access_token = creds.get("access_token")
+    if not access_token or not conexao.waba_phone_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Conexão sem credenciais. Conecte o número de novo.",
+        )
+    ok = await _sincronizar_coexistence(
+        access_token,
+        conexao.waba_phone_id,
+        conexao_id=conexao.id,
+        empresa_id=empresa_id,
+    )
+    if not ok:
+        await set_connection_state(
+            pool,
+            conexao.id,
+            state=conexao.connection_state,
+            message=MSG_SINCRONIZACAO_PENDENTE,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="A Meta não aceitou a sincronização agora. Tente de novo em instantes.",
+        )
+    if conexao.state_message == MSG_SINCRONIZACAO_PENDENTE:
+        await set_connection_state(
+            pool, conexao.id, state=conexao.connection_state, message=None
+        )
     return mask_sensitive(await get_conexao_by_id(pool, conexao.id) or conexao)
 
 
