@@ -402,6 +402,7 @@ async def list_atendimentos(
                AND m.status = 'done'
                AND m.incoming_message IS NOT NULL AND m.incoming_message <> ''
                AND COALESCE(m.interna, FALSE) = FALSE
+               AND NOT starts_with(COALESCE(m.normalized_input, ''), 'historico:')
                AND (v.ultima_visualizacao_at IS NULL
                     OR m.created_at > v.ultima_visualizacao_at))"""
         params.append(current_user_id)

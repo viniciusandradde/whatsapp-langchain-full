@@ -109,6 +109,8 @@ async def count_unread_para_user(
                AND m.incoming_message IS NOT NULL
                AND m.incoming_message <> ''
                AND COALESCE(m.interna, FALSE) = FALSE
+               -- Histórico importado do WhatsApp Business (mig 200) não é novo.
+               AND NOT starts_with(COALESCE(m.normalized_input, ''), 'historico:')
                AND (v.ultima_visualizacao_at IS NULL
                     OR m.created_at > v.ultima_visualizacao_at)
              GROUP BY m.atendimento_id

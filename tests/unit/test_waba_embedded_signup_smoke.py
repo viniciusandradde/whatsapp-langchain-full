@@ -119,7 +119,15 @@ class TestConfigNoSecret:
 # nos webhooks — conexão que não recebe uma única mensagem.
 
 
-async def _criar_conexao_fake(monkeypatch, *, registrou: bool, inscreveu: bool):
+async def _criar_conexao_fake(
+    monkeypatch,
+    *,
+    registrou: bool,
+    inscreveu: bool,
+    waba_mode: str = "cloud_api",
+    sync: dict | None = None,
+    mocks: dict | None = None,
+):
     """Roda `_create_waba_conexao` com todo o I/O mockado e devolve o estado."""
     from datetime import UTC, datetime
     from unittest.mock import AsyncMock
@@ -148,14 +156,22 @@ async def _criar_conexao_fake(monkeypatch, *, registrou: bool, inscreveu: bool):
 
     monkeypatch.setattr(rotas, "upsert_conexao", AsyncMock(return_value=conexao_fake))
     monkeypatch.setattr(rotas, "save_credentials", AsyncMock())
-    monkeypatch.setattr(rotas, "update_waba_fields", AsyncMock())
-    monkeypatch.setattr(rotas, "set_connection_state", _set_state)
-    monkeypatch.setattr(
-        rotas.waba_oauth, "register_phone", AsyncMock(return_value=registrou)
+    update = AsyncMock()
+    register = AsyncMock(return_value=registrou)
+    sincronizar = AsyncMock(
+        return_value=sync
+        if sync is not None
+        else {"smb_app_state_sync": "r1", "history": "r2"}
     )
+    monkeypatch.setattr(rotas, "update_waba_fields", update)
+    monkeypatch.setattr(rotas, "set_connection_state", _set_state)
+    monkeypatch.setattr(rotas.waba_oauth, "register_phone", register)
     monkeypatch.setattr(
         rotas.waba_oauth, "subscribe_webhook", AsyncMock(return_value=inscreveu)
     )
+    monkeypatch.setattr(rotas.waba_oauth, "sincronizar_smb", sincronizar)
+    if mocks is not None:
+        mocks.update(update=update, register=register, sincronizar=sincronizar)
 
     await rotas._create_waba_conexao(
         None,
@@ -167,6 +183,7 @@ async def _criar_conexao_fake(monkeypatch, *, registrou: bool, inscreveu: bool):
         account_description=None,
         from_number="+5567999999999",
         register_phone=True,
+        waba_mode=waba_mode,
     )
     return estados
 
@@ -180,12 +197,132 @@ async def test_webhook_nao_assinado_nao_vira_conectada(monkeypatch):
     estados = await _criar_conexao_fake(monkeypatch, registrou=True, inscreveu=False)
     assert len(estados) == 1
     estado, mensagem = estados[0]
-    assert estado == "close"
+    # "error", não "close": o CHECK de connection_state (mig 128) recusa "close".
+    assert estado == "error"
     assert mensagem is not None and "webhooks" in mensagem
 
 
 async def test_numero_nao_registrado_nao_vira_conectada(monkeypatch):
     estados = await _criar_conexao_fake(monkeypatch, registrou=False, inscreveu=True)
     estado, mensagem = estados[0]
-    assert estado == "close"
+    # "error", não "close": o CHECK de connection_state (mig 128) recusa "close".
+    assert estado == "error"
     assert mensagem is not None and "registrado" in mensagem
+
+
+# --- Coexistence (mig 200): pula o /register e sincroniza smb_app_data ---
+
+
+async def test_cloud_api_registra_e_nao_sincroniza(monkeypatch):
+    mocks: dict = {}
+    estados = await _criar_conexao_fake(
+        monkeypatch, registrou=True, inscreveu=True, mocks=mocks
+    )
+    assert estados == [("open", None)]
+    mocks["register"].assert_awaited_once()
+    mocks["sincronizar"].assert_not_awaited()
+    assert mocks["update"].await_args.kwargs["waba_mode"] == "cloud_api"
+
+
+async def test_coexistence_nao_registra_e_sincroniza(monkeypatch):
+    mocks: dict = {}
+    estados = await _criar_conexao_fake(
+        monkeypatch,
+        registrou=True,
+        inscreveu=True,
+        waba_mode="coexistence",
+        mocks=mocks,
+    )
+    assert estados == [("open", None)]
+    # A Meta manda pular o register para número do WhatsApp Business app.
+    mocks["register"].assert_not_awaited()
+    mocks["sincronizar"].assert_awaited_once_with("tok", "phone-1")
+    assert mocks["update"].await_args.kwargs["waba_mode"] == "coexistence"
+
+
+async def test_coexistence_sync_falhou_fica_aberta_com_aviso(monkeypatch):
+    estados = await _criar_conexao_fake(
+        monkeypatch,
+        registrou=True,
+        inscreveu=True,
+        waba_mode="coexistence",
+        sync={"smb_app_state_sync": "r1", "history": None},
+    )
+    estado, mensagem = estados[0]
+    # Recebe e envia — só falta trazer contatos e histórico (rota sincronizar).
+    assert estado == "open"
+    assert mensagem is not None and "24 horas" in mensagem
+
+
+class TestSmokeSincronizar:
+    def test_sincronizar_requires_auth(self) -> None:
+        resp = _client().post("/api/conexoes/1/waba/sincronizar")
+        assert resp.status_code == 401, resp.text
+
+
+class TestSincronizarSmb:
+    """POST /{phone}/smb_app_data: contatos primeiro, depois histórico."""
+
+    @pytest.mark.respx
+    async def test_chama_os_dois_sync_types_em_ordem(self, respx_mock):
+        import json
+
+        from whatsapp_langchain.integrations.waba import oauth
+        from whatsapp_langchain.shared.config import settings
+
+        version = settings.waba_graph_api_version
+        rota = respx_mock.post(
+            f"https://graph.facebook.com/{version}/PHONE1/smb_app_data"
+        ).mock(
+            return_value=httpx.Response(
+                200, json={"messaging_product": "whatsapp", "request_id": "REQ"}
+            )
+        )
+        out = await oauth.sincronizar_smb("tok", "PHONE1")
+        assert out == {"smb_app_state_sync": "REQ", "history": "REQ"}
+        corpos = [json.loads(c.request.content) for c in rota.calls]
+        assert corpos == [
+            {"messaging_product": "whatsapp", "sync_type": "smb_app_state_sync"},
+            {"messaging_product": "whatsapp", "sync_type": "history"},
+        ]
+        assert rota.calls[0].request.headers["Authorization"] == "Bearer tok"
+
+    @pytest.mark.respx
+    async def test_falha_nao_levanta_e_nao_vaza_token(self, respx_mock, capsys):
+        from whatsapp_langchain.integrations.waba import oauth
+        from whatsapp_langchain.shared.config import settings
+
+        version = settings.waba_graph_api_version
+        respx_mock.post(
+            f"https://graph.facebook.com/{version}/PHONE1/smb_app_data"
+        ).mock(return_value=httpx.Response(400, json={"error": {"code": 100}}))
+        out = await oauth.sincronizar_smb("SEGREDO-TOKEN", "PHONE1")
+        assert out == {"smb_app_state_sync": None, "history": None}
+        assert "SEGREDO-TOKEN" not in capsys.readouterr().out
+
+
+class TestListPhoneNumbers:
+    @pytest.mark.respx
+    async def test_lista_os_numeros_da_waba(self, respx_mock):
+        from whatsapp_langchain.integrations.waba import oauth
+        from whatsapp_langchain.shared.config import settings
+
+        version = settings.waba_graph_api_version
+        respx_mock.get(
+            f"https://graph.facebook.com/{version}/WABA1/phone_numbers"
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "PH1",
+                            "display_phone_number": "+55 67 99999-8888",
+                            "verified_name": "Loja",
+                        }
+                    ]
+                },
+            )
+        )
+        numeros = await oauth.list_phone_numbers("tok", "WABA1")
+        assert [n.id for n in numeros] == ["PH1"]

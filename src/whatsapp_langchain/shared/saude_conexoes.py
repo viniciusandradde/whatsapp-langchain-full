@@ -89,10 +89,15 @@ TIPOS_LABEL: Final = {
 # Predicado canônico de "mensagem recebida do cliente" (o mesmo de
 # shared/atendimento_visualizacao.py). starts_with e não LIKE '%' — o
 # placeholder do psycopg confunde com % (tests/unit/test_sql_placeholders.py).
+#
+# Histórico importado do WhatsApp Business (Coexistence, mig 200) fica de fora:
+# entra com o `created_at` original, de até 180 dias atrás, e inflaria a régua
+# de atividade da conexão justamente nas horas em que ela ainda não existia.
 PREDICADO_INBOUND: Final = (
     "incoming_message IS NOT NULL AND incoming_message <> '' "
     "AND COALESCE(interna, FALSE) = FALSE "
-    "AND NOT starts_with(COALESCE(message_id, ''), 'synthetic:')"
+    "AND NOT starts_with(COALESCE(message_id, ''), 'synthetic:') "
+    "AND NOT starts_with(COALESCE(normalized_input, ''), 'historico:')"
 )
 
 _MOTIVO_CODIGO: Final = {

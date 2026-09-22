@@ -18,16 +18,26 @@ from fastapi.responses import PlainTextResponse
 
 from whatsapp_langchain.integrations.waba.client import download_media
 from whatsapp_langchain.integrations.waba.webhook import (
+    parse_account_updates,
+    parse_history,
     parse_inbound,
+    parse_message_echoes,
+    parse_state_sync,
     parse_template_status_updates,
     verify_signature,
 )
+from whatsapp_langchain.shared import waba_coexistence
+from whatsapp_langchain.shared.atendimento import open_or_attach_atendimento
+from whatsapp_langchain.shared.cliente import upsert_cliente
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_waba_phone_id,
     get_credentials_decrypted,
+    liberar_wamid,
+    reivindicar_wamid,
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
 
 logger = structlog.get_logger()
@@ -108,7 +118,11 @@ async def waba_webhook_post(
     Retorna 200 no happy path. Assinatura inválida/ausente → 200 com status
     `rejected` (não dá pra forçar Meta a desistir de payload forjado). Mas
     FALHA de enfileiramento → 5xx, pra Meta retentar e não perder a mensagem do
-    cliente (idempotência por message_id evita duplicar na redelivery).
+    cliente (o livro de wamid da mig 200 evita duplicar na redelivery).
+
+    Campos tratados: `messages` (cliente → IA), `message_template_status_update`
+    e, no modo Coexistence, `smb_message_echoes` (a empresa respondeu pelo
+    celular → pausa a IA), `history`, `smb_app_state_sync` e `account_update`.
     """
     body = await request.body()
 
@@ -158,6 +172,11 @@ async def waba_webhook_post(
 
     inbound_messages = parse_inbound(payload)
     template_updates = parse_template_status_updates(payload)
+    # Coexistence (mig 200): o que vem do WhatsApp Business do celular.
+    ecos = parse_message_echoes(payload)
+    historicos = parse_history(payload)
+    contatos = parse_state_sync(payload)
+    contas = parse_account_updates(payload)
 
     # Sem nada a processar, não toca o banco. A Meta entrega vários eventos que
     # não são mensagem nem status de template, e abrir conexão só para
@@ -167,12 +186,16 @@ async def waba_webhook_post(
     # event loop efêmero de um `TestClient` sem lifespan, onde cada request cria
     # e destrói o próprio portal do anyio — que então esperava para sempre por
     # tasks que ninguém ia fechar. Ver docs/MIGRACAO_DEV.md.
-    if not inbound_messages and not template_updates:
+    if not (
+        inbound_messages or template_updates or ecos or historicos or contatos or contas
+    ):
         logger.info("waba_webhook_sem_conteudo")
         return {"status": "received", "inbound_count": "0"}
 
     pool = await get_pool()
     enqueue_failed = False
+    # Tenant SEMPRE pelo `phone_number_id` do payload (ou `entry.id` no
+    # account_update) → conexão → empresa. Nenhum `empresa_id` vem da Meta.
     for msg in inbound_messages:
         conexao = await get_conexao_by_waba_phone_id(pool, msg.waba_phone_id)
         if conexao is None:
@@ -186,44 +209,72 @@ async def waba_webhook_post(
         # Sprint A.2 — seta RLS context da empresa após resolver conexão.
         set_request_context(conexao.empresa_id)
 
-        # Mídia inbound: baixa via Graph /{media_id} e embute como data-URL
-        # base64 (igual Evolution) — o worker já sabe processar data URLs
-        # (visão/transcrição). Best-effort: falha vira texto/caption.
-        media_url = await _resolve_waba_media_url(pool, conexao, msg)
-
-        # Agrupamento adaptativo (mig 144). Sem `atendimento` em mãos aqui, a
-        # detecção cai no sinal de `origem_resposta` — que já cobre coleta e
-        # CSAT, porque os handlers deles carimbam a row ao responder.
-        grouping_seconds = float(conexao.resposta_agrupamento_segundos)
-        is_guided_flow = grouping_seconds > 0 and await detectar_fluxo_guiado(
-            pool,
-            phone_number=msg.from_number,
-            agent_id=conexao.default_agent_id,
-        )
+        # Idempotência (mig 200): a Meta reentrega o lote inteiro depois de um
+        # 5xx. Reivindica o wamid antes; libera se falhar, para a reentrega
+        # processar. Antes os comentários prometiam ON CONFLICT e o INSERT era
+        # puro — um 503 duplicava todas as mensagens do lote.
+        if not await reivindicar_wamid(pool, msg.message_id):
+            logger.info("waba_webhook_duplicado", message_id=msg.message_id)
+            continue
 
         try:
-            await enqueue_or_buffer(
-                pool,
-                phone_number=msg.from_number,
-                agent_id=conexao.default_agent_id,
-                body=msg.text or msg.media_caption or f"[{msg.type}]",
-                empresa_id=conexao.empresa_id,
-                to_number=conexao.from_number,
-                message_id=msg.message_id,
-                conexao_id=conexao.id,
-                media_url=media_url,
-                media_type=msg.media_mime_type,
-                media_filename=msg.media_filename,
-                grouping_seconds=grouping_seconds,
-                grouping_max_seconds=settings.message_grouping_max_seconds,
-                is_guided_flow=is_guided_flow,
-            )
+            await _enfileirar_inbound(pool, conexao, msg)
         except Exception as exc:
             # NÃO engolir: marca falha e ao final retorna 5xx pra Meta retentar
             # (antes retornava 200 e a mensagem do cliente era perdida pra
-            # sempre numa falha transitória de DB). O enqueue é idempotente por
-            # message_id (ON CONFLICT DO NOTHING), então a redelivery é segura.
+            # sempre numa falha transitória de DB).
             logger.exception("waba_webhook_enqueue_failed", error=str(exc))
+            await liberar_wamid(pool, msg.message_id)
+            enqueue_failed = True
+
+    for eco in ecos:
+        conexao = await get_conexao_by_waba_phone_id(pool, eco.waba_phone_id)
+        if conexao is None:
+            logger.warning("waba_webhook_no_conexao", phone_id=eco.waba_phone_id)
+            continue
+        set_request_context(conexao.empresa_id)
+        if not await reivindicar_wamid(pool, eco.message_id):
+            logger.info("waba_webhook_duplicado", message_id=eco.message_id)
+            continue
+        try:
+            await waba_coexistence.registrar_eco(pool, conexao, eco)
+        except Exception as exc:
+            logger.exception("waba_coexistence_echo_failed", error=str(exc))
+            await liberar_wamid(pool, eco.message_id)
+            enqueue_failed = True
+
+    for lote in historicos:
+        conexao = await get_conexao_by_waba_phone_id(pool, lote.waba_phone_id)
+        if conexao is None:
+            logger.warning("waba_webhook_no_conexao", phone_id=lote.waba_phone_id)
+            continue
+        set_request_context(conexao.empresa_id)
+        try:
+            # Deduplica por wamid dentro da própria transação de gravação.
+            await waba_coexistence.importar_historico(pool, conexao, lote)
+        except Exception as exc:
+            logger.exception("waba_coexistence_history_failed", error=str(exc))
+            enqueue_failed = True
+
+    for contato in contatos:
+        conexao = await get_conexao_by_waba_phone_id(pool, contato.waba_phone_id)
+        if conexao is None:
+            logger.warning("waba_webhook_no_conexao", phone_id=contato.waba_phone_id)
+            continue
+        set_request_context(conexao.empresa_id)
+        try:
+            await waba_coexistence.sincronizar_contato(pool, conexao, contato)
+        except Exception as exc:
+            logger.exception("waba_coexistence_state_sync_failed", error=str(exc))
+            enqueue_failed = True
+    if contatos:
+        logger.info("waba_coexistence_state_sync", contatos=len(contatos))
+
+    for conta in contas:
+        try:
+            await waba_coexistence.processar_account_update(pool, conta)
+        except Exception as exc:
+            logger.exception("waba_coexistence_account_update_failed", error=str(exc))
             enqueue_failed = True
 
     # Updates de template status (já lidos acima, junto do inbound)
@@ -257,13 +308,106 @@ async def waba_webhook_post(
         logger.info(
             "waba_template_status_updated",
             template_id=upd.get("meta_template_id"),
-            event=event,
+            evento=event,  # `event` é o 1º argumento do structlog
             new_status=new_status,
         )
 
     if enqueue_failed:
-        # 5xx → Meta redelivera o webhook inteiro; idempotência por message_id
-        # garante que os inbound já enfileirados não dupliquem.
+        # 5xx → Meta redelivera o webhook inteiro; o livro de wamid (mig 200)
+        # garante que o que já entrou não duplique.
         raise HTTPException(status_code=503, detail="enqueue failed; retry")
 
     return {"status": "received", "inbound_count": str(len(inbound_messages))}
+
+
+async def _enfileirar_inbound(pool, conexao, msg) -> None:
+    """Mensagem do cliente → cliente + atendimento + fila (vai ao worker).
+
+    Abre cliente/atendimento como o webhook da Evolution: sem isso a mensagem
+    WABA entrava com `atendimento_id` NULL — não aparecia na fila de
+    atendimento, não notificava e pulava menu e handoff no worker.
+    """
+    # Mídia inbound: baixa via Graph /{media_id} e embute como data-URL
+    # base64 (igual Evolution) — o worker já sabe processar data URLs
+    # (visão/transcrição). Best-effort: falha vira texto/caption.
+    media_url = await _resolve_waba_media_url(pool, conexao, msg)
+
+    agente = conexao.default_agent_id
+    cliente = await upsert_cliente(
+        pool, conexao.empresa_id, msg.from_number, nome=msg.profile_name
+    )
+    atendimento, atendimento_aberto = await open_or_attach_atendimento(
+        pool,
+        empresa_id=conexao.empresa_id,
+        cliente_id=cliente.id,
+        conexao_id=conexao.id,
+        agente=agente,
+        conexao=conexao,  # snapshot do canal (mig 129)
+    )
+
+    # Agrupamento adaptativo (mig 144).
+    grouping_seconds = float(conexao.resposta_agrupamento_segundos)
+    is_guided_flow = grouping_seconds > 0 and await detectar_fluxo_guiado(
+        pool,
+        phone_number=msg.from_number,
+        agent_id=agente,
+        atendimento=atendimento,
+    )
+
+    body = msg.text or msg.media_caption or f"[{msg.type}]"
+    await enqueue_or_buffer(
+        pool,
+        phone_number=msg.from_number,
+        agent_id=agente,
+        body=body,
+        empresa_id=conexao.empresa_id,
+        to_number=conexao.from_number,
+        message_id=msg.message_id,
+        conexao_id=conexao.id,
+        atendimento_id=atendimento.id,
+        media_url=media_url,
+        media_type=msg.media_mime_type,
+        media_filename=msg.media_filename,
+        grouping_seconds=grouping_seconds,
+        grouping_max_seconds=settings.message_grouping_max_seconds,
+        is_guided_flow=is_guided_flow,
+    )
+    logger.info(
+        "webhook_waba_received",
+        empresa_id=conexao.empresa_id,
+        conexao_id=conexao.id,
+        cliente_id=cliente.id,
+        atendimento_id=atendimento.id,
+        atendimento_aberto=atendimento_aberto,
+        message_id=msg.message_id,
+        waba_mode=conexao.waba_mode,
+    )
+
+    if atendimento_aberto:
+        await dispatch_event(
+            pool,
+            conexao.empresa_id,
+            "atendimento.aberto",
+            {
+                "atendimento_id": atendimento.id,
+                "cliente_id": cliente.id,
+                "cliente_telefone": cliente.telefone,
+                "cliente_nome": cliente.nome,
+                "conexao_id": conexao.id,
+                "agente_atual": atendimento.agente_atual,
+            },
+        )
+    await dispatch_event(
+        pool,
+        conexao.empresa_id,
+        "mensagem.recebida",
+        {
+            "atendimento_id": atendimento.id,
+            "cliente_id": cliente.id,
+            "cliente_telefone": cliente.telefone,
+            "message_sid": msg.message_id,
+            "body": body,
+            "num_media": 1 if media_url else 0,
+            "media_type": msg.media_mime_type,
+        },
+    )

@@ -35,7 +35,7 @@ _SELECT_COLS = (
     "connection_state, state_message, qr_code, qr_expires_at, "
     "ultimo_health_check_at, ultimo_health_check_ok, webhook_verify_token, "
     "daily_send_cap, warmup_started_at, resposta_agrupamento_segundos, "
-    "transcrever_audio_sempre"
+    "transcrever_audio_sempre, waba_mode"
 )
 
 
@@ -70,6 +70,7 @@ def _row_to_conexao(row) -> Conexao:
         warmup_started_at=row[26],
         resposta_agrupamento_segundos=row[27] if row[27] is not None else 8,
         transcrever_audio_sempre=bool(row[28]),
+        waba_mode=row[29] or "cloud_api",
     )
 
 
@@ -270,6 +271,33 @@ async def get_conexao_by_waba_phone_id(
             )
             row = await cur.fetchone()
     return _row_to_conexao(row) if row else None
+
+
+async def list_conexoes_by_waba_account_id(
+    pool: AsyncConnectionPool, waba_account_id: str
+) -> list[Conexao]:
+    """Conexões WABA ativas de uma WABA (`entry.id` do webhook).
+
+    Para eventos sem `phone_number_id`, como o `account_update`. Bypass RLS
+    pelo mesmo motivo de `get_conexao_by_waba_phone_id`: é o lookup que
+    descobre a empresa.
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    if not waba_account_id:
+        return []
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                f"""
+                SELECT {_SELECT_COLS} FROM conexao
+                 WHERE provider = 'waba' AND waba_account_id = %s
+                   AND status = 'active'
+                """,
+                (waba_account_id,),
+            )
+            rows = await cur.fetchall()
+    return [_row_to_conexao(r) for r in rows]
 
 
 async def upsert_conexao(
@@ -726,8 +754,12 @@ async def update_waba_fields(
     waba_account_description: str | None = None,
     webhook_verify_token: str | None = None,
     from_number: str | None = None,
+    waba_mode: str | None = None,
 ) -> None:
-    """Salva config WABA específica após embedded signup."""
+    """Salva config WABA específica após embedded signup.
+
+    `waba_mode` (mig 200) só muda quando informado — `None` preserva o atual.
+    """
     async with pool.connection() as conn:
         await conn.execute(
             """
@@ -738,6 +770,7 @@ async def update_waba_fields(
                    waba_account_description = COALESCE(%s, waba_account_description),
                    webhook_verify_token = COALESCE(%s, webhook_verify_token),
                    from_number = COALESCE(%s, from_number),
+                   waba_mode = COALESCE(%s, waba_mode),
                    updated_at = NOW()
              WHERE id = %s
             """,
@@ -748,9 +781,42 @@ async def update_waba_fields(
                 waba_account_description,
                 webhook_verify_token,
                 from_number,
+                waba_mode,
                 conexao_id,
             ),
         )
+
+
+async def reivindicar_wamid(pool: AsyncConnectionPool, wamid: str) -> bool:
+    """Reivindica o wamid no livro de idempotência do webhook WABA (mig 200).
+
+    True = primeira vez, pode processar. False = já processado (ou outra
+    entrega simultânea chegou antes) — pular. Quem reivindicou e falhou chama
+    `liberar_wamid` antes de devolver 5xx, para a reentrega da Meta processar.
+    wamid vazio sempre pode processar (não há como deduplicar).
+    """
+    if not wamid:
+        return True
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "INSERT INTO waba_wamid_processado (wamid) VALUES (%s)"
+            " ON CONFLICT (wamid) DO NOTHING RETURNING wamid",
+            (wamid,),
+        )
+        return await cur.fetchone() is not None
+
+
+async def liberar_wamid(pool: AsyncConnectionPool, wamid: str) -> None:
+    """Desfaz `reivindicar_wamid` quando o processamento falhou."""
+    if not wamid:
+        return
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                "DELETE FROM waba_wamid_processado WHERE wamid = %s", (wamid,)
+            )
+    except Exception as exc:  # noqa: BLE001 — o 5xx sai de qualquer jeito
+        logger.warning("waba_wamid_liberar_falhou", wamid=wamid, error=str(exc))
 
 
 def mask_sensitive(conexao: Conexao) -> Conexao:

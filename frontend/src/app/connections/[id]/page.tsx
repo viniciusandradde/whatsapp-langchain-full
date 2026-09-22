@@ -7,6 +7,7 @@ import { getConexao } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { ReconectarButton } from "../reconectar-button";
+import { SincronizarButton } from "./sincronizar-button";
 import { AntiBanPanel } from "./anti-ban-panel";
 import { RespostaPanel } from "./resposta-panel";
 import { TranscricaoPanel } from "./transcricao-panel";
@@ -124,6 +125,16 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
             initial={conexao.tipo_atendimento || "ia"}
           />
           <Field label="Padrão" value={conexao.is_default ? "Sim" : "Não"} />
+          {isWABA && (
+            <Field
+              label="Modo"
+              value={
+                conexao.waba_mode === "coexistence"
+                  ? "WhatsApp Business + ChatNexus (Coexistência)"
+                  : "WhatsApp Cloud API"
+              }
+            />
+          )}
           {isWABA && conexao.waba_account_id && (
             <>
               <Field label="WABA Account" value={conexao.waba_account_description || conexao.waba_account_id} />
@@ -145,6 +156,10 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-300">
             {conexao.state_message}
           </div>
+        )}
+
+        {isWABA && conexao.waba_mode === "coexistence" && (
+          <SincronizarButton conexaoId={conexao.id} />
         )}
       </div>
 

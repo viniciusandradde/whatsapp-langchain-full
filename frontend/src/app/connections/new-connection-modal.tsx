@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Cloud, Smartphone, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import type { WabaModo } from "@/lib/api";
 
 import { EvolutionQRModal } from "./evolution-qr-modal";
 import { WabaOAuthButton } from "./waba-oauth-button";
@@ -17,6 +20,8 @@ type Step = "pick" | "waba" | "evolution";
 export function NewConnectionModal({ onClose }: Props) {
   const [step, setStep] = useState<Step>("pick");
   const [wabaError, setWabaError] = useState<string | null>(null);
+  const [wabaModo, setWabaModo] = useState<WabaModo>("cloud_api");
+  const id = useId();
 
   if (step === "evolution") {
     return (
@@ -69,12 +74,65 @@ export function NewConnectionModal({ onClose }: Props) {
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Conexão via Meta WhatsApp Cloud API (Embedded Signup). 1
-                  clique, sem QR. Suporta templates aprovados e mensagens
-                  fora da janela 24h.
+                  Conexão oficial da Meta, sem QR. Suporta modelos de
+                  mensagem aprovados e mensagens fora da janela de 24 horas.
                 </p>
+                <RadioGroup
+                  value={wabaModo}
+                  onValueChange={(v) => {
+                    setWabaModo(v as WabaModo);
+                    setWabaError(null);
+                  }}
+                  className="mt-3 gap-3"
+                  aria-label="Como o número vai ser usado"
+                >
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem
+                      value="cloud_api"
+                      id={`${id}-cloud`}
+                      className="mt-0.5"
+                    />
+                    <Label
+                      htmlFor={`${id}-cloud`}
+                      className="flex-col items-start gap-0.5 font-normal"
+                    >
+                      <span className="font-medium">WhatsApp Cloud API</span>
+                      <span className="text-xs text-muted-foreground">
+                        Número dedicado à API oficial.
+                      </span>
+                    </Label>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <RadioGroupItem
+                      value="coexistence"
+                      id={`${id}-coex`}
+                      className="mt-0.5"
+                    />
+                    <Label
+                      htmlFor={`${id}-coex`}
+                      className="flex-col items-start gap-0.5 font-normal"
+                    >
+                      <span className="font-medium">
+                        WhatsApp Business + ChatNexus
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Continue usando o WhatsApp Business no celular enquanto
+                        o ChatNexus processa as conversas.
+                      </span>
+                    </Label>
+                  </div>
+                </RadioGroup>
+                {wabaModo === "coexistence" && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    O número precisa atender aos requisitos atuais da Meta para
+                    WhatsApp Business Coexistence. Quando você responder pelo
+                    celular, a IA para naquela conversa até alguém clicar em
+                    &quot;Devolver à IA&quot;.
+                  </p>
+                )}
                 <div className="mt-3">
                   <WabaOAuthButton
+                    modo={wabaModo}
                     onSuccess={() => onClose(true)}
                     onError={(e) => setWabaError(e)}
                   />

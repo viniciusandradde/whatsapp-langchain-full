@@ -231,6 +231,7 @@ export interface EmpresasResponse {
 }
 
 export type ConexaoProvider = "waba" | "evolution";
+export type WabaModo = "cloud_api" | "coexistence";
 export type ConexaoStatus = "active" | "disabled" | "error";
 
 export type ConnectionState =
@@ -262,6 +263,9 @@ export interface Conexao {
   waba_phone_id?: string | null;
   waba_app_id?: string | null;
   waba_account_description?: string | null;
+  // Mig 200: `coexistence` = o cliente segue usando o WhatsApp Business no
+  // celular enquanto o ChatNexus processa as conversas.
+  waba_mode?: WabaModo;
   connection_state?: ConnectionState;
   state_message?: string | null;
   qr_code?: string | null;
@@ -1642,9 +1646,11 @@ export async function getWabaConfig(): Promise<WabaConfig> {
 export interface WabaEmbeddedSignupInput {
   code: string;
   waba_account_id: string;
-  phone_number_id: string;
+  // Opcional só em Coexistence: o evento da Meta traz só o `waba_id`.
+  phone_number_id?: string | null;
   display_name?: string | null;
   register_phone?: boolean;
+  waba_mode?: WabaModo;
 }
 
 export async function wabaEmbeddedSignup(
@@ -1653,6 +1659,12 @@ export async function wabaEmbeddedSignup(
   return apiFetch<Conexao>("/api/conexoes/waba/embedded-signup", {
     method: "POST",
     body,
+  });
+}
+
+export async function wabaSincronizar(id: number): Promise<Conexao> {
+  return apiFetch<Conexao>(`/api/conexoes/${id}/waba/sincronizar`, {
+    method: "POST",
   });
 }
 
