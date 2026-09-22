@@ -239,11 +239,14 @@ async def saude_funcoes(
 
     with empresa_scope(None, bypass=True):
         async with pool.connection() as conn:
+            # O que o worker usa de fato (`resolver_modelo_efetivo`), não a
+            # coluna legada — o painel "em uso" listava modelos de agosto.
+            from whatsapp_langchain.shared.agente import SQL_MODELO_EFETIVO
+
             cur = await conn.execute(
-                "SELECT DISTINCT modelo FROM agente_ia "
-                "WHERE ativo AND modelo IS NOT NULL AND modelo <> ''"
+                f"SELECT DISTINCT {SQL_MODELO_EFETIVO} FROM agente_ia WHERE ativo"
             )
-            modelos_agentes = [str(r[0]) for r in await cur.fetchall()]
+            modelos_agentes = [str(r[0]) for r in await cur.fetchall() if r[0]]
 
     # As 4 funções e quem as serve de fato. Documentos = OCR usa o modelo de
     # mídia; PDF/DOCX/XLSX são extraídos localmente sem LLM (mig 164).

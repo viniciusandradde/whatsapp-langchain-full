@@ -3718,7 +3718,10 @@ export interface AgenteIA {
   descricao: string | null;
   template_catalog: string;
   prompt_override: string | null;
+  /** Coluna legada — pode estar parada. O que o worker usa é `modelo_efetivo`. */
   modelo: string | null;
+  /** `provedor/nome` do seletor, senão o legado: o modelo que responde de fato. */
+  modelo_efetivo: string | null;
   estilo_resposta: EstiloResposta;
   temperatura_override: number | null;
   max_tokens: number | null;
