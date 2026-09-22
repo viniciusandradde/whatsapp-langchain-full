@@ -60,6 +60,28 @@ class DuplicateAgenteError(ValueError):
     """Slug já existe na empresa."""
 
 
+def resolver_modelo_efetivo(
+    modelo_provedor: str | None, modelo_nome: str | None, modelo: str | None
+) -> str | None:
+    """Regra ÚNICA de "qual modelo este agente usa": `provedor/nome` quando os
+    dois existem (é o que o seletor da ADR-004 grava), senão a coluna legada
+    `modelo`. Worker (`AgenteRuntime`), API (`to_dict`) e Saúde de IA
+    (`SQL_MODELO_EFETIVO`) têm que concordar — até 22/09/2026 a lista de
+    agentes lia só a legada, parada desde 22/08, e mostrava um modelo que
+    nenhum turno usava."""
+    if modelo_provedor and modelo_nome:
+        return f"{modelo_provedor}/{modelo_nome}"
+    return modelo or None
+
+
+# A mesma regra em SQL, para consultas que varrem `agente_ia` sem montar o
+# dataclass (Saúde de IA, painel "em uso"). Sem `%` de propósito (psycopg).
+SQL_MODELO_EFETIVO = (
+    "CASE WHEN COALESCE(modelo_provedor, '') <> '' AND COALESCE(modelo_nome, '') <> '' "
+    "THEN modelo_provedor || '/' || modelo_nome ELSE modelo END"
+)
+
+
 _COLS = (
     "id, empresa_id, slug, nome, descricao, template_catalog, "
     "prompt_override, modelo, estilo_resposta, temperatura_override, "
@@ -131,6 +153,13 @@ class AgenteIA:
     # NULL = legado (o worker segue no TRIM_KEEP_TURNS global / janela_memoria).
     contexto_tamanho: str | None = None
 
+    @property
+    def modelo_efetivo(self) -> str | None:
+        """O modelo que o worker usa de fato — ver `resolver_modelo_efetivo`."""
+        return resolver_modelo_efetivo(
+            self.modelo_provedor, self.modelo_nome, self.modelo
+        )
+
     def to_dict(self) -> dict:
         out = {
             "id": self.id,
@@ -141,6 +170,8 @@ class AgenteIA:
             "template_catalog": self.template_catalog,
             "prompt_override": self.prompt_override,
             "modelo": self.modelo,
+            # O que o worker usa (lista e status do painel leem ISTO, não `modelo`).
+            "modelo_efetivo": self.modelo_efetivo,
             "estilo_resposta": self.estilo_resposta,
             "temperatura_override": (
                 float(self.temperatura_override)
@@ -779,6 +810,33 @@ async def update_agente(
 
     if not sets:
         return await get_agente_by_slug(pool, empresa_id, slug)
+
+    # A coluna legada `modelo` acompanha o modelo efetivo sempre que o seletor
+    # grava provedor/nome: quem ainda a lê (exports, relatórios antigos, painel
+    # "em uso") vê o que o worker usa. Até 22/09/2026 ela parava no último save
+    # do fallback curado (22/08) e a lista de agentes mostrava esse fóssil.
+    # Num SET, `modelo_provedor`/`modelo_nome` sem parâmetro são o valor ANTIGO
+    # da linha — o valor novo entra como parâmetro quando veio no patch. Não
+    # entra quando o patch já traz `modelo` (dois SETs na mesma coluna é erro).
+    if (
+        "modelo_provedor" in fields or "modelo_nome" in fields
+    ) and "modelo" not in fields:
+        prov_sql = "%s" if "modelo_provedor" in fields else "modelo_provedor"
+        nome_sql = "%s" if "modelo_nome" in fields else "modelo_nome"
+        sets.append(
+            f"modelo = CASE WHEN COALESCE({prov_sql}, '') <> '' "
+            f"AND COALESCE({nome_sql}, '') <> '' "
+            f"THEN {prov_sql} || '/' || {nome_sql} ELSE modelo END"
+        )
+        for expr, chave in (
+            (prov_sql, "modelo_provedor"),
+            (nome_sql, "modelo_nome"),
+            (prov_sql, "modelo_provedor"),
+            (nome_sql, "modelo_nome"),
+        ):
+            if expr == "%s":
+                params.append(fields[chave])
+
     sets.append("updated_at = NOW()")
     params.extend([empresa_id, slug])
 
@@ -910,14 +968,9 @@ class AgenteRuntime:
             else None,
             float(agente.top_p_override) if agente.top_p_override is not None else None,
         )
-        # Resolve modelo efetivo: provedor + nome separados (mig 043) OU
-        # modelo único legado. Provedor + nome ganha precedência se ambos
-        # preenchidos (cobre o caso pós-backfill).
-        modelo_efetivo: str | None
-        if agente.modelo_provedor and agente.modelo_nome:
-            modelo_efetivo = f"{agente.modelo_provedor}/{agente.modelo_nome}"
-        else:
-            modelo_efetivo = agente.modelo
+        # Modelo efetivo: provedor + nome (mig 043) OU o único legado — a regra
+        # mora em `resolver_modelo_efetivo`, a mesma que a API serializa.
+        modelo_efetivo = agente.modelo_efetivo
         return cls(
             slug=agente.slug,
             template_catalog=agente.template_catalog,

@@ -208,3 +208,141 @@ class TestAgenteRuntimeFromAgente:
         rt.base_conhecimento_ids.append(99)
         assert agente.tools_enabled == ["a", "b"]
         assert agente.base_conhecimento_ids == [1, 2]
+
+
+class TestModeloEfetivo:
+    """`resolver_modelo_efetivo` é a regra ÚNICA de "qual modelo o agente usa".
+
+    Até 22/09/2026 a lista de agentes lia `agente_ia.modelo` (legada, parada
+    desde 22/08) enquanto editor e worker liam `modelo_provedor/modelo_nome`:
+    o card da VSA dizia gemini-2.5-flash-lite e nenhum turno usava isso.
+    """
+
+    def test_provedor_e_nome_vencem_a_legada(self):
+        from whatsapp_langchain.shared.agente import resolver_modelo_efetivo
+
+        assert (
+            resolver_modelo_efetivo("deepseek", "deepseek-v4.1-flash", "google/x")
+            == "deepseek/deepseek-v4.1-flash"
+        )
+
+    def test_sem_par_completo_cai_na_legada(self):
+        from whatsapp_langchain.shared.agente import resolver_modelo_efetivo
+
+        assert (
+            resolver_modelo_efetivo("google", None, "google/legado") == "google/legado"
+        )
+        assert resolver_modelo_efetivo(None, "nome", "google/legado") == "google/legado"
+        assert resolver_modelo_efetivo("", "", "google/legado") == "google/legado"
+
+    def test_nada_preenchido_e_none(self):
+        from whatsapp_langchain.shared.agente import resolver_modelo_efetivo
+
+        assert resolver_modelo_efetivo(None, None, None) is None
+        assert resolver_modelo_efetivo(None, None, "") is None
+
+    def test_to_dict_e_runtime_concordam(self):
+        from whatsapp_langchain.shared.agente import AgenteRuntime
+
+        agente = _make_agente(
+            modelo="google/gemini-2.5-flash-lite",
+            modelo_provedor="deepseek",
+            modelo_nome="deepseek-v4.1-flash",
+        )
+        assert agente.modelo_efetivo == "deepseek/deepseek-v4.1-flash"
+        assert agente.to_dict()["modelo_efetivo"] == "deepseek/deepseek-v4.1-flash"
+        # A legada continua exposta crua — quem quiser ver o fóssil, vê.
+        assert agente.to_dict()["modelo"] == "google/gemini-2.5-flash-lite"
+        assert (
+            AgenteRuntime.from_agente(agente).modelo == "deepseek/deepseek-v4.1-flash"
+        )
+
+    def test_sql_da_regra_nao_tem_porcento(self):
+        # `%` em SQL literal quebra o psycopg (gotcha do repo).
+        from whatsapp_langchain.shared.agente import SQL_MODELO_EFETIVO
+
+        assert "%" not in SQL_MODELO_EFETIVO
+        assert "modelo_provedor || '/' || modelo_nome" in SQL_MODELO_EFETIVO
+
+
+def _pool_update_capturando():
+    """Pool falso: captura o UPDATE do `update_agente` sem banco."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    cur = AsyncMock()
+    cur.fetchone = AsyncMock(return_value=None)
+    conn = MagicMock()
+    conn.execute = AsyncMock(return_value=cur)
+    conn.transaction.return_value.__aenter__ = AsyncMock(return_value=None)
+    conn.transaction.return_value.__aexit__ = AsyncMock(return_value=None)
+    pool = MagicMock()
+    pool.connection.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.connection.return_value.__aexit__ = AsyncMock(return_value=None)
+    return pool, conn
+
+
+class TestUpdateAgenteSincronizaModeloLegado:
+    """O PUT com provedor/nome também grava a coluna legada `modelo`."""
+
+    async def test_provedor_e_nome_no_patch_entram_como_parametro(self):
+        from whatsapp_langchain.shared.agente import update_agente
+
+        pool, conn = _pool_update_capturando()
+        await update_agente(
+            pool, 1, "vendas", modelo_provedor="deepseek", modelo_nome="deepseek-v3.2"
+        )
+        sql, params = conn.execute.call_args.args
+        sql = str(sql)
+        assert (
+            "modelo = CASE WHEN COALESCE(%s, '') <> '' AND COALESCE(%s, '') <> ''"
+            in sql
+        )
+        assert "THEN %s || '/' || %s ELSE modelo END" in sql
+        # provedor, nome (SET normais) + prov, nome, prov, nome (CASE) + empresa, slug
+        assert list(params) == [
+            "deepseek",
+            "deepseek-v3.2",
+            "deepseek",
+            "deepseek-v3.2",
+            "deepseek",
+            "deepseek-v3.2",
+            1,
+            "vendas",
+        ]
+
+    async def test_so_o_nome_no_patch_usa_o_provedor_gravado(self):
+        from whatsapp_langchain.shared.agente import update_agente
+
+        pool, conn = _pool_update_capturando()
+        await update_agente(pool, 1, "vendas", modelo_nome="gemini-2.5-flash")
+        sql, params = conn.execute.call_args.args
+        sql = str(sql)
+        # O valor ANTIGO da coluna é o que o SET enxerga sem parâmetro.
+        assert "COALESCE(modelo_provedor, '') <> '' AND COALESCE(%s, '') <> ''" in sql
+        assert "THEN modelo_provedor || '/' || %s ELSE modelo END" in sql
+        assert list(params) == [
+            "gemini-2.5-flash",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash",
+            1,
+            "vendas",
+        ]
+
+    async def test_patch_com_modelo_legado_explicito_nao_duplica_o_set(self):
+        from whatsapp_langchain.shared.agente import update_agente
+
+        pool, conn = _pool_update_capturando()
+        await update_agente(
+            pool, 1, "vendas", modelo="google/gemini-2.5-flash-lite", modelo_nome="x"
+        )
+        sql = str(conn.execute.call_args.args[0])
+        assert sql.count("modelo = ") == 1
+        assert "CASE WHEN" not in sql
+
+    async def test_patch_sem_modelo_nao_mexe_na_legada(self):
+        from whatsapp_langchain.shared.agente import update_agente
+
+        pool, conn = _pool_update_capturando()
+        await update_agente(pool, 1, "vendas", nome="Vendas SP")
+        sql = str(conn.execute.call_args.args[0])
+        assert "modelo" not in sql.split("WHERE")[0].replace("modelo_", "")

@@ -43,7 +43,7 @@ interface Pendencia {
  */
 function diagnosticar(a: {
   ativo: boolean;
-  modelo: string | null;
+  modelo_efetivo: string | null;
   base_conhecimento_ids: number[];
 }): Pendencia[] {
   const out: Pendencia[] = [];
@@ -54,7 +54,9 @@ function diagnosticar(a: {
       grave: true,
     });
   }
-  if (!a.modelo) {
+  // `modelo_efetivo`, não `modelo`: a legada parou em 22/08 e dizia que o
+  // agente da VSA rodava um modelo que nenhum turno usava.
+  if (!a.modelo_efetivo) {
     out.push({
       icon: CpuIcon,
       texto: "Sem modelo de IA definido",
@@ -206,7 +208,7 @@ export default async function AgentsPage() {
                       </p>
                     )}
                     <p className="text-muted-foreground">
-                      {a.modelo ?? "sem modelo"}
+                      {a.modelo_efetivo ?? "sem modelo"}
                     </p>
                   </CardContent>
                   <CardFooter className="gap-2">
