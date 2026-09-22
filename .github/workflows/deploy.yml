@@ -53,6 +53,9 @@ jobs:
             backend:
               - 'src/**'
               - 'db/**'
+              # `Dockerfile.api` copia `scripts/` para a imagem: script novo sem
+              # rebuild não existe em produção (backfill da mídia, 22/09/2026).
+              - 'scripts/**'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'Dockerfile.api'
@@ -68,6 +71,7 @@ jobs:
               - 'Dockerfile.tests'
               - 'src/**'
               - 'db/**'
+              - 'scripts/**'
               - 'pyproject.toml'
               - 'uv.lock'
 
