@@ -206,8 +206,11 @@ async def register_phone(
 ) -> bool:
     """Registra o número no WABA Cloud (necessário pra enviar mensagens).
 
-    PIN é usado se 2FA tava habilitado no número antes. Pra novos números,
-    omitir (Meta gera PIN automaticamente).
+    A Meta EXIGE `pin` (6 dígitos): ele vira a verificação em duas etapas do
+    número, e um novo registro do mesmo número tem de repetir o MESMO PIN.
+    Limite da Meta: 10 registros por número a cada 72 h. O comentário antigo
+    dizia "omitir, a Meta gera" — não é o que a doc diz (conferido 23/09/2026,
+    "Register a business phone number"). O PIN nunca vai para log.
 
     POST /{phone_id}/register
     """

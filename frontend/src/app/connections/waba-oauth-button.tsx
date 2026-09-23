@@ -12,6 +12,9 @@ interface Props {
   displayName?: string;
   /** `coexistence` abre o subfluxo do WhatsApp Business app na Meta. */
   modo?: WabaModo;
+  /** PIN de 6 dígitos do registro (Cloud API). Sem ele o botão fica travado:
+   *  o código da Meta vale 30 s, então o PIN tem de existir ANTES do popup. */
+  pin?: string;
   onSuccess?: () => void;
   onError?: (error: string) => void;
 }
@@ -54,6 +57,7 @@ const FB_SDK_SRC = "https://connect.facebook.net/en_US/sdk.js";
 export function WabaOAuthButton({
   displayName,
   modo = "cloud_api",
+  pin = "",
   onSuccess,
   onError,
 }: Props) {
@@ -77,11 +81,13 @@ export function WabaOAuthButton({
   const onSuccessRef = useRef(onSuccess);
   const displayNameRef = useRef(displayName);
   const modoRef = useRef(modo);
+  const pinRef = useRef(pin);
   useEffect(() => {
     onErrorRef.current = onError;
     onSuccessRef.current = onSuccess;
     displayNameRef.current = displayName;
     modoRef.current = modo;
+    pinRef.current = pin;
   });
 
   // 1) Carrega FB SDK + config — SÓ no mount (deps vazias)
@@ -202,6 +208,7 @@ export function WabaOAuthButton({
             display_name: displayNameRef.current || null,
             register_phone: !coexistence,
             waba_mode: modoRef.current,
+            pin: coexistence ? null : pinRef.current,
           });
           setBusy(false);
           if (r.ok) onSuccessRef.current?.();
@@ -227,7 +234,12 @@ export function WabaOAuthButton({
   return (
     <Button
       onClick={handleClick}
-      disabled={busy || !sdkReady || indisponivel}
+      disabled={
+        busy ||
+        !sdkReady ||
+        indisponivel ||
+        (modo === "cloud_api" && !/^\d{6}$/.test(pin))
+      }
       className="gap-2"
     >
       {(busy || (!sdkReady && !indisponivel)) && (
