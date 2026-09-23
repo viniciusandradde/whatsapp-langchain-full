@@ -234,6 +234,7 @@ por redirect. Continuam registrados, mas o caminho oficial é o Embedded Signup
 |---|---|
 | `GET /api/conexoes/waba/config` | Frontend pega `app_id`+`config_id` pro FB.init (sem secret) |
 | `POST /api/conexoes/waba/embedded-signup` | Recebe `{code, waba_account_id, phone_number_id?, waba_mode}` → cria conexão (`phone_number_id` é opcional só em Coexistence) |
+| `POST /api/conexoes/waba/manual` | Conexão manual (como o Chatwoot): `{phone_number_id, waba_account_id, access_token, display_name?}` — valida na Meta (`GET /{phone}` + `GET /{waba}/phone_numbers`), **não registra** o número (já está ativo na API), assina o webhook da conta. Token de usuário do sistema com acesso ao App do ChatNexus (App próprio por empresa: ADR-006) |
 | `POST /api/conexoes/{id}/waba/sincronizar` | Coexistence: repete o pedido de contatos + histórico (`smb_app_data`) em até 24 h |
 | `GET/POST /webhook/waba` | Handshake (verify token) + mensagens, status de templates e, em Coexistence, eco do celular, histórico, contatos e desconexão |
 | `/api/conexoes/{id}/templates` | Templates HSM (após conexão criada). Desde a mig `113`, templates HSM aprovados são **enviáveis** via campanha (selector no form) e via composer do `/atendimento` |

@@ -10,6 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { WabaModo } from "@/lib/api";
 
 import { EvolutionQRModal } from "./evolution-qr-modal";
+import { WabaManualForm } from "./waba-manual-form";
 import { WabaOAuthButton } from "./waba-oauth-button";
 
 interface Props {
@@ -23,6 +24,7 @@ export function NewConnectionModal({ onClose }: Props) {
   const [wabaError, setWabaError] = useState<string | null>(null);
   const [wabaModo, setWabaModo] = useState<WabaModo>("cloud_api");
   const [pin, setPin] = useState("");
+  const [manual, setManual] = useState(false);
   const id = useId();
 
   if (step === "evolution") {
@@ -166,6 +168,15 @@ export function NewConnectionModal({ onClose }: Props) {
                 {wabaError && (
                   <p className="mt-2 text-xs text-rose-400">{wabaError}</p>
                 )}
+                <button
+                  type="button"
+                  className="mt-3 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setManual((v) => !v)}
+                  aria-expanded={manual}
+                >
+                  Conectar manualmente (ID do número + token)
+                </button>
+                {manual && <WabaManualForm onSuccess={() => onClose(true)} />}
               </div>
             </div>
           </div>

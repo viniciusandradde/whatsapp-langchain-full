@@ -21,6 +21,7 @@ import {
   wabaOAuthResult,
   wabaOAuthStart,
   wabaSincronizar,
+  wabaManual,
   type ConexaoInput,
   type ConexaoPatchInput,
   type ConexaoQuota,
@@ -28,6 +29,7 @@ import {
   type TestEvolutionResult,
   type WabaEmbeddedSignupInput,
   type WabaFinalizeInput,
+  type WabaManualInput,
 } from "@/lib/api";
 
 type ActionResult<T = void> =
@@ -211,6 +213,18 @@ export async function disconnectConexaoAction(conexaoId: number) {
     return { ok: true as const, data };
   } catch (e) {
     return { ok: false as const, error: safeError(e) };
+  }
+}
+
+export async function wabaManualAction(
+  body: WabaManualInput
+): Promise<ActionResult> {
+  try {
+    await wabaManual(body);
+    revalidatePath("/connections");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: safeError(e) };
   }
 }
 
