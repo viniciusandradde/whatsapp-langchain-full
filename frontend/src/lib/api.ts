@@ -1651,6 +1651,8 @@ export interface WabaEmbeddedSignupInput {
   display_name?: string | null;
   register_phone?: boolean;
   waba_mode?: WabaModo;
+  // PIN de 6 dígitos da verificação em duas etapas (obrigatório no Cloud API).
+  pin?: string | null;
 }
 
 export async function wabaEmbeddedSignup(

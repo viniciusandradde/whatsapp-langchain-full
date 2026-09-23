@@ -206,8 +206,11 @@ async def register_phone(
 ) -> bool:
     """Registra o número no WABA Cloud (necessário pra enviar mensagens).
 
-    PIN é usado se 2FA tava habilitado no número antes. Pra novos números,
-    omitir (Meta gera PIN automaticamente).
+    A Meta EXIGE `pin` (6 dígitos): ele vira a verificação em duas etapas do
+    número, e um novo registro do mesmo número tem de repetir o MESMO PIN.
+    Limite da Meta: 10 registros por número a cada 72 h. O comentário antigo
+    dizia "omitir, a Meta gera" — não é o que a doc diz (conferido 23/09/2026,
+    "Register a business phone number"). O PIN nunca vai para log.
 
     POST /{phone_id}/register
     """
@@ -237,17 +240,30 @@ async def register_phone(
 async def subscribe_webhook(access_token: str, waba_account_id: str) -> bool:
     """Inscreve nosso app pra receber webhooks dessa WABA.
 
-    POST /{waba_account_id}/subscribed_apps — Meta começa a entregar
-    eventos `messages` + `message_template_status_update` pra URL configurada
-    no App Dashboard.
+    POST /{waba_account_id}/subscribed_apps — Meta começa a entregar os
+    campos assinados no App Dashboard pra URL configurada lá.
+
+    Com `WABA_WEBHOOK_OVERRIDE_URL` (só dev), manda também
+    `override_callback_uri` + `verify_token`: os webhooks DESTA conta vão para
+    a URL do ambiente que a conectou ("Webhook overrides", doc da Meta). Sem
+    corpo, a Meta remove qualquer override e volta para a URL do App.
     """
     version = settings.waba_graph_api_version
     url = f"{META_GRAPH_URL.format(version=version)}/{waba_account_id}/subscribed_apps"
+
+    corpo: dict[str, str] | None = None
+    override = settings.waba_webhook_override_url.strip()
+    if override and settings.waba_webhook_verify_token:
+        corpo = {
+            "override_callback_uri": override,
+            "verify_token": settings.waba_webhook_verify_token.get_secret_value(),
+        }
 
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.post(
             url,
             headers={"Authorization": f"Bearer {access_token}"},
+            json=corpo,
         )
         if resp.status_code != 200:
             logger.warning(
@@ -255,8 +271,14 @@ async def subscribe_webhook(access_token: str, waba_account_id: str) -> bool:
                 waba_id=waba_account_id,
                 status=resp.status_code,
                 body=resp.text[:300],
+                override=bool(corpo),
             )
             return False
+        logger.info(
+            "waba_subscribe_ok",
+            waba_id=waba_account_id,
+            override_callback_uri=override if corpo else None,
+        )
         return True
 
 

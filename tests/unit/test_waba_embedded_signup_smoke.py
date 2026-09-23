@@ -326,3 +326,82 @@ class TestListPhoneNumbers:
         )
         numeros = await oauth.list_phone_numbers("tok", "WABA1")
         assert [n.id for n in numeros] == ["PH1"]
+
+
+# --- PIN do registro (Cloud API): a Meta exige 6 dígitos ---
+
+
+class TestPinDoRegistro:
+    def _input(self, **kw):
+        from whatsapp_langchain.server.routes.conexao import WabaEmbeddedSignupInput
+
+        base = {
+            "code": "AQDxxxxxxxxxx",
+            "waba_account_id": "W1",
+            "phone_number_id": "P1",
+        }
+        base.update(kw)
+        return WabaEmbeddedSignupInput(**base)
+
+    def test_cloud_api_sem_pin_recusa(self) -> None:
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError, match="PIN de 6"):
+            self._input()
+
+    def test_pin_precisa_de_6_digitos(self) -> None:
+        import pydantic
+
+        for ruim in ("12345", "1234567", "12a456"):
+            with pytest.raises(pydantic.ValidationError):
+                self._input(pin=ruim)
+
+    def test_cloud_api_com_pin_ok_e_coexistence_dispensa(self) -> None:
+        assert self._input(pin="123456").pin == "123456"
+        coex = self._input(waba_mode="coexistence", register_phone=False)
+        assert coex.pin is None
+
+
+async def test_pin_vai_ao_registro_e_fica_cifrado_nas_credenciais(monkeypatch):
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from whatsapp_langchain.server.routes import conexao as rotas
+    from whatsapp_langchain.shared.models import Conexao
+
+    conexao_fake = Conexao(
+        id=1,
+        empresa_id=1,
+        provider="waba",
+        from_number="+5567999999999",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    creds = AsyncMock()
+    register = AsyncMock(return_value=True)
+    monkeypatch.setattr(rotas, "upsert_conexao", AsyncMock(return_value=conexao_fake))
+    monkeypatch.setattr(rotas, "save_credentials", creds)
+    monkeypatch.setattr(rotas, "update_waba_fields", AsyncMock())
+    monkeypatch.setattr(rotas, "set_connection_state", AsyncMock())
+    monkeypatch.setattr(rotas.waba_oauth, "register_phone", register)
+    monkeypatch.setattr(
+        rotas.waba_oauth, "subscribe_webhook", AsyncMock(return_value=True)
+    )
+
+    await rotas._create_waba_conexao(
+        None,
+        empresa_id=1,
+        access_token="tok",
+        waba_account_id="W1",
+        phone_id="P1",
+        display_name="x",
+        account_description=None,
+        from_number="+5567999999999",
+        register_phone=True,
+        pin="654321",
+    )
+
+    assert register.await_args.kwargs["pin"] == "654321"
+    # Guardado junto das credenciais (a coluna é cifrada): o próximo registro
+    # do mesmo número exige o mesmo PIN.
+    assert creds.await_args.args[2]["pin"] == "654321"

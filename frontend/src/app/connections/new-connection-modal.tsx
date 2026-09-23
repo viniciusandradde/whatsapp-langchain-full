@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 import { Cloud, Smartphone, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { WabaModo } from "@/lib/api";
@@ -21,6 +22,7 @@ export function NewConnectionModal({ onClose }: Props) {
   const [step, setStep] = useState<Step>("pick");
   const [wabaError, setWabaError] = useState<string | null>(null);
   const [wabaModo, setWabaModo] = useState<WabaModo>("cloud_api");
+  const [pin, setPin] = useState("");
   const id = useId();
 
   if (step === "evolution") {
@@ -122,6 +124,29 @@ export function NewConnectionModal({ onClose }: Props) {
                     </Label>
                   </div>
                 </RadioGroup>
+                {wabaModo === "cloud_api" && (
+                  <div className="mt-3 space-y-1">
+                    <Label htmlFor={`${id}-pin`}>PIN de 6 dígitos do número</Label>
+                    <Input
+                      id={`${id}-pin`}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      value={pin}
+                      onChange={(e) =>
+                        setPin(e.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      className="w-32 tracking-widest tabular-nums"
+                      placeholder="000000"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      A Meta usa este PIN como verificação em duas etapas do
+                      número. Crie um e guarde. Se o número já tem PIN, use o
+                      mesmo. Para conectar o número de novo, será pedido o
+                      mesmo PIN.
+                    </p>
+                  </div>
+                )}
                 {wabaModo === "coexistence" && (
                   <p className="mt-2 text-xs text-muted-foreground">
                     O número precisa atender aos requisitos atuais da Meta para
@@ -133,6 +158,7 @@ export function NewConnectionModal({ onClose }: Props) {
                 <div className="mt-3">
                   <WabaOAuthButton
                     modo={wabaModo}
+                    pin={pin}
                     onSuccess={() => onClose(true)}
                     onError={(e) => setWabaError(e)}
                   />

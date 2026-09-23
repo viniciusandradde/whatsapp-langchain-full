@@ -180,6 +180,13 @@ class Settings(BaseSettings):
     # `graph_api_version` do relatório diário avisa 90 dias antes do sunset —
     # a tabela de datas fica em `scripts/producao_checks.py::SUNSET_GRAPH_API`.
     waba_graph_api_version: str = "v25.0"
+    # URL alternativa do webhook POR CONTA (WABA) — recurso oficial "Webhook
+    # overrides" da Meta. O App tem UMA URL padrão (a de produção); o ambiente
+    # que tiver esta variável assina as contas que ELE conecta com a própria
+    # URL, e os webhooks dessas contas vão para ele. Só o dev usa. Vazio =
+    # contas seguem a URL do App. `account_update` não aceita override (Meta):
+    # continua indo para a URL do App.
+    waba_webhook_override_url: str = ""
 
     # --- Sprint Conexões — Evolution admin (auto-provision de instances) ---
     # URL do Evolution server pra ops admin (create/connect/disconnect instance).

@@ -29,10 +29,10 @@ são segredo, e só quando existirem.
 
 | Item | Valor | Onde conferir |
 |---|---|---|
-| App ID | _preencher_ (não é segredo) | Meta for Developers → App → Configurações básicas |
+| App ID | `1370880258203802` ("Chat Nexus") | Meta for Developers → App → Configurações básicas |
 | Business ID | _preencher_ | Business Manager → Informações da empresa |
 | WABA ID | _preencher_ (a de teste) | WhatsApp Manager |
-| Configuration ID (Embedded Signup) | _preencher_ | App → WhatsApp → Embedded Signup |
+| Configuration ID (Embedded Signup) | `1063505079636299` ("ChatNexus": token do usuário do sistema, nunca expira) | Login do Facebook para Empresas → Configurações |
 | App Secret | `********` (só no env) | nunca no documento |
 | Tipo do App | Business, com o produto WhatsApp | Painel do App |
 | Tech Provider | _confirmar_ | exigido para Coexistence (Meta) |
@@ -54,7 +54,7 @@ Princípio: **menor quantidade + justificativa clara + uso comprovável**.
 |---|---|---|
 | `whatsapp_business_messaging` | **Sim** | `POST /{phone-number-id}/messages`: resposta da IA e do operador (`integrations/waba/client.py::WabaClient.send_message`), indicador de digitação (`send_typing`), modelo de mensagem aprovado (`templates.py::send_template_message`). `GET /{media-id}`: mídia recebida do cliente (`client.py::download_media`) |
 | `whatsapp_business_management` | **Sim** | `POST /{waba-id}/subscribed_apps`: assina o webhook no onboarding (`oauth.py::subscribe_webhook`). `GET /{phone-number-id}`: dados do número no onboarding (`fetch_phone_details`) e sonda de saúde da conexão, 1 vez por hora (`saude_conexoes.py::_sondar_waba`). `GET /{waba-id}/phone_numbers`: número do onboarding Coexistence (`list_phone_numbers`). `POST /{phone-number-id}/register`: só Cloud API (`register_phone`). `POST /{phone-number-id}/smb_app_data`: contatos e histórico no Coexistence (`sincronizar_smb`). `GET/POST/DELETE /{waba-id}/message_templates` e `GET /{template-id}`: modelos de mensagem (`templates.py`) |
-| `business_management` | **Proposta: não pedir** | Usada só pelo fluxo OAuth **legado** (`GET /me/businesses` em `oauth.py::list_waba_accounts`, rotas `/waba/oauth/*`), que não é o caminho oficial (Embedded Signup). Confirmar no painel da configuração do Embedded Signup se ela aparece como exigida. Se não aparecer, tirar do pedido de revisão |
+| `business_management` | **Proposta: não pedir** (a configuração "ChatNexus" de 23/09 veio com ela listada — conferir se dá para tirar sem quebrar o cadastro) | Usada só pelo fluxo OAuth **legado** (`GET /me/businesses` em `oauth.py::list_waba_accounts`, rotas `/waba/oauth/*`), que não é o caminho oficial (Embedded Signup). Confirmar no painel da configuração do Embedded Signup se ela aparece como exigida. Se não aparecer, tirar do pedido de revisão |
 
 Pendências para conferir no painel (não dá para ver pelo código):
 

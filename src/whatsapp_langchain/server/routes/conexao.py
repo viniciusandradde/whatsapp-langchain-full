@@ -15,7 +15,7 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from whatsapp_langchain.integrations.evolution import admin as evo_admin
 from whatsapp_langchain.integrations.waba import oauth as waba_oauth
@@ -310,10 +310,7 @@ async def waba_oauth_start(
     if not settings.waba_enabled:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Meta App não configurado. Setar "
-                "META_APP_ID/META_APP_SECRET/META_CONFIG_ID."
-            ),
+            detail=MSG_WABA_DESLIGADO,
         )
     user_id = get_user_id_from_request(request)
     state = waba_oauth.generate_state_token()
@@ -495,6 +492,10 @@ async def _create_waba_conexao(
             "access_token": access_token,
             "waba_account_id": waba_account_id,
             "phone_id": phone_id,
+            # PIN da verificação em duas etapas definido no registro (Cloud
+            # API). Cifrado com o resto; um novo registro do mesmo número exige
+            # o MESMO PIN. Nunca vai para log nem para resposta da API.
+            **({"pin": pin} if pin and waba_mode != "coexistence" else {}),
         },
     )
     # NOTA: esta coluna é gravada mas NÃO é lida por ninguém — o handshake do
@@ -532,7 +533,10 @@ async def _create_waba_conexao(
         and not coexistence
         and not await waba_oauth.register_phone(access_token, phone_id, pin=pin)
     ):
-        problemas.append("o número não foi registrado na Meta")
+        problemas.append(
+            "o número não foi registrado na Meta (confira o PIN de 6 dígitos: "
+            "se o número já tinha verificação em duas etapas, use o mesmo PIN)"
+        )
     if not await waba_oauth.subscribe_webhook(access_token, waba_account_id):
         problemas.append("o app não ficou inscrito nos webhooks (não recebe mensagem)")
 
@@ -571,6 +575,13 @@ async def _create_waba_conexao(
 
 MSG_SINCRONIZACAO_PENDENTE = (
     "Sincronização de contatos e histórico pendente. Tente de novo em até 24 horas."
+)
+
+
+#: Aparece na tela de nova conexão — sem nome de variável (quem lê é o cliente).
+#: Quem instala o ChatNexus acha o que falta no log e em `docs/WABA_SETUP.md`.
+MSG_WABA_DESLIGADO = (
+    "A conexão oficial com a Meta ainda não está disponível nesta instalação."
 )
 
 
@@ -705,10 +716,7 @@ async def waba_config() -> WabaConfigResponse:
     if not settings.waba_enabled:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Meta App não configurado. Setar "
-                "META_APP_ID/META_APP_SECRET/META_CONFIG_ID."
-            ),
+            detail=MSG_WABA_DESLIGADO,
         )
     return WabaConfigResponse(
         app_id=settings.meta_app_id,
@@ -726,6 +734,17 @@ class WabaEmbeddedSignupInput(BaseModel):
     display_name: str | None = Field(default=None, max_length=80)
     register_phone: bool = True
     waba_mode: Literal["cloud_api", "coexistence"] = "cloud_api"
+    # PIN de 6 dígitos da verificação em duas etapas. A Meta EXIGE no
+    # `POST /{phone}/register` (Cloud API) e um novo registro do mesmo número
+    # tem de usar o mesmo PIN — por isso quem conecta escolhe e guarda. Não se
+    # aplica ao Coexistence (o número do WhatsApp Business não é registrado).
+    pin: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+    @model_validator(mode="after")
+    def _pin_obrigatorio_no_registro(self) -> WabaEmbeddedSignupInput:
+        if self.waba_mode == "cloud_api" and self.register_phone and not self.pin:
+            raise ValueError("Informe o PIN de 6 dígitos do número.")
+        return self
 
 
 @router.post("/waba/embedded-signup")
@@ -811,6 +830,7 @@ async def waba_embedded_signup(
         account_description=phone.get("verified_name"),
         from_number=from_number,
         register_phone=body.register_phone,
+        pin=body.pin,
         waba_mode=body.waba_mode,
     )
 

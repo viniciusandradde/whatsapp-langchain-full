@@ -82,7 +82,20 @@ Embedded Signup, webhook). O que muda para Coexistence:
    - `smb_app_state_sync`: contatos do celular;
    - `account_update`: desconexão (`PARTNER_REMOVED`).
 3. A URL do webhook continua `https://<api>/webhook/waba`, com HMAC
-   `X-Hub-Signature-256` obrigatório.
+   `X-Hub-Signature-256` obrigatório. A URL do **App** é a de produção
+   (`https://api.vsanexus.com/webhook/waba`).
+4. **Dev recebendo sem trocar a URL do App**: `WABA_WEBHOOK_OVERRIDE_URL` (só
+   no dev, ex. `https://chatnexus.hospitalevangelico.com.br/webhook/waba`) faz
+   o onboarding assinar a conta com `override_callback_uri` + `verify_token`
+   ([Webhook overrides](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/override/)).
+   Os webhooks daquela conta vão para o dev; `account_update` não aceita
+   override e continua indo para a URL do App.
+5. **Configuração do cadastro (23/09/2026)**: criada à mão (não pelo modelo),
+   variação "Cadastro incorporado do WhatsApp", **token do usuário do sistema
+   que nunca expira** (o ChatNexus não renova token — o modelo de 60 dias
+   derrubaria a conexão no dia 61), ativos "Contas do WhatsApp" com tarefas
+   completas. O modelo "Parceiro de mensuração" é só leitura e só da versão 2:
+   não usar.
 
 ## 4. Configuração ChatNexus
 
