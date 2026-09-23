@@ -405,3 +405,122 @@ async def test_pin_vai_ao_registro_e_fica_cifrado_nas_credenciais(monkeypatch):
     # Guardado junto das credenciais (a coluna é cifrada): o próximo registro
     # do mesmo número exige o mesmo PIN.
     assert creds.await_args.args[2]["pin"] == "654321"
+
+
+# --- Conexão manual (ID do número + ID da conta + token) ---
+
+
+class TestSmokeManual:
+    def test_manual_requires_auth(self) -> None:
+        resp = _client().post(
+            "/api/conexoes/waba/manual",
+            json={
+                "phone_number_id": "1245381968647556",
+                "waba_account_id": "1534919371348477",
+                "access_token": "x" * 30,
+            },
+        )
+        assert resp.status_code == 401, resp.text
+
+
+def _manual_body(**kw):
+    from whatsapp_langchain.server.routes.conexao import WabaManualInput
+
+    base = {
+        "phone_number_id": "1245381968647556",
+        "waba_account_id": "1534919371348477",
+        "access_token": "EAA" + "x" * 40,
+    }
+    base.update(kw)
+    return WabaManualInput(**base)
+
+
+def _mock_manual(monkeypatch, *, numeros=("1245381968647556",), existente=None):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.integrations.waba.models import WabaPhoneNumber
+    from whatsapp_langchain.server.routes import conexao as rotas
+    from whatsapp_langchain.shared.config import settings
+
+    monkeypatch.setattr(settings, "meta_app_secret", SecretStr("s"))
+    monkeypatch.setattr(rotas, "get_pool", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(
+        rotas.waba_oauth,
+        "fetch_phone_details",
+        AsyncMock(
+            return_value={
+                "display_phone_number": "+55 67 9928-8039",
+                "verified_name": "Test Number",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        rotas.waba_oauth,
+        "list_phone_numbers",
+        AsyncMock(
+            return_value=[
+                WabaPhoneNumber(id=n, display_phone_number="+1") for n in numeros
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        rotas, "get_conexao_by_waba_phone_id", AsyncMock(return_value=existente)
+    )
+    criar = AsyncMock(return_value=MagicMock(id=7))
+    monkeypatch.setattr(rotas, "_create_waba_conexao", criar)
+    monkeypatch.setattr(rotas, "get_conexao_by_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(rotas, "mask_sensitive", lambda c: c)
+    return rotas, criar
+
+
+async def test_manual_cria_sem_registrar_o_numero(monkeypatch):
+    rotas, criar = _mock_manual(monkeypatch)
+    await rotas.waba_manual(_manual_body(), empresa_id=3, user_id="u")
+    kw = criar.await_args.kwargs
+    assert kw["register_phone"] is False  # número já ativo na API
+    assert kw["phone_id"] == "1245381968647556"
+    assert kw["from_number"] == "+556799288039"
+    assert kw["empresa_id"] == 3
+
+
+async def test_manual_recusa_numero_de_outra_conta(monkeypatch):
+    from fastapi import HTTPException
+
+    rotas, criar = _mock_manual(monkeypatch, numeros=("999",))
+    with pytest.raises(HTTPException) as exc:
+        await rotas.waba_manual(_manual_body(), empresa_id=3, user_id="u")
+    assert exc.value.status_code == 400
+    criar.assert_not_awaited()
+
+
+async def test_manual_recusa_numero_ja_conectado_em_outra_empresa(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from fastapi import HTTPException
+
+    rotas, criar = _mock_manual(monkeypatch, existente=MagicMock(empresa_id=99))
+    with pytest.raises(HTTPException) as exc:
+        await rotas.waba_manual(_manual_body(), empresa_id=3, user_id="u")
+    assert exc.value.status_code == 409
+    criar.assert_not_awaited()
+
+
+async def test_manual_token_invalido_vira_400_sem_vazar_token(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    rotas, criar = _mock_manual(monkeypatch)
+    monkeypatch.setattr(
+        rotas.waba_oauth,
+        "fetch_phone_details",
+        AsyncMock(side_effect=rotas.waba_oauth.WabaOAuthError("401")),
+    )
+    body = _manual_body()
+    with pytest.raises(HTTPException) as exc:
+        await rotas.waba_manual(body, empresa_id=3, user_id="u")
+    assert exc.value.status_code == 400
+    assert body.access_token not in str(exc.value.detail)
+    criar.assert_not_awaited()

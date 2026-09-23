@@ -1664,6 +1664,21 @@ export async function wabaEmbeddedSignup(
   });
 }
 
+export interface WabaManualInput {
+  phone_number_id: string;
+  waba_account_id: string;
+  access_token: string;
+  display_name?: string | null;
+}
+
+/** Conexão manual (ID do número + ID da conta + token) — sem cadastro incorporado. */
+export async function wabaManual(body: WabaManualInput): Promise<Conexao> {
+  return apiFetch<Conexao>("/api/conexoes/waba/manual", {
+    method: "POST",
+    body,
+  });
+}
+
 export async function wabaSincronizar(id: number): Promise<Conexao> {
   return apiFetch<Conexao>(`/api/conexoes/${id}/waba/sincronizar`, {
     method: "POST",

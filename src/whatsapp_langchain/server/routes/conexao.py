@@ -32,6 +32,7 @@ from whatsapp_langchain.server.dependencies_plano import (
 from whatsapp_langchain.server.dependencies_rbac import require_permission
 from whatsapp_langchain.shared.conexao import (
     get_conexao_by_id,
+    get_conexao_by_waba_phone_id,
     get_credentials_decrypted,
     hard_delete_conexao,
     list_conexoes,
@@ -745,6 +746,110 @@ class WabaEmbeddedSignupInput(BaseModel):
         if self.waba_mode == "cloud_api" and self.register_phone and not self.pin:
             raise ValueError("Informe o PIN de 6 dígitos do número.")
         return self
+
+
+class WabaManualInput(BaseModel):
+    """Conexão manual da API oficial (como a "configuração manual" do Chatwoot).
+
+    Para número que já está ativo na Cloud API — o número de teste da Meta,
+    ou um número que o cliente já usa na API — sem passar pelo cadastro
+    incorporado. O token tem de ser de um usuário do sistema com acesso ao App
+    do ChatNexus: o webhook confere a assinatura com o segredo do NOSSO App, e
+    mensagem assinada por outro App seria rejeitada.
+    """
+
+    phone_number_id: str = Field(min_length=5, max_length=40, pattern=r"^\d+$")
+    waba_account_id: str = Field(min_length=5, max_length=40, pattern=r"^\d+$")
+    access_token: str = Field(min_length=20, max_length=2048)
+    display_name: str | None = Field(default=None, max_length=80)
+
+
+@router.post("/waba/manual")
+async def waba_manual(
+    body: WabaManualInput,
+    empresa_id: int = Depends(get_empresa_context),
+    user_id: str = Depends(get_user_id_from_request),
+    _quota: None = Depends(require_plano_limit("conexoes")),
+    _perm: None = Depends(require_permission("integracao.manage")),
+    _plano: None = Depends(require_plano_feature("waba")),
+) -> Conexao:
+    """Cria a conexão WABA a partir de ID do número + ID da conta + token.
+
+    Valida na Meta antes de gravar: o número tem de existir para o token e
+    pertencer à conta informada. Não registra o número (ele já está ativo na
+    API); assina o webhook da conta. O token nunca volta na resposta nem vai
+    para log.
+    """
+    if not settings.meta_app_secret:
+        raise HTTPException(status_code=503, detail=MSG_WABA_DESLIGADO)
+
+    pool = await get_pool()
+    token = body.access_token.strip()
+
+    try:
+        phone = await waba_oauth.fetch_phone_details(token, body.phone_number_id)
+    except waba_oauth.WabaOAuthError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "A Meta não reconheceu o número com esse token. Confira o ID do "
+                "número de telefone e se o token tem acesso a ele."
+            ),
+        ) from exc
+    try:
+        numeros = await waba_oauth.list_phone_numbers(token, body.waba_account_id)
+    except waba_oauth.WabaOAuthError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "A Meta não reconheceu a conta do WhatsApp Business com esse "
+                "token. Confira o ID da conta."
+            ),
+        ) from exc
+    if body.phone_number_id not in {n.id for n in numeros}:
+        raise HTTPException(
+            status_code=400,
+            detail="Esse número não pertence à conta do WhatsApp Business informada.",
+        )
+
+    # Um número só pode estar ativo em uma conexão — senão o webhook resolveria
+    # a mensagem para a empresa errada (o lookup é por phone_number_id).
+    existente = await get_conexao_by_waba_phone_id(pool, body.phone_number_id)
+    if existente is not None and existente.empresa_id != empresa_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Esse número já está conectado em outra empresa.",
+        )
+
+    from_number = "+" + "".join(
+        c for c in (phone.get("display_phone_number") or "") if c.isdigit()
+    )
+    if from_number == "+":
+        raise HTTPException(
+            status_code=502, detail="A Meta não devolveu o número formatado."
+        )
+    display = body.display_name or phone.get("verified_name") or from_number
+
+    conexao = await _create_waba_conexao(
+        pool,
+        empresa_id=empresa_id,
+        access_token=token,
+        waba_account_id=body.waba_account_id,
+        phone_id=body.phone_number_id,
+        display_name=display,
+        account_description=phone.get("verified_name"),
+        from_number=from_number,
+        register_phone=False,
+    )
+    logger.info(
+        "waba_conexao_manual_criada",
+        empresa_id=empresa_id,
+        user_id=user_id,
+        conexao_id=conexao.id,
+        waba_account_id=body.waba_account_id,
+        phone_number_id=body.phone_number_id,
+    )
+    return mask_sensitive(await get_conexao_by_id(pool, conexao.id) or conexao)
 
 
 @router.post("/waba/embedded-signup")
