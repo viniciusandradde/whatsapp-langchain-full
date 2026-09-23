@@ -310,10 +310,7 @@ async def waba_oauth_start(
     if not settings.waba_enabled:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Meta App não configurado. Setar "
-                "META_APP_ID/META_APP_SECRET/META_CONFIG_ID."
-            ),
+            detail=MSG_WABA_DESLIGADO,
         )
     user_id = get_user_id_from_request(request)
     state = waba_oauth.generate_state_token()
@@ -574,6 +571,13 @@ MSG_SINCRONIZACAO_PENDENTE = (
 )
 
 
+#: Aparece na tela de nova conexão — sem nome de variável (quem lê é o cliente).
+#: Quem instala o ChatNexus acha o que falta no log e em `docs/WABA_SETUP.md`.
+MSG_WABA_DESLIGADO = (
+    "A conexão oficial com a Meta ainda não está disponível nesta instalação."
+)
+
+
 async def _sincronizar_coexistence(
     access_token: str, phone_id: str, *, conexao_id: int, empresa_id: int
 ) -> bool:
@@ -705,10 +709,7 @@ async def waba_config() -> WabaConfigResponse:
     if not settings.waba_enabled:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Meta App não configurado. Setar "
-                "META_APP_ID/META_APP_SECRET/META_CONFIG_ID."
-            ),
+            detail=MSG_WABA_DESLIGADO,
         )
     return WabaConfigResponse(
         app_id=settings.meta_app_id,

@@ -59,6 +59,9 @@ export function WabaOAuthButton({
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
+  // Config indisponível (WABA desligada nesta instalação): o botão para de
+  // girar "Carregando SDK..." para sempre e fica desabilitado.
+  const [indisponivel, setIndisponivel] = useState(false);
   const configRef = useRef<{ app_id: string; config_id: string; graph_version: string } | null>(
     null
   );
@@ -89,6 +92,7 @@ export function WabaOAuthButton({
       const cfg = await getWabaConfigAction();
       if (cancelled) return;
       if (!cfg.ok) {
+        setIndisponivel(true);
         onErrorRef.current?.(cfg.error);
         return;
       }
@@ -221,9 +225,15 @@ export function WabaOAuthButton({
   }, []);
 
   return (
-    <Button onClick={handleClick} disabled={busy || !sdkReady} className="gap-2">
-      {(busy || !sdkReady) && <Loader2 className="h-4 w-4 animate-spin" />}
-      {sdkReady ? "Conectar com Meta" : "Carregando SDK..."}
+    <Button
+      onClick={handleClick}
+      disabled={busy || !sdkReady || indisponivel}
+      className="gap-2"
+    >
+      {(busy || (!sdkReady && !indisponivel)) && (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      )}
+      {sdkReady || indisponivel ? "Conectar com Meta" : "Carregando..."}
     </Button>
   );
 }

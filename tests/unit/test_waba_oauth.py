@@ -101,3 +101,41 @@ async def test_list_waba_accounts_combina_business_waba_phones():
     assert accounts[0].name == "Loja Aurora"
     assert len(accounts[0].phone_numbers) == 1
     assert accounts[0].phone_numbers[0].id == "phone1"
+
+
+# --- URL alternativa por conta (Webhook overrides, só dev) ---
+
+
+def _rota_subscribe():
+    return respx.post(
+        f"https://graph.facebook.com/{settings.waba_graph_api_version}"
+        "/WABA1/subscribed_apps"
+    ).mock(return_value=httpx.Response(200, json={"success": True}))
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_subscribe_sem_override_nao_manda_corpo(monkeypatch):
+    """Produção: sem corpo — a conta usa a URL do App (e remove override antigo)."""
+    monkeypatch.setattr(settings, "waba_webhook_override_url", "")
+    rota = _rota_subscribe()
+    assert await oauth.subscribe_webhook("tok", "WABA1") is True
+    assert rota.calls[0].request.content == b""
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_subscribe_com_override_manda_url_e_verify_token(monkeypatch):
+    import json
+
+    monkeypatch.setattr(
+        settings,
+        "waba_webhook_override_url",
+        "https://dev.exemplo.com.br/webhook/waba",
+    )
+    rota = _rota_subscribe()
+    assert await oauth.subscribe_webhook("tok", "WABA1") is True
+    assert json.loads(rota.calls[0].request.content) == {
+        "override_callback_uri": "https://dev.exemplo.com.br/webhook/waba",
+        "verify_token": "verify_xx",
+    }
