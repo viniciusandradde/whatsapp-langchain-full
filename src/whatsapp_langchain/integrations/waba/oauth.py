@@ -237,7 +237,9 @@ async def register_phone(
         return True
 
 
-async def subscribe_webhook(access_token: str, waba_account_id: str) -> bool:
+async def subscribe_webhook(
+    access_token: str, waba_account_id: str, *, usar_override: bool = True
+) -> bool:
     """Inscreve nosso app pra receber webhooks dessa WABA.
 
     POST /{waba_account_id}/subscribed_apps — Meta começa a entregar os
@@ -247,13 +249,16 @@ async def subscribe_webhook(access_token: str, waba_account_id: str) -> bool:
     `override_callback_uri` + `verify_token`: os webhooks DESTA conta vão para
     a URL do ambiente que a conectou ("Webhook overrides", doc da Meta). Sem
     corpo, a Meta remove qualquer override e volta para a URL do App.
+
+    `usar_override=False` no App da própria empresa (ADR-006): o token é de
+    outro App, que tem a própria URL — a URL alternativa do dev não se aplica.
     """
     version = settings.waba_graph_api_version
     url = f"{META_GRAPH_URL.format(version=version)}/{waba_account_id}/subscribed_apps"
 
     corpo: dict[str, str] | None = None
     override = settings.waba_webhook_override_url.strip()
-    if override and settings.waba_webhook_verify_token:
+    if usar_override and override and settings.waba_webhook_verify_token:
         corpo = {
             "override_callback_uri": override,
             "verify_token": settings.waba_webhook_verify_token.get_secret_value(),
