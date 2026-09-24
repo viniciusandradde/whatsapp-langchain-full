@@ -792,14 +792,14 @@ async def send_template_by_id(
 
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT nome, idioma, status, provider "
+            "SELECT nome, idioma, status, provider, componentes_json "
             "FROM waba_template WHERE id = %s AND conexao_id = %s",
             (template_id, conexao_id),
         )
         row = await cur.fetchone()
     if row is None:
         raise OutboundError("Template não encontrado nesta conexão.")
-    nome, idioma, status, _tpl_provider = row
+    nome, idioma, status, _tpl_provider, componentes = row
     if status != "approved":
         raise OutboundError(f"Template não está aprovado (status={status}).")
 
@@ -824,7 +824,11 @@ async def send_template_by_id(
 
     row_out: dict = {}
     if atendimento_id is not None:
-        var_repr = ", ".join(f"{k}={v}" for k, v in variables.items()) or "no variables"
+        # O texto que o cliente recebeu, não o nome do modelo (24/09/2026).
+        texto = waba_templates.texto_do_template(componentes, variables)
+        if not texto:
+            var_repr = ", ".join(f"{k}={v}" for k, v in variables.items())
+            texto = f"[modelo {nome}] {var_repr}".strip()
         row_out = await _persist_outbound_row(
             pool,
             empresa_id=empresa_id,
@@ -832,7 +836,7 @@ async def send_template_by_id(
             atendimento_id=atendimento_id,
             phone_number=to,
             agent_id=conexao.default_agent_id,
-            response=f"[template {nome}] {var_repr}",
+            response=texto,
             user_id=user_id,
             provider_message_id=provider_message_id,
         )

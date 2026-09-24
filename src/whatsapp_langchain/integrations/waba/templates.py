@@ -14,6 +14,7 @@ Status mapping local → Meta event:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -34,6 +35,46 @@ class WabaTemplateError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"WABA template error {status_code}: {detail}")
+
+
+_VARIAVEL = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+
+
+def texto_do_template(
+    componentes: list[dict[str, Any]] | None, variables: dict[str, str] | None = None
+) -> str:
+    """O texto que o cliente vê no WhatsApp: cabeçalho, corpo e rodapé, com as
+    variáveis (`{{1}}`, `{{nome}}`) já trocadas pelos valores enviados.
+
+    É o que vai para a timeline — antes ficava só `[template nome] no
+    variables` e o operador não sabia o que o cliente tinha recebido
+    (24/09/2026). Variável sem valor fica como está (`{{2}}`); cabeçalho de
+    mídia vira a linha `[imagem]`/`[vídeo]`/`[documento]`. Sem corpo → "".
+    """
+    valores = {str(k): str(v) for k, v in (variables or {}).items()}
+
+    def _trocar(texto: str) -> str:
+        return _VARIAVEL.sub(lambda m: valores.get(m.group(1), m.group(0)), texto)
+
+    partes: dict[str, str] = {}
+    for c in componentes or []:
+        tipo = (c.get("type") or "").upper()
+        if tipo == "HEADER":
+            formato = (c.get("format") or "TEXT").upper()
+            if formato == "TEXT" and c.get("text"):
+                partes["HEADER"] = f"*{_trocar(str(c['text']))}*"
+            elif formato in _MIDIA_CABECALHO:
+                partes["HEADER"] = _MIDIA_CABECALHO[formato]
+        elif tipo in ("BODY", "FOOTER") and c.get("text"):
+            partes[tipo] = _trocar(str(c["text"]))
+    if "BODY" not in partes:
+        return ""
+    if "FOOTER" in partes:
+        partes["FOOTER"] = f"_{partes['FOOTER']}_"
+    return "\n\n".join(partes[k] for k in ("HEADER", "BODY", "FOOTER") if k in partes)
+
+
+_MIDIA_CABECALHO = {"IMAGE": "[imagem]", "VIDEO": "[vídeo]", "DOCUMENT": "[documento]"}
 
 
 def _base() -> str:

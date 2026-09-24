@@ -88,6 +88,12 @@ export function PainelCliente({ atendimentoId, clienteId }: Props) {
       historicoCarregado.current = false;
     }
     if (!clienteId || historicoCarregado.current || loading) return;
+    // Marca ANTES de chamar: uma tentativa por cliente, dê certo ou não. Só
+    // no sucesso, um erro (ex.: aba antiga com a conversa de outra empresa →
+    // 404) devolvia `loading` a false com a guarda ainda aberta e o efeito
+    // disparava de novo — 13.159 chamadas em 20 min em produção (24/09/2026),
+    // derrubando o painel inteiro no limite de 600/min.
+    historicoCarregado.current = true;
     setLoading(true);
     void loadClienteHistoricoAction(clienteId, {
       excludeId: atendimentoId,
@@ -96,7 +102,6 @@ export function PainelCliente({ atendimentoId, clienteId }: Props) {
       setLoading(false);
       if (r.ok) {
         setHistorico(r.atendimentos);
-        historicoCarregado.current = true;
       } else {
         setError(r.error);
       }
