@@ -36,8 +36,13 @@ services:
     restart: unless-stopped
 
   # Object storage S3-compatível (mig 183/184). Interno (sem portas publicadas),
-  # só a rede do compose alcança. Imagem do quay.io — o `minio/minio` do Docker
-  # Hub dá "repository does not exist" mesmo com o Hub acessível.
+  # só a rede do compose alcança. Imagem no NOSSO registry: o quay.io passou a
+  # exigir login para `minio/minio` (401 em 24/09/2026, o deploy parou antes de
+  # recriar api/worker) e o `minio/minio` do Docker Hub dá "repository does not
+  # exist". É a MESMA imagem que rodava (sha256:14cea493…, RELEASE.2025-09-07),
+  # re-tagueada e enviada ao registry.vsanexus.com. `pull_policy: missing`: o
+  # MinIO não muda a cada deploy — baixar sempre só amarra o deploy do app a um
+  # registry de terceiro.
   #
   # LIGAR O STORAGE = setar no Dokploy: S3_ACCESS_KEY, S3_SECRET_KEY e S3_BUCKET.
   # As duas primeiras viram TAMBÉM as credenciais root do MinIO (fonte única).
@@ -48,8 +53,8 @@ services:
   # ATENÇÃO backup: `minio_data` vive neste VPS — mesmo risco de desastre do
   # banco. Entra no docs/MIGRACAO_SERVIDOR.md / rotina de backup.
   minio:
-    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    pull_policy: always
+    image: registry.vsanexus.com/chatnexus/minio:RELEASE.2025-09-07T16-13-09Z
+    pull_policy: missing
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-chatnexus}
