@@ -23,6 +23,7 @@ from whatsapp_langchain.integrations.waba.webhook import (
     parse_inbound,
     parse_message_echoes,
     parse_state_sync,
+    parse_statuses,
     parse_template_status_updates,
     verify_signature,
 )
@@ -37,6 +38,7 @@ from whatsapp_langchain.shared.conexao import (
 )
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
+from whatsapp_langchain.shared.entrega import aplicar_status, motivo_da_falha
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
 from whatsapp_langchain.shared.models import Conexao
 from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
@@ -191,6 +193,8 @@ async def _processar_payload(
     historicos = parse_history(payload)
     contatos = parse_state_sync(payload)
     contas = parse_account_updates(payload)
+    # Avisos de entrega do que a Cloud API enviou (mig 203).
+    estados = parse_statuses(payload)
 
     if restrito is not None:
         antes = (
@@ -208,6 +212,7 @@ async def _processar_payload(
         historicos = [h for h in historicos if h.waba_phone_id == phone]
         contatos = [c for c in contatos if c.waba_phone_id == phone]
         contas = [c for c in contas if c.waba_account_id == waba]
+        estados = [e for e in estados if e.waba_phone_id == phone]
         template_updates = [
             t for t in template_updates if t.get("waba_account_id") == waba
         ]
@@ -235,7 +240,13 @@ async def _processar_payload(
     # e destrói o próprio portal do anyio — que então esperava para sempre por
     # tasks que ninguém ia fechar. Ver docs/MIGRACAO_DEV.md.
     if not (
-        inbound_messages or template_updates or ecos or historicos or contatos or contas
+        inbound_messages
+        or template_updates
+        or ecos
+        or historicos
+        or contatos
+        or contas
+        or estados
     ):
         logger.info("waba_webhook_sem_conteudo")
         return {"status": "received", "inbound_count": "0"}
@@ -325,6 +336,8 @@ async def _processar_payload(
             logger.exception("waba_coexistence_account_update_failed", error=str(exc))
             enqueue_failed = True
 
+    await _aplicar_estados(pool, estados)
+
     # Updates de template status (já lidos acima, junto do inbound)
     for upd in template_updates:
         event = upd.get("event", "").upper()
@@ -366,6 +379,61 @@ async def _processar_payload(
         raise HTTPException(status_code=503, detail="enqueue failed; retry")
 
     return {"status": "received", "inbound_count": str(len(inbound_messages))}
+
+
+async def _aplicar_estados(pool, estados) -> None:
+    """Grava entregue/lida/falhou na mensagem que saiu (mig 203).
+
+    Best-effort e sem 5xx: o aviso é informativo, e devolver erro faria a
+    Meta reentregar o lote inteiro (mensagens junto). A falha SEMPRE vai para
+    o log com o código — é o que faltava para saber por que uma mensagem
+    "enviada" não chegou.
+    """
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
+    conexoes: dict[str, Conexao | None] = {}
+    for st in estados:
+        if st.waba_phone_id not in conexoes:
+            conexoes[st.waba_phone_id] = await get_conexao_by_waba_phone_id(
+                pool, st.waba_phone_id
+            )
+        conexao = conexoes[st.waba_phone_id]
+        if conexao is None:
+            continue
+        set_request_context(conexao.empresa_id)
+        erro = (
+            motivo_da_falha(st.erro_codigo, st.erro_titulo, st.erro_detalhe)
+            if st.status == "failed"
+            else None
+        )
+        try:
+            linha = await aplicar_status(
+                pool,
+                conexao_id=conexao.id,
+                wamid=st.message_id,
+                status=st.status,
+                erro=erro,
+            )
+        except Exception as exc:
+            logger.exception("waba_status_falhou_ao_gravar", error=str(exc))
+            linha = None
+        if st.status == "failed":
+            logger.warning(
+                "waba_mensagem_nao_entregue",
+                empresa_id=conexao.empresa_id,
+                conexao_id=conexao.id,
+                message_queue_id=linha,
+                wamid=st.message_id,
+                codigo=st.erro_codigo,
+                titulo=st.erro_titulo,
+                detalhe=st.erro_detalhe,
+            )
+    if estados:
+        logger.info(
+            "waba_status_recebidos",
+            total=len(estados),
+            falhas=sum(1 for e in estados if e.status == "failed"),
+        )
 
 
 # ---------- App da Meta da própria empresa (ADR-006) ----------

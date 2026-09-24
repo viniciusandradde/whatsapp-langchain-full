@@ -171,12 +171,14 @@ async def _persist_outbound_row(
                  phone_number, agent_id, thread_id,
                  incoming_message, response, normalized_input,
                  response_media_url, response_media_type, response_media_filename,
-                 origem_resposta, status, process_after, processed_at)
+                 origem_resposta, response_message_ids,
+                 status, process_after, processed_at)
             VALUES (%s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s,
-                    %s, 'done', NOW(), NOW())
+                    %s, %s,
+                    'done', NOW(), NOW())
             RETURNING id, agent_id, incoming_message, response, status,
                       created_at, processed_at,
                       response_media_url, response_media_type,
@@ -197,6 +199,8 @@ async def _persist_outbound_row(
                 media_type,
                 media_filename,
                 origem_resposta,
+                # O aviso de entrega da Meta chega por este id (mig 203).
+                [provider_message_id] if provider_message_id else None,
             ),
         )
         row = await cur.fetchone()
@@ -221,6 +225,9 @@ async def _persist_outbound_row(
         "response_media_url": row[7],
         "response_media_type": row[8],
         "response_media_filename": row[9],
+        # Mig 203 — a mensagem acabou de sair; o aviso da Meta chega depois.
+        "entrega_status": None,
+        "entrega_erro": None,
     }
 
 

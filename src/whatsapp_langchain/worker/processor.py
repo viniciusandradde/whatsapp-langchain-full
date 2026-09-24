@@ -80,6 +80,7 @@ from whatsapp_langchain.shared.empresa import (
     get_empresa_csat_config,
     get_empresa_voz_config,
 )
+from whatsapp_langchain.shared.entrega import ClienteQueRegistraEnvio
 from whatsapp_langchain.shared.horario import is_business_hours
 from whatsapp_langchain.shared.llm import get_agent_llm_config
 from whatsapp_langchain.shared.menu_chatbot import (
@@ -675,6 +676,10 @@ async def _resolve_outbound_client(
             f"conexão {message.conexao_id} não existe (removida da UI?)"
         )
     client, _mode = await build_outbound_client(pool, conexao)
+    if conexao.provider == "waba":
+        # Guarda o wamid de cada envio na linha — é por ele que o aviso de
+        # entrega da Meta (entregue/lida/falhou) acha a mensagem (mig 203).
+        client = ClienteQueRegistraEnvio(client, pool, message.id)
     return client, conexao
 
 

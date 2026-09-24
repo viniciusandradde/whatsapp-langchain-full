@@ -1025,7 +1025,8 @@ async def list_atendimento_mensagens(
                    -- coluna, `media_disponivel` (bool(media_url)) dava False e
                    -- o áudio/imagem no bucket SUMIA da timeline.
                    (mq.media_arquivo_uuid IS NOT NULL),
-                   mq.media_filename, mq.response_media_filename
+                   mq.media_filename, mq.response_media_filename,
+                   mq.entrega_status, mq.entrega_erro
               FROM message_queue mq
               LEFT JOIN conexao c ON c.id = mq.conexao_id
              WHERE {" AND ".join(where)}
@@ -1097,6 +1098,10 @@ async def list_atendimento_mensagens(
                 # cliente e não precisa sair daqui.
                 "pode_editar_resposta": pode_editar,
                 "pode_apagar_resposta": pode_apagar,
+                # Mig 203 — aviso de entrega da Meta (Cloud API): sent,
+                # delivered, read ou failed; o erro já vem em frase legível.
+                "entrega_status": r[25],
+                "entrega_erro": r[26],
             }
         )
     return saida

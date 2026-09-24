@@ -577,6 +577,108 @@ class TestE2E:
 
 # ============================================================================
 # App da Meta da própria empresa (ADR-006) — webhook exclusivo por conexão
+def _status(wamid: str, status: str, codigo: int | None = None) -> dict:
+    item: dict = {
+        "id": wamid,
+        "status": status,
+        "timestamp": str(int(time.time())),
+        "recipient_id": _NUM_CLIENTE,
+    }
+    if codigo:
+        item["errors"] = [
+            {
+                "code": codigo,
+                "title": "Re-engagement message",
+                "error_data": {"details": "more than 24 hours"},
+            }
+        ]
+    return _envelope(
+        "messages",
+        {"messaging_product": "whatsapp", "metadata": _metadata(), "statuses": [item]},
+    )
+
+
+@pytest.mark.docker_demo
+class TestE2EEntrega:
+    """Aviso de entrega da Meta chega à mensagem que saiu (mig 203)."""
+
+    def _linha_saida(self, db_url: str, cenario, wamid: str) -> int:
+        atd = cenario.get("atendimento")
+        if atd is None:
+            pytest.skip("depende do atendimento aberto no test_2")
+        with psycopg.connect(db_url, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO message_queue (empresa_id, conexao_id, atendimento_id,"
+                " message_id, phone_number, agent_id, thread_id, incoming_message,"
+                " response, normalized_input, status, response_message_ids)"
+                " VALUES (%s, %s, %s, %s, %s, 'vsa_tech', 't', '', 'olá',"
+                " 'manual:e2e', 'done', ARRAY[%s]) RETURNING id",
+                (
+                    cenario["a"]["empresa"],
+                    cenario["a"]["conexao"],
+                    atd,
+                    wamid,
+                    "+" + _NUM_CLIENTE,
+                    wamid,
+                ),
+            ).fetchone()
+        assert row is not None
+        return row[0]
+
+    def _estado(self, db_url: str, linha: int):
+        return _um(
+            db_url,
+            "SELECT entrega_status, entrega_erro FROM message_queue WHERE id = %s",
+            (linha,),
+        )
+
+    def test_falha_grava_motivo_e_nao_e_apagada_por_entregue(
+        self, db_url: str, cenario
+    ) -> None:
+        wamid = _wamid("saida-falhou")
+        linha = self._linha_saida(db_url, cenario, wamid)
+        assert _post(_status(wamid, "failed", 131047)).status_code == 200
+        st, erro = self._estado(db_url, linha)
+        assert st == "failed"
+        assert "24 horas" in erro and "131047" in erro
+        # Aviso posterior (outra parte / fora de ordem) não apaga a falha
+        assert _post(_status(wamid, "delivered")).status_code == 200
+        assert self._estado(db_url, linha)[0] == "failed"
+
+        # A timeline devolve o estado para a tela
+        h = get_admin_api_headers()
+        h["X-User-Id"] = cenario["user"]
+        h["X-Empresa-Id"] = str(cenario["a"]["empresa"])
+        r = httpx.get(
+            f"{API_BASE_URL}/api/atendimentos/{cenario['atendimento']}/mensagens",
+            headers=h,
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        msgs = r.json()
+        msgs = msgs.get("mensagens", msgs) if isinstance(msgs, dict) else msgs
+        alvo = [m for m in msgs if m["id"] == linha]
+        assert alvo and alvo[0]["entrega_status"] == "failed"
+        assert "131047" in alvo[0]["entrega_erro"]
+
+    def test_estado_so_avanca(self, db_url: str, cenario) -> None:
+        wamid = _wamid("saida-lida")
+        linha = self._linha_saida(db_url, cenario, wamid)
+        for status in ("sent", "read", "delivered"):
+            assert _post(_status(wamid, status)).status_code == 200
+        assert self._estado(db_url, linha) == ("read", None)
+
+    def test_status_de_outra_conexao_nao_toca(self, db_url: str, cenario) -> None:
+        wamid = _wamid("saida-outra")
+        linha = self._linha_saida(db_url, cenario, wamid)
+        payload = _status(wamid, "failed", 131047)
+        payload["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"] = (
+            _PHONE_ID_B
+        )
+        assert _post(payload).status_code == 200
+        assert self._estado(db_url, linha) == (None, None)
+
+
 @pytest.mark.docker_demo
 class TestE2ENonoDigito:
     """Resposta da Meta sem o nono dígito cai no cliente cadastrado COM ele.

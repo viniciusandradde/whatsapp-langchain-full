@@ -44,6 +44,7 @@ from whatsapp_langchain.integrations.waba.models import (
     WabaHistoricoLote,
     WabaHistoricoMensagem,
     WabaInboundMessage,
+    WabaStatus,
 )
 
 logger = structlog.get_logger()
@@ -226,6 +227,40 @@ def _changes(payload: dict[str, Any], field: str):
         for change in entry.get("changes", []):
             if change.get("field") == field:
                 yield entry, change.get("value") or {}
+
+
+def parse_statuses(payload: dict[str, Any]) -> list[WabaStatus]:
+    """`messages.statuses[]` → avisos de entrega do que a Cloud API enviou.
+
+    Até 24/09/2026 esses avisos caíam em `waba_webhook_sem_conteudo` e eram
+    descartados: uma mensagem recusada pela Meta DEPOIS do envio aceito
+    (fora da janela de 24 h, número sem WhatsApp, limite de marketing)
+    aparecia como enviada no painel e ninguém via o motivo.
+    """
+    saida: list[WabaStatus] = []
+    for _entry, value in _changes(payload, "messages"):
+        phone_id = (value.get("metadata") or {}).get("phone_number_id", "")
+        for st in value.get("statuses", []):
+            wamid = str(st.get("id") or "")
+            status = str(st.get("status") or "").lower()
+            if not wamid or status not in ("sent", "delivered", "read", "failed"):
+                continue
+            erro = (st.get("errors") or [{}])[0] or {}
+            codigo = erro.get("code")
+            saida.append(
+                WabaStatus(
+                    waba_phone_id=phone_id,
+                    message_id=wamid,
+                    status=status,
+                    recipient_id=st.get("recipient_id"),
+                    erro_codigo=int(codigo)
+                    if isinstance(codigo, int | str) and str(codigo).isdigit()
+                    else None,
+                    erro_titulo=erro.get("title") or erro.get("message"),
+                    erro_detalhe=(erro.get("error_data") or {}).get("details"),
+                )
+            )
+    return saida
 
 
 def parse_message_echoes(payload: dict[str, Any]) -> list[WabaEcho]:
