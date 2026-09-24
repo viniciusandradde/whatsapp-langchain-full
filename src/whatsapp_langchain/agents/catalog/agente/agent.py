@@ -25,10 +25,25 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.agents.middleware import get_context_middleware
 from whatsapp_langchain.agents.tools import read_memory, save_memory
+from whatsapp_langchain.agents.tools.cliente_atendimento import classificar_lead
 from whatsapp_langchain.agents.tools.registry import resolve_tools
 from whatsapp_langchain.shared.llm import create_chat_model
 
 from .prompts import SYSTEM_PROMPT
+
+# Só a descrição da tool não bastou: o agente de atendimento do dev respondeu
+# a um "quero contratar o Pro esta semana" sem classificar (24/09/2026). O
+# prompt de cada empresa não fala da tool, então o bloco entra quando ela está
+# ligada. Texto FIXO no fim — não quebra o cache do prefixo do prompt.
+INSTRUCAO_CLASSIFICAR_LEAD = """
+
+<classificacao_do_lead>
+Quando a conversa mostrar sinal comercial — perguntou preço ou condições,
+pediu proposta ou orçamento, disse prazo ou urgência, fechou, ou desistiu —
+chame a ferramenta `classificar_lead` em silêncio, junto com a sua resposta.
+Não comente a classificação com o cliente. Conversa sem sinal comercial
+(suporte, dúvida geral, saudação) não precisa de classificação.
+</classificacao_do_lead>"""
 
 
 def build_graph(
@@ -125,6 +140,9 @@ def build_graph(
         if system_prompt_override and system_prompt_override.strip()
         else SYSTEM_PROMPT
     )
+
+    if classificar_lead in tools:
+        effective_prompt += INSTRUCAO_CLASSIFICAR_LEAD
 
     return create_agent(
         model=model,

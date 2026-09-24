@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { Campanha, Conexao, WabaTemplate } from "@/lib/api";
+import { ESTAGIOS_FUNIL, TEMPERATURAS } from "@/lib/lead";
 
 import {
   createCampanhaAction,
@@ -107,6 +108,7 @@ export function CampanhasPageClient({
   const [crmTags, setCrmTags] = useState<Set<string>>(new Set());
   const [crmSegmento, setCrmSegmento] = useState("");
   const [crmLifecycle, setCrmLifecycle] = useState("");
+  const [crmTemperatura, setCrmTemperatura] = useState("");
   const [crmSearch, setCrmSearch] = useState("");
   const [crmLoading, setCrmLoading] = useState(false);
 
@@ -131,6 +133,7 @@ export function CampanhasPageClient({
       tags: crmTags.size ? [...crmTags] : undefined,
       segmento: crmSegmento.trim() || null,
       lifecycle_stage: crmLifecycle.trim() || null,
+      temperatura: crmTemperatura || null,
       search: crmSearch.trim() || null,
     });
     setCrmLoading(false);
@@ -622,19 +625,39 @@ export function CampanhasPageClient({
                     ))}
                   </div>
                 )}
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                   <input
                     placeholder="Segmento"
                     value={crmSegmento}
                     onChange={(e) => setCrmSegmento(e.target.value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-xs"
                   />
-                  <input
-                    placeholder="Lifecycle (lead/cliente…)"
+                  <select
+                    aria-label="Estágio do funil"
                     value={crmLifecycle}
                     onChange={(e) => setCrmLifecycle(e.target.value)}
                     className="h-9 rounded-md border border-input bg-background px-2 text-xs"
-                  />
+                  >
+                    <option value="">Todos os estágios</option>
+                    {ESTAGIOS_FUNIL.map((e) => (
+                      <option key={e.valor} value={e.valor}>
+                        {e.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Temperatura"
+                    value={crmTemperatura}
+                    onChange={(e) => setCrmTemperatura(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                  >
+                    <option value="">Todas as temperaturas</option>
+                    {TEMPERATURAS.map((t) => (
+                      <option key={t.valor} value={t.valor}>
+                        {t.rotulo}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     placeholder="Buscar nome/telefone"
                     value={crmSearch}

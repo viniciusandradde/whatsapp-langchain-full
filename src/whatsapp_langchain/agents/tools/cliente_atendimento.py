@@ -35,8 +35,11 @@ from whatsapp_langchain.shared.atendimento import (
     close_atendimento as _close_atendimento,
 )
 from whatsapp_langchain.shared.cliente import (
+    ESTAGIOS_FUNIL,
+    TEMPERATURAS,
     add_anotacao,
     add_tag,
+    classificar_cliente,
     get_cliente_by_id,
     list_anotacoes,
     update_cliente_partial,
@@ -389,6 +392,81 @@ async def classificar_atendimento(
         f"Atendimento classificado: prioridade={result.prioridade}, "
         f"sentimento={result.sentimento}, categoria={result.classificacao}."
     )
+
+
+@tool
+async def classificar_lead(
+    estagio: str,
+    temperatura: str,
+    pontuacao: int,
+    motivo: str,
+    *,
+    runtime: Annotated[Any, InjectedToolArg()] = None,
+) -> str:
+    """Sugere a classificação comercial do cliente desta conversa (silenciosa —
+    não mencione ao cliente). O operador vê a sugestão e confirma ou corrige;
+    se ele já classificou à mão, a sua sugestão é ignorada.
+
+    Chame quando a conversa mostrar sinais claros de interesse de compra (ou
+    de desistência). Pode chamar de novo se o cenário mudar — vale a última.
+
+    Args:
+        estagio: 'lead' (primeiro contato, interesse ainda vago) |
+            'mql' (demonstrou interesse real no produto/serviço) |
+            'sql' (pronto para falar de compra: perguntou preço, condições,
+            disponibilidade) | 'oportunidade' (pediu proposta/orçamento ou
+            está negociando) | 'cliente' (fechou/comprou) |
+            'perdido' (desistiu ou disse que não tem interesse).
+        temperatura: 'frio' (curioso, sem urgência) | 'morno' (interessado,
+            sem prazo definido) | 'quente' (quer resolver logo, tem
+            orçamento ou prazo).
+        pontuacao: 0 a 100 — chance de compra na sua avaliação.
+        motivo: uma frase curta com o sinal que justificou (ex: "pediu
+            orçamento para 3 unidades até sexta").
+    """
+    empresa_id, atendimento_id = _extract_ids(runtime)
+    if empresa_id is None or atendimento_id is None:
+        return "contexto incompleto."
+    estagio_n = estagio.strip().lower()
+    temperatura_n = temperatura.strip().lower()
+    if estagio_n not in ESTAGIOS_FUNIL:
+        return f"Estágio inválido. Use um de: {', '.join(ESTAGIOS_FUNIL)}."
+    if temperatura_n not in TEMPERATURAS:
+        return f"Temperatura inválida. Use um de: {', '.join(TEMPERATURAS)}."
+    try:
+        pontuacao_n = max(0, min(100, int(pontuacao)))
+    except (TypeError, ValueError):
+        return "Pontuação inválida: use um número de 0 a 100."
+    pool = await get_pool()
+    atd = await get_atendimento_by_id(pool, atendimento_id)
+    if atd is None or atd.empresa_id != empresa_id or atd.cliente_id is None:
+        return "atendimento não encontrado."
+    out = await classificar_cliente(
+        pool,
+        empresa_id,
+        atd.cliente_id,
+        estagio=estagio_n,
+        temperatura=temperatura_n,
+        pontuacao=pontuacao_n,
+        origem="ia",
+        motivo=(motivo or "").strip()[:300] or None,
+    )
+    if out is None:
+        logger.info(
+            "agent_tool_classificar_lead_manual_preservada",
+            empresa_id=empresa_id,
+            cliente_id=atd.cliente_id,
+        )
+        return "O operador já classificou este cliente; nada foi alterado."
+    logger.info(
+        "agent_tool_classificar_lead",
+        empresa_id=empresa_id,
+        cliente_id=atd.cliente_id,
+        estagio=estagio_n,
+        temperatura=temperatura_n,
+        pontuacao=pontuacao_n,
+    )
+    return f"Sugestão registrada: {estagio_n}, {temperatura_n}, {pontuacao_n}."
 
 
 @tool

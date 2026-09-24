@@ -11,7 +11,6 @@ import {
   User,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,16 +41,6 @@ const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: "social", label: "Social/Outros", icon: Globe },
   { id: "integracoes", label: "Integrações", icon: Plug },
   { id: "avancado", label: "Avançado", icon: User },
-];
-
-const LIFECYCLE_OPTIONS = [
-  { v: "", l: "—" },
-  { v: "lead", l: "Lead" },
-  { v: "qualified", l: "Qualified" },
-  { v: "opportunity", l: "Opportunity" },
-  { v: "customer", l: "Customer" },
-  { v: "evangelist", l: "Evangelist" },
-  { v: "churned", l: "Churned" },
 ];
 
 const UF_OPTIONS = [
@@ -121,12 +110,9 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
       add("pais", getStr("pais") ?? "BR");
     }
     if (tab === "comercial") {
+      // Estágio, temperatura e pontuação saíram daqui: moram no bloco
+      // "Classificação do lead" (mig 201), que grava como classificação manual.
       add("segmento", getStr("segmento"));
-      add(
-        "lifecycle_stage",
-        (getStr("lifecycle_stage") as Cliente["lifecycle_stage"]) ?? null
-      );
-      add("score", getNum("score"));
       add("source", getStr("source"));
       add("responsavel_user_id", getStr("responsavel_user_id"));
       add("valor_estimado_brl", getNum("valor_estimado_brl"));
@@ -174,9 +160,6 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-base">Cadastro do cliente</CardTitle>
-          {c.lifecycle_stage && (
-            <Badge variant="outline">{c.lifecycle_stage}</Badge>
-          )}
         </div>
 
         {/* Tabs nav */}
@@ -305,19 +288,7 @@ export function ClienteEnrichedForm({ initialCliente }: Props) {
           {tab === "comercial" && (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <FieldText name="segmento" label="Segmento" defaultValue={c.segmento} />
-              <FieldSelect
-                name="lifecycle_stage"
-                label="Lifecycle stage"
-                defaultValue={c.lifecycle_stage ?? ""}
-                options={LIFECYCLE_OPTIONS}
-              />
-              <FieldText
-                name="score"
-                label="Score (0-100)"
-                defaultValue={c.score?.toString() ?? null}
-                type="number"
-              />
-              <FieldText name="source" label="Source" defaultValue={c.source} />
+              <FieldText name="source" label="Origem" defaultValue={c.source} />
               <FieldText
                 name="responsavel_user_id"
                 label="Responsável (user_id)"

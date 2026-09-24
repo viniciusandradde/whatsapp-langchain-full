@@ -3,8 +3,11 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { NovaConversaBotao } from "@/app/atendimento/nova-conversa-modal";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCliente } from "@/lib/api";
 import { requireSession } from "@/lib/session";
+
+import { ClassificacaoLead } from "../classificacao-lead";
 
 import { ClienteDetailClient } from "./cliente-detail-client";
 import { ClienteEnrichedForm } from "./cliente-enriched-form";
@@ -79,6 +82,16 @@ export default async function ClienteDetailPage({ params }: PageProps) {
           clienteInicial={{ telefone: cliente.telefone, nome: cliente.nome }}
         />
       </div>
+
+      {/* Mig 201: estágio do funil + temperatura + pontuação (IA sugere). */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Classificação do lead</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ClassificacaoLead cliente={cliente} />
+        </CardContent>
+      </Card>
 
       {/* Fase 1.A: ficha enriquecida (4 tabs editáveis) */}
       <ClienteEnrichedForm initialCliente={cliente} />

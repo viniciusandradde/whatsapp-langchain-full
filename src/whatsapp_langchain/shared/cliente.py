@@ -32,8 +32,22 @@ _SELECT_COLS = (
     # Sub-fase B+ (padrão profissional) (mig 046)
     "whatsapp_state, numero_verificado, whatsapp_lid, remote_id, "
     "msg_apos_encerramento, field_1, field_2, field_3, field_4, field_5, "
-    "ignora_inatividade, desconsidera_turno"
+    "ignora_inatividade, desconsidera_turno, "
+    # Classificação do lead (mig 201)
+    "temperatura, classificacao_origem, classificacao_motivo, classificado_em"
 )
+
+# Fonte única dos valores de classificação (mig 201). A ordem do funil é a
+# ordem de exibição; os rótulos são os do painel.
+ESTAGIOS_FUNIL: dict[str, str] = {
+    "lead": "Lead",
+    "mql": "Lead qualificado (marketing)",
+    "sql": "Lead qualificado (vendas)",
+    "oportunidade": "Oportunidade",
+    "cliente": "Cliente",
+    "perdido": "Perdido",
+}
+TEMPERATURAS: dict[str, str] = {"frio": "Frio", "morno": "Morno", "quente": "Quente"}
 
 
 def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
@@ -97,6 +111,10 @@ def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
         field_5=row[52],
         ignora_inatividade=row[53] or False,
         desconsidera_turno=row[54] or False,
+        temperatura=row[55],
+        classificacao_origem=row[56],
+        classificacao_motivo=row[57],
+        classificado_em=row[58],
     )
 
 
@@ -209,6 +227,7 @@ async def update_cliente_partial(
     field_5: str | None = None,
     ignora_inatividade: bool | None = None,
     desconsidera_turno: bool | None = None,
+    temperatura: str | None = None,
 ) -> Cliente | None:
     """Update parcial — só campos não-None são tocados (M5.b.1 + Fase 1.A).
 
@@ -272,6 +291,13 @@ async def update_cliente_partial(
     _add("field_5", field_5)
     _add("ignora_inatividade", ignora_inatividade)
     _add("desconsidera_turno", desconsidera_turno)
+    _add("temperatura", temperatura)
+    # Quem salva estágio/temperatura/pontuação pela ficha é o operador: a
+    # classificação vira manual e a IA deixa de mexer nela (mig 201).
+    if any(v is not None for v in (lifecycle_stage, score, temperatura)):
+        sets.append("classificacao_origem = 'manual'")
+        sets.append("classificacao_motivo = NULL")
+        sets.append("classificado_em = NOW()")
 
     if not sets:
         return await get_cliente_by_id(pool, cliente_id)
@@ -308,6 +334,89 @@ async def get_cliente_by_telefone(
     return _row_to_cliente(row) if row else None
 
 
+async def criar_cliente(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    telefone: str,
+    *,
+    nome: str | None = None,
+    email: str | None = None,
+    source: str | None = None,
+) -> tuple[Cliente, bool]:
+    """Cadastro manual pelo painel. Devolve `(cliente, criado)`.
+
+    Telefone já cadastrado na empresa NÃO é alterado (criado=False) — quem
+    chama decide se é erro (formulário) ou só "já existia" (importação).
+    """
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            INSERT INTO cliente (empresa_id, telefone, nome, email, source)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (empresa_id, telefone) DO NOTHING
+            RETURNING {_SELECT_COLS}
+            """,
+            (empresa_id, telefone, nome, email, source),
+        )
+        row = await cur.fetchone()
+    if row is not None:
+        return _row_to_cliente(row), True
+    existente = await get_cliente_by_telefone(pool, empresa_id, telefone)
+    assert existente is not None
+    return existente, False
+
+
+async def classificar_cliente(
+    pool: AsyncConnectionPool,
+    empresa_id: int,
+    cliente_id: int,
+    *,
+    estagio: str | None,
+    temperatura: str | None,
+    pontuacao: int | None,
+    origem: str,
+    motivo: str | None = None,
+) -> Cliente | None:
+    """Grava a classificação do lead (mig 201) de uma vez.
+
+    `origem='manual'` (operador): grava os três valores como vieram — None
+    limpa o campo. `origem='ia'` (tool do agente): só grava se a
+    classificação atual NÃO for manual; devolve None quando a manual foi
+    preservada (ou o cliente não existe).
+    """
+    if estagio is not None and estagio not in ESTAGIOS_FUNIL:
+        raise ValueError(f"estágio inválido: {estagio}")
+    if temperatura is not None and temperatura not in TEMPERATURAS:
+        raise ValueError(f"temperatura inválida: {temperatura}")
+    if pontuacao is not None and not 0 <= pontuacao <= 100:
+        raise ValueError("pontuação fora de 0-100")
+    if origem not in ("manual", "ia"):
+        raise ValueError(f"origem inválida: {origem}")
+    guarda = (
+        " AND classificacao_origem IS DISTINCT FROM 'manual'" if origem == "ia" else ""
+    )
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            UPDATE cliente
+               SET lifecycle_stage = %s,
+                   temperatura = %s,
+                   score = %s,
+                   classificacao_origem = %s,
+                   classificacao_motivo = %s,
+                   classificado_em = NOW(),
+                   updated_at = NOW()
+             WHERE id = %s AND empresa_id = %s{guarda}
+            RETURNING id
+            """,  # type: ignore[arg-type]
+            (estagio, temperatura, pontuacao, origem, motivo, cliente_id, empresa_id),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    return await get_cliente_by_id(pool, cliente_id)
+
+
 async def list_clientes(
     pool: AsyncConnectionPool,
     empresa_id: int,
@@ -316,10 +425,13 @@ async def list_clientes(
     limit: int = 50,
     offset: int = 0,
     scope_departamento_ids: set[int] | None = None,
+    lifecycle_stage: str | None = None,
+    temperatura: str | None = None,
 ) -> list[Cliente]:
     """Lista clientes da empresa, ordenados por updated_at DESC.
 
-    `search` filtra por substring case-insensitive em nome ou telefone.
+    `search` filtra por substring case-insensitive em nome, telefone ou
+    e-mail. `lifecycle_stage`/`temperatura`: igualdade exata (mig 201).
 
     `scope_departamento_ids` (mig 083 record-level):
     - None ⇒ sem filtro de scope (vê todos da empresa)
@@ -333,9 +445,15 @@ async def list_clientes(
     params: list = [empresa_id]
     where = "WHERE empresa_id = %s"
     if search:
-        where += " AND (nome ILIKE %s OR telefone ILIKE %s)"
+        where += " AND (nome ILIKE %s OR telefone ILIKE %s OR email ILIKE %s)"
         like = f"%{search}%"
-        params.extend([like, like])
+        params.extend([like, like, like])
+    if lifecycle_stage:
+        where += " AND lifecycle_stage = %s"
+        params.append(lifecycle_stage)
+    if temperatura:
+        where += " AND temperatura = %s"
+        params.append(temperatura)
     if scope_departamento_ids is not None:
         where += (
             " AND EXISTS ("
@@ -369,6 +487,7 @@ async def resolve_telefones_por_filtro(
     lifecycle_stage: str | None = None,
     search: str | None = None,
     limit: int = 10_000,
+    temperatura: str | None = None,
 ) -> list[str]:
     """Resolve a lista de telefones (E.164, distintos) de clientes do CRM que
     casam com os filtros. Usado pra alimentar destinatários de campanha.
@@ -392,6 +511,9 @@ async def resolve_telefones_por_filtro(
     if lifecycle_stage:
         where += " AND c.lifecycle_stage = %s"
         params.append(lifecycle_stage)
+    if temperatura:
+        where += " AND c.temperatura = %s"
+        params.append(temperatura)
     if search:
         where += " AND (c.nome ILIKE %s OR c.telefone ILIKE %s)"
         like = f"%{search}%"
@@ -404,6 +526,24 @@ async def resolve_telefones_por_filtro(
         )
         rows = await cur.fetchall()
     return [r[0] for r in rows if r[0]]
+
+
+async def tags_por_cliente(
+    pool: AsyncConnectionPool, cliente_ids: list[int]
+) -> dict[int, list[str]]:
+    """Tags de vários clientes numa query só (listagem e exportação)."""
+    if not cliente_ids:
+        return {}
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT cliente_id, tag FROM cliente_tag WHERE cliente_id = ANY(%s) ORDER BY tag",
+            (cliente_ids,),
+        )
+        rows = await cur.fetchall()
+    out: dict[int, list[str]] = {}
+    for cid, tag in rows:
+        out.setdefault(cid, []).append(tag)
+    return out
 
 
 async def add_anotacao(

@@ -1,7 +1,7 @@
 """Testes dos endpoints CRUD /api/clientes (M3 CRM Light)."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -49,16 +49,70 @@ def _anotacao(**overrides) -> ClienteAnotacao:
     return ClienteAnotacao(**base)
 
 
+_PERMS_GESTOR = {"cliente.read.all", "cliente.write.all"}
+
+
 @pytest.fixture
 def client():
-    """TestClient com auth desabilitada e empresa_id=1, user=user-x."""
+    """TestClient com auth desabilitada e empresa_id=1, user=user-x.
+
+    Perfil com as variantes de escopo (como o Gestor system) — as rotas
+    exigem `cliente.read`/`cliente.write` desde a mig 201.
+    """
     app.dependency_overrides[verify_service_token] = lambda: None
     app.dependency_overrides[get_empresa_context] = lambda: 1
     app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"
     try:
-        yield TestClient(app)
+        with (
+            patch(
+                "whatsapp_langchain.server.routes.cliente.get_user_permissions",
+                new=AsyncMock(return_value=_PERMS_GESTOR),
+            ),
+            patch(
+                "whatsapp_langchain.server.routes.cliente.tags_por_cliente",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "whatsapp_langchain.server.routes.cliente.get_pool",
+                new=AsyncMock(return_value=MagicMock()),
+            ),
+            patch(
+                "whatsapp_langchain.server.dependencies_rbac.get_user_permissions",
+                new=AsyncMock(return_value=_PERMS_GESTOR),
+            ),
+            patch(
+                "whatsapp_langchain.server.dependencies_rbac.get_pool",
+                new=AsyncMock(return_value=MagicMock()),
+            ),
+        ):
+            yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+def test_sem_permissao_de_escrita_recebe_403():
+    app.dependency_overrides[verify_service_token] = lambda: None
+    app.dependency_overrides[get_empresa_context] = lambda: 1
+    app.dependency_overrides[get_user_id_from_request] = lambda: "user-x"
+    try:
+        with (
+            patch(
+                "whatsapp_langchain.server.routes.cliente.get_user_permissions",
+                new=AsyncMock(return_value={"cliente.read.own"}),
+            ),
+            patch(
+                "whatsapp_langchain.server.dependencies_rbac.get_user_permissions",
+                new=AsyncMock(return_value={"cliente.read.own"}),
+            ),
+            patch(
+                "whatsapp_langchain.server.dependencies_rbac.get_pool",
+                new=AsyncMock(return_value=MagicMock()),
+            ),
+        ):
+            r = TestClient(app).post("/api/clientes", json={"telefone": "67996460034"})
+    finally:
+        app.dependency_overrides.clear()
+    assert r.status_code == 403
 
 
 def test_list_clientes_returns_array(client):
@@ -81,7 +135,14 @@ def test_list_clientes_passes_search_and_pagination(client):
         response = client.get("/api/clientes?search=fulano&limit=10&offset=20")
     assert response.status_code == 200
     kwargs = mock_list.await_args.kwargs
-    assert kwargs == {"search": "fulano", "limit": 10, "offset": 20}
+    assert kwargs == {
+        "search": "fulano",
+        "limit": 10,
+        "offset": 20,
+        "scope_departamento_ids": None,
+        "lifecycle_stage": None,
+        "temperatura": None,
+    }
 
 
 def test_read_cliente_returns_detail_with_anotacoes(client):

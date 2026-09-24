@@ -31,6 +31,7 @@ from whatsapp_langchain.server.dependencies import (
 )
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.perfil import get_user_permissions
+from whatsapp_langchain.shared.permissoes import effective_scope
 
 logger = structlog.get_logger()
 
@@ -69,6 +70,38 @@ def require_permission(codigo: str):
             raise HTTPException(
                 status_code=403,
                 detail=f"Permissão necessária: {codigo}",
+            )
+
+    return _checker
+
+
+def require_permission_escopo(base: str):
+    """Como `require_permission`, mas aceita `base`, `base.own` ou `base.all`.
+
+    `require_permission` compara o código EXATO, e os perfis system só
+    concedem as variantes com escopo (Operador `.own`, Gestor `.all`) —
+    exigir o código-base tornava a rota exclusiva do Admin. Use esta quando
+    qualquer escopo basta para a ação; o recorte por departamento, quando
+    houver, fica no handler (`effective_scope`).
+    """
+
+    async def _checker(
+        request: Request,
+        user_id: str = Depends(get_user_id_from_request),
+        empresa_id: int = Depends(get_empresa_context),
+    ) -> None:
+        perms = await _resolve_user_perms(request, user_id, empresa_id)
+        if effective_scope(perms, base) is None:
+            logger.warning(
+                "permission_denied",
+                user_id=user_id,
+                empresa_id=empresa_id,
+                required=f"{base}[.own|.all]",
+                has_count=len(perms),
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="Seu perfil não tem acesso a esta ação.",
             )
 
     return _checker

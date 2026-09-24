@@ -499,3 +499,79 @@ async def test_transfer_to_human_handles_empty_motivo():
         )
     # motivo vazio → "sem motivo informado" no texto da anotação.
     assert "sem motivo" in mock_anot.await_args.args[3].lower()
+
+
+# --- classificar_lead (mig 201) ---
+
+
+def _args(**extra):
+    base = {
+        "estagio": "SQL",
+        "temperatura": "Quente",
+        "pontuacao": 130,
+        "motivo": "pediu orçamento",
+        "runtime": _runtime(),
+    }
+    base.update(extra)
+    return base
+
+
+@pytest.mark.asyncio
+async def test_classificar_lead_grava_como_ia_no_cliente_do_atendimento():
+    classificar = AsyncMock(return_value=_cliente())
+    with (
+        patch.object(ct, "get_pool", AsyncMock(return_value=MagicMock())),
+        patch.object(
+            ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
+        ),
+        patch.object(ct, "classificar_cliente", classificar),
+    ):
+        out = await ct.classificar_lead.ainvoke(_args())
+    assert "Sugestão registrada" in out
+    kwargs = classificar.await_args.kwargs
+    assert classificar.await_args.args[1:] == (1, 10)
+    assert kwargs["origem"] == "ia"
+    assert (kwargs["estagio"], kwargs["temperatura"], kwargs["pontuacao"]) == (
+        "sql",
+        "quente",
+        100,
+    )
+
+
+@pytest.mark.asyncio
+async def test_classificar_lead_respeita_classificacao_manual():
+    with (
+        patch.object(ct, "get_pool", AsyncMock(return_value=MagicMock())),
+        patch.object(
+            ct, "get_atendimento_by_id", AsyncMock(return_value=_atendimento())
+        ),
+        patch.object(ct, "classificar_cliente", AsyncMock(return_value=None)),
+    ):
+        out = await ct.classificar_lead.ainvoke(_args())
+    assert "já classificou" in out
+
+
+@pytest.mark.asyncio
+async def test_classificar_lead_recusa_estagio_fora_do_funil():
+    classificar = AsyncMock()
+    with patch.object(ct, "classificar_cliente", classificar):
+        out = await ct.classificar_lead.ainvoke(_args(estagio="qualified"))
+    assert "Estágio inválido" in out
+    classificar.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_classificar_lead_nao_opera_em_atendimento_de_outra_empresa():
+    classificar = AsyncMock()
+    with (
+        patch.object(ct, "get_pool", AsyncMock(return_value=MagicMock())),
+        patch.object(
+            ct,
+            "get_atendimento_by_id",
+            AsyncMock(return_value=_atendimento(empresa_id=2)),
+        ),
+        patch.object(ct, "classificar_cliente", classificar),
+    ):
+        out = await ct.classificar_lead.ainvoke(_args())
+    assert "não encontrado" in out
+    classificar.assert_not_awaited()

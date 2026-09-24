@@ -5,8 +5,15 @@ import { revalidatePath } from "next/cache";
 import {
   addClienteAnotacao,
   addClienteTag,
+  classificarCliente,
+  createCliente,
+  getCliente,
   removeClienteTag,
+  type Cliente,
+  type ClassificacaoInput,
+  type ClienteCreateInput,
 } from "@/lib/api";
+import { ApiRequestError } from "@/lib/api-error-shared";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -56,6 +63,54 @@ export async function removeTagAction(
     await removeClienteTag(clienteId, tag);
     revalidatePath(`/clientes/${clienteId}`);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export type CriarClienteResult =
+  | { ok: true; id: number }
+  | { ok: false; error: string; existenteId?: number };
+
+export async function criarClienteAction(
+  body: ClienteCreateInput
+): Promise<CriarClienteResult> {
+  try {
+    const c = await createCliente(body);
+    revalidatePath("/clientes");
+    return { ok: true, id: c.id };
+  } catch (e) {
+    // 409: telefone já cadastrado — a tela oferece abrir o cadastro existente.
+    if (e instanceof ApiRequestError && e.status === 409) {
+      const d = e.detail as { cliente_id?: unknown } | null;
+      const existenteId = typeof d?.cliente_id === "number" ? d.cliente_id : undefined;
+      return { ok: false, error: e.message, existenteId };
+    }
+    return { ok: false, error: toError(e) };
+  }
+}
+
+export async function classificarClienteAction(
+  clienteId: number,
+  body: ClassificacaoInput
+): Promise<{ ok: true; cliente: Cliente } | { ok: false; error: string }> {
+  try {
+    const cliente = await classificarCliente(clienteId, body);
+    revalidatePath(`/clientes/${clienteId}`);
+    revalidatePath("/clientes");
+    return { ok: true, cliente };
+  } catch (e) {
+    return { ok: false, error: toError(e) };
+  }
+}
+
+/** Cliente para o bloco de classificação no painel da conversa. */
+export async function carregarClienteAction(
+  clienteId: number
+): Promise<{ ok: true; cliente: Cliente } | { ok: false; error: string }> {
+  try {
+    const { cliente } = await getCliente(clienteId);
+    return { ok: true, cliente };
   } catch (e) {
     return { ok: false, error: toError(e) };
   }

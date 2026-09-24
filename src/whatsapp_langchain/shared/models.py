@@ -386,9 +386,8 @@ class Cliente(BaseModel):
 
     # ---- Comercial / lifecycle ----
     segmento: str | None = None
-    lifecycle_stage: str | None = (
-        None  # lead|qualified|opportunity|customer|evangelist|churned
-    )
+    # Funil (mig 201): lead|mql|sql|oportunidade|cliente|perdido
+    lifecycle_stage: str | None = None
     score: int | None = None  # 0-100
     source: str | None = None  # whatsapp|website|indicacao|...
     responsavel_user_id: str | None = None
@@ -424,6 +423,12 @@ class Cliente(BaseModel):
     field_5: str | None = None
     ignora_inatividade: bool = False
     desconsidera_turno: bool = False
+
+    # ---- Classificação do lead (mig 201) ----
+    temperatura: str | None = None  # frio|morno|quente
+    classificacao_origem: str | None = None  # manual|ia
+    classificacao_motivo: str | None = None
+    classificado_em: datetime | None = None
 
 
 class ClienteAnotacao(BaseModel):

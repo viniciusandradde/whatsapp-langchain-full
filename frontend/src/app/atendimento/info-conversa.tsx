@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Phone,
   Tag as TagIcon,
+  Target,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import type { Atendimento, AtendimentoMensagem } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ClassificacaoLeadConversa } from "@/app/clientes/classificacao-lead";
 
 import { MediaPreview } from "./bolha-midia";
 import { PainelCliente } from "./painel-cliente";
@@ -162,6 +164,14 @@ export function InfoConversa({ atendimento, departamentoNome, mensagens, secao, 
 
         <TriagemCard atendimento={a} destaque={secao === "triagem"} />
         <ColetaPreviaCard atendimento={a} />
+
+        {/* Estágio do funil + temperatura do cliente (mig 201; a IA sugere). */}
+        {a.cliente_id && (
+          <section className="space-y-1.5">
+            <Titulo icone={Target}>Classificação do lead</Titulo>
+            <ClassificacaoLeadConversa clienteId={a.cliente_id} />
+          </section>
+        )}
 
         {/* Tags do cliente + último atendimento (painel do cliente de sempre) */}
         <PainelCliente

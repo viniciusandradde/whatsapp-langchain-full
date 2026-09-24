@@ -53,6 +53,7 @@ class PreviewCrmInput(BaseModel):
     tags: list[str] | None = None
     segmento: str | None = Field(default=None, max_length=120)
     lifecycle_stage: str | None = Field(default=None, max_length=60)
+    temperatura: str | None = Field(default=None, pattern=r"^(frio|morno|quente)?$")
     search: str | None = Field(default=None, max_length=200)
 
 
@@ -273,6 +274,7 @@ async def add_destinatarios_endpoint(
             segmento=body.crm.segmento,
             lifecycle_stage=body.crm.lifecycle_stage,
             search=body.crm.search,
+            temperatura=body.crm.temperatura or None,
         )
     if not telefones:
         raise HTTPException(status_code=422, detail="Nenhum telefone informado.")
@@ -331,6 +333,7 @@ async def preview_crm(
         segmento=body.segmento,
         lifecycle_stage=body.lifecycle_stage,
         search=body.search,
+        temperatura=body.temperatura or None,
     )
     return {"total": len(telefones), "telefones": telefones}
 
