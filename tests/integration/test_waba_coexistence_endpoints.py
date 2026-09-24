@@ -204,16 +204,18 @@ def _metadata(phone_id: str = _PHONE_ID) -> dict:
     return {"display_phone_number": _NUM_EMPRESA, "phone_number_id": phone_id}
 
 
-def _inbound(wamid: str, texto: str, phone_id: str = _PHONE_ID) -> dict:
+def _inbound(
+    wamid: str, texto: str, phone_id: str = _PHONE_ID, remetente: str = _NUM_CLIENTE
+) -> dict:
     return _envelope(
         "messages",
         {
             "messaging_product": "whatsapp",
             "metadata": _metadata(phone_id),
-            "contacts": [{"wa_id": _NUM_CLIENTE, "profile": {"name": "Cliente E2E"}}],
+            "contacts": [{"wa_id": remetente, "profile": {"name": "Cliente E2E"}}],
             "messages": [
                 {
-                    "from": _NUM_CLIENTE,
+                    "from": remetente,
                     "id": wamid,
                     "timestamp": str(int(time.time())),
                     "type": "text",
@@ -575,6 +577,50 @@ class TestE2E:
 
 # ============================================================================
 # App da Meta da própria empresa (ADR-006) — webhook exclusivo por conexão
+@pytest.mark.docker_demo
+class TestE2ENonoDigito:
+    """Resposta da Meta sem o nono dígito cai no cliente cadastrado COM ele.
+
+    Caso real (empresa 1025, 24/09/2026): conversa aberta com +55 67 98424-9725
+    pelo painel; a resposta chegou como 556784249725 e virou outro cliente.
+    """
+
+    def test_resposta_sem_o_9_vai_para_o_cliente_com_o_9(
+        self, db_url: str, cenario
+    ) -> None:
+        empresa = cenario["a"]["empresa"]
+        linha = f"8{int(_RUN, 16) % 10**7:07d}"  # celular antigo: 8 dígitos
+        com_9 = f"+55679{linha}"
+        sem_9 = f"5567{linha}"  # como a Meta manda (wa_id, sem +)
+        with psycopg.connect(db_url, autocommit=True) as conn:
+            row = conn.execute(
+                "INSERT INTO cliente (empresa_id, telefone, nome) VALUES (%s, %s, 'Com 9')"
+                " RETURNING id",
+                (empresa, com_9),
+            ).fetchone()
+        assert row is not None
+        cliente_id = row[0]
+
+        wamid = _wamid("nono-digito")
+        r = _post(_inbound(wamid, "resposta sem o 9", remetente=sem_9))
+        assert r.status_code == 200, r.text
+
+        linha_fila = _um(
+            db_url,
+            "SELECT a.cliente_id FROM message_queue mq"
+            " JOIN atendimento a ON a.id = mq.atendimento_id"
+            " WHERE mq.message_id = %s",
+            (wamid,),
+        )
+        assert linha_fila is not None and linha_fila[0] == cliente_id
+        duplicados = _um(
+            db_url,
+            "SELECT count(*) FROM cliente WHERE empresa_id = %s AND telefone IN (%s, %s)",
+            (empresa, com_9, f"+{sem_9}"),
+        )
+        assert duplicados is not None and duplicados[0] == 1
+
+
 # ============================================================================
 
 _PHONE_PROPRIO = f"77{int(_RUN, 16) % 10**10:010d}"

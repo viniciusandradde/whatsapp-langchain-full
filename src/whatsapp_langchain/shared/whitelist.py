@@ -13,6 +13,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.campanha import normalize_phone
 from whatsapp_langchain.shared.rls_context import empresa_scope
+from whatsapp_langchain.shared.telefone import variantes_nono_digito
 
 logger = structlog.get_logger()
 
@@ -28,24 +29,15 @@ def candidatos_lookup(telefone: str) -> list[str]:
     - o número normalizado; e, quando BR mobile,
     - a variante com/sem o `9` após o DDD.
 
-    Não-BR (sem prefixo 55 ou tamanho não-mobile): só o normalizado.
+    Não-BR, fixo ou tamanho fora do padrão: só o normalizado
+    (`shared/telefone.py::variantes_nono_digito`).
     Lista pequena (1-2 itens) — vai num `telefone = ANY(%s)` que ainda usa
     o índice (empresa_id, telefone).
     """
     norm = normalize_phone(telefone)
     if not norm:
         return []
-    candidatos = [norm]
-    digits = norm.lstrip("+")
-    if digits.startswith("55"):
-        resto = digits[2:]  # DDD + assinante
-        # 55 + DDD(2) + 9 + 8 dígitos = 13 → variante sem o 9
-        if len(resto) == 11 and resto[2] == "9":
-            candidatos.append(f"+55{resto[:2]}{resto[3:]}")
-        # 55 + DDD(2) + 8 dígitos = 12 → variante com o 9 (celular antigo)
-        elif len(resto) == 10:
-            candidatos.append(f"+55{resto[:2]}9{resto[2:]}")
-    return candidatos
+    return variantes_nono_digito(norm)
 
 
 async def is_whitelisted(

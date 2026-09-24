@@ -140,3 +140,31 @@ def normalizar_br(raw: str | None) -> str | None:
         return None
 
     return f"+{digitos}"
+
+
+def variantes_nono_digito(telefone: str) -> list[str]:
+    """O próprio número e, se for celular BR, a grafia com/sem o nono dígito.
+
+    O mesmo celular brasileiro chega em duas grafias: a Meta (`wa_id`) e o
+    WhatsApp Web (JID) identificam números antigos SEM o 9 (`+55 67 8424-9725`)
+    enquanto quem digita no painel usa o número de hoje, COM o 9
+    (`+55 67 98424-9725`). Tratar as duas como pessoas diferentes partia a
+    conversa em duas (empresa 1025, 24/09/2026: o operador escrevia numa e a
+    resposta do cliente caía na outra).
+
+    Mantém o formato recebido (`+` ou não). Só celular: 9 + 8 dígitos perde o
+    9; 8 dígitos começando em 6–9 (celular antigo) ganha o 9. Fixo (2–5) e
+    número estrangeiro voltam sozinhos.
+    """
+    prefixo = "+" if telefone.startswith("+") else ""
+    digitos = telefone[len(prefixo):]
+    if not digitos.isdigit() or not digitos.startswith("55"):
+        return [telefone]
+    resto = digitos[2:]  # DDD + linha
+    if len(resto) == 11 and resto[2] == "9":
+        outra = resto[:2] + resto[3:]
+    elif len(resto) == 10 and resto[2] in "6789":
+        outra = resto[:2] + "9" + resto[2:]
+    else:
+        return [telefone]
+    return [telefone, f"{prefixo}55{outra}"]
