@@ -1669,6 +1669,21 @@ export interface WabaManualInput {
   waba_account_id: string;
   access_token: string;
   display_name?: string | null;
+  // App da Meta da própria empresa (ADR-006): com o segredo, a conexão recebe
+  // pela URL exclusiva e a assinatura é conferida com ele.
+  app_secret?: string | null;
+  app_id?: string | null;
+}
+
+export interface WabaWebhookInfo {
+  app_proprio: boolean;
+  url: string;
+  verify_token: string | null;
+  campos: string[];
+}
+
+export async function getWabaWebhookInfo(id: number): Promise<WabaWebhookInfo> {
+  return apiFetch<WabaWebhookInfo>(`/api/conexoes/${id}/waba/webhook`);
 }
 
 /** Conexão manual (ID do número + ID da conta + token) — sem cadastro incorporado. */

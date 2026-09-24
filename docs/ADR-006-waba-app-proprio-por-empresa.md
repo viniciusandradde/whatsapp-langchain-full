@@ -1,6 +1,6 @@
 # ADR-006 — API oficial do WhatsApp com o App da Meta da própria empresa
 
-- **Status:** PROPOSTA (23/09/2026), aguardando o dono.
+- **Status:** ACEITA pelo dono em 23/09/2026 — implementada (PR A #184 conexão manual; PR B App próprio).
 - **Contexto de negócio:** o dono quer que cada empresa possa conectar o
   WhatsApp oficial **com o próprio App da Meta**, como no Chatwoot, além do
   caminho de Tech Provider (cadastro incorporado pelo App do ChatNexus).

@@ -38,6 +38,7 @@ from whatsapp_langchain.shared.conexao import (
 from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.hook_dispatcher import dispatch_event
+from whatsapp_langchain.shared.models import Conexao
 from whatsapp_langchain.shared.queue import detectar_fluxo_guiado, enqueue_or_buffer
 
 logger = structlog.get_logger()
@@ -167,7 +168,20 @@ async def waba_webhook_post(
         logger.warning("waba_webhook_bad_json", error=str(exc))
         return {"status": "bad_json"}
 
-    # Mensagens inbound
+    return await _processar_payload(payload)
+
+
+async def _processar_payload(
+    payload: dict, *, restrito: Conexao | None = None
+) -> dict[str, str]:
+    """Processa um payload JÁ AUTENTICADO (assinatura conferida por quem chama).
+
+    Compartilhado pelo `/webhook/waba` (App do ChatNexus) e pelo
+    `/webhook/waba/{phone_number_id}` (App da própria empresa, ADR-006).
+    Com `restrito`, só entra o que for DAQUELA conexão: itens de outro
+    `phone_number_id` (ou de outra WABA, no account_update/templates) são
+    descartados — o App de uma empresa não injeta mensagem em outra.
+    """
     from whatsapp_langchain.shared.rls_context import set_request_context
 
     inbound_messages = parse_inbound(payload)
@@ -177,6 +191,40 @@ async def waba_webhook_post(
     historicos = parse_history(payload)
     contatos = parse_state_sync(payload)
     contas = parse_account_updates(payload)
+
+    if restrito is not None:
+        antes = (
+            len(inbound_messages)
+            + len(ecos)
+            + len(historicos)
+            + len(contatos)
+            + len(contas)
+            + len(template_updates)
+        )
+        phone = restrito.waba_phone_id
+        waba = restrito.waba_account_id
+        inbound_messages = [m for m in inbound_messages if m.waba_phone_id == phone]
+        ecos = [e for e in ecos if e.waba_phone_id == phone]
+        historicos = [h for h in historicos if h.waba_phone_id == phone]
+        contatos = [c for c in contatos if c.waba_phone_id == phone]
+        contas = [c for c in contas if c.waba_account_id == waba]
+        template_updates = [
+            t for t in template_updates if t.get("waba_account_id") == waba
+        ]
+        depois = (
+            len(inbound_messages)
+            + len(ecos)
+            + len(historicos)
+            + len(contatos)
+            + len(contas)
+            + len(template_updates)
+        )
+        if depois < antes:
+            logger.warning(
+                "waba_webhook_app_proprio_item_de_outra_conexao",
+                conexao_id=restrito.id,
+                descartados=antes - depois,
+            )
 
     # Sem nada a processar, não toca o banco. A Meta entrega vários eventos que
     # não são mensagem nem status de template, e abrir conexão só para
@@ -318,6 +366,84 @@ async def waba_webhook_post(
         raise HTTPException(status_code=503, detail="enqueue failed; retry")
 
     return {"status": "received", "inbound_count": str(len(inbound_messages))}
+
+
+# ---------- App da Meta da própria empresa (ADR-006) ----------
+#
+# Cada App da Meta tem a própria URL de webhook e assina as notificações com o
+# PRÓPRIO App Secret (doc "Webhooks — Getting Started"). A empresa que usa o App
+# dela aponta o webhook para esta URL exclusiva; o `phone_number_id` do caminho
+# diz qual conexão — e, portanto, qual segredo e qual verify token — valem ANTES
+# de ler o corpo. Conexão que usa o App do ChatNexus continua no `/webhook/waba`.
+
+
+async def _conexao_app_proprio(phone_number_id: str):
+    """Conexão ativa do caminho + credenciais, ou (None, {}) se não for App próprio."""
+    from whatsapp_langchain.shared.rls_context import set_request_context
+
+    pool = await get_pool()
+    conexao = await get_conexao_by_waba_phone_id(pool, phone_number_id)
+    if conexao is None:
+        return None, {}
+    set_request_context(conexao.empresa_id)
+    creds = await get_credentials_decrypted(pool, conexao.id) or {}
+    if not creds.get("app_secret"):
+        return None, {}
+    return conexao, creds
+
+
+@router.get("/{phone_number_id}")
+async def waba_webhook_verify_conexao(
+    phone_number_id: str, request: Request
+) -> PlainTextResponse:
+    """Handshake da URL exclusiva — compara com o verify token DA CONEXÃO."""
+    params = dict(request.query_params)
+    if params.get("hub.mode") != "subscribe" or not phone_number_id.isdigit():
+        raise HTTPException(status_code=400, detail="hub.mode deve ser 'subscribe'")
+    conexao, _creds = await _conexao_app_proprio(phone_number_id)
+    esperado = (conexao.webhook_verify_token or "") if conexao else ""
+    token = params.get("hub.verify_token") or ""
+    if conexao is None or not esperado or not hmac.compare_digest(token, esperado):
+        logger.warning(
+            "waba_webhook_app_proprio_verify_failed",
+            phone_id=phone_number_id,
+            conexao_encontrada=conexao is not None,
+        )
+        raise HTTPException(status_code=403, detail="verify_token inválido")
+    logger.info("waba_webhook_app_proprio_verified", conexao_id=conexao.id)
+    return PlainTextResponse(params.get("hub.challenge", ""))
+
+
+@router.post("/{phone_number_id}")
+async def waba_webhook_post_conexao(
+    phone_number_id: str,
+    request: Request,
+    x_hub_signature_256: str | None = Header(default=None),
+) -> dict[str, str]:
+    """POST da URL exclusiva: assinatura com o App Secret DA EMPRESA.
+
+    Mesmo contrato do `/webhook/waba`: 200 com `rejected*` para assinatura
+    ausente/inválida, 5xx só em falha interna (a Meta reentrega).
+    """
+    body = await request.body()
+    if not phone_number_id.isdigit():
+        return {"status": "rejected"}
+    conexao, creds = await _conexao_app_proprio(phone_number_id)
+    if conexao is None:
+        logger.warning("waba_webhook_app_proprio_sem_conexao", phone_id=phone_number_id)
+        return {"status": "rejected_no_secret"}
+    if not x_hub_signature_256:
+        logger.warning("waba_webhook_signature_missing", conexao_id=conexao.id)
+        return {"status": "rejected_no_signature"}
+    if not verify_signature(body, x_hub_signature_256, creds["app_secret"]):
+        logger.warning("waba_webhook_signature_invalid", conexao_id=conexao.id)
+        return {"status": "rejected"}
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        logger.warning("waba_webhook_bad_json", error=str(exc))
+        return {"status": "bad_json"}
+    return await _processar_payload(payload, restrito=conexao)
 
 
 async def _enfileirar_inbound(pool, conexao, msg) -> None:

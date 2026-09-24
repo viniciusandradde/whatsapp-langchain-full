@@ -3,11 +3,12 @@ import Link from "next/link";
 import { ChevronLeft, FileCheck, Smartphone } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { getConexao } from "@/lib/api";
+import { getConexao, getWabaWebhookInfo, type WabaWebhookInfo } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { ReconectarButton } from "../reconectar-button";
 import { SincronizarButton } from "./sincronizar-button";
+import { WebhookConexao } from "./webhook-conexao";
 import { AntiBanPanel } from "./anti-ban-panel";
 import { RespostaPanel } from "./resposta-panel";
 import { TranscricaoPanel } from "./transcricao-panel";
@@ -67,6 +68,12 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
   }
 
   const isWABA = conexao.provider === "waba";
+  // Webhook do App da própria empresa (ADR-006). Sem permissão ou falha: o
+  // bloco só não aparece — o resto da página não depende dele.
+  let webhookInfo: WabaWebhookInfo | null = null;
+  if (isWABA) {
+    webhookInfo = await getWabaWebhookInfo(conexao.id).catch(() => null);
+  }
   // Templates HSM: só WABA (Meta Cloud API). Evolution não tem.
   const hasTemplates = ["waba"].includes(
     conexao.provider
@@ -162,6 +169,8 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
           <SincronizarButton conexaoId={conexao.id} />
         )}
       </div>
+
+      {webhookInfo && <WebhookConexao info={webhookInfo} />}
 
       <RespostaPanel
         conexaoId={conexao.id}

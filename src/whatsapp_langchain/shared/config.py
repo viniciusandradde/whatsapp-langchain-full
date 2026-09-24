@@ -396,6 +396,20 @@ class Settings(BaseSettings):
         return "http://localhost:8000/api/conexoes/waba/oauth/callback"
 
     @property
+    def resolved_waba_webhook_url(self) -> str:
+        """URL pública do `/webhook/waba` DESTE ambiente.
+
+        No dev é a `WABA_WEBHOOK_OVERRIDE_URL` (o `PUBLIC_BASE_URL` de lá é o
+        nome interno `http://api:8000`); em produção, `PUBLIC_BASE_URL` +
+        `/webhook/waba`. É a base da URL exclusiva do App próprio (ADR-006).
+        """
+        override = self.waba_webhook_override_url.strip().rstrip("/")
+        if override:
+            return override
+        base = self.public_base_url.strip().rstrip("/")
+        return f"{base}/webhook/waba" if base else "/webhook/waba"
+
+    @property
     def resolved_evolution_admin_url(self) -> str:
         """URL admin do Evolution — fallback pra evolution_api_url se vazio."""
         return (self.evolution_admin_url or self.evolution_api_url).strip()

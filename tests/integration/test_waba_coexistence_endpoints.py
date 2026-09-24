@@ -571,3 +571,175 @@ class TestE2E:
             (cenario["b"]["conexao"],),
         )
         assert outra == ("open",)
+
+
+# ============================================================================
+# App da Meta da própria empresa (ADR-006) — webhook exclusivo por conexão
+# ============================================================================
+
+_PHONE_PROPRIO = f"77{int(_RUN, 16) % 10**10:010d}"
+_WABA_PROPRIO = f"88{int(_RUN, 16) % 10**10:010d}"
+_SEGREDO_PROPRIO = f"segredo-app-empresa-{_RUN}"
+_VERIFY_PROPRIO = f"verify-{_RUN}"
+
+
+@pytest.fixture(scope="module")
+def conexao_propria(db_url: str, cenario):
+    """Conexão da empresa A usando o App da Meta DELA (segredo próprio)."""
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        cid = conn.execute(
+            """
+            INSERT INTO conexao (empresa_id, provider, from_number, display_name,
+                                 default_agent_id, status, tipo_atendimento,
+                                 waba_account_id, waba_phone_id,
+                                 webhook_verify_token, connection_state)
+            VALUES (%s, 'waba', %s, %s, %s, 'active', 'manual', %s, %s, %s, 'open')
+            RETURNING id
+            """,
+            (
+                cenario["a"]["empresa"],
+                f"+5541{int(_RUN, 16) % 10**8:08d}",
+                f"App proprio {_RUN}",
+                cenario["a"]["slug"],
+                _WABA_PROPRIO,
+                _PHONE_PROPRIO,
+                _VERIFY_PROPRIO,
+            ),
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE conexao SET credentials_encrypted = %s WHERE id = %s",
+            (
+                encrypt_dict(
+                    {
+                        "access_token": f"token-falso-proprio-{_RUN}",
+                        "waba_account_id": _WABA_PROPRIO,
+                        "phone_id": _PHONE_PROPRIO,
+                        "app_secret": _SEGREDO_PROPRIO,
+                    }
+                ),
+                cid,
+            ),
+        )
+    return cid
+
+
+def _inbound_proprio(wamid: str, phone_id: str = _PHONE_PROPRIO) -> dict:
+    payload = _inbound(wamid, "Oi pelo App da empresa", phone_id=phone_id)
+    payload["entry"][0]["id"] = _WABA_PROPRIO
+    return payload
+
+
+def _post_proprio(
+    payload: dict, *, segredo: str = _SEGREDO_PROPRIO, phone=_PHONE_PROPRIO
+):
+    corpo = json.dumps(payload).encode()
+    sig = "sha256=" + hmac.new(segredo.encode(), corpo, hashlib.sha256).hexdigest()
+    return httpx.post(
+        f"{API_BASE_URL}/webhook/waba/{phone}",
+        content=corpo,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig},
+        timeout=15,
+    )
+
+
+@pytest.mark.docker_demo
+class TestE2EAppProprio:
+    def test_1_handshake_com_token_da_conexao(self, conexao_propria) -> None:
+        base = f"{API_BASE_URL}/webhook/waba/{_PHONE_PROPRIO}?hub.mode=subscribe&hub.challenge=xyz"
+        ok = httpx.get(base + f"&hub.verify_token={_VERIFY_PROPRIO}", timeout=10)
+        assert ok.status_code == 200 and ok.text == "xyz"
+        errado = httpx.get(base + "&hub.verify_token=outro", timeout=10)
+        assert errado.status_code == 403
+
+    def test_2_assinado_pela_empresa_entra(
+        self, db_url: str, cenario, conexao_propria
+    ) -> None:
+        r = _post_proprio(_inbound_proprio(_wamid("prop1")))
+        assert r.status_code == 200, r.text
+        row = _um(
+            db_url,
+            "SELECT empresa_id, conexao_id, atendimento_id FROM message_queue"
+            " WHERE message_id = %s",
+            (_wamid("prop1"),),
+        )
+        assert row is not None, r.text
+        assert row[0] == cenario["a"]["empresa"]
+        assert row[1] == conexao_propria
+        assert row[2] is not None
+
+    def test_3_mesmo_payload_na_rota_geral_e_recusado(
+        self, db_url: str, conexao_propria
+    ) -> None:
+        corpo = json.dumps(_inbound_proprio(_wamid("prop-geral"))).encode()
+        sig = (
+            "sha256="
+            + hmac.new(_SEGREDO_PROPRIO.encode(), corpo, hashlib.sha256).hexdigest()
+        )
+        r = httpx.post(
+            f"{API_BASE_URL}/webhook/waba",
+            content=corpo,
+            headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig},
+            timeout=15,
+        )
+        assert r.json()["status"] == "rejected"
+        assert (
+            _um(
+                db_url,
+                "SELECT COUNT(*) FROM message_queue WHERE message_id = %s",
+                (_wamid("prop-geral"),),
+            )[0]
+            == 0
+        )
+
+    def test_4_assinatura_errada_recusada(self, db_url: str, conexao_propria) -> None:
+        r = _post_proprio(_inbound_proprio(_wamid("prop-forjado")), segredo="errado")
+        assert r.json()["status"] == "rejected"
+        assert (
+            _um(
+                db_url,
+                "SELECT COUNT(*) FROM message_queue WHERE message_id = %s",
+                (_wamid("prop-forjado"),),
+            )[0]
+            == 0
+        )
+
+    def test_5_item_de_outro_numero_e_descartado(
+        self, db_url: str, conexao_propria
+    ) -> None:
+        """Assinado corretamente, mas para o número de OUTRA conexão (empresa B)."""
+        payload = _inbound_proprio(_wamid("prop-invasao"), phone_id=_PHONE_ID_B)
+        r = _post_proprio(payload)
+        assert r.status_code == 200
+        assert (
+            _um(
+                db_url,
+                "SELECT COUNT(*) FROM message_queue WHERE message_id = %s",
+                (_wamid("prop-invasao"),),
+            )[0]
+            == 0
+        )
+
+    def test_6_api_mostra_url_e_token_da_conexao(
+        self, cenario, conexao_propria
+    ) -> None:
+        h = get_admin_api_headers()
+        h["X-User-Id"] = cenario["user"]
+        h["X-Empresa-Id"] = str(cenario["a"]["empresa"])
+        r = httpx.get(
+            f"{API_BASE_URL}/api/conexoes/{conexao_propria}/waba/webhook",
+            headers=h,
+            timeout=10,
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["app_proprio"] is True
+        assert d["url"].endswith(f"/webhook/waba/{_PHONE_PROPRIO}")
+        assert d["verify_token"] == _VERIFY_PROPRIO
+        assert "smb_message_echoes" in d["campos"]
+        # Conexão do App do ChatNexus: sem token (o global é da plataforma).
+        r2 = httpx.get(
+            f"{API_BASE_URL}/api/conexoes/{cenario['a']['conexao']}/waba/webhook",
+            headers=h,
+            timeout=10,
+        )
+        assert r2.status_code == 200 and r2.json()["verify_token"] is None

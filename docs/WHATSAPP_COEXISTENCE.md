@@ -115,6 +115,16 @@ idempotência do webhook.
 
 ## 5. Como conectar
 
+> Três jeitos de conectar a API oficial: (a) botão **Conectar com Meta**
+> (cadastro incorporado, App do ChatNexus — Coexistência exige Tech Provider);
+> (b) **Conectar manualmente** (ID do número + ID da conta + token), para número
+> já ativo na API; (c) manual com **"Usar o App da Meta da própria empresa"**:
+> pede a chave secreta do App e a página da conexão mostra a URL exclusiva
+> `…/webhook/waba/{ID do número}` + o token de verificação para colar no App da
+> empresa (ADR-006). A assinatura desse webhook é conferida com a chave da
+> empresa, e item de outro número é descartado.
+
+
 1. **Conexões → Nova conexão → WhatsApp Oficial**.
 2. Escolher **WhatsApp Business + ChatNexus**: "Continue usando o WhatsApp
    Business no celular enquanto o ChatNexus processa as conversas".

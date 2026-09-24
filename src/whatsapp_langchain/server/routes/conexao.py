@@ -459,6 +459,8 @@ async def _create_waba_conexao(
     register_phone: bool = False,
     pin: str | None = None,
     waba_mode: str = "cloud_api",
+    app_secret: str | None = None,
+    app_id: str | None = None,
 ) -> Conexao:
     """Cria/atualiza conexão WABA + cifra token + registra phone + webhook.
 
@@ -497,6 +499,9 @@ async def _create_waba_conexao(
             # API). Cifrado com o resto; um novo registro do mesmo número exige
             # o MESMO PIN. Nunca vai para log nem para resposta da API.
             **({"pin": pin} if pin and waba_mode != "coexistence" else {}),
+            # App da Meta da própria empresa (ADR-006): o webhook exclusivo
+            # confere a assinatura com ESTE segredo. Cifrado; nunca volta.
+            **({"app_secret": app_secret, "app_id": app_id} if app_secret else {}),
         },
     )
     # NOTA: esta coluna é gravada mas NÃO é lida por ninguém — o handshake do
@@ -509,12 +514,16 @@ async def _create_waba_conexao(
         if settings.waba_webhook_verify_token
         else _secrets.token_urlsafe(24)
     )
+    if app_secret:
+        # App próprio: a URL exclusiva da conexão compara o handshake com ESTE
+        # token (lido de volta em `GET /webhook/waba/{phone_number_id}`).
+        verify_token = _secrets.token_urlsafe(24)
     await update_waba_fields(
         pool,
         conexao.id,
         waba_account_id=waba_account_id,
         waba_phone_id=phone_id,
-        waba_app_id=settings.meta_app_id or None,
+        waba_app_id=(app_id or None) if app_secret else (settings.meta_app_id or None),
         waba_account_description=account_description,
         webhook_verify_token=verify_token,
         from_number=from_number,
@@ -538,7 +547,9 @@ async def _create_waba_conexao(
             "o número não foi registrado na Meta (confira o PIN de 6 dígitos: "
             "se o número já tinha verificação em duas etapas, use o mesmo PIN)"
         )
-    if not await waba_oauth.subscribe_webhook(access_token, waba_account_id):
+    if not await waba_oauth.subscribe_webhook(
+        access_token, waba_account_id, usar_override=not app_secret
+    ):
         problemas.append("o app não ficou inscrito nos webhooks (não recebe mensagem)")
 
     sincronizacao_pendente = False
@@ -762,6 +773,11 @@ class WabaManualInput(BaseModel):
     waba_account_id: str = Field(min_length=5, max_length=40, pattern=r"^\d+$")
     access_token: str = Field(min_length=20, max_length=2048)
     display_name: str | None = Field(default=None, max_length=80)
+    # App da Meta da própria empresa (ADR-006). Com `app_secret`, a conexão
+    # recebe por `/webhook/waba/{phone_number_id}` e a assinatura é conferida
+    # com ele. Sem, vale o App do ChatNexus (`/webhook/waba`).
+    app_secret: str | None = Field(default=None, min_length=16, max_length=128)
+    app_id: str | None = Field(default=None, max_length=40, pattern=r"^\d+$")
 
 
 @router.post("/waba/manual")
@@ -780,7 +796,8 @@ async def waba_manual(
     API); assina o webhook da conta. O token nunca volta na resposta nem vai
     para log.
     """
-    if not settings.meta_app_secret:
+    app_secret = (body.app_secret or "").strip() or None
+    if not app_secret and not settings.meta_app_secret:
         raise HTTPException(status_code=503, detail=MSG_WABA_DESLIGADO)
 
     pool = await get_pool()
@@ -840,6 +857,8 @@ async def waba_manual(
         account_description=phone.get("verified_name"),
         from_number=from_number,
         register_phone=False,
+        app_secret=app_secret,
+        app_id=body.app_id,
     )
     logger.info(
         "waba_conexao_manual_criada",
@@ -848,8 +867,58 @@ async def waba_manual(
         conexao_id=conexao.id,
         waba_account_id=body.waba_account_id,
         phone_number_id=body.phone_number_id,
+        app_proprio=bool(app_secret),
     )
     return mask_sensitive(await get_conexao_by_id(pool, conexao.id) or conexao)
+
+
+#: Campos que o App da empresa precisa assinar (App → WhatsApp → Configuração).
+CAMPOS_WEBHOOK_WABA = [
+    "messages",
+    "message_template_status_update",
+    "smb_message_echoes",
+    "history",
+    "smb_app_state_sync",
+    "account_update",
+]
+
+
+class WabaWebhookInfo(BaseModel):
+    app_proprio: bool
+    url: str
+    verify_token: str | None = None
+    campos: list[str]
+
+
+@router.get("/{conexao_id}/waba/webhook")
+async def waba_webhook_info(
+    conexao_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _perm: None = Depends(require_permission("integracao.manage")),
+) -> WabaWebhookInfo:
+    """URL + verify token que a empresa cola no App dela (ADR-006).
+
+    Conexão do App do ChatNexus: devolve só a URL geral, sem token — o verify
+    token global é da plataforma, não do cliente.
+    """
+    pool = await get_pool()
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if (
+        conexao is None
+        or conexao.empresa_id != empresa_id
+        or conexao.provider != "waba"
+    ):
+        raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    creds = await get_credentials_decrypted(pool, conexao.id) or {}
+    base = settings.resolved_waba_webhook_url
+    if creds.get("app_secret") and conexao.waba_phone_id:
+        return WabaWebhookInfo(
+            app_proprio=True,
+            url=f"{base}/{conexao.waba_phone_id}",
+            verify_token=conexao.webhook_verify_token,
+            campos=CAMPOS_WEBHOOK_WABA,
+        )
+    return WabaWebhookInfo(app_proprio=False, url=base, campos=CAMPOS_WEBHOOK_WABA)
 
 
 @router.post("/waba/embedded-signup")

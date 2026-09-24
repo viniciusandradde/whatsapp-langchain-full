@@ -548,3 +548,136 @@ def test_rota_history_state_sync_e_account_update(rota):
     rota["contato"].assert_awaited_once()
     rota["conta"].assert_awaited_once()
     rota["enqueue"].assert_not_awaited()
+
+
+# ---------- App da Meta da própria empresa (ADR-006) ----------
+
+SEGREDO_EMPRESA = "segredo-do-app-da-empresa-123"
+
+
+def _post_conexao(payload: dict, *, phone: str, segredo: str = SEGREDO_EMPRESA):
+    from whatsapp_langchain.server.main import app
+
+    corpo = json.dumps(payload).encode()
+    sig = "sha256=" + hmac.new(segredo.encode(), corpo, hashlib.sha256).hexdigest()
+    return TestClient(app).post(
+        f"/webhook/waba/{phone}",
+        content=corpo,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig},
+    )
+
+
+@pytest.fixture
+def rota_propria(rota, monkeypatch):
+    """Rota com a conexão do caminho usando App próprio."""
+    from whatsapp_langchain.server.routes import webhook_waba as mod
+
+    conexao = _conexao(webhook_verify_token="token-da-conexao")
+    monkeypatch.setattr(
+        mod,
+        "_conexao_app_proprio",
+        AsyncMock(return_value=(conexao, {"app_secret": SEGREDO_EMPRESA})),
+    )
+    return rota
+
+
+def test_app_proprio_aceita_assinatura_da_empresa(rota_propria):
+    r = _post_conexao(ECHO, phone="106540352242922")
+    assert r.status_code == 200, r.text
+    rota_propria["eco"].assert_awaited_once()
+
+
+def test_app_proprio_recusa_assinatura_do_app_do_chatnexus(rota_propria):
+    r = _post_conexao(ECHO, phone="106540352242922", segredo=SECRET)
+    assert r.json()["status"] == "rejected"
+    rota_propria["eco"].assert_not_awaited()
+
+
+def test_rota_geral_recusa_assinatura_do_app_da_empresa(rota):
+    """O mesmo payload assinado pelo App da empresa não entra pelo /webhook/waba."""
+    from whatsapp_langchain.server.main import app
+
+    corpo = json.dumps(ECHO).encode()
+    sig = (
+        "sha256="
+        + hmac.new(SEGREDO_EMPRESA.encode(), corpo, hashlib.sha256).hexdigest()
+    )
+    r = TestClient(app).post(
+        "/webhook/waba",
+        content=corpo,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig},
+    )
+    assert r.json()["status"] == "rejected"
+    rota["eco"].assert_not_awaited()
+
+
+def test_app_proprio_descarta_item_de_outra_conexao(rota_propria):
+    """O App de uma empresa não injeta mensagem no número de outra."""
+    payload = json.loads(json.dumps(INBOUND))
+    payload["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"] = "999"
+    r = _post_conexao(payload, phone="106540352242922")
+    assert r.status_code == 200
+    rota_propria["enqueue"].assert_not_awaited()
+    rota_propria["reivindicar"].assert_not_awaited()
+
+
+def test_app_proprio_sem_segredo_na_conexao_rejeita(rota, monkeypatch):
+    from whatsapp_langchain.server.routes import webhook_waba as mod
+
+    monkeypatch.setattr(mod, "_conexao_app_proprio", AsyncMock(return_value=(None, {})))
+    r = _post_conexao(ECHO, phone="106540352242922")
+    assert r.json()["status"] == "rejected_no_secret"
+    rota["eco"].assert_not_awaited()
+
+
+def test_app_proprio_handshake_usa_token_da_conexao(rota_propria):
+    from whatsapp_langchain.server.main import app
+
+    base = "/webhook/waba/106540352242922?hub.mode=subscribe&hub.challenge=abc"
+    c = TestClient(app)
+    ok = c.get(base + "&hub.verify_token=token-da-conexao")
+    assert ok.status_code == 200 and ok.text == "abc"
+    assert c.get(base + "&hub.verify_token=outro").status_code == 403
+
+
+async def test_manual_app_proprio_guarda_segredo_e_gera_token(monkeypatch):
+    from pydantic import SecretStr
+
+    from whatsapp_langchain.server.routes import conexao as rotas
+    from whatsapp_langchain.shared.config import settings
+    from whatsapp_langchain.shared.models import Conexao
+
+    monkeypatch.setattr(settings, "waba_webhook_verify_token", SecretStr("GLOBAL"))
+    fake = Conexao(
+        id=1,
+        empresa_id=1,
+        provider="waba",
+        from_number="+1",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    creds, campos, inscrever = AsyncMock(), AsyncMock(), AsyncMock(return_value=True)
+    monkeypatch.setattr(rotas, "upsert_conexao", AsyncMock(return_value=fake))
+    monkeypatch.setattr(rotas, "save_credentials", creds)
+    monkeypatch.setattr(rotas, "update_waba_fields", campos)
+    monkeypatch.setattr(rotas, "set_connection_state", AsyncMock())
+    monkeypatch.setattr(rotas.waba_oauth, "subscribe_webhook", inscrever)
+
+    await rotas._create_waba_conexao(
+        None,
+        empresa_id=1,
+        access_token="tok",
+        waba_account_id="W1",
+        phone_id="P1",
+        display_name="x",
+        account_description=None,
+        from_number="+1",
+        app_secret=SEGREDO_EMPRESA,
+        app_id="42",
+    )
+    assert creds.await_args.args[2]["app_secret"] == SEGREDO_EMPRESA
+    token = campos.await_args.kwargs["webhook_verify_token"]
+    assert token and token != "GLOBAL"  # token exclusivo da conexão
+    assert campos.await_args.kwargs["waba_app_id"] == "42"
+    # Token de outro App: a URL alternativa do dev não se aplica.
+    assert inscrever.await_args.kwargs["usar_override"] is False
