@@ -15,6 +15,7 @@ import structlog
 from psycopg_pool import AsyncConnectionPool
 
 from whatsapp_langchain.shared.models import Cliente, ClienteAnotacao
+from whatsapp_langchain.shared.telefone import variantes_nono_digito
 
 logger = structlog.get_logger()
 
@@ -118,6 +119,28 @@ def _row_to_cliente(row, tags: list[str] | None = None) -> Cliente:
     )
 
 
+async def _grafia_cadastrada(conn, empresa_id: int, telefone: str) -> str:
+    """A grafia do telefone já cadastrada na empresa, com ou sem o nono dígito.
+
+    Sem cadastro, devolve o próprio `telefone`. Com as duas grafias já
+    cadastradas (legado), fica a exata.
+    """
+    variantes = variantes_nono_digito(telefone)
+    if len(variantes) == 1:
+        return telefone
+    cur = await conn.execute(
+        """
+        SELECT telefone FROM cliente
+         WHERE empresa_id = %s AND telefone = ANY(%s)
+         ORDER BY (telefone = %s) DESC, id ASC
+         LIMIT 1
+        """,
+        (empresa_id, variantes, telefone),
+    )
+    row = await cur.fetchone()
+    return row[0] if row else telefone
+
+
 async def upsert_cliente(
     pool: AsyncConnectionPool,
     empresa_id: int,
@@ -132,8 +155,12 @@ async def upsert_cliente(
     Política do webhook: nunca sobrescreve nome/email/doc já preenchidos.
     Usa COALESCE para preservar os valores existentes quando os argumentos
     chegam None ou quando a coluna já tem valor.
+
+    Celular BR com e sem o nono dígito é o MESMO cliente: se a outra grafia
+    já está cadastrada, é ela que vale (`_grafia_cadastrada`).
     """
     async with pool.connection() as conn:
+        telefone = await _grafia_cadastrada(conn, empresa_id, telefone)
         cur = await conn.execute(
             f"""
             INSERT INTO cliente (empresa_id, telefone, nome, email, doc)
@@ -345,10 +372,12 @@ async def criar_cliente(
 ) -> tuple[Cliente, bool]:
     """Cadastro manual pelo painel. Devolve `(cliente, criado)`.
 
-    Telefone já cadastrado na empresa NÃO é alterado (criado=False) — quem
-    chama decide se é erro (formulário) ou só "já existia" (importação).
+    Telefone já cadastrado na empresa — inclusive na outra grafia do nono
+    dígito — NÃO é alterado (criado=False); quem chama decide se é erro
+    (formulário) ou só "já existia" (importação).
     """
     async with pool.connection() as conn:
+        telefone = await _grafia_cadastrada(conn, empresa_id, telefone)
         cur = await conn.execute(
             f"""
             INSERT INTO cliente (empresa_id, telefone, nome, email, source)
