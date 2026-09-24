@@ -48,7 +48,7 @@ export function PageHeader({
           ) : null}
         </div>
       </div>
-      {acoes ? <div className="flex shrink-0 gap-2">{acoes}</div> : null}
+      {acoes ? <div className="flex max-w-full shrink-0 flex-wrap gap-2">{acoes}</div> : null}
     </div>
   );
 }

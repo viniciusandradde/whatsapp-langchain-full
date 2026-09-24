@@ -10,7 +10,7 @@
  */
 import "server-only";
 import { cookies, headers as nextHeaders } from "next/headers";
-import { ApiRequestError } from "@/lib/api-error-shared";
+import { ApiRequestError, friendlyError } from "@/lib/api-error-shared";
 import { auth } from "@/lib/auth";
 import { ensureFrontendRuntimeConfig } from "@/lib/runtime-config";
 
@@ -501,13 +501,14 @@ export interface Cliente {
   uf: string | null;
   pais: string;
   segmento: string | null;
+  // Funil (mig 201) — rótulos em `lib/lead.ts`
   lifecycle_stage:
     | "lead"
-    | "qualified"
-    | "opportunity"
-    | "customer"
-    | "evangelist"
-    | "churned"
+    | "mql"
+    | "sql"
+    | "oportunidade"
+    | "cliente"
+    | "perdido"
     | null;
   score: number | null;
   source: string | null;
@@ -537,6 +538,11 @@ export interface Cliente {
   field_5: string | null;
   ignora_inatividade: boolean;
   desconsidera_turno: boolean;
+  // Classificação do lead (mig 201)
+  temperatura: "frio" | "morno" | "quente" | null;
+  classificacao_origem: "manual" | "ia" | null;
+  classificacao_motivo: string | null;
+  classificado_em: string | null;
 }
 
 export type ClienteUpdateInput = Partial<
@@ -552,6 +558,9 @@ export type ClienteUpdateInput = Partial<
     | "updated_at"
     | "tags"
     | "last_interaction_at"
+    | "classificacao_origem"
+    | "classificacao_motivo"
+    | "classificado_em"
   >
 >;
 
@@ -1887,10 +1896,14 @@ export async function getClientes(
     search?: string;
     limit?: number;
     offset?: number;
+    estagio?: string;
+    temperatura?: string;
   } = {},
 ): Promise<ClientesResponse> {
   const q = new URLSearchParams();
   if (params.search) q.set("search", params.search);
+  if (params.estagio) q.set("lifecycle_stage", params.estagio);
+  if (params.temperatura) q.set("temperatura", params.temperatura);
   if (params.limit) q.set("limit", String(params.limit));
   if (params.offset) q.set("offset", String(params.offset));
   const qs = q.toString();
@@ -1905,6 +1918,70 @@ export async function updateCliente(
     method: "PUT",
     body,
   });
+}
+
+export interface ClienteCreateInput {
+  telefone: string;
+  nome?: string | null;
+  email?: string | null;
+  source?: string | null;
+  lifecycle_stage?: Cliente["lifecycle_stage"];
+  temperatura?: Cliente["temperatura"];
+}
+
+export async function createCliente(body: ClienteCreateInput): Promise<Cliente> {
+  return apiFetch<Cliente>(`/api/clientes`, { method: "POST", body });
+}
+
+export interface ClassificacaoInput {
+  lifecycle_stage: Cliente["lifecycle_stage"];
+  temperatura: Cliente["temperatura"];
+  score: number | null;
+}
+
+export async function classificarCliente(
+  id: number,
+  body: ClassificacaoInput,
+): Promise<Cliente> {
+  return apiFetch<Cliente>(`/api/clientes/${id}/classificacao`, {
+    method: "PUT",
+    body,
+  });
+}
+
+/**
+ * Bytes do CSV de clientes para o route handler devolver ao navegador.
+ * Mesmo desenho de `proxyHistoricoExport` (apiFetch espera JSON).
+ */
+export async function proxyClientesExport(
+  search: string,
+): Promise<{ bytes: ArrayBuffer; filename: string }> {
+  ensureFrontendRuntimeConfig();
+  const qs = search.startsWith("?") ? search.slice(1) : search;
+  const url = `${API_URL}/api/clientes/exportar${qs ? `?${qs}` : ""}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${SERVICE_TOKEN}`,
+  };
+  try {
+    const session = await auth.api.getSession({ headers: await nextHeaders() });
+    if (session?.user?.id) headers["X-User-Id"] = session.user.id;
+  } catch {
+    // sem session → 401 esperado
+  }
+  try {
+    const empresaCookie = (await cookies()).get(ACTIVE_EMPRESA_COOKIE)?.value;
+    if (empresaCookie) headers["X-Empresa-Id"] = empresaCookie;
+  } catch {
+    // sem cookies
+  }
+  const resp = await fetch(url, { headers, cache: "no-store" });
+  if (!resp.ok) {
+    console.error("[api] clientes export", resp.status, resp.statusText, url);
+    throw new Error(friendlyError(resp.status, await resp.text()));
+  }
+  const cd = resp.headers.get("content-disposition") || "";
+  const m = cd.match(/filename="?([^"]+)"?/);
+  return { bytes: await resp.arrayBuffer(), filename: m?.[1] || "clientes.csv" };
 }
 
 export async function getCliente(id: number): Promise<ClienteDetail> {
@@ -3084,6 +3161,7 @@ export interface PreviewCrmFiltro {
   tags?: string[];
   segmento?: string | null;
   lifecycle_stage?: string | null;
+  temperatura?: string | null;
   search?: string | null;
 }
 

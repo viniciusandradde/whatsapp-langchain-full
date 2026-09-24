@@ -42,6 +42,7 @@ from whatsapp_langchain.agents.tools.calendar import (
 from whatsapp_langchain.agents.tools.cliente_atendimento import (
     add_cliente_tag,
     classificar_atendimento,
+    classificar_lead,
     close_atendimento,
     create_cliente_anotacao,
     get_cliente_anotacoes,
@@ -79,6 +80,9 @@ TOOL_SLUGS: dict[str, tuple[Any, ...]] = {
     # Classificar grava prioridade/sentimento/categoria no atendimento —
     # é o que a UI chama de "tag do atendimento".
     "tag_atendimento": (classificar_atendimento,),
+    # Estágio do funil + temperatura do lead no cadastro do cliente (mig 201).
+    # A IA só sugere: classificação manual do operador nunca é sobrescrita.
+    "classificar_lead": (classificar_lead,),
     "consultar_contexto": (get_cliente_history, get_cliente_anotacoes),
     "salvar_contexto": (save_cliente_fato, read_cliente_memoria),
     "cliente.read": (get_cliente_profile,),

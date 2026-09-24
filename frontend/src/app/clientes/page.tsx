@@ -1,7 +1,13 @@
 import Link from "next/link";
-import { UsersRound } from "lucide-react";
+import { Download, UsersRound } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
+import { ESTAGIOS_FUNIL, TEMPERATURAS } from "@/lib/lead";
+
+import { ChipsLead } from "./classificacao-lead";
+import { ImportarCsvDialog } from "./importar-csv-dialog";
+import { NovoClienteDialog } from "./novo-cliente-dialog";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,8 +22,11 @@ import { requireSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 interface PageProps {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; estagio?: string; temperatura?: string }>;
 }
+
+const SELECT =
+  "h-10 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 /**
  * Página /clientes — diretório dos clientes da empresa ativa.
@@ -29,12 +38,21 @@ export default async function ClientesPage({ searchParams }: PageProps) {
   await requireSession();
   const sp = await searchParams;
   const search = sp.q?.trim() || undefined;
+  const estagio = ESTAGIOS_FUNIL.some((e) => e.valor === sp.estagio) ? sp.estagio : undefined;
+  const temperatura = TEMPERATURAS.some((t) => t.valor === sp.temperatura)
+    ? sp.temperatura
+    : undefined;
+  const filtrando = !!(search || estagio || temperatura);
+  const exportarQs = new URLSearchParams();
+  if (search) exportarQs.set("search", search);
+  if (estagio) exportarQs.set("lifecycle_stage", estagio);
+  if (temperatura) exportarQs.set("temperatura", temperatura);
 
   let clientes: Awaited<ReturnType<typeof getClientes>>["clientes"] = [];
   let error: string | null = null;
 
   try {
-    const data = await getClientes({ search, limit: 50 });
+    const data = await getClientes({ search, estagio, temperatura, limit: 50 });
     clientes = data.clientes;
   } catch (e) {
     error =
@@ -46,21 +64,57 @@ export default async function ClientesPage({ searchParams }: PageProps) {
       <PageHeader
         titulo="Clientes"
         icon={UsersRound}
+        acoes={
+          <div className="flex flex-wrap gap-2">
+            <NovoClienteDialog />
+            <ImportarCsvDialog />
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<a href={`/api/clientes-exportar?${exportarQs.toString()}`} download />}
+            >
+              <Download className="size-4" />
+              Exportar
+            </Button>
+          </div>
+        }
       />
 
-      <form className="flex max-w-md gap-2" action="/clientes" method="get">
+      <form className="flex flex-wrap items-center gap-2" action="/clientes" method="get">
         <input
           name="q"
           defaultValue={search ?? ""}
-          placeholder="Buscar por nome ou telefone…"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          placeholder="Buscar por nome, telefone ou e-mail…"
+          aria-label="Buscar clientes"
+          className="flex h-10 w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <button
-          type="submit"
-          className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        <select name="estagio" defaultValue={estagio ?? ""} aria-label="Estágio do funil" className={SELECT}>
+          <option value="">Todos os estágios</option>
+          {ESTAGIOS_FUNIL.map((e) => (
+            <option key={e.valor} value={e.valor}>
+              {e.rotulo}
+            </option>
+          ))}
+        </select>
+        <select
+          name="temperatura"
+          defaultValue={temperatura ?? ""}
+          aria-label="Temperatura"
+          className={SELECT}
         >
-          Buscar
-        </button>
+          <option value="">Todas as temperaturas</option>
+          {TEMPERATURAS.map((t) => (
+            <option key={t.valor} value={t.valor}>
+              {t.rotulo}
+            </option>
+          ))}
+        </select>
+        <Button type="submit">Filtrar</Button>
+        {filtrando && (
+          <Link href="/clientes" className="text-sm text-muted-foreground hover:text-foreground">
+            Limpar
+          </Link>
+        )}
       </form>
 
       {error && (
@@ -74,9 +128,9 @@ export default async function ClientesPage({ searchParams }: PageProps) {
         <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
           <p className="font-medium">Nenhum cliente encontrado</p>
           <p className="mt-1 text-sm">
-            {search
-              ? "Ajuste o filtro ou aguarde uma nova mensagem inbound."
-              : "Quando um inbound chegar, o cliente entra aqui automaticamente."}
+            {filtrando
+              ? "Ajuste os filtros para ver mais clientes."
+              : "Quem manda mensagem entra aqui sozinho. Você também pode cadastrar ou importar uma planilha."}
           </p>
         </div>
       )}
@@ -95,6 +149,16 @@ export default async function ClientesPage({ searchParams }: PageProps) {
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
+                  {(c.lifecycle_stage || c.temperatura || c.score !== null) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ChipsLead cliente={c} curto />
+                      {c.score !== null && (
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {c.score} pts
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {c.email && (
                     <div className="text-muted-foreground">{c.email}</div>
                   )}

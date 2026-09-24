@@ -156,6 +156,7 @@ const TOOLS_DISPONIVEIS: { slug: string; label: string; pending?: boolean }[] = 
   { slug: "chamar_webhook", label: "Chamar webhook customizado", pending: true },
   { slug: "tag_cliente", label: "Adicionar tag ao cliente" },
   { slug: "tag_atendimento", label: "Adicionar tag ao atendimento" },
+  { slug: "classificar_lead", label: "Sugerir estágio e temperatura do lead" },
   { slug: "consultar_contexto", label: "Consultar contexto do atendimento" },
   { slug: "salvar_contexto", label: "Salvar contexto do atendimento" },
   { slug: "buscar_arquivos", label: "Buscar arquivos na galeria", pending: true },
