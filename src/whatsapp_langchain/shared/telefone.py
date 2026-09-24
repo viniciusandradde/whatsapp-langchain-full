@@ -157,7 +157,7 @@ def variantes_nono_digito(telefone: str) -> list[str]:
     número estrangeiro voltam sozinhos.
     """
     prefixo = "+" if telefone.startswith("+") else ""
-    digitos = telefone[len(prefixo):]
+    digitos = telefone[len(prefixo) :]
     if not digitos.isdigit() or not digitos.startswith("55"):
         return [telefone]
     resto = digitos[2:]  # DDD + linha
