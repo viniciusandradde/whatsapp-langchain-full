@@ -111,6 +111,22 @@ class WabaTemplateRecord(BaseModel):
     content_sid: str | None = None
 
 
+class WabaStatus(BaseModel):
+    """Aviso de entrega de uma mensagem que a Cloud API enviou.
+
+    Vem no campo `messages`, em `value.statuses[]`: `sent`, `delivered`,
+    `read` ou `failed`. No `failed`, `errors[0]` traz o código e o motivo.
+    """
+
+    waba_phone_id: str
+    message_id: str  # wamid da mensagem ENVIADA
+    status: str  # sent | delivered | read | failed
+    recipient_id: str | None = None
+    erro_codigo: int | None = None
+    erro_titulo: str | None = None
+    erro_detalhe: str | None = None
+
+
 class WabaEcho(BaseModel):
     """Mensagem que a empresa enviou pelo WhatsApp Business do CELULAR.
 

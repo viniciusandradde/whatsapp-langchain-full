@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, RefreshCw } from "lucide-react";
+import { CircleAlert, Lock, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDestrutivo } from "@/components/confirm-destrutivo";
@@ -163,6 +163,17 @@ function BolhaItem({
         >
           {conteudo}
         </BolhaMenu>
+        {/* Mig 203 — a Meta aceitou o envio e depois avisou que NÃO entregou
+            (fora das 24 h, número sem WhatsApp…). Motivo à vista, não só no
+            `title`: no celular não há hover. */}
+        {b.lado === "out" && m.entrega_status === "failed" && !(b.kind === "text" && b.erro) && (
+          <p className="mt-0.5 flex items-start justify-end gap-1 text-right text-[11px] text-destructive">
+            <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
+            <span className="wrap-anywhere">
+              Não entregue{m.entrega_erro ? `: ${m.entrega_erro}` : ""}
+            </span>
+          </p>
+        )}
       </div>
     </div>
   );

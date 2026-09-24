@@ -697,6 +697,10 @@ export interface AtendimentoMensagem {
   // aberta há horas).
   pode_editar_resposta?: boolean;
   pode_apagar_resposta?: boolean;
+  // Mig 203 — aviso de entrega da Meta (só API oficial). `entrega_erro` já
+  // vem em frase legível, com o código da Meta no fim.
+  entrega_status?: "sent" | "delivered" | "read" | "failed" | null;
+  entrega_erro?: string | null;
   media_processing_status: string | null;
   response: string | null;
   status: string;

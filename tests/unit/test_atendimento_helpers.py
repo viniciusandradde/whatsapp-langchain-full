@@ -97,8 +97,9 @@ def _row_with_cliente(*, nome="Fulano", telefone="+5511999", **kwargs):
 #:
 #: 25 desde a mig 186: mig 184 acrescentou `media_arquivo_uuid IS NOT NULL`
 #: (23) e a 186 os dois nomes de arquivo (`media_filename`,
-#: `response_media_filename`).
-_COLUNAS_MENSAGEM = 25
+#: `response_media_filename`). 27 desde a mig 203 (`entrega_status`,
+#: `entrega_erro`).
+_COLUNAS_MENSAGEM = 27
 
 
 def _mock_pool(*results) -> tuple[MagicMock, AsyncMock]:
@@ -560,6 +561,9 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
             False,
             None,
             None,
+            # Mig 203: aviso de entrega da Meta.
+            "failed",
+            "Passaram mais de 24 horas (código 131047)",
         )
     ]
     assert len(rows[0]) == _COLUNAS_MENSAGEM
@@ -568,6 +572,8 @@ async def test_list_atendimento_mensagens_filters_by_empresa_and_atendimento():
     assert len(out) == 1
     assert out[0]["incoming_message"] == "oi"
     assert out[0]["response"] == "olá! como posso ajudar?"
+    assert out[0]["entrega_status"] == "failed"
+    assert "131047" in out[0]["entrega_erro"]
     # Mensagem só de texto não tem mídia de saída — o campo existe e vem nulo,
     # o que é o que faz a timeline renderizar bolha de texto e não de anexo.
     assert out[0]["response_media_url"] is None
@@ -622,6 +628,8 @@ async def test_incluir_midia_false_nao_seleciona_o_blob():
             False,  # media_arquivo_uuid IS NOT NULL (mig 184)
             "comprovante.jpg",  # media_filename (mig 164)
             None,  # response_media_filename (mig 186)
+            None,  # entrega_status (mig 203)
+            None,  # entrega_erro (mig 203)
         )
     ]
     assert len(rows[0]) == _COLUNAS_MENSAGEM
