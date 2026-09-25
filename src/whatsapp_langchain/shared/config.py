@@ -217,6 +217,12 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.5-flash-lite"
     # Modelo dedicado ao pré-processamento de mídia (imagem/áudio)
     openrouter_midia_model: str = "google/gemini-2.5-flash-lite"
+    # ADR-007 (mig 204): chave de GESTÃO da OpenRouter (Provisioning API),
+    # usada só para criar/consultar/apagar a chave exclusiva de uma empresa
+    # (Opção B). Sem ela, "Criar chave exclusiva" responde que o
+    # provisionamento não está configurado; a chave própria que a empresa
+    # traz (Opção A) não depende disto.
+    openrouter_provisioning_key: SecretStr | None = None
 
     # --- Voz do agente (TTS, mig 176) ---
     # Chave OpenRouter dedicada ao TTS (opcional). Ausente, cai na

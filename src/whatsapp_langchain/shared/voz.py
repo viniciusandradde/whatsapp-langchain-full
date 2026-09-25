@@ -56,6 +56,7 @@ from whatsapp_langchain.shared.governanca_ia import (
     registrar_execucao,
 )
 from whatsapp_langchain.shared.midia_processing import transcribe_audio_bytes
+from whatsapp_langchain.shared.openrouter_chave import chave_openrouter_tts
 from whatsapp_langchain.shared.outbound import MIDIA_MAX_BYTES
 
 logger = structlog.get_logger()
@@ -325,7 +326,7 @@ async def sintetizar(
         logger.warning("voz_desconhecida_usando_default", voz=voz)
         voz = VOZ_DEFAULT
 
-    api_key = settings.resolved_tts_api_key
+    api_key = chave_openrouter_tts()  # ADR-007: chave da empresa, se houver
     if api_key is None:
         raise VozError("OPENROUTER_API_KEY/OPENROUTER_TTS_API_KEY não configurada.")
 

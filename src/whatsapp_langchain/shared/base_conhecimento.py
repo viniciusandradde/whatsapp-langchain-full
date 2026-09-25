@@ -17,10 +17,9 @@ from dataclasses import dataclass
 import structlog
 from langchain_openai import OpenAIEmbeddings
 from psycopg_pool import AsyncConnectionPool
-from pydantic import SecretStr
 
 from whatsapp_langchain.shared.chunking import split_text
-from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.embeddings import embeddings_openrouter
 from whatsapp_langchain.shared.llm import create_chat_model
 from whatsapp_langchain.shared.models import (
     DocumentoConhecimento,
@@ -149,20 +148,10 @@ def _row_to_documento(row) -> DocumentoConhecimento:
     )
 
 
-_embeddings_singleton: OpenAIEmbeddings | None = None
-
-
 def _get_embeddings() -> OpenAIEmbeddings:
-    global _embeddings_singleton
-    if _embeddings_singleton is None:
-        api_key = settings.openrouter_api_key
-        secret_key = SecretStr(api_key.get_secret_value()) if api_key else None
-        _embeddings_singleton = OpenAIEmbeddings(
-            model=settings.embedding_model,
-            base_url=settings.openrouter_base_url,
-            api_key=secret_key,
-        )
-    return _embeddings_singleton
+    """Um cliente por chave (ADR-007): a empresa com chave própria embeda com
+    ela; as demais compartilham o da plataforma. Ver `shared/embeddings.py`."""
+    return embeddings_openrouter()
 
 
 async def _embed(texto: str) -> list[float]:

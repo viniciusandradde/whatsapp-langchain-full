@@ -288,22 +288,26 @@ async def _processar_mensagem(message, pool, checkpointer, store, slots) -> None
     IA lenta (>lease) não disparar reclaim + resposta duplicada. Criado dentro
     do `empresa_scope` pra herdar o contextvar.
     """
+    from whatsapp_langchain.shared.openrouter_chave import chave_da_empresa
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
     try:
+        # ADR-007: a chave da OpenRouter da empresa entra no contexto da task
+        # junto com o escopo de RLS — o grafo, a mídia e a voz leem dali.
         with empresa_scope(empresa_id=message.empresa_id):
-            heartbeat = asyncio.create_task(_lease_heartbeat(pool, message))
-            try:
-                await process_message(
-                    message,
-                    pool,
-                    checkpointer=checkpointer,
-                    store=store,
-                )
-            finally:
-                heartbeat.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat
+            async with chave_da_empresa(pool, message.empresa_id):
+                heartbeat = asyncio.create_task(_lease_heartbeat(pool, message))
+                try:
+                    await process_message(
+                        message,
+                        pool,
+                        checkpointer=checkpointer,
+                        store=store,
+                    )
+                finally:
+                    heartbeat.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await heartbeat
     except asyncio.CancelledError:
         raise
     except Exception:

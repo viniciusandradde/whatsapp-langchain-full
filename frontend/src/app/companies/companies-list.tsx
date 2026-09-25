@@ -32,6 +32,7 @@ import {
   ResumoDiarioSection,
   VozDoAgenteSection,
 } from "./empresa-form";
+import { OpenRouterChaveSection } from "./openrouter-chave-section";
 import { VigenciaSection } from "./vigencia-section";
 import { usePermissionsContext } from "@/components/permissions-context";
 
@@ -63,6 +64,13 @@ export function CompaniesList({ empresas }: Props) {
           <EmpresaForm initial={editing} onDone={() => setEditing(null)} />
           {/* Vigência do plano (leva E): decisão de cobrança, só superadmin. */}
           {isSuperadmin && <VigenciaSection key={`vig-${editing.id}`} empresa={editing} />}
+          {/* Chave da OpenRouter (ADR-007): admin define a própria; superadmin
+              cria a exclusiva pela plataforma. */}
+          <OpenRouterChaveSection
+            key={`or-${editing.id}`}
+            empresa={editing}
+            superadmin={isSuperadmin}
+          />
           <CsatConfigSection empresaId={editing.id} />
           <ResumoDiarioSection empresaId={editing.id} />
           {/* key: o estado inicial vem das props — trocar de empresa sem

@@ -42,6 +42,15 @@ from whatsapp_langchain.shared.empresa import (
     update_member_role,
 )
 from whatsapp_langchain.shared.models import Empresa, EmpresaMembro
+from whatsapp_langchain.shared.openrouter_chave import (
+    ChaveNaoGeridaError,
+    chave_da_empresa,
+    definir_chave_propria,
+    definir_limite,
+    provisionar_chave,
+    remover_chave,
+    status_chave,
+)
 from whatsapp_langchain.shared.voz import VOZES, VozError, sintetizar
 
 logger = structlog.get_logger()
@@ -340,13 +349,16 @@ async def preview_voz_endpoint(
             detail=f"Voz inválida. Valores aceitos: {sorted(VOZES)}.",
         )
     try:
-        ogg = await sintetizar(
-            _VOZ_PREVIEW_FRASE,
-            voz=body.voz_nome,
-            estilo=body.voz_estilo,
-            pool=pool,
-            empresa_id=empresa_id,
-        )
+        # ADR-007: a empresa vem do PATH (superadmin pode estar noutra ativa),
+        # por isso a chave dela entra aqui e não pelo middleware.
+        async with chave_da_empresa(pool, empresa_id):
+            ogg = await sintetizar(
+                _VOZ_PREVIEW_FRASE,
+                voz=body.voz_nome,
+                estilo=body.voz_estilo,
+                pool=pool,
+                empresa_id=empresa_id,
+            )
     except VozError as e:
         logger.warning("voz_preview_falhou", empresa_id=empresa_id, error=str(e))
         raise HTTPException(
@@ -357,6 +369,188 @@ async def preview_voz_endpoint(
         "audio_base64": base64.b64encode(ogg).decode("ascii"),
         "mime": "audio/ogg",
     }
+
+
+# --- Chave da OpenRouter por empresa (ADR-007, mig 204) ---
+#
+# A chave NUNCA sai pela API: as respostas levam `definida`, `origem`
+# (`propria` = a empresa trouxe; `provisionada` = a plataforma criou),
+# o prefixo mascarado e, quando a OpenRouter responde, limite e uso.
+# Admin da empresa define/remove a própria; só o superadmin cria, rotaciona
+# e ajusta o limite da provisionada (é crédito da plataforma).
+
+_OR_SEM_REDE = "Não foi possível falar com a OpenRouter agora. Tente de novo."
+
+
+class ChaveOpenRouterInput(BaseModel):
+    chave: str = Field(min_length=20, max_length=200)
+
+
+class LimiteOpenRouterInput(BaseModel):
+    """`null` = sem limite."""
+
+    limite_usd: float | None = Field(default=None, ge=0, le=100_000)
+
+
+async def _exigir_empresa(pool, empresa_id: int) -> None:
+    if await get_empresa_by_id(pool, empresa_id) is None:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+
+@router.get("/{empresa_id}/openrouter-chave")
+async def get_openrouter_chave_endpoint(
+    empresa_id: int,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só admin vê a chave da OpenRouter da empresa."
+        )
+    await _exigir_empresa(pool, empresa_id)
+    st = await status_chave(pool, empresa_id)
+    assert st is not None
+    return st.to_dict()
+
+
+@router.put("/{empresa_id}/openrouter-chave")
+async def set_openrouter_chave_endpoint(
+    empresa_id: int,
+    body: ChaveOpenRouterInput,
+    request: Request,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Opção A: a empresa traz a própria chave. Validada na OpenRouter antes
+    de gravar (formato errado ou recusada → 422)."""
+    from whatsapp_langchain.integrations.crypto import IntegracaoConfigError
+    from whatsapp_langchain.integrations.openrouter_gestao import (
+        ChaveInvalidaError,
+        OpenRouterGestaoError,
+    )
+
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só admin define a chave da OpenRouter da empresa."
+        )
+    await _exigir_empresa(pool, empresa_id)
+    try:
+        st = await definir_chave_propria(
+            pool, empresa_id, body.chave, user_id=user_id, request=request
+        )
+    except ChaveInvalidaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except OpenRouterGestaoError:
+        raise HTTPException(status_code=502, detail=_OR_SEM_REDE) from None
+    except IntegracaoConfigError:
+        raise HTTPException(
+            status_code=503,
+            detail="O servidor não consegue guardar a chave de forma segura agora.",
+        ) from None
+    assert st is not None
+    return st.to_dict()
+
+
+@router.delete("/{empresa_id}/openrouter-chave")
+async def remover_openrouter_chave_endpoint(
+    empresa_id: int,
+    request: Request,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Volta a empresa para a chave da plataforma. Chave criada pela
+    plataforma só o superadmin remove (é crédito dela)."""
+    pool = await get_pool()
+    if not await is_admin_of(pool, empresa_id, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só admin remove a chave da OpenRouter da empresa."
+        )
+    await _exigir_empresa(pool, empresa_id)
+    atual = await status_chave(pool, empresa_id, consultar_uso=False)
+    if (
+        atual is not None
+        and atual.origem == "provisionada"
+        and not await is_superadmin(pool, user_id)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Só o superadmin remove uma chave criada pela plataforma.",
+        )
+    st, apagada = await remover_chave(
+        pool, empresa_id, user_id=user_id, request=request
+    )
+    assert st is not None
+    d = st.to_dict()
+    d["apagada_na_openrouter"] = apagada
+    return d
+
+
+@router.post("/{empresa_id}/openrouter-chave/provisionar", status_code=201)
+async def provisionar_openrouter_chave_endpoint(
+    empresa_id: int,
+    body: LimiteOpenRouterInput,
+    request: Request,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Opção B: cria (ou rotaciona) a chave exclusiva da empresa pela API de
+    gestão da OpenRouter, com limite de crédito. Só superadmin."""
+    from whatsapp_langchain.integrations.openrouter_gestao import (
+        OpenRouterGestaoError,
+        ProvisionamentoNaoConfiguradoError,
+    )
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só o superadmin cria chaves pela plataforma."
+        )
+    await _exigir_empresa(pool, empresa_id)
+    try:
+        st = await provisionar_chave(
+            pool,
+            empresa_id,
+            limite_usd=body.limite_usd,
+            user_id=user_id,
+            request=request,
+        )
+    except ProvisionamentoNaoConfiguradoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except OpenRouterGestaoError:
+        raise HTTPException(status_code=502, detail=_OR_SEM_REDE) from None
+    assert st is not None
+    return st.to_dict()
+
+
+@router.put("/{empresa_id}/openrouter-chave/limite")
+async def limite_openrouter_chave_endpoint(
+    empresa_id: int,
+    body: LimiteOpenRouterInput,
+    request: Request,
+    user_id: str = Depends(get_user_id_from_request),
+) -> dict:
+    """Ajusta o limite de crédito de uma chave criada pela plataforma."""
+    from whatsapp_langchain.integrations.openrouter_gestao import (
+        OpenRouterGestaoError,
+        ProvisionamentoNaoConfiguradoError,
+    )
+
+    pool = await get_pool()
+    if not await is_superadmin(pool, user_id):
+        raise HTTPException(
+            status_code=403, detail="Só o superadmin ajusta o limite da chave."
+        )
+    await _exigir_empresa(pool, empresa_id)
+    try:
+        st = await definir_limite(
+            pool, empresa_id, body.limite_usd, user_id=user_id, request=request
+        )
+    except ChaveNaoGeridaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except ProvisionamentoNaoConfiguradoError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except OpenRouterGestaoError:
+        raise HTTPException(status_code=502, detail=_OR_SEM_REDE) from None
+    assert st is not None
+    return st.to_dict()
 
 
 # --- White-label: upload de logo (mig 115) ---

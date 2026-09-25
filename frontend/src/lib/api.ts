@@ -1312,6 +1312,84 @@ export interface PagamentosEmpresa {
   sugestao: { periodo_inicio: string; periodo_fim: string };
 }
 
+/**
+ * Chave da OpenRouter da empresa (ADR-007, mig 204). A chave NUNCA vem na
+ * resposta: só o prefixo, a origem (`propria` = a empresa trouxe;
+ * `provisionada` = a plataforma criou pela API de gestão) e, quando a
+ * OpenRouter responde, limite e uso.
+ */
+export interface OpenRouterChaveUso {
+  label: string | null;
+  limite_usd: number | null;
+  limite_restante_usd: number | null;
+  uso_usd: number;
+  uso_mes_usd: number | null;
+  gratuita: boolean;
+  desativada: boolean;
+}
+
+export interface OpenRouterChaveStatus {
+  definida: boolean;
+  origem: "propria" | "provisionada" | null;
+  prefixo: string | null;
+  definida_em: string | null;
+  limite_usd: number | null;
+  uso: OpenRouterChaveUso | null;
+  uso_erro: string | null;
+  provisionamento_disponivel: boolean;
+  /** Só na remoção: `null` = não havia chave criada pela plataforma para apagar. */
+  apagada_na_openrouter?: boolean | null;
+}
+
+export async function getEmpresaOpenRouterChave(
+  empresaId: number,
+): Promise<OpenRouterChaveStatus> {
+  return apiFetch<OpenRouterChaveStatus>(
+    `/api/empresas/${empresaId}/openrouter-chave`,
+  );
+}
+
+/** Opção A: a empresa traz a própria chave (validada na OpenRouter antes de gravar). */
+export async function setEmpresaOpenRouterChave(
+  empresaId: number,
+  chave: string,
+): Promise<OpenRouterChaveStatus> {
+  return apiFetch<OpenRouterChaveStatus>(
+    `/api/empresas/${empresaId}/openrouter-chave`,
+    { method: "PUT", body: { chave } },
+  );
+}
+
+export async function removerEmpresaOpenRouterChave(
+  empresaId: number,
+): Promise<OpenRouterChaveStatus> {
+  return apiFetch<OpenRouterChaveStatus>(
+    `/api/empresas/${empresaId}/openrouter-chave`,
+    { method: "DELETE" },
+  );
+}
+
+/** Opção B (superadmin): cria ou rotaciona a chave exclusiva da empresa com limite de crédito. */
+export async function provisionarEmpresaOpenRouterChave(
+  empresaId: number,
+  limiteUsd: number | null,
+): Promise<OpenRouterChaveStatus> {
+  return apiFetch<OpenRouterChaveStatus>(
+    `/api/empresas/${empresaId}/openrouter-chave/provisionar`,
+    { method: "POST", body: { limite_usd: limiteUsd } },
+  );
+}
+
+export async function setLimiteEmpresaOpenRouterChave(
+  empresaId: number,
+  limiteUsd: number | null,
+): Promise<OpenRouterChaveStatus> {
+  return apiFetch<OpenRouterChaveStatus>(
+    `/api/empresas/${empresaId}/openrouter-chave/limite`,
+    { method: "PUT", body: { limite_usd: limiteUsd } },
+  );
+}
+
 /** Superadmin registra um pagamento conciliado no gateway (leva F). */
 export async function registrarPagamento(
   empresaId: number,

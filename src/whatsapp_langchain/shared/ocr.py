@@ -25,6 +25,7 @@ import httpx
 import structlog
 
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.openrouter_chave import chave_openrouter
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -106,7 +107,7 @@ async def ocr_image_bytes(
     o mesmo gasto invisível ao ia_budget que a transcrição de áudio
     (ver `registrar_custo_midia` em shared/midia_processing.py).
     """
-    api_key = settings.openrouter_api_key
+    api_key = chave_openrouter()  # ADR-007: chave da empresa, se houver
     if not api_key:
         raise OCRError("OPENROUTER_API_KEY não configurada")
 

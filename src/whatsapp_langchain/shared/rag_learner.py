@@ -19,7 +19,6 @@ import structlog
 from langchain_core.messages import HumanMessage
 from psycopg_pool import AsyncConnectionPool
 
-from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import get_pool
 from whatsapp_langchain.shared.llm import create_chat_model
 
@@ -111,16 +110,9 @@ async def _cluster_queries(misses: list[QueryMiss]) -> list[Cluster]:
     # Embeddings em batch
     queries_text = [m.query_text for m in misses]
     logger.info("rag_learner_embedding", n=len(queries_text))
-    from langchain_openai import OpenAIEmbeddings
-    from pydantic import SecretStr
+    from whatsapp_langchain.shared.embeddings import embeddings_openrouter
 
-    api_key = settings.openrouter_api_key
-    secret_key = SecretStr(api_key.get_secret_value()) if api_key else None
-    embedder = OpenAIEmbeddings(
-        model=settings.embedding_model,
-        api_key=secret_key,
-        base_url=settings.openrouter_base_url,
-    )
+    embedder = embeddings_openrouter()  # ADR-007: chave da empresa, se houver
     vectors = await embedder.aembed_documents(queries_text)
     for m, v in zip(misses, vectors, strict=True):
         m.embedding = v
