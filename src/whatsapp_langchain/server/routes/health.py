@@ -14,12 +14,14 @@ BetterStack/Statuspage podem mapear granular ao invés de "tudo ou nada".
 
 from __future__ import annotations
 
+import hmac
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import JSONResponse, Response
 
 from whatsapp_langchain import __version__
+from whatsapp_langchain.shared.config import settings
 from whatsapp_langchain.shared.db import check_db_health, get_pool
 from whatsapp_langchain.shared.metrics import (
     CONTENT_TYPE_PROMETHEUS,
@@ -242,9 +244,30 @@ async def health_workers() -> JSONResponse:
 # ---- Prometheus metrics ----
 
 
+def _token_metrics_esperado() -> str:
+    """Token que protege o /metrics: o dedicado, senão o service token."""
+    if settings.metrics_token is not None:
+        return settings.metrics_token.get_secret_value()
+    return settings.internal_service_token
+
+
 @router.get("/metrics")
-async def metrics() -> Response:
-    """Endpoint Prometheus — text/plain format. Sem auth (padrão Prometheus)."""
+async def metrics(authorization: str | None = Header(default=None)) -> Response:
+    """Endpoint Prometheus — text/plain. Exige `Authorization: Bearer <token>`.
+
+    Deixou de ser público em 24/09/2026: expunha métricas internas (versão do
+    Python, memória, caminhos e volume por endpoint). O coletor manda o token
+    em `metrics_token` (ou o `internal_service_token`).
+    """
+    esperado = _token_metrics_esperado()
+    prefixo = "Bearer "
+    fornecido = (
+        authorization[len(prefixo) :]
+        if authorization and authorization.startswith(prefixo)
+        else ""
+    )
+    if not esperado or not fornecido or not hmac.compare_digest(fornecido, esperado):
+        raise HTTPException(status_code=401, detail="Não autorizado.")
     return Response(
         content=render_prometheus_text(),
         media_type=CONTENT_TYPE_PROMETHEUS,
