@@ -21,7 +21,7 @@
 | Objetivo | Chave por cliente ajuda? | Por quê |
 |---|---|---|
 | Separar custo para **cobrar** | **Não** | Cobra-se preço de plano, não custo bruto. A fonte de verdade do que cada empresa gastou já é `ia_execucao`. |
-| Isolar **limite de uso** (rate limit) entre clientes | Sim | Uma chave junta o limite de todos; um cliente que dispara muito atrasa os outros. |
+| Isolar **limite de uso** (rate limit) entre clientes | **Não** (chave na mesma conta) | A OpenRouter governa a capacidade **por conta**, não por chave: "Making additional accounts or API keys will not affect your rate limits, as we govern capacity globally" (docs, conferido 25/09/2026). Chave provisionada só separa crédito e visibilidade. A justiça entre empresas é do nosso lado: claim round-robin por empresa na fila (PR #150) e slots do worker. |
 | **Teto de gasto** no lado do provedor | Sim | A OpenRouter permite limite de crédito por chave — teto duro além do `ia_budget`. |
 | Reduzir o **raio de um vazamento** | Sim | Chave única vazada afeta todos. |
 | Cliente pagar a OpenRouter **direto** | Sim (BYOK) | Cliente traz a própria chave; o gasto aparece no painel dele. |
@@ -126,3 +126,11 @@ semeadura cifrada, remoção e auditoria sem a chave).
   perde nada (o cache já é por empresa na prática, os prompts diferem).
 - Provisionar automaticamente ao criar a empresa ficou de fora: o padrão
   é a chave da plataforma e a decisão é do superadmin, caso a caso.
+- **Latência não muda com a chave.** O tempo de resposta vem do modelo e
+  do provedor upstream, não da chave: várias chaves na mesma conta não dão
+  limites nem filas separadas na OpenRouter (limite é por conta). O que
+  separa as empresas num teste de carga é a fila (round-robin por empresa)
+  e os slots do worker; o que a chave separa é o crédito e o extrato. Para
+  medir por empresa: `ia_execucao.duracao_ms` por `empresa_id` (e
+  `metadata->>'chave_propria'`), e na OpenRouter a Activity filtrada por
+  chave.
