@@ -96,7 +96,9 @@ def empresa_b(db_url: str):
     _apagar_empresa(db_url, eid)
 
 
-def _membro(db_url: str, empresa_id: int, user_id: str, role: str, *, perfil_admin: bool):
+def _membro(
+    db_url: str, empresa_id: int, user_id: str, role: str, *, perfil_admin: bool
+):
     with psycopg.connect(db_url, autocommit=True) as conn, conn.cursor() as cur:
         _criar_user(cur, user_id, superadmin=False)
         cur.execute(
@@ -141,7 +143,9 @@ def superadmin(db_url: str):
     _apagar_user(db_url, uid)
 
 
-def _semear_chave(db_url: str, empresa_id: int, chave: str, origem: str, hash_: str | None) -> None:
+def _semear_chave(
+    db_url: str, empresa_id: int, chave: str, origem: str, hash_: str | None
+) -> None:
     """Grava a chave cifrada como a API gravaria (mesma cifra do dev)."""
     from whatsapp_langchain.integrations.crypto import encrypt_str
     from whatsapp_langchain.integrations.openrouter_gestao import mascarar
@@ -176,7 +180,11 @@ class TestE2EChaveOpenRouter:
 
     def test_02_operador_nao_ve_nem_define(self, empresa_a, operador_a):
         h = _headers(operador_a, empresa_a)
-        r = httpx.get(f"{API_BASE_URL}/api/empresas/{empresa_a}/openrouter-chave", headers=h, timeout=15)
+        r = httpx.get(
+            f"{API_BASE_URL}/api/empresas/{empresa_a}/openrouter-chave",
+            headers=h,
+            timeout=15,
+        )
         assert r.status_code == 403, r.text
         r = httpx.put(
             f"{API_BASE_URL}/api/empresas/{empresa_a}/openrouter-chave",
@@ -242,11 +250,23 @@ class TestE2EChaveOpenRouter:
         assert body["uso_erro"]
         assert _CHAVE_FALSA not in r.text
 
-    def test_07_provisionar_exige_superadmin_e_configuracao(self, empresa_a, admin_a, superadmin):
+    def test_07_provisionar_exige_superadmin_e_configuracao(
+        self, empresa_a, admin_a, superadmin
+    ):
         url = f"{API_BASE_URL}/api/empresas/{empresa_a}/openrouter-chave/provisionar"
-        r = httpx.post(url, headers=_headers(admin_a, empresa_a), json={"limite_usd": 10}, timeout=15)
+        r = httpx.post(
+            url,
+            headers=_headers(admin_a, empresa_a),
+            json={"limite_usd": 10},
+            timeout=15,
+        )
         assert r.status_code == 403, r.text
-        r = httpx.post(url, headers=_headers(superadmin, empresa_a), json={"limite_usd": 10}, timeout=15)
+        r = httpx.post(
+            url,
+            headers=_headers(superadmin, empresa_a),
+            json={"limite_usd": 10},
+            timeout=15,
+        )
         # O dev não tem OPENROUTER_PROVISIONING_KEY: 409 explicando.
         assert r.status_code in (409, 201), r.text
         if r.status_code == 409:
@@ -261,7 +281,9 @@ class TestE2EChaveOpenRouter:
         )
         assert r.status_code == 409, r.text
 
-    def test_09_provisionada_so_superadmin_remove(self, db_url, empresa_a, admin_a, superadmin):
+    def test_09_provisionada_so_superadmin_remove(
+        self, db_url, empresa_a, admin_a, superadmin
+    ):
         _semear_chave(db_url, empresa_a, _CHAVE_FALSA, "provisionada", "hash-falso")
         r = httpx.delete(
             f"{API_BASE_URL}/api/empresas/{empresa_a}/openrouter-chave",

@@ -27,7 +27,9 @@ _BASE = settings.openrouter_base_url.rstrip("/")
 
 @pytest.fixture(autouse=True)
 def _plataforma(monkeypatch):
-    monkeypatch.setattr(settings, "openrouter_api_key", SecretStr("sk-or-v1-plataforma-000000"))
+    monkeypatch.setattr(
+        settings, "openrouter_api_key", SecretStr("sk-or-v1-plataforma-000000")
+    )
     monkeypatch.setattr(settings, "openrouter_tts_api_key", None)
     monkeypatch.setattr(settings, "openrouter_provisioning_key", None)
     oc.limpar_cache()
@@ -51,16 +53,25 @@ class TestContexto:
             assert chave is not None
             assert chave.get_secret_value() == "sk-or-v1-empresa-111111"
             assert oc.chave_e_da_empresa() is True
-            assert oc.chave_openrouter_tts().get_secret_value() == "sk-or-v1-empresa-111111"  # type: ignore[union-attr]
+            assert (
+                oc.chave_openrouter_tts().get_secret_value()
+                == "sk-or-v1-empresa-111111"
+            )  # type: ignore[union-attr]
         assert oc.chave_openrouter().get_secret_value() == "sk-or-v1-plataforma-000000"  # type: ignore[union-attr]
         assert oc.chave_e_da_empresa() is False
 
     def test_contexto_vazio_nao_apaga_a_plataforma(self):
         with oc.usar_chave(None):
-            assert oc.chave_openrouter().get_secret_value() == "sk-or-v1-plataforma-000000"  # type: ignore[union-attr]
+            assert (
+                oc.chave_openrouter().get_secret_value() == "sk-or-v1-plataforma-000000"
+            )  # type: ignore[union-attr]
 
-    def test_tts_dedicada_da_plataforma_quando_a_empresa_nao_tem_chave(self, monkeypatch):
-        monkeypatch.setattr(settings, "openrouter_tts_api_key", SecretStr("sk-or-v1-tts-222222"))
+    def test_tts_dedicada_da_plataforma_quando_a_empresa_nao_tem_chave(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            settings, "openrouter_tts_api_key", SecretStr("sk-or-v1-tts-222222")
+        )
         assert oc.chave_openrouter_tts().get_secret_value() == "sk-or-v1-tts-222222"  # type: ignore[union-attr]
 
     def test_factory_do_modelo_honra_o_contexto(self):
@@ -232,7 +243,9 @@ class TestConsultarChave:
 
     async def test_chave_recusada(self):
         with respx.mock() as mock:
-            mock.get(f"{_BASE}/key").mock(return_value=httpx.Response(401, json={"error": "x"}))
+            mock.get(f"{_BASE}/key").mock(
+                return_value=httpx.Response(401, json={"error": "x"})
+            )
             with pytest.raises(gestao.ChaveInvalidaError):
                 await gestao.consultar_chave("sk-or-v1-" + "b" * 40)
 
@@ -258,7 +271,11 @@ class TestGestao:
                 return_value=httpx.Response(
                     201,
                     json={
-                        "data": {"hash": "h123", "name": "chatnexus-1-vsa", "limit": 25},
+                        "data": {
+                            "hash": "h123",
+                            "name": "chatnexus-1-vsa",
+                            "limit": 25,
+                        },
                         "key": "sk-or-v1-" + "d" * 40,
                     },
                 )
@@ -269,7 +286,10 @@ class TestGestao:
         assert criada.limite_usd == 25
         pedido = json.loads(rota.calls[0].request.content)
         assert pedido == {"name": "chatnexus-1-vsa", "limit": 25.0}
-        assert rota.calls[0].request.headers["Authorization"] == "Bearer sk-or-v1-gestao-888888"
+        assert (
+            rota.calls[0].request.headers["Authorization"]
+            == "Bearer sk-or-v1-gestao-888888"
+        )
 
     async def test_criar_chave_sem_limite_nao_manda_limit(self, monkeypatch):
         monkeypatch.setattr(
@@ -307,7 +327,9 @@ class TestGestao:
         )
         with respx.mock() as mock:
             rota = mock.patch(f"{_BASE}/keys/h9").mock(
-                return_value=httpx.Response(200, json={"data": {"hash": "h9", "limit": 30}})
+                return_value=httpx.Response(
+                    200, json={"data": {"hash": "h9", "limit": 30}}
+                )
             )
             info = await gestao.atualizar_chave_gerida("h9", limite_usd=30)
         assert info.limite_usd == 30
@@ -335,7 +357,9 @@ class TestDefinirChavePropria:
         monkeypatch.setattr("whatsapp_langchain.shared.audit.record_audit", _audit)
         with respx.mock() as mock:
             mock.get(f"{_BASE}/key").mock(
-                return_value=httpx.Response(200, json={"data": {"usage": 0, "limit": None}})
+                return_value=httpx.Response(
+                    200, json={"data": {"usage": 0, "limit": None}}
+                )
             )
             st = await oc.definir_chave_propria(
                 pool,  # type: ignore[arg-type]
@@ -366,6 +390,17 @@ class TestDefinirChavePropria:
         assert not any(c[0].startswith("UPDATE") for c in pool.chamadas)
 
     async def test_limite_so_para_provisionada(self):
-        pool = _PoolLinha((1, "vsa", encrypt_str("sk-or-v1-" + "h" * 40), "sk-or-v1-hhh…", "propria", None, None, None))
+        pool = _PoolLinha(
+            (
+                1,
+                "vsa",
+                encrypt_str("sk-or-v1-" + "h" * 40),
+                "sk-or-v1-hhh…",
+                "propria",
+                None,
+                None,
+                None,
+            )
+        )
         with pytest.raises(oc.ChaveNaoGeridaError):
             await oc.definir_limite(pool, 1, 10, user_id="u1")  # type: ignore[arg-type]
