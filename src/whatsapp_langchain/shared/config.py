@@ -304,6 +304,11 @@ class Settings(BaseSettings):
     # Preencha também em desenvolvimento; em produção, use um token forte.
     internal_service_token: str = ""
 
+    # Token do endpoint /metrics (Prometheus). Vazio = usa o internal_service_token
+    # (o /metrics deixou de ser público em 24/09/2026 — expunha métricas internas).
+    # Um coletor Prometheus manda `Authorization: Bearer <token>`.
+    metrics_token: SecretStr | None = None
+
     # --- CORS / Security Headers ---
     # Lista CSV de origens permitidas para CORS. Em produção, restrinja ao domínio
     # do frontend. Em desenvolvimento, o default permite localhost:3000.

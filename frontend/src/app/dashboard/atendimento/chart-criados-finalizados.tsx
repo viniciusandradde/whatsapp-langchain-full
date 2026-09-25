@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChartCriadosFinalizadosPoint } from "@/lib/dashboard-atendimento-api";
+import { dataCivil } from "@/lib/formato";
 
 /**
  * Bar chart SVG simples (sem dep externa) — criados vs finalizados por dia.
@@ -82,12 +83,10 @@ export function ChartCriadosFinalizados({
           const xFinal = xBase + 1;
           const hCriados = (d.criados / maxVal) * innerH;
           const hFinal = (d.finalizados / maxVal) * innerH;
-          const dia = d.dia
-            ? new Date(d.dia).toLocaleDateString("pt-BR", {
-                day: "2-digit",
-                month: "2-digit",
-              })
-            : "";
+          // dataCivil monta a data a partir do texto (sem fuso): o mesmo rótulo
+          // no servidor e no cliente. `new Date("2026-09-24")` virava o dia
+          // anterior no fuso do navegador (hidratação #418).
+          const dia = d.dia ? dataCivil(d.dia).slice(0, 5) : "";
           return (
             <g key={d.dia}>
               <rect

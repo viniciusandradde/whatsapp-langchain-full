@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+
+import { useMontado } from "@/hooks/use-montado";
 import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -36,6 +38,10 @@ export function DashboardClient({ initial }: { initial: DashboardPayload }) {
   const [isPending, startTransition] = useTransition();
   const [lastError, setLastError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  // A hora de "última atualização" só é renderizada após montar: no SSR ela
+  // sai no fuso do servidor (UTC) e na hidratação no fuso do navegador, e a
+  // diferença dava o aviso de hidratação #418 (achado 24/09/2026).
+  const montado = useMontado();
 
   async function load(p: Periodo) {
     try {
@@ -69,12 +75,13 @@ export function DashboardClient({ initial }: { initial: DashboardPayload }) {
     };
   }, [autoRefresh, periodo]);
 
-  const updatedDate = new Date(data.updated_at);
-  const updatedStr = updatedDate.toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  const updatedStr = montado
+    ? new Date(data.updated_at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    : "—";
 
   return (
     <>
@@ -109,7 +116,7 @@ export function DashboardClient({ initial }: { initial: DashboardPayload }) {
             <span>Auto-refresh 30s</span>
           </label>
           <span>·</span>
-          <span>Última atualização: {updatedStr}</span>
+          <span suppressHydrationWarning>Última atualização: {updatedStr}</span>
           <Button
             type="button"
             variant="ghost"
