@@ -103,7 +103,7 @@ uma chave própria" (campo de senha), e, só para o superadmin, "Criar chave
 exclusiva" / "Trocar por uma chave nova" / "Alterar limite". Remoção passa
 por confirmação.
 
-**Testes** — `tests/unit/test_openrouter_chave.py` (35: contexto, factory,
+**Testes** — `tests/unit/test_openrouter_chave.py` (27: contexto, factory,
 embeddings por chave, marca no `ia_execucao`, cache, cliente da OpenRouter
 com respx, gravação cifrada sem devolver a chave) e
 `tests/integration/test_openrouter_chave_endpoints.py` (E2E: 401/403/422,
