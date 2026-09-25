@@ -27,6 +27,7 @@ from whatsapp_langchain.shared.governanca_ia import (
     registrar_execucao,
 )
 from whatsapp_langchain.shared.llm import provider_preferences
+from whatsapp_langchain.shared.openrouter_chave import chave_openrouter
 from whatsapp_langchain.shared.ssrf_guard import host_is_public, validar_url_externa
 
 if TYPE_CHECKING:
@@ -289,7 +290,7 @@ async def chat_completion_media(
     registra (caminho da aba Testar e das tools do agente, que não carregam
     pool). Ver `registrar_custo_midia`.
     """
-    api_key = settings.openrouter_api_key
+    api_key = chave_openrouter()  # ADR-007: chave da empresa, se houver
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY não configurada")
     modelo_alvo = model or settings.openrouter_midia_model

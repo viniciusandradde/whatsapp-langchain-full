@@ -245,3 +245,50 @@ def install_rls_context(app: ASGIApp) -> None:
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         return await rls_context_middleware(request, call_next)
+
+
+# --- ADR-007: chave da OpenRouter da empresa ativa -------------------------
+
+
+async def openrouter_chave_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Põe no contexto a chave da OpenRouter da empresa ativa (mig 204).
+
+    Roda DEPOIS do `rls_context_middleware` (é dele que vem o `empresa_id`).
+    Só `/api/*` com `X-Empresa-Id`: webhooks e health não chamam a IA pela
+    borda. A leitura tem cache de 60 s por empresa (`carregar_chave_empresa`),
+    então custa uma consulta por empresa por minuto por processo. Empresa
+    sem chave → contexto vazio → `chave_openrouter()` devolve a da plataforma.
+    Falha ao carregar não derruba a request: cai na chave da plataforma com log.
+    """
+    from whatsapp_langchain.shared.openrouter_chave import (
+        carregar_chave_empresa,
+        usar_chave,
+    )
+    from whatsapp_langchain.shared.rls_context import get_request_context
+
+    empresa_id, _bypass = get_request_context()
+    if empresa_id is None or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    chave: str | None = None
+    try:
+        chave = await carregar_chave_empresa(await get_pool(), empresa_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "openrouter_chave_middleware_falhou", empresa_id=empresa_id, error=str(exc)
+        )
+    with usar_chave(chave):
+        return await call_next(request)
+
+
+def install_openrouter_chave_context(app: ASGIApp) -> None:
+    """Registra o middleware da chave por empresa (ADR-007)."""
+
+    @app.middleware("http")  # type: ignore[attr-defined]
+    async def _wrapper(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        return await openrouter_chave_middleware(request, call_next)

@@ -376,7 +376,11 @@ async def run_migrations(db_pool: AsyncConnectionPool) -> None:
 
 
 def resolve_store_index_config() -> PostgresIndexConfig:
-    """Monta configuração de embeddings para o AsyncPostgresStore."""
+    """Monta configuração de embeddings para o AsyncPostgresStore.
+
+    Fica na chave da PLATAFORMA de propósito (ADR-007): o store embeda numa
+    task de fundo, sem o contexto da empresa — ver `shared/embeddings.py`.
+    """
     api_key = settings.openrouter_api_key
     secret_key = SecretStr(api_key.get_secret_value()) if api_key else None
     embeddings = OpenAIEmbeddings(

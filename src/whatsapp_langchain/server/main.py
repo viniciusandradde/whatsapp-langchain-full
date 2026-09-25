@@ -25,6 +25,7 @@ from whatsapp_langchain.agents.loader import AgentNotFoundError
 from whatsapp_langchain.server.middlewares import (
     install_admin_rate_limit,
     install_correlation_id,
+    install_openrouter_chave_context,
     install_rls_context,
     install_security_headers,
 )
@@ -317,6 +318,10 @@ app.add_middleware(
 
 install_security_headers(app, is_production=settings.is_production)
 install_admin_rate_limit(app, limit_per_minute=settings.admin_rate_limit_per_minute)
+# ADR-007 — chave da OpenRouter da empresa ativa no contexto. Registrado
+# ANTES do rls_context para rodar DEPOIS dele (LIFO): precisa do empresa_id
+# que o RLS acabou de extrair do X-Empresa-Id.
+install_openrouter_chave_context(app)
 # Sprint A.2.4 — RLS context: extrai X-Empresa-Id e seta contextvar pro
 # wrapper do pool injetar `SET app.empresa_id` em cada conexão. Roda
 # DEPOIS do correlation_id (registrado por último = roda primeiro LIFO)

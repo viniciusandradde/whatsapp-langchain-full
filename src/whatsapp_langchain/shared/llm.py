@@ -21,6 +21,7 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import SecretStr
 
 from whatsapp_langchain.shared.config import settings
+from whatsapp_langchain.shared.openrouter_chave import chave_openrouter
 
 _RATE_LIMITERS: dict[tuple[float, int], InMemoryRateLimiter] = {}
 
@@ -331,7 +332,10 @@ def create_chat_model(
     Returns:
         ChatOpenAI com rate limiter aplicado.
     """
-    api_key = settings.openrouter_api_key
+    # ADR-007: a chave da empresa no contexto (worker/API) vence a da
+    # plataforma. O grafo é montado por mensagem, então o modelo nasce com a
+    # chave certa e não vaza para outra empresa.
+    api_key = chave_openrouter()
     secret_key = SecretStr(api_key.get_secret_value()) if api_key else None
 
     # O limiter é por PROCESSO e a setting é por SLOT do worker: com N

@@ -134,6 +134,14 @@ async def registrar_execucao(
     """
     import json
 
+    from whatsapp_langchain.shared.openrouter_chave import chave_e_da_empresa
+
+    # ADR-007: marca o gasto que saiu por chave da EMPRESA (própria ou
+    # provisionada) — não é custo da plataforma, e o relatório precisa saber.
+    meta = dict(metadata or {})
+    if chave_e_da_empresa():
+        meta["chave_propria"] = True
+
     try:
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -163,7 +171,7 @@ async def registrar_execucao(
                     list(tools_chamadas or []),
                     status,
                     erro_msg,
-                    json.dumps(metadata or {}),
+                    json.dumps(meta),
                     langfuse_trace_id,
                     custo_fonte,
                     openrouter_generation_id,

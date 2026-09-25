@@ -340,3 +340,68 @@ export async function saveEmpresaCsatAction(
     return { ok: false, error: e instanceof Error ? e.message : "Erro" };
   }
 }
+
+// --- Chave da OpenRouter por empresa (ADR-007, mig 204) ---
+
+type ChaveOpenRouterResult =
+  | { ok: true; data: import("@/lib/api").OpenRouterChaveStatus }
+  | { ok: false; error: string };
+
+export async function loadOpenRouterChaveAction(
+  empresaId: number
+): Promise<ChaveOpenRouterResult> {
+  try {
+    const { getEmpresaOpenRouterChave } = await import("@/lib/api");
+    return { ok: true, data: await getEmpresaOpenRouterChave(empresaId) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+/** A chave só passa por aqui a caminho da API — nunca é guardada nem logada no Next. */
+export async function setOpenRouterChaveAction(
+  empresaId: number,
+  chave: string
+): Promise<ChaveOpenRouterResult> {
+  try {
+    const { setEmpresaOpenRouterChave } = await import("@/lib/api");
+    return { ok: true, data: await setEmpresaOpenRouterChave(empresaId, chave.trim()) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+export async function removerOpenRouterChaveAction(
+  empresaId: number
+): Promise<ChaveOpenRouterResult> {
+  try {
+    const { removerEmpresaOpenRouterChave } = await import("@/lib/api");
+    return { ok: true, data: await removerEmpresaOpenRouterChave(empresaId) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+export async function provisionarOpenRouterChaveAction(
+  empresaId: number,
+  limiteUsd: number | null
+): Promise<ChaveOpenRouterResult> {
+  try {
+    const { provisionarEmpresaOpenRouterChave } = await import("@/lib/api");
+    return { ok: true, data: await provisionarEmpresaOpenRouterChave(empresaId, limiteUsd) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
+
+export async function setLimiteOpenRouterChaveAction(
+  empresaId: number,
+  limiteUsd: number | null
+): Promise<ChaveOpenRouterResult> {
+  try {
+    const { setLimiteEmpresaOpenRouterChave } = await import("@/lib/api");
+    return { ok: true, data: await setLimiteEmpresaOpenRouterChave(empresaId, limiteUsd) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Erro." };
+  }
+}
