@@ -1777,6 +1777,26 @@ export async function getWabaWebhookInfo(id: number): Promise<WabaWebhookInfo> {
   return apiFetch<WabaWebhookInfo>(`/api/conexoes/${id}/waba/webhook`);
 }
 
+/** Resposta pelo celular pausa a IA (ADR-008): `null` = a IA só volta por
+ * "Devolver à IA"; um número = volta sozinha depois desses minutos. */
+export interface RespostaCelularConfig {
+  retorno_ia_minutos: number | null;
+}
+
+export async function getRespostaCelular(id: number): Promise<RespostaCelularConfig> {
+  return apiFetch<RespostaCelularConfig>(`/api/conexoes/${id}/resposta-celular`);
+}
+
+export async function putRespostaCelular(
+  id: number,
+  body: RespostaCelularConfig,
+): Promise<RespostaCelularConfig> {
+  return apiFetch<RespostaCelularConfig>(`/api/conexoes/${id}/resposta-celular`, {
+    method: "PUT",
+    body,
+  });
+}
+
 /** Conexão manual (ID do número + ID da conta + token) — sem cadastro incorporado. */
 export async function wabaManual(body: WabaManualInput): Promise<Conexao> {
   return apiFetch<Conexao>("/api/conexoes/waba/manual", {

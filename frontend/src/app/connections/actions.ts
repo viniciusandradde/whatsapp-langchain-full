@@ -13,6 +13,7 @@ import {
   getConexaoStatus,
   regeneratePairingCode,
   patchConexao,
+  putRespostaCelular,
   testConexao,
   getWabaConfig,
   testEvolutionConnection,
@@ -62,6 +63,18 @@ export async function patchConexaoAction(
   try {
     await patchConexao(id, body);
     revalidatePath("/connections");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: safeError(e) };
+  }
+}
+
+export async function salvarRespostaCelularAction(
+  id: number,
+  retornoIaMinutos: number | null
+): Promise<ActionResult> {
+  try {
+    await putRespostaCelular(id, { retorno_ia_minutos: retornoIaMinutos });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: safeError(e) };

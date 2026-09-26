@@ -22,6 +22,7 @@ tratado ANTES, no webhook.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Final
 
 import structlog
@@ -262,3 +263,117 @@ async def respostas_humanas_recentes(
         if canal and (response or "").strip():
             itens.append(RespostaHumana(texto=response, canal=canal))
     return itens
+
+
+# --- retorno da IA por tempo (PR B da ADR-008) --------------------------------
+
+#: Mensagem do cliente mais velha que isto não é reprocessada: responder
+#: depois de um dia soa como robô atrasado.
+IDADE_MAXIMA_REPROCESSO: Final = timedelta(hours=24)
+#: Opções oferecidas no painel (minutos). NULL = só "Devolver à IA".
+OPCOES_RETORNO_MINUTOS: Final = (30, 60, 120, 240, 1440)
+
+
+def deve_retornar(
+    *,
+    ultima_celular_em: datetime | None,
+    ultima_cliente_em: datetime | None,
+    minutos: int | None,
+    agora: datetime,
+) -> bool:
+    """A IA volta sozinha quando a conexão tem prazo, o dono não responde pelo
+    celular há pelo menos esse prazo, o cliente escreveu DEPOIS da última
+    resposta do dono e essa mensagem do cliente ainda é recente."""
+    if not minutos or ultima_celular_em is None or ultima_cliente_em is None:
+        return False
+    if ultima_cliente_em <= ultima_celular_em:
+        return False
+    if agora - ultima_celular_em < timedelta(minutes=minutos):
+        return False
+    return agora - ultima_cliente_em <= IDADE_MAXIMA_REPROCESSO
+
+
+async def retornar_ia_por_tempo(
+    pool: AsyncConnectionPool, *, agora: datetime | None = None
+) -> int:
+    """Devolve à IA as conversas pausadas pelo celular que venceram o prazo da
+    conexão e reprocessa a última mensagem do cliente. Devolve quantas
+    conversas voltaram.
+
+    A devolução é um UPDATE condicional ao dono AINDA ser `HUMANO_CELULAR`:
+    é a trava entre as réplicas do worker (só uma recebe a linha de volta) e
+    impede tirar a conversa de um operador que a assumiu pelo painel entre a
+    leitura dos candidatos e a devolução. A mensagem é reenfileirada na mesma
+    transação, só se ainda carregar o marcador de handoff.
+    """
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    agora = agora or datetime.now(UTC)
+    with empresa_scope(None, bypass=True):
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT a.id, a.empresa_id, c.celular_retorno_ia_minutos,
+                       (SELECT max(m.created_at) FROM message_queue m
+                         WHERE m.atendimento_id = a.id AND m.origem_resposta = 'celular'),
+                       ult.id, ult.created_at
+                  FROM atendimento a
+                  JOIN conexao c ON c.id = a.conexao_id
+                  LEFT JOIN LATERAL (
+                        SELECT m.id, m.created_at FROM message_queue m
+                         WHERE m.atendimento_id = a.id
+                           AND m.response LIKE '[handoff humano%%'
+                         ORDER BY m.id DESC LIMIT 1
+                  ) ult ON TRUE
+                 WHERE a.status = 'em_andamento'
+                   AND a.assigned_to_user_id = %s
+                   AND c.celular_retorno_ia_minutos IS NOT NULL
+                """,
+                (HUMANO_CELULAR,),
+            )
+            candidatos = await cur.fetchall()
+    voltaram = 0
+    for atd_id, empresa_id, minutos, ult_cel, ult_cli_id, ult_cli_em in candidatos:
+        if not deve_retornar(
+            ultima_celular_em=ult_cel,
+            ultima_cliente_em=ult_cli_em,
+            minutos=minutos,
+            agora=agora,
+        ):
+            continue
+        with empresa_scope(empresa_id=empresa_id):
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    """
+                    UPDATE atendimento
+                       SET assigned_to_user_id = NULL, status = 'aguardando',
+                           updated_at = NOW()
+                     WHERE id = %s AND status = 'em_andamento'
+                       AND assigned_to_user_id = %s
+                    RETURNING id
+                    """,
+                    (atd_id, HUMANO_CELULAR),
+                )
+                if await cur.fetchone() is None:
+                    continue
+                await conn.execute(
+                    """
+                    UPDATE message_queue
+                       SET status = 'queued', response = NULL, error = NULL,
+                           attempts = 0, lease_until = NULL, processed_at = NULL,
+                           process_after = NOW(), updated_at = NOW()
+                     WHERE id = %s AND atendimento_id = %s
+                       AND response LIKE '[handoff humano%%'
+                    """,
+                    (ult_cli_id, atd_id),
+                )
+                await conn.commit()
+        voltaram += 1
+        logger.info(
+            "resposta_celular_ia_retornou",
+            atendimento_id=atd_id,
+            empresa_id=empresa_id,
+            minutos=minutos,
+            reprocessada=ult_cli_id,
+        )
+    return voltaram

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from whatsapp_langchain.shared.resposta_celular import (
+    IDADE_MAXIMA_REPROCESSO,
     MAX_CHARS_POR_RESPOSTA,
     MAX_RESPOSTAS_NO_CONTEXTO,
+    OPCOES_RETORNO_MINUTOS,
     RespostaHumana,
     bloco_respostas_humanas,
     canal_da_resposta,
     destino_ignorado,
+    deve_retornar,
     texto_da_resposta,
 )
 
@@ -93,3 +98,55 @@ class TestBloco:
         assert all(t.endswith("…") for t in trechos), (
             "texto longo é cortado com reticências"
         )
+
+
+class TestRetornoPorTempo:
+    """PR B: a IA volta sozinha depois do prazo da conexão."""
+
+    AGORA = datetime(2026, 9, 26, 15, 0, tzinfo=UTC)
+
+    def _decide(self, *, cel_min_atras, cli_min_atras, minutos=30):
+        cel = (
+            None
+            if cel_min_atras is None
+            else self.AGORA - timedelta(minutes=cel_min_atras)
+        )
+        cli = (
+            None
+            if cli_min_atras is None
+            else self.AGORA - timedelta(minutes=cli_min_atras)
+        )
+        return deve_retornar(
+            ultima_celular_em=cel,
+            ultima_cliente_em=cli,
+            minutos=minutos,
+            agora=self.AGORA,
+        )
+
+    def test_prazo_vencido_e_cliente_escreveu_depois_volta(self):
+        assert self._decide(cel_min_atras=45, cli_min_atras=40) is True
+
+    def test_sem_prazo_na_conexao_nunca_volta(self):
+        assert self._decide(cel_min_atras=600, cli_min_atras=10, minutos=None) is False
+        assert self._decide(cel_min_atras=600, cli_min_atras=10, minutos=0) is False
+
+    def test_dentro_do_prazo_espera(self):
+        assert self._decide(cel_min_atras=20, cli_min_atras=10) is False
+
+    def test_cliente_nao_escreveu_depois_do_dono_espera(self):
+        assert self._decide(cel_min_atras=45, cli_min_atras=50) is False
+        assert self._decide(cel_min_atras=45, cli_min_atras=45) is False
+        assert self._decide(cel_min_atras=45, cli_min_atras=None) is False
+
+    def test_sem_resposta_do_celular_nao_decide(self):
+        assert self._decide(cel_min_atras=None, cli_min_atras=10) is False
+
+    def test_mensagem_com_mais_de_um_dia_nao_e_respondida(self):
+        limite = int(IDADE_MAXIMA_REPROCESSO.total_seconds() // 60)
+        assert self._decide(cel_min_atras=limite + 60, cli_min_atras=limite) is True
+        assert (
+            self._decide(cel_min_atras=limite + 60, cli_min_atras=limite + 1) is False
+        )
+
+    def test_opcoes_do_painel_cabem_no_check_da_mig_205(self):
+        assert all(5 <= m <= 10080 for m in OPCOES_RETORNO_MINUTOS)
