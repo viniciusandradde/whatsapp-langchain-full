@@ -172,6 +172,44 @@ def _codigo_desconexao(data: dict) -> int | None:
     return None
 
 
+async def _registrar_resposta_do_celular(instance: str, key: dict, data: dict) -> None:
+    """ADR-008: mensagem do dono pelo celular → bolha "WhatsApp (celular)" e
+    IA pausada na conversa. Grupos, listas, canais, status e mensagens sem
+    conteúdo (reação, enquete, protocolo) ficam de fora."""
+    from whatsapp_langchain.shared.resposta_celular import (
+        RespostaCelular,
+        destino_ignorado,
+        registrar_resposta_celular,
+        texto_da_resposta,
+    )
+    from whatsapp_langchain.shared.rls_context import empresa_scope
+
+    if destino_ignorado(key.get("remoteJid")):
+        return
+    texto = texto_da_resposta(data.get("message"))
+    message_id = key.get("id")
+    if not texto or not message_id:
+        return
+    para = _resolve_sender_phone(key)
+    if not para:
+        return
+    pool = await get_pool()
+    conexao = await get_conexao_by_evolution_instance(pool, instance)
+    if conexao is None or conexao.status != "active":
+        return
+    with empresa_scope(empresa_id=conexao.empresa_id):
+        await registrar_resposta_celular(
+            pool,
+            conexao,
+            RespostaCelular(message_id=str(message_id), para=para, texto=texto),
+        )
+    logger.info(
+        "evolution_resposta_celular_origem",
+        conexao_id=conexao.id,
+        source=data.get("source"),
+    )
+
+
 def _texto_eco(data: dict) -> bool:
     """A mensagem é o eco de saúde (mig 198)? Só o texto simples conta."""
     msg = data.get("message") if isinstance(data, dict) else None
@@ -397,6 +435,20 @@ async def webhook_evolution(
                     message_id=key.get("id"),
                 )
                 return Response(status_code=200)
+        # ADR-008 (mig 205): fora o eco, `fromMe` é o DONO respondendo pelo
+        # celular / WhatsApp Web (a Evolution v2 não reemite o que ela mesma
+        # enviou). Vira resposta humana e pausa a IA naquela conversa.
+        # Best-effort: falha aqui nunca derruba o webhook.
+        if instance:
+            try:
+                await _registrar_resposta_do_celular(instance, key, data)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "evolution_resposta_celular_falhou",
+                    instance=instance,
+                    message_id=key.get("id"),
+                    error=str(exc)[:200],
+                )
         logger.debug(
             "evolution_webhook_skipped_fromMe",
             instance=instance,

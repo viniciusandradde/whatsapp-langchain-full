@@ -1,6 +1,6 @@
 # ADR-008 — Resposta do dono pelo celular pausa a IA (Evolution, Z-API e Meta)
 
-- **Status:** PROPOSTA (26/09/2026), aguardando aprovação do dono.
+- **Status:** ACEITA (26/09/2026) — o dono aprovou as quatro decisões da §6 como propostas. PR A implementada (mig 205).
 - **Origem:** relatório `.planning/reports/20260926-agente-luis-analise-e-mercado-llm.md`
   (agente do Luís "entra por cima" das conversas que ele conduz pelo celular;
   pontuação competitiva 8,4/10).
@@ -76,19 +76,24 @@ No `evolution_webhook.py`, o ramo `fromMe` passa a ter três saídas, nesta orde
      com `normalized_input = "manual:app:whatsapp"` (mesmo prefixo que a
      timeline já rotula como "WhatsApp Business (celular)"; o rótulo ganha a
      forma genérica "WhatsApp (celular)");
-   - **memória do agente**: a mensagem entra no checkpoint da conversa
-     (`thread_id = telefone:agente`) como fala do assistente, do mesmo jeito
-     que a resposta do operador do painel entra hoje (`worker/processor.py`,
-     caminho de `manual:`). Assim o agente, ao voltar, sabe o que o dono disse;
+   - **memória do agente** (corrigido na implementação): a resposta do
+     operador do painel **não** entrava no contexto do agente (o worker só
+     monta a mensagem do cliente). O mecanismo adotado, para celular E painel:
+     antes de chamar o modelo, o worker anexa ao texto do cliente o bloco
+     `[A EQUIPE JÁ RESPONDEU ESTE CLIENTE desde a sua última mensagem …]` com
+     até 5 respostas humanas (500 caracteres cada) dadas depois da última
+     resposta da IA (`shared/resposta_celular.py::respostas_humanas_recentes`),
+     depois dos guardrails, como o prefixo `[JÁ ENCAMINHADO AO SETOR]`;
    - `entrega_status`/ack: a Evolution manda `messages.update` para as
      mensagens do celular também; `registrar_ack` continua contando só como
      "saída funcionando" (não muda);
    - log `evolution_resposta_celular_registrada` com `conexao_id`,
      `atendimento_id`, `ia_pausada`, `source`.
-4. Mídia do celular: foto, áudio e documento entram como saída com
-   `response_media_*` pelo mesmo caminho da mídia recebida (`download_evolution_media_b64`
-   + bucket), sem transcrição e sem visão (custo de IA para mensagem que a IA
-   não vai responder).
+4. Mídia do celular (simplificado na implementação): entra como texto
+   indicativo com a legenda, por exemplo `[foto enviada pelo celular] segue`
+   ou `[documento enviado pelo celular: proposta.pdf]`. O arquivo não é
+   baixado: a IA não responde a essa mensagem, e baixar custaria banda e
+   armazenamento sem uso.
 
 **Idempotência:** o `key.id` da Evolution vai em `message_id` da linha de
 saída; repetição do webhook (reentrega) faz `INSERT … ON CONFLICT DO NOTHING`
@@ -210,7 +215,7 @@ a timeline e o chip tratam os dois com o rótulo "WhatsApp (celular)".
 Ordem de merge: A → B. Cada uma validada no dev e mostrada ao dono antes do
 merge (contrato de entrega).
 
-## 6. Decisões pendentes do dono
+## 6. Decisões do dono (aprovadas em 26/09/2026, todas como propostas)
 
 1. Padrão do retorno automático: **nunca** (proposta, igual à Meta) ou um
    tempo (ex.: 2 h)?

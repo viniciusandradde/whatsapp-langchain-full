@@ -1,6 +1,6 @@
 import type { AtendenteStatus, Atendimento, Departamento } from "@/lib/api";
 
-import { DONO_CELULAR, ROTULO_CELULAR } from "./timeline";
+import { rotuloDonoCelular } from "./timeline";
 
 /**
  * Agrupamento da fila (inbox agrupado 2026-09) — puro, sem React.
@@ -251,9 +251,7 @@ export function agruparAtendimentos(
     nome: (k) =>
       k === ctx.userId
         ? `${nomes.get(k) ?? "Você"} (você)`
-        : k === DONO_CELULAR
-          ? ROTULO_CELULAR
-          : (nomes.get(k) ?? "Atendente"),
+        : (rotuloDonoCelular(k) ?? nomes.get(k) ?? "Atendente"),
     nomeSem: "Sem responsável",
     ponto: "bg-brand-primary",
     primeiro: ctx.userId,
