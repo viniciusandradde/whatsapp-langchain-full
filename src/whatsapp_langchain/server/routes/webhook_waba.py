@@ -355,7 +355,7 @@ async def _processar_payload(
             continue
 
         async with pool.connection() as conn:
-            await conn.execute(
+            cur = await conn.execute(
                 """
                 UPDATE waba_template
                    SET status = %s,
@@ -366,12 +366,23 @@ async def _processar_payload(
                 """,
                 (new_status, upd.get("reason"), upd.get("meta_template_id")),
             )
-        logger.info(
-            "waba_template_status_updated",
-            template_id=upd.get("meta_template_id"),
-            evento=event,  # `event` é o 1º argumento do structlog
-            new_status=new_status,
-        )
+            atualizados = cur.rowcount
+        if atualizados:
+            logger.info(
+                "waba_template_status_updated",
+                template_id=upd.get("meta_template_id"),
+                evento=event,  # `event` é o 1º argumento do structlog
+                new_status=new_status,
+            )
+        else:
+            # Modelo criado FORA do ChatNexus ou noutra conta do WhatsApp (o
+            # App recebe o aviso de toda conta assinada): nada a atualizar.
+            # Antes o log dizia "updated" e escondia isso (25/09/2026).
+            logger.info(
+                "waba_template_status_sem_modelo_local",
+                template_id=upd.get("meta_template_id"),
+                evento=event,
+            )
 
     if enqueue_failed:
         # 5xx → Meta redelivera o webhook inteiro; o livro de wamid (mig 200)

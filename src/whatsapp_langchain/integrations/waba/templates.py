@@ -112,6 +112,21 @@ async def submit_template(
         return resp.json()
 
 
+def nota_de_qualidade(valor: Any) -> str | None:
+    """`quality_score` da Meta → texto da coluna `meta_quality_score`.
+
+    A Meta devolve um OBJETO (`{"score": "GREEN", "date": 1727...}`); gravar o
+    dict direto quebrava o "Sincronizar" com `cannot adapt type 'dict'`
+    (produção, 25/09/2026). Texto passa como veio; o resto vira None.
+    """
+    if isinstance(valor, dict):
+        nota = valor.get("score")
+        return str(nota) if nota else None
+    if isinstance(valor, str) and valor:
+        return valor
+    return None
+
+
 async def sync_template_status(
     access_token: str,
     meta_template_id: str,

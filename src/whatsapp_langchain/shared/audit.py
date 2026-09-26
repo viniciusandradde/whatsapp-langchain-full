@@ -84,7 +84,11 @@ async def record_audit(
                     action,
                     entity_type,
                     entity_id,
-                    json.dumps(payload_diff or {}),
+                    # `default=str`: `model_dump()` traz datetime/Decimal
+                    # (`updated_at`, `classificado_em`…) e o json puro
+                    # recusava — a auditoria de `cliente.update` se perdia
+                    # com "datetime is not JSON serializable" (25/09/2026).
+                    json.dumps(payload_diff or {}, default=str),
                     ip,
                     user_agent,
                     request_id,

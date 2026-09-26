@@ -324,7 +324,7 @@ async def _sync_template_internal(
         "FLAGGED": "approved",
     }
     new_status = status_map.get(meta_status, template.status)
-    quality = data.get("quality_score")
+    quality = waba_templates.nota_de_qualidade(data.get("quality_score"))
     rejection = data.get("rejected_reason")
 
     async with pool.connection() as conn:
@@ -472,11 +472,7 @@ async def import_templates(
     }
     for t in remote:
         local_status = status_map.get((t.get("status") or "").upper(), "approved")
-        quality = (
-            (t.get("quality_score") or {}).get("score")
-            if isinstance(t.get("quality_score"), dict)
-            else None
-        )
+        quality = waba_templates.nota_de_qualidade(t.get("quality_score"))
         rows_to_insert.append(
             (
                 empresa_id,
