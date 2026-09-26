@@ -3067,6 +3067,7 @@ async def process_message(
                 phone_number=message.phone_number,
                 agent_id=message.agent_id,
                 antes_do_id=message.id,
+                atendimento_id=message.atendimento_id,
             )
             _bloco = bloco_respostas_humanas(_humanas)
             if _bloco:

@@ -30,6 +30,8 @@ _RUN = uuid.uuid4().hex[:8]
 _TEL = f"+5567998{int(_RUN[:5], 16) % 1000000:06d}"
 # PR B usa outra conversa: a do PR A termina devolvida à IA.
 _TEL2 = f"+5567997{int(_RUN[3:8], 16) % 1000000:06d}"
+# Contexto do agente só da conversa atual (incidente 26/09).
+_TEL3 = f"+5567996{int(_RUN[2:7], 16) % 1000000:06d}"
 
 
 # ============================================================================
@@ -69,7 +71,7 @@ def ambiente():
     yield {"db": url, "instancia": instancia, "apikey": apikey}
     with psycopg.connect(url, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute("SELECT set_config('app.bypass_rls', 'true', false)")
-        for tel in (_TEL, _TEL2):
+        for tel in (_TEL, _TEL2, _TEL3):
             cur.execute(
                 "DELETE FROM message_queue WHERE empresa_id = 1 AND phone_number = %s",
                 (tel,),
@@ -396,3 +398,65 @@ class TestE2ERetornoPorTempo:
             timeout=15,
         )
         assert r.status_code == 200, r.text
+
+
+@pytest.mark.docker_demo
+class TestE2EContextoSoDaConversaAtual:
+    """Incidente 26/09 em produção: o aviso "Você foi transferido…" de uma
+    conversa encerrada 9 dias antes entrou no bloco de respostas humanas de
+    uma conversa nova, e o agente respondeu a um "Olá" dizendo que o
+    atendimento já tinha sido encaminhado."""
+
+    async def test_20_resposta_de_conversa_encerrada_nao_entra(self, ambiente):
+        from whatsapp_langchain.shared.resposta_celular import (
+            respostas_humanas_recentes,
+        )
+
+        mid = f"CEL-{_RUN}-C1"
+        assert (
+            _upsert(
+                ambiente,
+                from_me=True,
+                texto="Você foi transferido para o setor Financeiro",
+                mid=mid,
+                tel=_TEL3,
+            ).status_code
+            == 200
+        )
+        antigo = _consulta(
+            ambiente,
+            "SELECT atendimento_id FROM message_queue WHERE message_id = %s",
+            (mid,),
+        )[0][0]
+        _executa(
+            ambiente,
+            "UPDATE atendimento SET status = 'resolvido', closed_at = NOW() "
+            "WHERE id = %s",
+            (antigo,),
+        )
+        cid = f"CLI-{_RUN}-C1"
+        assert (
+            _upsert(
+                ambiente, from_me=False, texto="Olá", mid=cid, tel=_TEL3
+            ).status_code
+            == 200
+        )
+        linha, novo = _consulta(
+            ambiente,
+            "SELECT id, atendimento_id FROM message_queue WHERE message_id = %s",
+            (cid,),
+        )[0]
+        assert novo != antigo, "mensagem nova depois de resolver abre outra conversa"
+
+        async with AsyncConnectionPool(ambiente["db"], min_size=1, max_size=2) as pool:
+            comum = dict(
+                empresa_id=1, phone_number=_TEL3, agent_id=None, antes_do_id=linha
+            )
+            assert (
+                await respostas_humanas_recentes(pool, **comum, atendimento_id=novo)
+                == []
+            )
+            na_antiga = await respostas_humanas_recentes(
+                pool, **comum, atendimento_id=antigo
+            )
+            assert [r.canal for r in na_antiga] == ["celular"], na_antiga

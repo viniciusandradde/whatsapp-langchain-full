@@ -212,6 +212,10 @@ def bloco_respostas_humanas(itens: list[RespostaHumana]) -> str:
     )
 
 
+#: Sem atendimento na linha (legado), só respostas deste período contam.
+JANELA_SEM_ATENDIMENTO: Final = timedelta(hours=24)
+
+
 async def respostas_humanas_recentes(
     pool: AsyncConnectionPool,
     *,
@@ -219,12 +223,26 @@ async def respostas_humanas_recentes(
     phone_number: str,
     agent_id: str | None,
     antes_do_id: int,
+    atendimento_id: int | None,
 ) -> list[RespostaHumana]:
     """Respostas humanas (celular e painel) dadas a este cliente depois da
-    última resposta da IA, na ordem em que saíram."""
+    última resposta da IA, na ordem em que saíram.
+
+    Só do atendimento ATUAL: sem esse recorte, uma conversa nova herdava o que
+    o operador escreveu numa conversa encerrada dias antes (em produção, 26/09:
+    o aviso "Você foi transferido para o setor…" de 9 dias atrás fez o agente
+    dizer a um "Olá" que o atendimento já tinha sido encaminhado). Linha sem
+    atendimento (legado) cai na janela de `JANELA_SEM_ATENDIMENTO`.
+    """
+    if atendimento_id is not None:
+        recorte = "atendimento_id = %s"
+        param_recorte: object = atendimento_id
+    else:
+        recorte = "created_at > NOW() - %s"
+        param_recorte = JANELA_SEM_ATENDIMENTO
     async with pool.connection() as conn:
         cur = await conn.execute(
-            """
+            f"""
             WITH ultima_ia AS (
                 SELECT COALESCE(MAX(created_at), '-infinity'::timestamptz) AS em
                   FROM message_queue
@@ -232,11 +250,13 @@ async def respostas_humanas_recentes(
                    AND origem_resposta = 'agente'
                    AND (%s::text IS NULL OR agent_id = %s)
                    AND id < %s
+                   AND {recorte}
             )
             SELECT normalized_input, response
               FROM message_queue, ultima_ia
              WHERE empresa_id = %s AND phone_number = %s
                AND id < %s
+               AND {recorte}
                AND created_at > ultima_ia.em
                AND normalized_input LIKE 'manual:%%'
                AND response IS NOT NULL
@@ -250,9 +270,11 @@ async def respostas_humanas_recentes(
                 agent_id,
                 agent_id,
                 antes_do_id,
+                param_recorte,
                 empresa_id,
                 phone_number,
                 antes_do_id,
+                param_recorte,
                 MAX_RESPOSTAS_NO_CONTEXTO,
             ),
         )
