@@ -28,7 +28,8 @@ export type Remetente =
   | "IA"
   | "Operador"
   | "Sistema"
-  | "WhatsApp Business (celular)";
+  | "WhatsApp Business (celular)"
+  | "WhatsApp (celular)";
 
 /**
  * Coexistence (mig 200): a empresa respondeu pelo WhatsApp Business do
@@ -38,6 +39,22 @@ export type Remetente =
  */
 export const DONO_CELULAR = "whatsapp_business_app";
 export const ROTULO_CELULAR = "WhatsApp Business (celular)" as const;
+
+/**
+ * ADR-008 (mig 205): o dono respondeu pelo celular numa conexão Evolution.
+ * Mesmo comportamento da Coexistence (IA pausada até "Devolver à IA");
+ * espelho de `shared/resposta_celular.py::HUMANO_CELULAR`, prefixo
+ * `manual:app:whatsapp`.
+ */
+export const DONO_CELULAR_EVOLUTION = "whatsapp_celular";
+export const ROTULO_CELULAR_EVOLUTION = "WhatsApp (celular)" as const;
+
+/** Rótulo do dono sentinela "celular", ou null se o dono é uma pessoa. */
+export function rotuloDonoCelular(dono: string | null | undefined): string | null {
+  if (dono === DONO_CELULAR) return ROTULO_CELULAR;
+  if (dono === DONO_CELULAR_EVOLUTION) return ROTULO_CELULAR_EVOLUTION;
+  return null;
+}
 
 export interface BolhaTexto {
   tipo: "bolha";
@@ -186,7 +203,8 @@ export const AVISO_IA_TEXTO: Record<
 export function remetenteDaResposta(m: AtendimentoMensagem): Remetente {
   const n = m.normalized_input ?? "";
   if (n.startsWith("manual:system:")) return "Sistema";
-  if (n.startsWith("manual:app:")) return ROTULO_CELULAR;
+  if (n.startsWith("manual:app:whatsapp_business")) return ROTULO_CELULAR;
+  if (n.startsWith("manual:app:")) return ROTULO_CELULAR_EVOLUTION;
   if (n.startsWith("manual:")) return "Operador";
   return "IA";
 }

@@ -3050,6 +3050,35 @@ async def process_message(
                 f"continue ajudando normalmente] {normalized_text}"
             )
 
+        # ADR-008 (decisão 2 do dono): o que a equipe já respondeu a este
+        # cliente desde a última resposta da IA — pelo celular (mig 205) ou
+        # pelo painel — entra no contexto. Sem isto o agente recomeçava a
+        # conversa ou contradizia o dono. Também DEPOIS dos guardrails, pelo
+        # mesmo motivo do bloco acima. Best-effort.
+        try:
+            from whatsapp_langchain.shared.resposta_celular import (
+                bloco_respostas_humanas,
+                respostas_humanas_recentes,
+            )
+
+            _humanas = await respostas_humanas_recentes(
+                pool,
+                empresa_id=message.empresa_id,
+                phone_number=message.phone_number,
+                agent_id=message.agent_id,
+                antes_do_id=message.id,
+            )
+            _bloco = bloco_respostas_humanas(_humanas)
+            if _bloco:
+                normalized_text = f"{_bloco} {normalized_text}"
+                logger.info(
+                    "worker_respostas_humanas_no_contexto",
+                    message_id=message.id,
+                    quantidade=len(_humanas),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("worker_respostas_humanas_falhou", error=str(exc)[:200])
+
         human_message = HumanMessage(content=normalized_text)
 
         # A.6 — `agente_runtime` já foi resolvido no passo 0.b (o
