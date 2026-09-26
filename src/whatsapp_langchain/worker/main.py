@@ -135,6 +135,10 @@ async def main() -> None:
     # baseline, avisa o canal da plataforma
     saude_task = asyncio.create_task(_saude_conexoes_loop(pool))
 
+    # ADR-008 PR B: conversa pausada pela resposta do dono no celular volta à
+    # IA depois do prazo da conexão (`celular_retorno_ia_minutos`).
+    retorno_celular_task = asyncio.create_task(_retorno_ia_celular_loop(pool))
+
     # Push FCM (mig 168): LISTEN no mesmo canal do SSE → notifica os
     # dispositivos da empresa em mensagem nova de cliente. No-op sem a
     # credencial no env.
@@ -170,6 +174,7 @@ async def main() -> None:
         relatorio_task.cancel()
         openrouter_task.cancel()
         saude_task.cancel()
+        retorno_celular_task.cancel()
         push_task.cancel()
         retencao_task.cancel()
         for t in (
@@ -181,6 +186,7 @@ async def main() -> None:
             relatorio_task,
             openrouter_task,
             saude_task,
+            retorno_celular_task,
             push_task,
             retencao_task,
         ):
@@ -501,6 +507,25 @@ async def _plano_vigencia_loop(pool) -> None:
 # ticks de verdade (5 min) entre as réplicas; o loop só tenta a cada minuto
 # para uma réplica morta não deixar o monitor parado por mais que isso.
 SAUDE_CONEXOES_LOOP_SECONDS = 60
+
+
+RETORNO_IA_CELULAR_LOOP_SECONDS = 60
+
+
+async def _retorno_ia_celular_loop(pool) -> None:
+    """ADR-008 PR B: devolve à IA as conversas pausadas pelo celular cujo
+    prazo venceu e reprocessa a última mensagem do cliente."""
+    from whatsapp_langchain.shared.resposta_celular import retornar_ia_por_tempo
+
+    await asyncio.sleep(30)
+    while True:
+        try:
+            voltaram = await retornar_ia_por_tempo(pool)
+            if voltaram:
+                logger.info("retorno_ia_celular_tick", voltaram=voltaram)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("retorno_ia_celular_loop_error", error=str(e))
+        await asyncio.sleep(RETORNO_IA_CELULAR_LOOP_SECONDS)
 
 
 async def _saude_conexoes_loop(pool) -> None:

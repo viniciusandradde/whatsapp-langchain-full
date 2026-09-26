@@ -1536,3 +1536,56 @@ async def test_evolution_connection(
         state=state,
         instance_name=body.instance_name,
     )
+
+
+# --- Resposta pelo celular pausa a IA (ADR-008) --------------------------------
+
+
+class RespostaCelularConfig(BaseModel):
+    """`retorno_ia_minutos`: None = a IA só volta por "Devolver à IA"."""
+
+    retorno_ia_minutos: int | None = Field(default=None, ge=5, le=10080)
+
+
+@router.get("/{conexao_id}/resposta-celular", response_model=RespostaCelularConfig)
+async def get_resposta_celular(
+    conexao_id: int,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("conexao.write")),
+) -> RespostaCelularConfig:
+    pool = await get_pool()
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT celular_retorno_ia_minutos FROM conexao WHERE id = %s",
+            (conexao_id,),
+        )
+        row = await cur.fetchone()
+    return RespostaCelularConfig(retorno_ia_minutos=row[0] if row else None)
+
+
+@router.put("/{conexao_id}/resposta-celular", response_model=RespostaCelularConfig)
+async def put_resposta_celular(
+    conexao_id: int,
+    body: RespostaCelularConfig,
+    empresa_id: int = Depends(get_empresa_context),
+    _: None = Depends(require_permission("conexao.write")),
+) -> RespostaCelularConfig:
+    pool = await get_pool()
+    conexao = await get_conexao_by_id(pool, conexao_id)
+    if conexao is None or conexao.empresa_id != empresa_id:
+        raise HTTPException(status_code=404, detail="Conexão não encontrada.")
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE conexao SET celular_retorno_ia_minutos = %s, updated_at = NOW() WHERE id = %s",
+            (body.retorno_ia_minutos, conexao_id),
+        )
+        await conn.commit()
+    logger.info(
+        "conexao_resposta_celular_config",
+        conexao_id=conexao_id,
+        retorno_ia_minutos=body.retorno_ia_minutos,
+    )
+    return body
