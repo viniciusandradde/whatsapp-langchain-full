@@ -297,10 +297,15 @@ async def retornar_ia_por_tempo(
     pool: AsyncConnectionPool, *, agora: datetime | None = None
 ) -> int:
     """Devolve à IA as conversas pausadas pelo celular que venceram o prazo da
-    conexão e reprocessa a última mensagem do cliente. Idempotente entre as
-    réplicas do worker: o reenfileiramento só pega a linha que ainda tem o
-    marcador de handoff. Devolve quantas conversas voltaram."""
-    from whatsapp_langchain.shared.atendimento import devolver_atendimento_para_ia
+    conexão e reprocessa a última mensagem do cliente. Devolve quantas
+    conversas voltaram.
+
+    A devolução é um UPDATE condicional ao dono AINDA ser `HUMANO_CELULAR`:
+    é a trava entre as réplicas do worker (só uma recebe a linha de volta) e
+    impede tirar a conversa de um operador que a assumiu pelo painel entre a
+    leitura dos candidatos e a devolução. A mensagem é reenfileirada na mesma
+    transação, só se ainda carregar o marcador de handoff.
+    """
     from whatsapp_langchain.shared.rls_context import empresa_scope
 
     agora = agora or datetime.now(UTC)
@@ -337,19 +342,30 @@ async def retornar_ia_por_tempo(
         ):
             continue
         with empresa_scope(empresa_id=empresa_id):
-            devolvido = await devolver_atendimento_para_ia(pool, atd_id)
-            if devolvido is None:
-                continue
             async with pool.connection() as conn:
+                cur = await conn.execute(
+                    """
+                    UPDATE atendimento
+                       SET assigned_to_user_id = NULL, status = 'aguardando',
+                           updated_at = NOW()
+                     WHERE id = %s AND status = 'em_andamento'
+                       AND assigned_to_user_id = %s
+                    RETURNING id
+                    """,
+                    (atd_id, HUMANO_CELULAR),
+                )
+                if await cur.fetchone() is None:
+                    continue
                 await conn.execute(
                     """
                     UPDATE message_queue
                        SET status = 'queued', response = NULL, error = NULL,
                            attempts = 0, lease_until = NULL, processed_at = NULL,
                            process_after = NOW(), updated_at = NOW()
-                     WHERE id = %s AND response LIKE '[handoff humano%%'
+                     WHERE id = %s AND atendimento_id = %s
+                       AND response LIKE '[handoff humano%%'
                     """,
-                    (ult_cli_id,),
+                    (ult_cli_id, atd_id),
                 )
                 await conn.commit()
         voltaram += 1

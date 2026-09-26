@@ -3,7 +3,13 @@ import Link from "next/link";
 import { ChevronLeft, FileCheck, Smartphone } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { getConexao, getWabaWebhookInfo, type WabaWebhookInfo } from "@/lib/api";
+import {
+  getConexao,
+  getRespostaCelular,
+  getWabaWebhookInfo,
+  type RespostaCelularConfig,
+  type WabaWebhookInfo,
+} from "@/lib/api";
 import { requireSession } from "@/lib/session";
 
 import { ReconectarButton } from "../reconectar-button";
@@ -11,6 +17,7 @@ import { SincronizarButton } from "./sincronizar-button";
 import { WebhookConexao } from "./webhook-conexao";
 import { AntiBanPanel } from "./anti-ban-panel";
 import { RespostaPanel } from "./resposta-panel";
+import { RespostaCelularPanel } from "./resposta-celular-panel";
 import { TranscricaoPanel } from "./transcricao-panel";
 import { DefaultAgentSelect } from "./default-agent-select";
 import { TipoAtendimentoSelect } from "./tipo-atendimento-select";
@@ -73,6 +80,12 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
   let webhookInfo: WabaWebhookInfo | null = null;
   if (isWABA) {
     webhookInfo = await getWabaWebhookInfo(conexao.id).catch(() => null);
+  }
+  // Resposta pelo celular pausa a IA (ADR-008): só Evolution. Sem permissão
+  // de alterar a conexão ou falha, o bloco só não aparece.
+  let respostaCelular: RespostaCelularConfig | null = null;
+  if (conexao.provider === "evolution") {
+    respostaCelular = await getRespostaCelular(conexao.id).catch(() => null);
   }
   // Templates HSM: só WABA (Meta Cloud API). Evolution não tem.
   const hasTemplates = ["waba"].includes(
@@ -176,6 +189,13 @@ export default async function ConexaoDetailPage({ params }: PageProps) {
         conexaoId={conexao.id}
         initialAgrupamento={conexao.resposta_agrupamento_segundos ?? 8}
       />
+
+      {respostaCelular && (
+        <RespostaCelularPanel
+          conexaoId={conexao.id}
+          initialMinutos={respostaCelular.retorno_ia_minutos}
+        />
+      )}
 
       <TranscricaoPanel
         conexaoId={conexao.id}

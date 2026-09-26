@@ -1,6 +1,6 @@
 # ADR-008 — Resposta do dono pelo celular pausa a IA (Evolution, Z-API e Meta)
 
-- **Status:** ACEITA (26/09/2026) — o dono aprovou as quatro decisões da §6 como propostas. PR A implementada (mig 205).
+- **Status:** ACEITA (26/09/2026) — o dono aprovou as quatro decisões da §6 como propostas. PR A implementada (mig 205, PR #194); PR B (retorno por tempo) implementada.
 - **Origem:** relatório `.planning/reports/20260926-agente-luis-analise-e-mercado-llm.md`
   (agente do Luís "entra por cima" das conversas que ele conduz pelo celular;
   pontuação competitiva 8,4/10).
@@ -115,10 +115,15 @@ propõe um índice **parcial** `WHERE origem_resposta = 'celular'`.
   (NULL = só manual). Um laço no worker, `_retorno_ia_celular_loop`, a cada
   60 s: atendimentos com dono `HUMANO_CELULAR` cuja **última mensagem do
   celular** é mais antiga que o prazo **e** que receberam mensagem do cliente
-  depois dela → `devolver_atendimento_para_ia` + reprocessa a última mensagem
-  do cliente (reusa o caminho de "Reprocessar com IA"). Sem mensagem nova do
-  cliente, nada a fazer: o atendimento espera. Log `resposta_celular_ia_retornou`.
-  Padrão do dono a decidir (proposta: NULL, ou seja, só manual, como a Meta).
+  depois dela → devolve à IA + reprocessa a última mensagem do cliente. Sem
+  mensagem nova do cliente, nada a fazer: o atendimento espera. Log
+  `resposta_celular_ia_retornou`. Padrão decidido pelo dono: NULL (só manual).
+  *Implementado (PR B):* a devolução não usa `devolver_atendimento_para_ia`
+  (que devolve qualquer dono) e sim um UPDATE condicional a o dono AINDA ser
+  `HUMANO_CELULAR`, na mesma transação do reenfileiramento: só uma réplica do
+  worker ganha a linha, e o operador que assumiu pelo painel entre a leitura e
+  a devolução fica com a conversa. O reenfileiramento é o mesmo reset do
+  "Reprocessar com IA", restrito à linha com marcador de handoff.
 - **Cliente escreve enquanto pausado**: a mensagem entra na fila e recebe o
   marcador de handoff, como hoje quando um operador está atendendo. O chip
   "Em atendimento · WhatsApp (celular)" no cabeçalho da conversa avisa o
